@@ -282,6 +282,11 @@ fn dw0427_names_every_kind_but_the_approach() {
         r#"{ "on": "approach", "range": 3 }"#,
         r#"{ "on": "strike-npc", "npc": "npc/keeper" }"#,
         r#"{ "on": "strike-assembly", "assembly": "assembly/a" }"#,
+        r#"{ "on": "body-enters", "state": "state/a" }"#,
+        r#"{ "on": "shot" }"#,
+        r#"{ "on": "use-item", "item": "minecraft:spyglass", "range": 2 }"#,
+        r#"{ "on": "strike-actor", "actor": "actor/a" }"#,
+        r#"{ "on": "use-actor", "actor": "actor/a" }"#,
     ]
     .iter()
     .map(|j| serde_json::from_str(j).expect("a trigger kind"))
@@ -291,7 +296,11 @@ fn dw0427_names_every_kind_but_the_approach() {
         let expected = match k {
             TriggerOn::Use | TriggerOn::Strike | TriggerOn::Step => true,
             TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => true,
-            TriggerOn::Approach { .. } => false,
+            TriggerOn::StrikeActor { .. } | TriggerOn::UseActor { .. } => true,
+            // spec-0134: a shot names its shooter, a raised item its holder.
+            TriggerOn::Shot | TriggerOn::UseItem { .. } => true,
+            // spec-0134 §1: a census is a body's, never a player's.
+            TriggerOn::Approach { .. } | TriggerOn::BodyEnters { .. } => false,
         };
         assert_eq!(k.attributes_its_actor(), expected, "{}", k.kind());
     }

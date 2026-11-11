@@ -961,7 +961,7 @@ pub(super) fn emit_quest_effect(
                 .iter()
                 .find(|a| a.id.as_str() == actor.as_str())
             {
-                body.extend(actor_answer_box_kill(a));
+                body.extend(actor_answer_box_kill(plan.campaign, a));
             }
             emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
         }

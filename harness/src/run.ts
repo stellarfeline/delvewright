@@ -616,6 +616,7 @@ async function main(): Promise<number> {
     report.recordRests(executor.performedRests());
     report.recordAftermath(executor.aftermathResults);
     report.recordMocks(executor.mockResults);
+    report.recordSmallSurfaces(executor.censusResults, executor.shotsLoosed);
     report.recordLoadWindows(executor.loadWindows());
     for (const w of executor.loadWindows()) {
       process.stderr.write(

@@ -37,7 +37,9 @@ pub(super) fn trigger_carrier_tag(t: &delvewright_dsl::EnvTrigger) -> String {
 /// writes `attack`, a right-click writes `interaction`.
 pub(super) fn trigger_record(t: &delvewright_dsl::EnvTrigger) -> &'static str {
     match t.on {
-        delvewright_dsl::TriggerOn::Use => "interaction",
+        delvewright_dsl::TriggerOn::Use | delvewright_dsl::TriggerOn::UseActor { .. } => {
+            "interaction"
+        }
         _ => "attack",
     }
 }
@@ -57,11 +59,18 @@ pub(super) fn trigger_record(t: &delvewright_dsl::EnvTrigger) -> &'static str {
 pub fn press_criterion(on: &delvewright_dsl::TriggerOn) -> Option<&'static str> {
     use delvewright_dsl::TriggerOn;
     match on {
-        TriggerOn::Use => Some("minecraft:player_interacted_with_entity"),
-        TriggerOn::Strike | TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => {
-            Some("minecraft:player_hurt_entity")
+        TriggerOn::Use | TriggerOn::UseActor { .. } => {
+            Some("minecraft:player_interacted_with_entity")
         }
-        TriggerOn::Step | TriggerOn::Approach { .. } => None,
+        TriggerOn::Strike
+        | TriggerOn::StrikeNpc { .. }
+        | TriggerOn::StrikeAssembly { .. }
+        | TriggerOn::StrikeActor { .. } => Some("minecraft:player_hurt_entity"),
+        // spec-0134 §2/§3: the shooter and the holder are named by their own
+        // criteria (`shot_criterion`, `use_item_criterion`), not an interaction.
+        TriggerOn::Shot => Some("minecraft:target_hit"),
+        TriggerOn::UseItem { .. } => Some("minecraft:using_item"),
+        TriggerOn::Step | TriggerOn::Approach { .. } | TriggerOn::BodyEnters { .. } => None,
     }
 }
 
@@ -422,7 +431,9 @@ pub(super) fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) ->
             TriggerOn::Strike
             | TriggerOn::Use
             | TriggerOn::StrikeNpc { .. }
-            | TriggerOn::StrikeAssembly { .. } => {
+            | TriggerOn::StrikeAssembly { .. }
+            | TriggerOn::StrikeActor { .. }
+            | TriggerOn::UseActor { .. } => {
                 let (poll, clear) = click_trigger_poll(plan, t);
                 out.push(poll);
                 // Several triggers may ride one hitbox (an NPC's, an
@@ -445,6 +456,11 @@ pub(super) fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) ->
             }
             // Polled above.
             TriggerOn::Step => {}
+            // spec-0134 §1: polled by the census tick (`census_tick`).
+            TriggerOn::BodyEnters { .. } => {}
+            // spec-0134 §2/§3: dispatched by their own advancements, which
+            // name the shooter and the holder; nothing is polled.
+            TriggerOn::Shot | TriggerOn::UseItem { .. } => {}
         }
     }
     out.extend(clears);
@@ -580,7 +596,10 @@ pub(super) fn env_trigger_fns(
         let id = plan::safe_local(t.id.as_str());
         if matches!(t.on, delvewright_dsl::TriggerOn::Step) {
             out.push(step_dispatch_fn(plan, t, &id));
-        } else if t.addresses_presser() || trigger_is_block_bound(plan, t) {
+        } else if t.addresses_presser()
+            || trigger_is_block_bound(plan, t)
+            || act_criterion(plan, t).is_some()
+        {
             out.push(press_dispatch_fn(plan, t, &id));
         }
         let mut body: Vec<String> = Vec::new();
@@ -723,6 +742,69 @@ pub(super) fn press_dispatch_fn(
     (format!("press_{id}"), lines(&body))
 }
 
+/// The span a criterion's position predicate gives one cell, grown by
+/// `grow` blocks on each side.
+fn cell_span(v: i32, grow: f64) -> serde_json::Value {
+    json!({ "min": f64::from(v) - grow, "max": f64::from(v) + 1.0 + grow })
+}
+
+/// How far past the target block's faces an arrow that struck it may stand
+/// when the criterion reads it: an arrow stops at the face, its centre
+/// outside the cell by at most its own half-length.
+pub(super) const SHOT_FACE_MARGIN: f64 = 0.5;
+
+/// **The criterion that names the player for a shot or a raised item**
+/// (spec-0134 §2/§3), or `None` for every other kind and for one whose place
+/// does not resolve.
+///
+/// A `shot`: `minecraft:target_hit`, granted to the shooting player, its
+/// `projectile` bounded to the target's cell (grown by [`SHOT_FACE_MARGIN`]).
+/// A `use-item`: `minecraft:using_item` with the item, the player inside the
+/// box of half-extent `range` around the anchor.
+pub(super) fn act_criterion(
+    plan: &Plan,
+    t: &delvewright_dsl::EnvTrigger,
+) -> Option<serde_json::Value> {
+    use delvewright_dsl::TriggerOn;
+    let at = t.at_anchor().and_then(|a| anchor_point_any(plan, a));
+    match &t.on {
+        TriggerOn::Shot => {
+            let c = at?;
+            let m = SHOT_FACE_MARGIN;
+            Some(json!({
+                "trigger": "minecraft:target_hit",
+                "conditions": {
+                    "projectile": [{
+                        "condition": "minecraft:entity_properties",
+                        "entity": "this",
+                        "predicate": { "location": { "position": {
+                            "x": cell_span(c[0], m), "y": cell_span(c[1], m), "z": cell_span(c[2], m)
+                        }}}
+                    }]
+                }
+            }))
+        }
+        TriggerOn::UseItem { item, range } => {
+            let c = at?;
+            let r = f64::from(*range);
+            Some(json!({
+                "trigger": "minecraft:using_item",
+                "conditions": {
+                    "item": { "items": item },
+                    "player": [{
+                        "condition": "minecraft:entity_properties",
+                        "entity": "this",
+                        "predicate": { "location": { "position": {
+                            "x": cell_span(c[0], r), "y": cell_span(c[1], r), "z": cell_span(c[2], r)
+                        }}}
+                    }]
+                }
+            }))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod press_criterion_agreement {
     use super::press_criterion;
@@ -746,17 +828,36 @@ mod press_criterion_agreement {
             TriggerOn::StrikeAssembly {
                 assembly: delvewright_dsl::AssemblyId("assembly/x".to_string()),
             },
+            TriggerOn::BodyEnters {
+                state: delvewright_dsl::StateId("state/x".to_string()),
+            },
+            TriggerOn::Shot,
+            TriggerOn::UseItem {
+                item: "minecraft:spyglass".to_string(),
+                range: 2,
+            },
+            TriggerOn::StrikeActor {
+                actor: delvewright_dsl::ActorId("actor/x".to_string()),
+            },
+            TriggerOn::UseActor {
+                actor: delvewright_dsl::ActorId("actor/x".to_string()),
+            },
         ];
         let mut compared = 0;
         for on in &every {
-            // Exhaustive by construction: a seventh variant fails to compile here.
+            // Exhaustive by construction: a new variant fails to compile here.
             let named_by_selector = match on {
                 TriggerOn::Step => true,
                 TriggerOn::Strike
                 | TriggerOn::Use
                 | TriggerOn::Approach { .. }
                 | TriggerOn::StrikeNpc { .. }
-                | TriggerOn::StrikeAssembly { .. } => false,
+                | TriggerOn::StrikeAssembly { .. }
+                | TriggerOn::BodyEnters { .. }
+                | TriggerOn::Shot
+                | TriggerOn::UseItem { .. }
+                | TriggerOn::StrikeActor { .. }
+                | TriggerOn::UseActor { .. } => false,
             };
             assert_eq!(
                 on.attributes_its_actor(),
@@ -766,7 +867,7 @@ mod press_criterion_agreement {
             );
             compared += 1;
         }
-        assert_eq!(compared, 6);
+        assert_eq!(compared, 11);
         assert_eq!(
             press_criterion(&TriggerOn::Strike),
             Some("minecraft:player_hurt_entity")

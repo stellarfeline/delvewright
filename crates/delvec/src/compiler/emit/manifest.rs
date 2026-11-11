@@ -387,7 +387,7 @@ pub(super) fn critical_path_json(
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand, block } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand, block, item } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
@@ -395,7 +395,14 @@ pub(super) fn critical_path_json(
                         // spec-0083 §4: a trigger that carries the party says
                         // where to stand to be carried; its `transport` is the
                         // link's `to`, written below like every carried step's.
-                        if let Some(c) = stand {
+                        // spec-0134 §2: a shot is loosed from the stance the
+                        // build proved sees its target.
+                        let shot = plan
+                            .shot_stances
+                            .get()
+                            .and_then(|m| m.get(trigger_id.as_str()))
+                            .copied();
+                        if let Some(c) = stand.or(shot) {
                             obj.insert("stand".to_string(), json!(c));
                         }
                         if let Some(a) = anchor_id {
@@ -412,6 +419,9 @@ pub(super) fn critical_path_json(
                         }
                         if let Some(b) = block {
                             obj.insert("block".to_string(), json!(b));
+                        }
+                        if let Some(i) = item {
+                            obj.insert("item".to_string(), json!(i));
                         }
                     }
                     v
@@ -534,6 +544,15 @@ pub(super) fn critical_path_json(
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("cutscene_seconds".to_string(), json!(secs));
+            }
+            // Format 8 (spec-0134 §1): a step gated on a counted datum carries
+            // the census the harness stands in for the mob's own walk —
+            // present only when the step's gate reads one.
+            let census = step_census(plan, s);
+            if !census.is_empty()
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("census".to_string(), Value::Array(census));
             }
             // Format 6: every step says which bodies it is walked beside —
             // empty included, because a step that cannot say is one the
@@ -733,4 +752,56 @@ pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value
         }
     }
     out
+}
+
+/// **The census a step is gated on** (spec-0134 §1): for every numeric term
+/// of the step's own gate (its objective's `requires_state`, or its trigger's)
+/// that names a counted datum, the row `{state, select, region, count}` the
+/// harness performs by command — `select` is the selector's body terms,
+/// `region` the box's corners, `count` the bodies the term needs. In
+/// declaration order; empty for a step whose gate reads no census.
+pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
+    let q = &plan.campaign.quests.content;
+    let terms: &[delvewright_dsl::StateCompare] = if let Some(o) = s.objective() {
+        q.quests
+            .iter()
+            .flat_map(|x| &x.objectives)
+            .find(|x| x.id().as_str() == o)
+            .map_or(&[], |x| x.requires_state())
+    } else if let Some(t) = s.trigger() {
+        q.triggers
+            .iter()
+            .find(|x| x.id.as_str() == t)
+            .map_or(&[], |x| x.requires_state.as_slice())
+    } else {
+        &[]
+    };
+    terms
+        .iter()
+        .filter_map(|cmp| {
+            let decl = q.state_decl(cmp.state.as_str())?;
+            let k = decl.counts.as_ref()?;
+            let (lo, hi) = plan.zone_box(&k.region)?;
+            let count = match cmp.op {
+                delvewright_dsl::CompareOp::AtLeast | delvewright_dsl::CompareOp::Equals => {
+                    cmp.value.max(0)
+                }
+                delvewright_dsl::CompareOp::NotEquals => {
+                    if cmp.value == 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                delvewright_dsl::CompareOp::AtMost => 0,
+            };
+            Some(json!({
+                "state": cmp.state.as_str(),
+                "objective": plan::state_score(cmp.state.as_str()),
+                "select": super::census::census_terms(plan, &k.of),
+                "region": [lo, hi],
+                "count": count,
+            }))
+        })
+        .collect()
 }

@@ -58,6 +58,7 @@ use delvewright_dsl::DSL_VERSION;
 const SURFACE: &[(&str, &str, Kind)] = &[
     ("<root>", "dsl_version", Machine),
     ("Actor", "entity", Reference),
+    ("CensusOf", "kind", Reference),
     ("Actor", "name", Inventoried),
     ("Area", "name", Inventoried),
     (
@@ -298,6 +299,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Trigger", "type", Machine),
     ("TriggerOn", "on", Machine),
     ("WaveMob", "entity", Reference),
+    ("TriggerOn", "item", Reference),
     ("WaveMob", "name", Inventoried),
     ("WorldContent", "languages", Reference),
     ("WorldContent", "outro", Inventoried),

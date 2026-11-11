@@ -1103,6 +1103,28 @@ impl Plan<'_> {
                     ev.laying(&p.block)
                 }
             })
+            .chain(self.shot_targets().into_iter().map(|(_, cell, block)| {
+                RegionEvent::forced((cell, cell), RegionWrite::of_block(&block), 0).laying(&block)
+            }))
+            .collect()
+    }
+
+    /// **The target blocks a `shot` trigger places** (spec-0134 §2): each
+    /// `shot` trigger's prop at its anchor's cell, `(trigger id, cell, block)`,
+    /// in declaration order. Laid at load like every prop, and stood in the
+    /// region model as a forced write at step 0.
+    pub(crate) fn shot_targets(&self) -> Vec<(String, [i32; 3], String)> {
+        self.campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Shot))
+            .filter_map(|t| {
+                let cell = self.point_any(t.at_anchor()?)?;
+                let block = t.prop.as_ref()?.block.clone();
+                Some((t.id.as_str().to_string(), cell, block))
+            })
             .collect()
     }
 }

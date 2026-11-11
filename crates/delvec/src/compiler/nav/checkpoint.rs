@@ -210,6 +210,26 @@ fn trigger_root_step(
                 crate::compiler::crosshair::INTERACTION_REACH,
             )
         }
+        // spec-0134 §8: the actor's body, at its mark.
+        delvewright_dsl::TriggerOn::StrikeActor { actor }
+        | delvewright_dsl::TriggerOn::UseActor { actor } => {
+            let a = c.quests.content.actors.iter().find(|a| a.id == *actor)?;
+            (
+                plan.body_point(delvewright_dsl::BodyRef::Actor(a))?,
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
+        }
+        // spec-0134 §3: a player inside the box around the anchor.
+        delvewright_dsl::TriggerOn::UseItem { range, .. } => {
+            (plan.point_any(t.at_anchor()?)?, f64::from(*range))
+        }
+        // spec-0134 §2: shot from as far as the stance proof reaches.
+        delvewright_dsl::TriggerOn::Shot => (
+            plan.point_any(t.at_anchor()?)?,
+            f64::from(crate::compiler::nav::SHOT_REACH_MAX),
+        ),
+        // spec-0134 §1: a body of the census fires it, never the party.
+        delvewright_dsl::TriggerOn::BodyEnters { .. } => return None,
     };
     let r = radius.ceil() as i32;
     let r2 = radius * radius;

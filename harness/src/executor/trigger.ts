@@ -8,6 +8,13 @@ import { INTERACT_RANGE } from "./interact.ts";
 import { OBJECTIVE_TIMEOUT_MS, EFFECT_SETTLE_MS } from "./objective.ts";
 import { SCORE_POLL_MS } from "./score.ts";
 import type { MineflayerExecutor } from "../executor.ts";
+import {
+  SHOT_DRAW_MS,
+  SHOT_FLIGHT_MS,
+  USE_ITEM_HOLD_MS,
+  shotAim,
+  shotSpent,
+} from "../shot.ts";
 
 /**
  * A `/trigger …` a step sent, and every chat line the server answered it with.
@@ -150,6 +157,61 @@ export const methods = {
    * proximity proposes, the ray decides — so a hitbox buried in a wall or behind
    * another body fails here, naming both, rather than as a silent miss.
    */
+  /**
+   * spec-0134 §2: one real hit — equip the bow, aim over the target's centre
+   * by the record's elevation for the distance, draw past a full charge,
+   * release, and pass on the trigger's fired marker; a miss re-aims from the
+   * table, and the step fails by name once it is spent. Every arrow loosed is
+   * counted on the run log.
+   */
+  async loose(
+    this: MineflayerExecutor,
+    step: TriggerStep,
+    label: string,
+    arrivalsBefore: number,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    const bow = bot.inventory.items().find((i) => i.name === "bow");
+    if (!bow) throw new Error(`${label}: the bot holds no bow`);
+    await bot.equip(bow, "hand");
+    let loosed = 0;
+    for (let k = 0; ; k++) {
+      const p = bot.entity.position;
+      const eye: [number, number, number] = [p.x, p.y + bot.entity.height * 0.9, p.z];
+      const aim = shotAim(eye, step.pos, k);
+      if (aim === undefined) throw new Error(shotSpent(label, loosed));
+      await bot.lookAt(p.offset(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z), true);
+      bot.activateItem();
+      await delay(SHOT_DRAW_MS);
+      bot.deactivateItem();
+      loosed += 1;
+      const hit = await this.waitFor(
+        () => (this.markerArrivals.get(step.trigger) ?? 0) > arrivalsBefore,
+        SHOT_FLIGHT_MS,
+        SCORE_POLL_MS,
+      );
+      process.stderr.write(
+        `[shot] ${step.trigger}: arrow ${loosed} at elevation try ${k + 1} — ${hit ? "hit" : "missed"}\n`,
+      );
+      if (hit) {
+        this.shotsLoosed.push({ trigger: step.trigger, arrows: loosed });
+        return;
+      }
+    }
+  },
+
+  /** spec-0134 §3: hold the item in use inside the trigger's box. */
+  async raiseItem(this: MineflayerExecutor, step: TriggerStep, label: string): Promise<void> {
+    const bot = this.requireBot();
+    const want = (step.item ?? "").replace(/^minecraft:/, "");
+    const item = bot.inventory.items().find((i) => i.name === want);
+    if (!item) throw new Error(`${label}: the bot holds no ${step.item ?? "item"}`);
+    await bot.equip(item, "hand");
+    bot.activateItem();
+    await delay(USE_ITEM_HOLD_MS);
+    bot.deactivateItem();
+  },
+
   async fireTrigger(this: MineflayerExecutor, step: TriggerStep): Promise<void> {
     const bot = this.requireBot();
     const label = `trigger ${step.trigger} (${step.on})`;
@@ -173,7 +235,14 @@ export const methods = {
               `${(step.keepOut ?? []).map((k) => k.objective).join(", ")}, to perform it\n`,
       );
     }
-    if (step.on === "approach") {
+    if (step.on === "shot") {
+      await this.loose(step, label, arrivalsBefore);
+      await delay(EFFECT_SETTLE_MS);
+      return;
+    } else if (step.on === "use-item") {
+      await this.walkTo(step.pos, Math.max(0, (step.range ?? 1) - 1), label);
+      await this.raiseItem(step, label);
+    } else if (step.on === "approach") {
       if (!step.stand) {
         await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label);
       }

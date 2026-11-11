@@ -67,6 +67,25 @@ pub struct MovementItems {
     pub unmodelled: Vec<MovementItem>,
     /// The fall reducers, in reading order.
     pub reducers: Vec<MovementItem>,
+    /// Every stack read, `(item, the first step a body can hold it at)`, in
+    /// reading order — what `DW1090` asks of a `shot` (spec-0134 §2).
+    pub held: Vec<(String, usize)>,
+}
+
+impl MovementItems {
+    /// The first critical-path step at which a body may hold one of `items`,
+    /// or `None` when the campaign gives none of them.
+    #[must_use]
+    pub fn first_held(&self, items: &[&str]) -> Option<usize> {
+        self.held
+            .iter()
+            .filter(|(i, _)| {
+                let bare = i.strip_prefix("minecraft:").unwrap_or(i);
+                items.contains(&bare)
+            })
+            .map(|(_, s)| *s)
+            .min()
+    }
 }
 
 impl MovementItems {
@@ -254,6 +273,7 @@ impl Reader<'_> {
         at: (usize, bool),
     ) {
         self.out.examined += 1;
+        self.out.held.push((item.to_string(), at.0));
         if let Some(rule) = item_rule(item) {
             self.push(Kind::Unmodelled, item, rule, source, at);
         }

@@ -154,6 +154,9 @@ pub enum Step {
         /// `prop` when it is a lever or a button, which the bot right-clicks
         /// instead of a hitbox. `None` = the hitbox.
         block: Option<String>,
+        /// **The item a `use-item` trigger holds in use** (spec-0134 §3);
+        /// `None` for every other kind.
+        item: Option<String>,
     },
     /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
     /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
@@ -306,7 +309,7 @@ impl Step {
                 block,
                 ..
             } => match (*on, range) {
-                ("approach", Some(r)) => within(*pos, f64::from(*r)),
+                ("approach" | "use-item", Some(r)) => within(*pos, f64::from(*r)),
                 ("step", _) => within(*pos, STEP_REACH),
                 _ if block.is_some() => within(*pos, BLOCK_INTERACTION_REACH),
                 _ => within(*pos, INTERACTION_REACH),
@@ -412,9 +415,16 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   refuse a step kind it does not know, and one that guessed would perform
 ///   the act the step is there to let lapse.
 ///
+/// * `8` — a step gated on a counted datum carries `census` (spec-0134 §1):
+///   `[{state, objective, select, region, count}]`, the bodies the harness
+///   teleports into the box before the step and the count it reads back; a
+///   `shot` trigger step carries `stand`, the cell the compiler proved sees the
+///   target. A format change for `7`'s reason: a format-7 bot handed a census
+///   step would wait on a count no body of its making raises.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 7;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 8;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1761,6 +1771,7 @@ pub(super) fn build_critical_path(
                     range: l.range,
                     stand: Some(stand),
                     block: pressed_block(campaign, &l.trigger_id),
+                    item: None,
                 });
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);
