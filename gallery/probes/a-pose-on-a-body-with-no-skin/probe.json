@@ -1,0 +1,22 @@
+{
+  "code": "DW1101",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/11/steps/1/effects/0/audience",
+      "value": {
+        "bodies": [
+          {
+            "npc": "npc/curator"
+          },
+          {
+            "npc": "npc/warden"
+          }
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "The crouch that goes with the curator's hop, addressed to the warden as well. The curator is skinned and ships as a mannequin, which keeps five poses; the warden is a plain villager, and on a villager the game has no `pose` field to write, so the command would change nothing and the bounce would be one body short with nothing said. The build names the body and the entity it ships as. It declares no unit: `pose` and the cast are bound by the primary, on two skinned bodies. The remedy is a `skin` on the body or leaving it out, never removing the check; perturbing the other way — the two skinned bodies alone — is the primary, which builds."
+}

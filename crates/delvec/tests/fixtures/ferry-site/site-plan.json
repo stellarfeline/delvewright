@@ -110,6 +110,6 @@
     },
     "seams": []
   },
-  "dsl_version": "0.74.0",
+  "dsl_version": "0.75.0",
   "stage": "site-plan"
 }

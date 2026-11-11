@@ -1478,9 +1478,8 @@ fn effect_roots_mut(c: &mut Campaign) -> Vec<(&'static str, String, String, &mut
 /// diagnostic can point at the real site; `keybase` is its l10n key prefix, derived
 /// by the **same** position-keying as [`each_string`]/[`effect_strings_deep`] (so an
 /// art narrate's key matches its inventory key). Shared by [`art_narrates`],
-/// [`on_screen_narrates`], [`bonfire_option_labels`], [`sound_refs`] and
-/// [`play_sound_actor_refs`], so the consumer checks
-/// (`DW0326`/`DW0328`/`DW0330`/`DW0331`/`DW0335`) see exactly the strings the
+/// [`on_screen_narrates`], [`bonfire_option_labels`] and [`sound_refs`], so the
+/// consumer checks (`DW0326`/`DW0328`/`DW0330`/`DW0331`) see exactly the strings the
 /// inventory demands a translation for.
 fn each_effect_ref<'a>(
     c: &'a Campaign,
@@ -1558,24 +1557,6 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
             sound: p.sound.clone(),
         });
     }
-    out
-}
-
-/// Every `play-sound` effect using the unsupported `at: actor` target, in a fixed
-/// order, as `(path, actor-id)` pairs. The actor variant is accepted by the
-/// schema and rejected (`DW0335`) by the compiler, which resolves no position for
-/// a live actor. `SoundRef::sound` carries the actor id.
-pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
-    let mut out = Vec::new();
-    each_effect_ref(c, &mut |stage, path, _key, eff| {
-        if let Some(actor) = eff.play_sound_actor() {
-            out.push(SoundRef {
-                stage,
-                path: format!("{path}/at/actor"),
-                sound: actor.to_string(),
-            });
-        }
-    });
     out
 }
 

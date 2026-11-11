@@ -1,0 +1,16 @@
+{
+  "code": "DW1102",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/6/repeat",
+      "value": {
+        "every_ticks": 5,
+        "times": 3
+      }
+    }
+  ],
+  "units": [],
+  "why": "A `set-flag` asked to happen three times, five ticks apart. A cadence is kept by what leaves nothing for a proof to read — a body's move, a particle, a sound; a flag is read by the completability proof as one write at one moment, and three of them under a proof that counts one is a timeline the build has not judged. The build names the verb and the field. It declares no unit: `repeat` is bound by the primary, on a hop, a pose, a turn and a particle. The remedy is steps of a `sequence`, each of which the proofs read."
+}

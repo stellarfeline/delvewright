@@ -198,7 +198,6 @@ holding them at once.
 | `two-placement-authorities` | `DW0839` | `validate` | carrying `areas[]` and a site plan at once |
 | `aquatic-locomotion` | `DW0455` | `validate` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | `validate` | setting the world to peaceful |
-| `sound-at-actor` | `DW0335` | `validate` | playing a sound from an actor's position |
 | `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
@@ -235,6 +234,8 @@ holding them at once.
 | `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
 | `a-tiller-pulled-from-the-hall-floor` | `DW0932` | `build` | playing the ferry's cutscene before its carry, so a pull from the open hall floor puts the whole party down there and nobody crosses |
 | `a-bolt-beside-the-arrival` | `DW0958` | `build` | striking a lightning bolt two cells from `anchor/arrival`, where every player first stands |
+| `a-pose-on-a-body-with-no-skin` | `DW1101` | `validate` | asking a plain villager to crouch beside the skinned curator |
+| `a-flag-set-three-times` | `DW1102` | `validate` | repeating a `set-flag` on a cadence only a move, a particle and a sound keep |
 | `a-bolt-on-a-copper-tile` | `DW0959` | `build` | laying a waxed copper tile under the exit and striking a bolt on it, so the game would scrape copper along a random walk |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |

@@ -357,7 +357,10 @@ fn standing_set(
         Some(delvewright_dsl::EffectAudience::Party) => false,
         // spec-0134 §9: a grant aimed at bodies blinds no player.
         Some(
-            delvewright_dsl::EffectAudience::Wave(_) | delvewright_dsl::EffectAudience::Body(_),
+            delvewright_dsl::EffectAudience::Wave(_)
+            | delvewright_dsl::EffectAudience::Body(_)
+            | delvewright_dsl::EffectAudience::Npc(_)
+            | delvewright_dsl::EffectAudience::Bodies(_),
         ) => return Default::default(),
         None => f.solo,
     };

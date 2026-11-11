@@ -86,12 +86,13 @@ The entry leaves out documentation, tests and release machinery, which change no
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.74.0
+## delvewright-dsl 0.75.0
 
 ### Highlights
 
 - An objective can carry a time limit: the task is done in time or lost, and the story goes on either way.
 - A boat, a minecart or a saddled mount can be placed for players to ride, and a crossing nobody can walk can be ridden.
+- A character standing in the world can hop, crouch, turn, hold something and change size, alone or as a crowd in a rolling wave.
 
 ### Added
 
@@ -104,7 +105,11 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
 - Every objective kind takes `ride`: the leg to it is ridden on the named vehicle.
 - A census counts a vehicle's riders: `state[].counts.of: {"riders": id}`.
+- Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
+- A `particle` and a `play-sound` can happen at staged bodies: `at: {"bodies": [...], "up"?}` and `at: {"at": "bodies", "bodies": [...]}`.
+- A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
 
 ### Changed
 
 - The `damage-players` verb is named `damage`.
+- `play-sound` `at: {"at": "actor"}`, which every build refused, is replaced by `at: {"at": "bodies"}`.

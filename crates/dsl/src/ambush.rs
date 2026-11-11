@@ -103,6 +103,8 @@ impl Ambush {
                 happening: if i == 0 { self.happening.clone() } else { None },
                 audience: None,
                 within: None,
+                repeat: None,
+                stagger_ticks: None,
                 verb: Verb::SpawnActor {
                     actor: (*a).clone(),
                 },
