@@ -3981,12 +3981,6 @@
               },
               "style": "vanish",
               "type": "despawn-actor"
-            },
-            {
-              "carrier": "all",
-              "count": 1,
-              "item": "minecraft:carrot_on_a_stick",
-              "type": "give-item"
             }
           ],
           "obj/ride-clover": [

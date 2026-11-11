@@ -269,9 +269,25 @@ export const methods = {
       failRide("the server did not position the bot after it left the vehicle", { reported, serverSeen, seat: arrived });
     }
     this.landingSwims = step.kind === "boat";
+    // Every position the server hands the bot on the walk off is said: a walk
+    // the server undoes is the vehicle's or the delve's, and is read here.
+    const said = (): void => {
+      const p = bot.entity.position;
+      process.stderr.write(
+        `[ride] ${step.vehicle}: the server positioned the bot at ` +
+          `[${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}] on its walk off\n`,
+      );
+    };
+    bot.on("forcedMove", said);
     try {
+      const p = bot.entity.position;
+      process.stderr.write(
+        `[ride] ${step.vehicle}: left; the bot stands at [${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ` +
+          `${p.z.toFixed(2)}], the server holds it at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}\n`,
+      );
       await this.walkTo(step.leave, 0, `the shore after ${step.vehicle}`, step.sneak);
     } finally {
+      bot.removeListener("forcedMove", said);
       this.landingSwims = false;
     }
     record({ reported, serverSeen, seat: arrived, left: true, passed: true });

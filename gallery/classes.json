@@ -52,6 +52,10 @@
               "flight": 1
             },
             "item": "minecraft:firework_rocket"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:carrot_on_a_stick"
           }
         ],
         "name": "Wanderer"
@@ -77,6 +81,10 @@
             "flask": true,
             "item": "minecraft:potion",
             "name": "Warder's Flask"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:carrot_on_a_stick"
           }
         ],
         "name": "Warder"

@@ -44,6 +44,9 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
       equip: async () => {},
       nearestEntity: () => ({ type: "mob", name: "pig", position: { x: 8.5, y: 67, z: 3.5, offset: () => ({}) }, height: 0.9 }),
       lookAt: async () => {},
+      on: () => {},
+      removeListener: () => {},
+      entity: { position: { x: 0, y: 0, z: 0 } },
       mount: () => {
         mounted = true;
       },
