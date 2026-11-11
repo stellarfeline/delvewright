@@ -464,17 +464,16 @@ fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
     c.classes.content.classes[0]
         .kit
         .push(delvewright_dsl::KitItem {
-            item: "minecraft:potion".to_string(),
-            count: 1,
-            name: Some("Potion of Night Vision".to_string()),
-            carrier: None,
-            flask: false,
             // Deliberately contents-less: this IS the Uncraftable Potion the
             // test is about. (`DW0487` refuses it at 0.8.0; this campaign's
             // classes stage is earlier, which is why the item survives to reach
             // the mitigation heuristic at all.)
-            contents: None,
-            fireworks: None,
+            stack: delvewright_dsl::Stack {
+                name: Some("Potion of Night Vision".to_string()),
+                ..delvewright_dsl::Stack::of("minecraft:potion")
+            },
+            carrier: None,
+            flask: false,
         });
     match build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err() {
         BuildFailure::Diagnostic { code, .. } => assert_eq!(
