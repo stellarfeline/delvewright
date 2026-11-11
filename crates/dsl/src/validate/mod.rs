@@ -112,6 +112,7 @@ pub fn validate_campaign_with(
     crate::quest::check::quest_anchor_checks(c, &providers, &mut d);
     crate::trigger::trigger_anchor_checks(c, &providers, &mut d);
     crate::class::kit_item_checks(c, items, &mut d);
+    crate::trigger::use_item_checks(c, items, &mut d);
     crate::quest::check::cross_stage(c, &mut d);
     crate::dialogue::npc_tree_checks(c, &mut d);
     // `DW0849`: an item gate no class can bring. The walk is empty for a

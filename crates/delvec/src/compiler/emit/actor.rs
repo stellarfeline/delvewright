@@ -68,8 +68,11 @@ pub(super) fn actor_answer_box_summon(
 /// The line that removes an actor's answer box (spec-0119 §5.1), emitted by
 /// `unleash_<id>` and by `despawn-actor` before either touches the puppet.
 /// `None` for an actor that wears none.
-pub(super) fn actor_answer_box_kill(a: &delvewright_dsl::Actor) -> Option<String> {
-    a.answers.as_ref().map(|_| {
+pub(super) fn actor_answer_box_kill(
+    c: &delvewright_dsl::Campaign,
+    a: &delvewright_dsl::Actor,
+) -> Option<String> {
+    actor_has_answer_box(c, a.id.as_str()).then(|| {
         format!(
             "kill @e[tag={}]",
             crate::compiler::bodies::answer_box_tag(a.id.as_str())
@@ -626,7 +629,9 @@ pub(super) fn actor_fns(
         out.push((format!("spawn_actor_{safe}"), lines(&spawn)));
         // spec-0119: the answer box goes before anything touches the puppet —
         // the twin must take the blows the box would otherwise take.
-        let mut unleash: Vec<String> = actor_answer_box_kill(a).into_iter().collect();
+        let mut unleash: Vec<String> = actor_answer_box_kill(plan.campaign, a)
+            .into_iter()
+            .collect();
         unleash.push(format!(
             "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
             actor_twin_summon(ns, a, "~ ~ ~", TwinArrival::Arrives)

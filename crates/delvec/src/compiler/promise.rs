@@ -971,6 +971,25 @@ fn act_places(
             TriggerOn::StrikeAssembly { assembly } => {
                 assembly_place(plan, assembly.as_str()).map(|p| vec![p])
             }
+            TriggerOn::Shot | TriggerOn::UseItem { .. } => t
+                .at_anchor()
+                .and_then(|a| plan.point_any(a))
+                .map(|p| vec![p]),
+            TriggerOn::StrikeActor { actor } | TriggerOn::UseActor { actor } => c
+                .quests
+                .content
+                .actors
+                .iter()
+                .find(|a| a.id == *actor)
+                .and_then(|a| plan.body_point(delvewright_dsl::BodyRef::Actor(a)))
+                .map(|p| vec![p]),
+            TriggerOn::BodyEnters { state } => c
+                .quests
+                .content
+                .state_decl(state.as_str())
+                .and_then(|s| s.counts.as_ref())
+                .and_then(|k| plan.point_any(k.region.anchor.as_str()))
+                .map(|p| vec![p]),
         },
         EffectRootOwner::TrapPayload(t) => plan
             .traps
@@ -1411,14 +1430,18 @@ pub fn check_highlights(c: &Campaign) -> (Vec<Diagnostic>, HighlightBinding) {
         }
         b.highlights += 1;
         let what = match &t.on {
-            TriggerOn::Use | TriggerOn::Strike => {
+            TriggerOn::Use | TriggerOn::Strike | TriggerOn::Shot => {
                 b.on_block += 1;
                 continue;
             }
-            TriggerOn::StrikeNpc { .. } => {
+            TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeActor { .. }
+            | TriggerOn::UseActor { .. } => {
                 b.on_body += 1;
                 continue;
             }
+            TriggerOn::UseItem { .. } => "a `use-item` watches a place a body stands in",
+            TriggerOn::BodyEnters { .. } => "a `body-enters` watches a box bodies walk into",
             TriggerOn::Approach { .. } => "an `approach` watches a place a body stands in",
             TriggerOn::Step => "a `step` watches the cell a body steps into",
             TriggerOn::StrikeAssembly { .. } => {

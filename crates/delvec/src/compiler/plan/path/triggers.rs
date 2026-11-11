@@ -244,11 +244,13 @@ pub(super) fn path_triggers(
                 assembly_id: t.on.assembly_target().map(|a| a.as_str().to_string()),
                 pos,
                 range: match t.on {
-                    delvewright_dsl::TriggerOn::Approach { range } => Some(range),
+                    delvewright_dsl::TriggerOn::Approach { range }
+                    | delvewright_dsl::TriggerOn::UseItem { range, .. } => Some(range),
                     _ => None,
                 },
                 stand: None,
                 block: pressed_block(campaign, t.id.as_str()),
+                item: super::drive::use_item(t),
             });
         }
     }

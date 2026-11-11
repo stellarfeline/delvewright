@@ -154,6 +154,20 @@ pub(super) fn emit_advancements(
     // so the advancement needs to know nothing about seals, doors, or any
     // future pressable object class.
     for t in &plan.emitted_triggers(chrome) {
+        // spec-0134 §2/§3: a shot and a raised item are dispatched by their own
+        // criteria, which name the shooter and the holder, whoever the trigger
+        // addresses.
+        if let Some(criterion) = super::trigger::act_criterion(plan, t) {
+            let id = plan::safe_local(t.id.as_str());
+            advs.push((
+                format!("press_{id}"),
+                json!({
+                    "criteria": { "act": criterion },
+                    "rewards": { "function": format!("{ns}:press_{id}") }
+                }),
+            ));
+            continue;
+        }
         // spec-0093 §6.5: a trigger whose prop a hand presses is dispatched by
         // vanilla's `default_block_use` at the block's cell, whoever it
         // addresses — the block is the body and nothing is polled. A presser

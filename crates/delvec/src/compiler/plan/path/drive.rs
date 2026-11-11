@@ -452,6 +452,7 @@ fn press_step(campaign: &Campaign, t: &EnvTrigger, pos: [i32; 3]) -> Step {
         },
         stand: None,
         block: pressed_block(campaign, t.id.as_str()),
+        item: use_item(t),
     }
 }
 
@@ -1054,4 +1055,12 @@ fn unpaid(
             t.id.as_str()
         ),
     )
+}
+
+/// The item a `use-item` trigger holds in use (spec-0134 §3), else `None`.
+pub(crate) fn use_item(t: &EnvTrigger) -> Option<String> {
+    match &t.on {
+        delvewright_dsl::TriggerOn::UseItem { item, .. } => Some(item.clone()),
+        _ => None,
+    }
 }

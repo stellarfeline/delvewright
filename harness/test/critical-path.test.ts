@@ -47,7 +47,7 @@ const parseCriticalPathJson = (text: string) => {
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 7,
+    format_version: 8,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -1362,10 +1362,10 @@ test("format 7: an expire step without any one of its three fields is refused", 
   );
 });
 
-test("format 7: the constant moved, and a format-6 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 7);
+test("format 8: the constant moved, and a format-7 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 8);
   const raw = validRaw();
-  raw["format_version"] = 6;
+  raw["format_version"] = 7;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

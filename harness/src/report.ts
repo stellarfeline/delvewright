@@ -153,6 +153,8 @@ export class RunReport {
   /** spec-0108 §6.3: what the bot read of the world the ending left. */
   private aftermath: import("./aftermath.ts").AftermathResult[] | undefined;
   private mocks: import("./mock.ts").MockResult[] = [];
+  private censuses: import("./census.ts").CensusResult[] = [];
+  private shots: { trigger: string; arrows: number }[] = [];
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
   /** Every walk into a lethal volume, and what the stage examined. */
@@ -239,6 +241,15 @@ export class RunReport {
    */
   recordMocks(results: readonly import("./mock.ts").MockResult[]): void {
     this.mocks = [...results];
+  }
+
+  /** spec-0134 §1/§2: the censuses performed and the shots that landed. */
+  recordSmallSurfaces(
+    censuses: readonly import("./census.ts").CensusResult[],
+    shots: readonly { trigger: string; arrows: number }[],
+  ): void {
+    this.censuses = [...censuses];
+    this.shots = [...shots];
   }
 
   recordAftermath(results: readonly import("./aftermath.ts").AftermathResult[]): void {
@@ -526,12 +537,17 @@ export class RunReport {
               })),
             },
           };
+    // spec-0134 §1/§2: present only when the path performed one.
+    const counted = this.censuses.length === 0 ? {} : { census: this.censuses };
+    const shot = this.shots.length === 0 ? {} : { shots: this.shots };
     return {
       version: 1,
       campaign_id: this.campaignId,
       ...branches,
       ...aftermath,
       ...mocked,
+      ...counted,
+      ...shot,
       // The difficulty the run was verified AT: spec-0023 §3 proves orchestration
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.
