@@ -1454,7 +1454,7 @@
                     },
                     {
                       "audience": {
-                        "npc": "npc/curator"
+                        "npc": "npc/copyist"
                       },
                       "to": {
                         "anchor": "anchor/pedestal",
@@ -1611,7 +1611,7 @@
                     },
                     {
                       "audience": {
-                        "npc": "npc/curator"
+                        "actor": "actor/standard-bearer"
                       },
                       "to": "watch",
                       "type": "face"

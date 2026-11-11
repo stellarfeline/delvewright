@@ -4,7 +4,8 @@
 //! and staggers across a cast. Refusals: a move with no staged body
 //! (`DW0942`), an NPC in the audience of an effect that harms (`DW0942`), an
 //! undeclared body (`DW0112`), a number outside its bound (`DW0100`), an item
-//! the game does not hold (`DW0143`) or draw there (`DW0898`), a pose on a
+//! the game does not hold (`DW0143`) or draw there (`DW0898`), a mark nobody
+//! placed (`DW0142`), a pose on a
 //! body that is not a mannequin and a watch handed back to a body with none
 //! (`DW1101`), and a cadence the effect cannot keep (`DW1102`).
 
@@ -518,6 +519,12 @@ fn a_number_outside_its_bound_and_a_misfit_item_are_refused() {
             json!({"type": "hold", "slot": "saddle", "item": "minecraft:saddle"}),
             "DW0898",
             "/slot",
+        ),
+        // A mark nobody placed.
+        (
+            json!({"type": "face", "to": {"anchor": "anchor/nowhere"}}),
+            "DW0142",
+            "/to/anchor",
         ),
     ] {
         let mut effect = effect;
