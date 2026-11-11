@@ -7054,45 +7054,97 @@ and `validation/design-record.json`'s three camera keys. `delvec schema --stage
 cameras` exports the record's JSON Schema (`camera::record_schema`), naming the
 file it lives at under `x-delvewright-file`; it is not part of `--stage all`.
 
-**The configuration a camera stands in** (spec-0089 §4). A camera with no
-`after` stands at load: the critical path's configuration on arrival at its
-first step, every world-load seal in place, no beat fired. A camera after step
-`X` of path `P` (index `i`) stands in `P`'s configuration on arrival at `i + 1`
-(`nav::configuration_at` — `World::region_state_at` over `P`'s own region
-writes under `P`'s own ancestry; the critical path's is `Plan::gate_fired_before`,
-a branch's `Plan::branch_gate_model`), the state the proofs route the leg leaving
-`X` under; after the last step it is the end state. Its bytes are
-`Configuration::blocks` — `RegionState::blocks_over`, the one derivation of a
-configuration's block map, which `DW0891` reads too — laid over **the world as
-shipped** (`view::beat::picture_base`): the assembly, every gate the placed
-world authors shut written back with its anchor's block (the assembly clears a
-gate's region; the datapack's setup holds it), the relight fixtures and then every trigger's `prop`
-(`pressable::props`, every pressable's block, the list `setup_finish` writes them from) in the
-order `setup_finish` sets them (`assembled::shipped_blocks`, which the loop's
-tiling reads too), and every gated trap's trigger removed whose gate is shut at load (a
-`requires_flags`, or a `requires_state` term its datum's `initial` fails). An
-unforced write is not laid. The path is the one the build's proofs read, with
-the links the route proof takes spliced in (`nav::with_links_taken`), so a step
-index counts `plan.critical_path` — the region model's step space, not
+**The moment a camera stands in** (spec-0089 §4; `view::beat`, `view::moment`).
+A camera with no `after` stands at load: arrival at the critical path's first
+step, every world-load seal and every setup write in place, no beat fired. A
+camera after step `X` of path `P` (index `i`) stands in the world one play of
+`P` leaves on arrival at `i + 1` — every step before it played, in `P`'s own
+order — after the last step, the end state. The moment is three things, each
+asked of its own authority:
+
+- **its blocks**: every write fired on the way, laid in firing order over
+  **the world as shipped** (`view::beat::picture_base`: the assembly, every
+  gate the placed world authors shut written back with its anchor's block,
+  the relight fixtures and then every trigger's `prop` in the order
+  `setup_finish` sets them, every gated trap's trigger removed whose gate is
+  shut at load) — the placements ledger's setup rows first (world init), then
+  per step its region writes (`nav::configuration_at` over `P`'s own region
+  writes read under `P`'s order, every write fired at a step before the
+  arrival; `Configuration::laid_writes` names the step each fires at) and
+  then the ledger's block rows fired at that step (`view::moment::Laid`). A
+  cell the setup lays and a later beat rewrites holds the beat's block.
+  `nav::lay_writes` is the one writer of region writes over a block map, for a
+  configuration's bytes (`RegionState::blocks_over`, which `DW0891` reads) and
+  a moment's alike. The ledger is the build's own `validation/placed.json`,
+  fired along `P` (`placed::Ledger::on_path`: on a branch, a beat the branch
+  plays fires at the branch's step); an unforced write or row is not laid. The
+  proofs read the same writes under causal ancestry (`PathModel::at`); a
+  picture is of one play of the path, on which every earlier step was played.
+- **its cast**: every NPC the cast ledger declares stands where the ledger
+  stations it at that moment of that path (`view::moment::cast_at`:
+  `cast::station` for the quest of the next step to play, under the flags the
+  path's flow journal holds once the played steps fired, its anchor resolved
+  in the beat's area and then the NPC's home as `plan::body_station`'s
+  `BodyScope::Beat` resolves a `talk-to` step's NPC) — its body and hitbox
+  moved to the mark, taken out of the world while the ledger declares it
+  absent, and summoned from its ledger rows when the path's rows never
+  summoned it (a `spawn-npc` the rows hold unforced). A body a planned walk
+  leaves on the mark stands where the walk ends, facing its last step; any
+  other on the cell's centre, facing its home facing on its home cell and its
+  anchor's facing elsewhere. An NPC no row declares stands as the rows place
+  it.
+- **its sky**: the latest `set-time` and `set-weather` the path's replay fired
+  at the played steps (`view::moment::clock_at`). The frame is still drawn
+  under its picture's sky (`clock: as the picture`).
+
+The path is the one the build's proofs read, with the links the route proof
+takes spliced in (`nav::with_links_taken`), so a step index counts
+`plan.critical_path` — the region model's step space, not
 `critical-path.json`'s rows, which splice witness, rest and completion steps
 into the export. The `after` rules are the record's, refused `DW0721` by
 `delvec cameras`, `delvec place-camera` and `delvec build` alike through
 `view::beat::stand`: a step no step of the path carries (the path's steps
 listed), a step the path carries more than once (a candidate, not a match — the
 steps carried once listed), a path the build does not declare (the declared
-branches listed) or declares and no world plays, and a step after which the map
-equals load byte for byte (the remedy is to remove the field or name the first
-step after which a block moves that the path carries once; or the line says the
-path moves none).
+branches listed) or declares and no world plays, and a step after which no
+block, no member of the cast and no sky differs from load (the remedy is to
+remove the field or name the first step after which something moves that the
+path carries once; or the line says the path moves none). `delvec build` asks
+before its ledger is written, so there a moment's blocks are its region
+writes; `delvec cameras` lays the ledger's rows too.
 
 **The world a camera's frame is drawn from** (spec-0089 §5, spec-0112 §5). One
-world per distinct configuration a framed camera stands in, under
+world per distinct moment a framed camera stands in, under
 `<out>/worlds/<key>/` — `at-load`, or `after-<step>` (`/` as `-`) with
 `-on-<branch slug>` for a branch — written through the one writer every frame
 world goes through (`view::review::WorldMaker`, `view::world::encode_world`;
-§4 "The worlds the build writes" states its bytes), with the placements
-ledger's rows the camera's arrival holds laid from the build's own
-`validation/placed.json`. A frame has one world source.
+§4 "The worlds the build writes" states its bytes), holding the moment's
+blocks, the ledger's items and sign keys its rows hold, and its bodies.
+**A frame of the horizon**: where the horizon's base lays ground past the
+build (an `ocean`'s sea; `void` and `valley` lay none, and a player there sees
+none), a frame whose rays meet that ground's surface past the build's loaded
+extent loads the chunks they meet it in, out to where the frame's fog closes
+(`frames::horizon_cover`: the frame's rays on a 64 × 64 grid, each followed to
+the surface or to the fog's distance over the loaded extent,
+`frames::draw_distance`), and its world is written over the build's extent
+widened to every such frame standing in it; the fog stays where the build's
+extent puts it. Printed per such frame: `horizon: <name> sees past the build:
+chunks [x, z]..[x, z] of the horizon's ground loaded beside the build's [x,
+z]..[x, z], the fog at <r> blocks`. An hq frame draws no fog: over an `ocean`
+horizon it states the renderer's sea plane (`frames::sea_plane_at`, one rule
+for every frame the engine draws: the level above the topmost generator water
+block, `sea_level + 1`), which carries the sea to the horizon; over `void` and
+`valley` it states none. **A watch at the lens** (spec-0101): a body that
+turns to the nearest player within its reach (`watching::watchers`, `who`
+nearest) and whose feet are within that reach of the feet of a player whose
+eyes are at the lens turns to the lens, its yaw the game's look-at bearing
+(`watching::bearing`), its pitch the record's; a frame that turns one stands
+in a copy of its world, the same blocks with its bodies turned
+(`world::copy_with_entities`), under `<key>.facing-<stem>/`, named in the
+frame's manifest. Printed: `facing: <name> <k> watching bod(ies) within reach
+of the lens turned to it -> <dir>` per such frame, and `facing: <t> bod(ies)
+turned to the lens over <f> of <n> frame(s); <w> watching bod(ies) a player of
+any class draws`. A frame has one world source.
 The server save (`validation/world-save.sh`) is the instrument that checks the
 writer — cells (`DW0955`) and placed objects (`DW1040`), both in
 `tools/ci/check-written-world.py` — and the check is bound to staging:
@@ -7162,14 +7214,23 @@ sun <drawn | not drawn>[; moon drawn at its day's phase | ; no moon under <weath
 refused)]; weathers emitted: {…}`, whose set names the non-clear weathers.
 Beside them, per framed camera, `after: <name> at load` or `after: <name> after
 <step> (step <i> of <n> on <the critical path | branch `<id>`'s path>): <c>
-cells moved from load, <u> unforced write(s) not laid, <b> block entit(ies)
-omitted; biomes: at load; clock: as the picture`; per written world the
+cells moved from load, <m> of the cast moved, sky <as at load | set by the
+story>, <u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes:
+at load; clock: as the picture` — `<c>` the count of cells the moment's bytes
+differ from load's in, the bytes the world is written from; per written world the
 `world:` line (§4); `configurations: <k> written for <c> camera(s), <a> after a
 step, <l> at load`; the renderer line; `drew|previewed <n> camera frame(s) for
 <s> of <t> stated camera(s) -> <dir> (<mode> in <s> s)`; and `lens: <k> of <n>
 camera(s) clear of every block by 0.25 block, <f> flagged` — a camera whose lens
 is inside or within `LENS_CLEARANCE` of a placed block is named, a report, since
-a pinhole camera has no near plane.
+a pinhole camera has no near plane — and `undrawn: <u> of <n> frame(s) frame a
+body the renderer draws nothing of (DW1100)`. **`DW1100`**: a body of the
+frame's world whose kind the renderer's own statistics for that frame put among
+the kinds it skipped, standing inside the frame (its feet or its head projects
+inside), nearer than the fog and in sight of the lens, is named — the camera,
+each body's kind, tag and position — and an hq frame, the picture an author
+approves, is not written: the run exits 5 once every frame is drawn. A preview
+prints the same line and is written.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),

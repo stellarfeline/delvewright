@@ -675,7 +675,7 @@ impl Camera {
     }
 
     /// The normalised ray direction through pixel centre `(px, py)`.
-    fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
+    pub(crate) fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
         let (f, r, u) = self.basis();
         let aspect = width as f64 / height as f64;
         let ty = (self.fov.to_radians() * 0.5).tan();
@@ -691,7 +691,7 @@ impl Camera {
 
     /// Project a world point to pixel coordinates plus camera-space depth.
     /// `None` when the point is at or behind the eye plane.
-    fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
+    pub(crate) fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
         let (f, r, u) = self.basis();
         let c = [p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]];
         let z = dot(c, f);

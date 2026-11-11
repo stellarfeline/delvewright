@@ -171,7 +171,7 @@ pub(crate) fn run_frames_campaign(
         delvec::compiler::view::review::WorldMaker::new(&plan, &assembled, &base, &structures);
     let laid = delvec::compiler::view::beat::load_laid(&plan, &world);
     let day_time = delvec::compiler::view::review::Clock::at(&plan, 0).day_time(&plan);
-    let (_, written) = maker.encode_blocks(load, &laid, day_time, &[]);
+    let (_, written) = maker.encode_blocks(load, &laid, day_time, &[], None, None);
     if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
         eprintln!("internal error: cannot write {}: {e}", world_dir.display());
         return ExitCode::from(EXIT_INTERNAL);
@@ -213,6 +213,8 @@ pub(crate) fn run_frames_campaign(
             served: args
                 .served
                 .then(|| delvewright_dsl::viewdistance::chunks(&campaign)),
+            reach: None,
+            sea: delvec::compiler::view::frames::sea_plane_at(maker.surface),
         },
         args.draw.threads,
     ) {
@@ -315,12 +317,13 @@ pub(crate) fn camera_stands(
     prefabs_dir: &Path,
     json: bool,
     cameras: &[delvec::compiler::view::camera::Camera],
+    ledger: &delvec::compiler::placed::Ledger,
 ) -> Result<
     delvec::compiler::view::beat::Stood,
     (Option<delvec::compiler::view::diag::Diagnostic>, u8),
 > {
     stood_over(campaign_dir, prefabs_dir, json, |plan, world, base| {
-        delvec::compiler::view::beat::stands(plan, world, base, cameras).map_err(|why| {
+        delvec::compiler::view::beat::stands(plan, world, base, cameras, ledger).map_err(|why| {
             (
                 Some(delvec::compiler::view::diag::Diagnostic::error(
                     delvec::compiler::view::camera::DW_RECORD_AT_BUILD.id(),
@@ -387,7 +390,7 @@ fn stood_over(
             &structures,
         ),
         day_time: delvec::compiler::view::review::Clock::at(plan, 0).day_time(plan),
-        ancestors: plan.strict_ancestor_steps.clone(),
+        watchers: delvec::compiler::view::beat::Stood::watchers_of(plan),
     })
 }
 

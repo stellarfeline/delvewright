@@ -760,9 +760,37 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
         });
     let Ok(()) = folded;
     crate::compiler::notes::mark("encode: chunks lit, encoded and compressed");
-    // The bodies, one entity chunk per chunk a body stands in.
+    let mut files = vec![("level.dat".to_string(), level_dat(*spawn, input.day_time))];
+    let mut hasher = Sha256::new();
+    let mut named: Vec<(String, Vec<u8>)> = regions
+        .iter()
+        .map(|((rx, rz), payloads)| (format!("region/r.{rx}.{rz}.mca"), region_file(payloads)))
+        .chain(entity_files(input.entities))
+        .collect();
+    named.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, bytes) in &named {
+        hasher.update(bytes);
+    }
+    files.extend(named);
+    WrittenWorld {
+        chunks: chunk_set.len(),
+        cells,
+        ground: ground_count,
+        block_entities,
+        entities: input.entities.len(),
+        light_cells,
+        light_sha256: format!("{:x}", light_hash.finalize()),
+        sha256: format!("{:x}", hasher.finalize()),
+        files,
+    }
+}
+
+/// **The entity files of a world holding `entities`**: one entity chunk per
+/// chunk a body stands in, `entities/r.<x>.<z>.mca` per region, in name
+/// order.
+fn entity_files(entities: &[EntityRecord]) -> Vec<(String, Vec<u8>)> {
     let mut by_chunk: BTreeMap<(i32, i32), Vec<Tag>> = BTreeMap::new();
-    for e in input.entities {
+    for e in entities {
         let (cx, cz) = (
             (e.pos[0].floor() as i32).div_euclid(16),
             (e.pos[2].floor() as i32).div_euclid(16),
@@ -782,30 +810,38 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
             .or_default()
             .insert(index, zlib(&nbt_root(root)));
     }
-    let mut files = vec![("level.dat".to_string(), level_dat(*spawn, input.day_time))];
-    let mut hasher = Sha256::new();
-    let mut named: Vec<(String, Vec<u8>)> = regions
+    entity_regions
         .iter()
-        .map(|((rx, rz), payloads)| (format!("region/r.{rx}.{rz}.mca"), region_file(payloads)))
-        .chain(entity_regions.iter().map(|((rx, rz), payloads)| {
-            (format!("entities/r.{rx}.{rz}.mca"), region_file(payloads))
-        }))
-        .collect();
-    named.sort_by(|a, b| a.0.cmp(&b.0));
-    for (_, bytes) in &named {
-        hasher.update(bytes);
-    }
-    files.extend(named);
-    WrittenWorld {
-        chunks: chunk_set.len(),
-        cells,
-        ground: ground_count,
-        block_entities,
-        entities: input.entities.len(),
-        light_cells,
-        light_sha256: format!("{:x}", light_hash.finalize()),
-        sha256: format!("{:x}", hasher.finalize()),
-        files,
+        .map(|((rx, rz), payloads)| (format!("entities/r.{rx}.{rz}.mca"), region_file(payloads)))
+        .collect()
+}
+
+impl WrittenWorld {
+    /// **This world holding `entities` in place of its own bodies**: the same
+    /// `level.dat` and region files, its entity files written again — a
+    /// picture whose bodies differ from another's over the same blocks (a
+    /// body that turns to face the lens) without encoding the blocks twice.
+    pub fn with_entities(&self, entities: &[EntityRecord]) -> WrittenWorld {
+        let mut files: Vec<(String, Vec<u8>)> = self
+            .files
+            .iter()
+            .filter(|(n, _)| !n.starts_with("entities/"))
+            .cloned()
+            .collect();
+        let level = files.remove(0);
+        files.extend(entity_files(entities));
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut hasher = Sha256::new();
+        for (_, bytes) in &files {
+            hasher.update(bytes);
+        }
+        files.insert(0, level);
+        WrittenWorld {
+            entities: entities.len(),
+            sha256: format!("{:x}", hasher.finalize()),
+            files,
+            ..self.clone()
+        }
     }
 }
 
@@ -1019,6 +1055,39 @@ pub fn write_files(w: &WrittenWorld, dir: &Path) -> std::io::Result<()> {
         std::fs::write(path, bytes)?;
     }
     Ok(())
+}
+
+/// **A world `from` wrote, holding `entities` in place of its bodies**,
+/// written under `dir`: its `level.dat` and region files copied as they are,
+/// its entity files encoded from `entities`
+/// ([`WrittenWorld::with_entities`]'s files, without encoding the blocks
+/// again). Returns how many bodies it holds.
+pub fn copy_with_entities(
+    from: &Path,
+    entities: &[EntityRecord],
+    dir: &Path,
+) -> std::io::Result<usize> {
+    if dir.is_dir() {
+        std::fs::remove_dir_all(dir)?;
+    }
+    std::fs::create_dir_all(dir.join("region"))?;
+    std::fs::copy(from.join("level.dat"), dir.join("level.dat"))?;
+    for e in std::fs::read_dir(from.join("region"))? {
+        let p = e?.path();
+        if p.extension().is_some_and(|x| x == "mca")
+            && let Some(name) = p.file_name()
+        {
+            std::fs::copy(&p, dir.join("region").join(name))?;
+        }
+    }
+    for (rel, bytes) in entity_files(entities) {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, bytes)?;
+    }
+    Ok(entities.len())
 }
 
 /// [`encode`], written under `dir` ([`write_world`] over the map alone).

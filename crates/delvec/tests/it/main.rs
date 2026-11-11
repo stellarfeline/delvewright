@@ -245,6 +245,7 @@ mod starter_program;
 mod state_path;
 mod step_trigger;
 mod stepped_blocks_tag;
+mod story_moment;
 mod structure_void_shipped;
 mod talkto_cast_pos;
 mod teleport_link;

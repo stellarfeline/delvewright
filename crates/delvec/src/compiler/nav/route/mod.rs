@@ -8,6 +8,10 @@
 pub(in crate::compiler::nav) mod leg;
 pub(in crate::compiler::nav) mod region;
 pub use leg::*;
+pub(crate) use region::{LaidWrite, lay_writes};
+
+/// A laid write with the step it fires at ([`Configuration::laid_writes`]).
+pub type FiredWrite = (([i32; 3], [i32; 3]), Option<String>, usize);
 pub use region::*;
 
 use crate::compiler::failure::Failure;
@@ -606,6 +610,21 @@ impl Configuration {
     /// from one nothing wrote.
     pub fn laid_regions(&self) -> Vec<([i32; 3], [i32; 3])> {
         self.state.laid.iter().map(|(r, _)| *r).collect()
+    }
+
+    /// **Every write this configuration lays, with the step it fires at**, in
+    /// the order laid: the region, the block it lays (`None`: air) and the
+    /// critical-path step whose completion fires it (`0` for a world-load
+    /// write). What a picture orders against the placements ledger's rows, so
+    /// a cell the setup writes and a later beat rewrites holds the beat's
+    /// block.
+    pub fn laid_writes(&self) -> Vec<FiredWrite> {
+        self.state
+            .laid
+            .iter()
+            .zip(self.state.laid_steps.0.iter())
+            .map(|((r, b), s)| (*r, b.clone(), *s))
+            .collect()
     }
 
     /// How many regions an **unforced** write holds here — writes a beat

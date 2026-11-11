@@ -578,6 +578,60 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
     Some((prefix.to_string(), row))
 }
 
+/// **One exported path, as the ledger fires its functions along it**: the
+/// critical path, or one branch's path (spec-0025) — its steps, the step each
+/// objective is completed at, what it fires ([`crate::compiler::plan::firing_of`]'s
+/// input) and its causal ancestry. A row's firing is a step of THIS path.
+pub struct OnPath<'p> {
+    pub steps: &'p [crate::compiler::plan::Step],
+    pub obj_step: &'p BTreeMap<String, usize>,
+    pub(crate) firing: &'p crate::compiler::plan::PathFiring,
+    pub ancestors: &'p BTreeMap<usize, std::collections::BTreeSet<usize>>,
+}
+
+impl<'p> OnPath<'p> {
+    /// The critical path, as the build's ledger fires it.
+    pub fn critical(plan: &'p crate::compiler::plan::Plan) -> OnPath<'p> {
+        OnPath {
+            steps: &plan.critical_path,
+            obj_step: &plan.objective_steps,
+            firing: &plan.path_firing,
+            ancestors: &plan.strict_ancestor_steps,
+        }
+    }
+}
+
+impl Ledger {
+    /// **This ledger fired along `path`**: every distinct row of every function
+    /// the ledger reads ([`firings_of`]), one row per firing of its function on
+    /// that path, in the ledger's own order. On the critical path this is the
+    /// ledger the build wrote; on a branch's path a beat the branch plays is a
+    /// step of the branch, and one the critical path forces and the branch
+    /// never plays is unforced. A row whose function no rule reads keeps the
+    /// firing it was recorded with.
+    pub fn on_path(&self, plan: &crate::compiler::plan::Plan, path: &OnPath<'_>) -> Ledger {
+        let mut rows: Vec<Placed> = Vec::new();
+        let mut seen: std::collections::BTreeSet<(String, String)> = Default::default();
+        for r in &self.rows {
+            let key = (r.function.clone(), r.command());
+            match firings_of(plan, path, &r.function) {
+                Some(firings) => {
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    for f in firings {
+                        let mut x = r.clone();
+                        x.fired = f;
+                        rows.push(x);
+                    }
+                }
+                None => rows.push(r.clone()),
+            }
+        }
+        Ledger { rows }
+    }
+}
+
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
 /// a shortcut gate's `seal_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
@@ -587,7 +641,11 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
 /// `spawn_npc_<n>`, `despawn_npc_<n>`, `spawn_actor_<a>`, `despawn_actor_<a>`,
 /// `asm_summon_<s>`, `asm_despawn_<s>` — at every step an effect that runs it
 /// fires, unforced where the effect is.
-fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firing>> {
+fn firings_of(
+    plan: &crate::compiler::plan::Plan,
+    path: &OnPath<'_>,
+    name: &str,
+) -> Option<Vec<Firing>> {
     use crate::compiler::plan::safe_local;
     if name == "setup_finish" {
         return Some(vec![Firing::Setup]);
@@ -609,12 +667,12 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
     };
     if let Some(safe) = name.strip_prefix("activate_o_") {
         let (_, o) = objectives().find(|(_, o)| safe_local(o.id().as_str()) == safe)?;
-        return Some(vec![activation_firing(plan, o.id().as_str())]);
+        return Some(vec![activation_on(path, o.id().as_str())]);
     }
     if let Some(safe) = name.strip_prefix("complete_o_") {
         let (q, o) = objectives().find(|(_, o)| safe_local(o.id().as_str()) == safe)?;
         let optional = plan.campaign.quest_plan.content.optional();
-        return Some(vec![match plan.objective_steps.get(o.id().as_str()) {
+        return Some(vec![match path.obj_step.get(o.id().as_str()) {
             Some(s) if !optional.contains(q.id.as_str()) => Firing::Step(*s),
             _ => Firing::Unforced(format!(
                 "the completion of `{}`, which the critical path does not force",
@@ -636,7 +694,7 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
         let steps: Option<Vec<usize>> = q
             .objectives
             .iter()
-            .map(|o| plan.objective_steps.get(o.id().as_str()).copied())
+            .map(|o| path.obj_step.get(o.id().as_str()).copied())
             .collect();
         return Some(vec![match steps.and_then(|s| s.into_iter().max()) {
             Some(s) if !optional.contains(q.id.as_str()) => Firing::Step(s),
@@ -657,8 +715,8 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
             .triggers
             .iter()
             .find(|t| safe_local(t.id.as_str()) == safe)?;
-        let step = plan
-            .critical_path
+        let step = path
+            .steps
             .iter()
             .position(|st| crate::compiler::view::beat::step_id(st) == Some(t.id.as_str()));
         return Some(vec![match step {
@@ -737,7 +795,7 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
         if safe_local(target) != safe {
             return;
         }
-        let (step, forced) = crate::compiler::plan::firing_of(site, &plan.path_firing, &optional);
+        let (step, forced) = crate::compiler::plan::firing_of(site, path.firing, &optional);
         let f = if forced {
             Firing::Step(step)
         } else {
@@ -761,19 +819,24 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
 /// (`emit::class`'s `class_apply_`), so it fires at the `select-class` step —
 /// never at world load, where the pinned server's save holds no such body.
 pub fn activation_firing(plan: &crate::compiler::plan::Plan, objective: &str) -> Firing {
-    let Some(s) = plan.objective_steps.get(objective) else {
+    activation_on(&OnPath::critical(plan), objective)
+}
+
+/// [`activation_firing`] on `path`.
+fn activation_on(path: &OnPath<'_>, objective: &str) -> Firing {
+    let Some(s) = path.obj_step.get(objective) else {
         return Firing::Unforced(format!(
             "the activation of `{objective}`, which the critical path never reaches"
         ));
     };
-    match plan
-        .strict_ancestor_steps
+    match path
+        .ancestors
         .get(s)
         .and_then(|a| a.iter().copied().filter(|a| a < s).max())
     {
         Some(a) => Firing::Step(a),
-        None => plan
-            .critical_path
+        None => path
+            .steps
             .iter()
             .position(|st| matches!(st, crate::compiler::plan::Step::SelectClass { .. }))
             .map_or(Firing::Setup, Firing::Step),
@@ -792,7 +855,7 @@ pub fn ledger_of_functions(
     let mut ledger = Ledger::default();
     let mut lines_read = 0usize;
     for (name, body) in functions.iter_mut() {
-        let Some(firings) = firings_of(plan, name) else {
+        let Some(firings) = firings_of(plan, &OnPath::critical(plan), name) else {
             continue;
         };
         let mut out: Vec<String> = Vec::new();

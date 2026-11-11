@@ -163,7 +163,7 @@ fn stands_in(
     );
     let relight = delvec::compiler::light::relight_over(&plan, &assembled);
     let base = beat::picture_base(&plan, &assembled, &relight.placements);
-    beat::stands(&plan, &world, &base, cams).map(|s| (s, base))
+    beat::stands(&plan, &world, &base, cams, &Default::default()).map(|s| (s, base))
 }
 
 /// Read a written world back through `tools/lib/anvil.py`: every non-air cell
@@ -306,12 +306,16 @@ fn a_block_only_a_pressed_button_writes_is_in_no_world() {
     }
 }
 
-/// **Criterion 2's second half**: no site of `crates/delvec/src` lays a region
-/// write's block over a block map but `RegionState::blocks_over`.
+/// **Criterion 2's second half**: one function lays region writes over a
+/// block map — `nav::lay_writes`, which a configuration's bytes
+/// (`RegionState::blocks_over`) and a picture's moment
+/// (`view::moment::Laid`) both lay through — and every site that walks a
+/// state's laid writes is in `compiler/nav`.
 #[test]
 fn one_function_lays_a_configuration() {
     let src = common::repo_root().join("crates/delvec/src");
     let mut sites = Vec::new();
+    let mut writers = Vec::new();
     let mut stack = vec![src];
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).unwrap() {
@@ -320,23 +324,85 @@ fn one_function_lays_a_configuration() {
                 stack.push(p);
             } else if p.extension().is_some_and(|x| x == "rs") {
                 let text = std::fs::read_to_string(&p).unwrap();
-                // The only iteration over a state's laid writes.
                 for (i, line) in text.lines().enumerate() {
                     let t = line.trim_start();
-                    if t.starts_with("for ") && t.contains(" in &") && t.contains("laid") {
+                    let walks_laid = t.starts_with("for ")
+                        && t.contains("laid")
+                        && t.contains("block")
+                        && (t.contains(" in &") || t.ends_with(" in laid {"));
+                    if walks_laid {
                         sites.push(format!("{}:{}", p.display(), i + 1));
+                    }
+                    if t.contains("fn lay_writes(") {
+                        writers.push(format!("{}:{}", p.display(), i + 1));
                     }
                 }
             }
         }
     }
-    eprintln!("laid-write sites: {} — {sites:?}", sites.len());
-    // `blocks_over` lays them; `moved_from` counts the same cells without
-    // laying. Two readers of one list, one writer.
-    assert_eq!(sites.len(), 2, "{sites:?}");
+    eprintln!(
+        "laid-write sites: {} — {sites:?}; writers: {writers:?}",
+        sites.len()
+    );
+    assert_eq!(writers.len(), 1, "{writers:?}");
+    assert!(
+        writers[0].contains("compiler/nav/route/region.rs"),
+        "{writers:?}"
+    );
+    assert!(!sites.is_empty());
     assert!(
         sites.iter().all(|s| s.contains("compiler/nav/")),
         "{sites:?}"
+    );
+}
+
+/// **A setup write and a later beat on one cell**: the placements ledger lays
+/// stone at the pillar's foot at world setup, and `obj/talk`'s fill lays gold
+/// there. The world after `obj/talk` holds the gold — every write in firing
+/// order — and its count of moved cells is the count of cells its bytes
+/// differ from load's in.
+#[test]
+fn a_beat_s_write_lands_over_the_setup_s() {
+    let lib = prefabs("setup-row");
+    let c = campaign();
+    let reg = PrefabRegistry::load_dir(&lib).unwrap();
+    let plan = Plan::build(&c, &reg).expect("plan builds");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &lib);
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    let world = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
+    );
+    let relight = delvec::compiler::light::relight_over(&plan, &assembled);
+    let base = beat::picture_base(&plan, &assembled, &relight.placements);
+    let setup = delvec::compiler::placed::Placed::block(
+        delvec::compiler::placed::Firing::Setup,
+        [1, 65, 1],
+        "minecraft:stone",
+    );
+    let ledger = delvec::compiler::placed::Ledger { rows: vec![setup] };
+    let cams = [cam("before", None), cam("after-talk", Some("obj/talk"))];
+    let stood = beat::stands(&plan, &world, &base, &cams, &ledger).unwrap();
+    let map = |k: &str| &stood.worlds.iter().find(|(key, _)| key == k).unwrap().1;
+    let (load, talk) = (map("at-load"), map("after-obj-talk"));
+    let at = |m: &BlockMap, c: [i32; 3]| m.get(&c).map(|s| s.as_str().to_string());
+    assert_eq!(at(load, [1, 65, 1]).as_deref(), Some("minecraft:stone"));
+    assert_eq!(
+        at(talk, [1, 65, 1])
+            .as_deref()
+            .map(|s| s.split('[').next().unwrap()),
+        Some("minecraft:gold_block"),
+        "the beat's fill lands over the setup's stone"
+    );
+    let mut cells: std::collections::BTreeSet<[i32; 3]> = load.keys().collect();
+    cells.extend(talk.keys());
+    let differ = cells
+        .iter()
+        .filter(|c| at(load, **c) != at(talk, **c))
+        .count();
+    assert_eq!(
+        stood.stands[1].cells_moved, differ,
+        "the count is the bytes'"
     );
 }
 
@@ -413,7 +479,7 @@ fn plain_stands(
         delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
     let base = beat::picture_base(&plan, &assembled, &[]);
-    beat::stands(&plan, &world, &base, cams)
+    beat::stands(&plan, &world, &base, cams, &Default::default())
 }
 
 /// **Criterion 3 — an after equal to load**: a step after which no block moves
@@ -428,7 +494,7 @@ fn a_step_after_which_nothing_moves_is_refused_naming_the_first_that_does() {
     });
     let err = plain_stands(door.clone(), &[cam("t", Some("obj/look"))]).unwrap_err();
     assert!(
-        err.contains("is the world at load block for block")
+        err.contains("is the world at load — no block, no member of the cast and no sky differs")
             && err.contains("REMOVE `after` from camera `t`")
             && err.contains("the first on the critical path is `obj/talk`"),
         "{err}"
@@ -438,7 +504,9 @@ fn a_step_after_which_nothing_moves_is_refused_naming_the_first_that_does() {
     // A path that moves nothing at all says so.
     let err = plain_stands(serde_json::json!({}), &[cam("t", Some("obj/look"))]).unwrap_err();
     assert!(
-        err.contains("the critical path moves no block at all"),
+        err.contains(
+            "the critical path moves no block, no member of the cast and no sky after a step it carries once"
+        ),
         "{err}"
     );
 }
@@ -676,7 +744,7 @@ fn cameras_print_where_every_camera_stands() {
     let (code, log) = cameras(&out, &camp, &scenes, &[]);
     assert_eq!(code, 0, "{log}");
     let want = format!(
-        "after: door after obj/talk (step {} of {steps} on the critical path): 6 cells moved from load, 0 unforced write(s) not laid, 0 block entit(ies) omitted; biomes: at load; clock: as the picture",
+        "after: door after obj/talk (step {} of {steps} on the critical path): 6 cells moved from load, 0 of the cast moved, sky as at load, 0 unforced write(s) not laid, 0 block entit(ies) omitted; biomes: at load; clock: as the picture",
         talk + 1
     );
     assert!(log.contains(&want), "`{want}` in:\n{log}");
@@ -687,7 +755,12 @@ fn cameras_print_where_every_camera_stands() {
     assert!(log.contains("world: after-obj-talk "), "{log}");
     let door = json(&scenes.join("hello-world_camera_door.manifest.json"));
     assert_eq!(door["world"]["key"], "after-obj-talk", "{door}");
-    assert_eq!(door["world"]["path"], "worlds/after-obj-talk", "{door}");
+    // The keeper watches and the lens is within his reach: the frame stands
+    // in its world's copy with him turned to the lens.
+    assert_eq!(
+        door["world"]["path"], "worlds/after-obj-talk.facing-hello-world_camera_door",
+        "{door}"
+    );
     let hero = json(&scenes.join("hello-world_camera_hero.manifest.json"));
     assert_eq!(hero["world"]["key"], "at-load", "{hero}");
     // The six cells are the door's, read back from the two written worlds.
@@ -1411,7 +1484,7 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
         .find(|l| l.starts_with("after: door after obj/talk"))
         .unwrap_or_else(|| panic!("{log}"));
     assert!(
-        line.contains(": 6 cells moved from load, 0 unforced write(s) not laid,"),
+        line.contains(": 6 cells moved from load, 0 of the cast moved, sky as at load, 0 unforced write(s) not laid,"),
         "the bolt writes no block: {line}"
     );
     assert!(

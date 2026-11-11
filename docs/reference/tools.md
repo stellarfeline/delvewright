@@ -1382,7 +1382,8 @@ Nucleation; `versions.toml [render] lumenwright_version` holds the same version,
 dependency is named by `git` or `path`. Its `glam` is reached
 as `lumenwright::glam`, so the engine holds no second copy. `delvec` reaches it
 through one module, `compiler::view::frames`: a frame request (world, chunk
-rectangle, jar, the build's resource pack, camera, sky, mode, backend, size)
+rectangle, jar, the build's resource pack, camera, sky, mode, backend, size,
+the sea level an hq frame carries to the horizon)
 in, RGBA pixels and the renderer's own statistics out.
 
 **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
@@ -1513,7 +1514,7 @@ there is no second way to say where a showcase camera is.
 | `source` | `estimated` (a tool's or an agent's camera) or `hand` (placed by a person in the running game). A `hand` row is final: `place-camera` refuses an estimate over it |
 | `width`, `height`, `spp` | the frame and the sample target of the hq frame (doune: 1600×900; 300 in daylight; [`showcase-shots.md`](showcase-shots.md) §3.8) |
 | `sky` | optional: `{"time": …, "weather": …}`, the sky the picture is taken under when it is **not** the sky of the row it answers. Absent, the camera is drawn under its row's `time` and `weather` — the game's own sky at that hour under that weather (`compiler.md` §4); stating the row's own sky is refused (`DW0721`) |
-| `after` | optional: `{"step": …, "path": …}`, the step the picture is taken **after** — an objective id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical path, or, with `path`, of the branch it names. Absent, the camera pictures the world at load. The engine writes the world as the proofs hold it once that step is played (a door opened, a floor filled) and the frame is drawn from it; a step the path does not carry, carries twice, or after which nothing moves is refused (`DW0721`) |
+| `after` | optional: `{"step": …, "path": …}`, the step the picture is taken **after** — an objective id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical path, or, with `path`, of the branch it names. Absent, the camera pictures the world at load. The engine writes the world one play of that path leaves once that step is played — every block written on the way (a door opened, a candle lit, a floor filled), the cast where the cast ledger stations it then, the sky the story set — and the frame is drawn from it; a step the path does not carry, carries twice, or after which no block, no member of the cast and no sky differs from load is refused (`DW0721`) |
 
 **There is no `exposure`.** Every frame is exposed at the engine's derived
 1.0 (`compiler.md` §4), and a camera carrying the field is refused with
@@ -1524,11 +1525,23 @@ Everything else a frame needs comes from the build and is not restated: the
 loaded extent, and **the world the frame is drawn from, which `delvec cameras`
 writes itself** — one per configuration a camera stands in, under
 `<out>/worlds/<key>/` (`at-load`, `after-<step>`), assembled from the campaign
-and `--prefabs`, with the bodies and props the build's ledger places by then. No
-server boot is needed for a showcase frame, and the run prints, per camera,
-`after: <name> at load` or `after: <name> after <step> (…): <c> cells moved from
-load, …`, per world its `world:` line, and `configurations: <k> written for <c>
-camera(s), …`. What a frame does not show — an item, a text display, the rain in
+and `--prefabs`, with the bodies and props the build's ledger places by then and
+the cast where the cast ledger stations it. No server boot is needed for a
+showcase frame, and the run prints, per camera, `after: <name> at load` or
+`after: <name> after <step> (…): <c> cells moved from load, <m> of the cast
+moved, sky …`, per world its `world:` line, and `configurations: <k> written for
+<c> camera(s), …`. **A body that turns to face a player turns to the lens**: a
+watching body within its reach of the lens faces the camera, as it would a
+player standing there (`facing:` lines). **A frame that looks out past the
+build sees the horizon**: an `ocean`'s sea is loaded out to where the frame's
+fog closes (`horizon:` lines); an hq frame draws no fog, so over an `ocean`
+horizon it states the renderer's sea plane at the level above the topmost
+generator water block (`frames::sea_plane_at`), which carries the sea to the
+horizon, and states none over any other horizon. **A body the renderer cannot
+draw refuses the picture**: a body in frame of a kind the renderer reports
+skipped for that frame (read from the renderer's statistics, never from a list
+the engine keeps) is named under `DW1100`, and its hq frame is not written
+(exit 5); a preview names it and is drawn. What a frame does not show — an item, a text display, the rain in
 the air, a `collapse`'s debris — is `compiler.md` §7, `delvec cameras`. The sky
 comes from the picture (the camera's `sky`, else its row's), never from the
 world's initial hour, and `delvec cameras` prints the sky each camera is drawn

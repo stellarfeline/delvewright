@@ -59,7 +59,7 @@ use crate::compiler::view::scene;
 /// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_VERSION: &str = "0.3.0";
+pub const RENDERER_VERSION: &str = "0.4.0";
 
 /// The client's *Mipmap Levels* option at its default, the texture filtering
 /// a player who has not changed it sees.
@@ -277,6 +277,33 @@ pub struct FrameRequest<'a> {
     /// the fog closing at `16 · n` blocks — so a frame taken at a pose shows
     /// what a player standing there sees, and nothing the server never sends.
     pub served: Option<u8>,
+    /// **Where the fog closes** when `served` is `None`: `None` past the
+    /// farthest chunk of `chunks`; `Some(r)` at `r` blocks — a frame whose
+    /// `chunks` are widened to its horizon ([`horizon_cover`]) keeps the fog
+    /// where the build's own extent puts it.
+    pub reach: Option<f32>,
+    /// **The sea the frame looks out over** ([`sea_plane_at`]): `Some(level)`
+    /// where the world's horizon is an ocean, and an hq frame then draws the
+    /// sea out to the horizon past the loaded chunks; `None` everywhere else.
+    /// A quick frame never draws it.
+    pub sea: Option<f64>,
+}
+
+/// **The one rule for the sea plane**: the level Lumenwright's hq water plane
+/// takes for a world whose ground is a sea whose topmost generator water block
+/// is at `top_water_y` — the Y of the surface above that block, which is the
+/// sea level the client names. `None` where the horizon lays no sea (`void`,
+/// `valley`), so the plane is off there.
+pub fn sea_plane_at(top_water_y: Option<i32>) -> Option<f64> {
+    top_water_y.map(|y| f64::from(y) + 1.0)
+}
+
+/// [`sea_plane_at`] for the horizon a `render-plan.json` declares.
+pub fn sea_plane(horizon: Option<scene::Horizon>) -> Option<f64> {
+    sea_plane_at(match horizon {
+        Some(scene::Horizon::Ocean { sea_level }) => Some(sea_level),
+        _ => None,
+    })
 }
 
 /// The chunks the pinned client draws at render distance `n` around a camera
@@ -410,7 +437,7 @@ impl Drawn {
 /// How far the quick-mode fog closes from `eye` so every loaded chunk is
 /// drawn: the distance to the farthest corner of the chunk rectangle at the
 /// eye's height band, never under 64 blocks.
-fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
+pub fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
     let (lo, hi) = chunks;
     let mut far: f64 = 64.0;
     for x in [lo[0] * 16, hi[0] * 16 + 16] {
@@ -425,6 +452,52 @@ fn draw_distance(eye: [f64; 3], chunks: ([i32; 2], [i32; 2])) -> f32 {
         }
     }
     far.ceil() as f32
+}
+
+/// **The chunks a frame's horizon needs beyond `loaded`** (the declared
+/// horizon's ground): the level generator lays its ground (an ocean's sea) in
+/// every chunk of the world the server makes, so a player standing at the lens
+/// sees that ground out to where the fog closes. Every ray of the frame
+/// (sampled on a grid, its edges included) that meets the ground's surface
+/// `surface_y` is followed to that surface, or to `reach` blocks out
+/// horizontally where it meets it farther — the frame's fog
+/// ([`draw_distance`] over `loaded`); the result is `loaded` widened to the
+/// chunks those points stand in. `None` when `loaded` already holds them all.
+pub fn horizon_cover(
+    camera: &Camera,
+    width: u32,
+    height: u32,
+    loaded: ([i32; 2], [i32; 2]),
+    surface_y: f64,
+) -> Option<([i32; 2], [i32; 2])> {
+    const SAMPLES: u32 = 64;
+    let reach = f64::from(draw_distance(camera.pos, loaded));
+    let (mut lo, mut hi) = loaded;
+    let eye = camera.pos;
+    let drop = eye[1] - surface_y;
+    let at = |n: u32, of: u32| (n * (of - 1)) / (SAMPLES - 1);
+    for i in 0..SAMPLES {
+        for j in 0..SAMPLES {
+            let d = camera.ray(width, height, at(i, width), at(j, height));
+            // A ray that never comes down to the surface meets no ground.
+            if drop <= 0.0 || d[1] >= 0.0 {
+                continue;
+            }
+            let t = drop / -d[1];
+            let flat = (d[0] * d[0] + d[2] * d[2]).sqrt();
+            let t = if t * flat > reach { reach / flat } else { t };
+            let p = [eye[0] + d[0] * t, eye[2] + d[2] * t];
+            let c = [
+                (p[0].floor() as i32).div_euclid(16),
+                (p[1].floor() as i32).div_euclid(16),
+            ];
+            for a in 0..2 {
+                lo[a] = lo[a].min(c[a]);
+                hi[a] = hi[a].max(c[a]);
+            }
+        }
+    }
+    ((lo, hi) != loaded).then_some((lo, hi))
 }
 
 /// The world a run renders from, opened once and drawn many times.
@@ -448,7 +521,11 @@ impl OpenedWorld {
 /// backend that cannot be opened are `DW0723`, naming what was asked.
 pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Drawn, Diagnostic> {
     let (chunks, reach) = match req.served {
-        None => (req.chunks, draw_distance(req.camera.pos, req.chunks)),
+        None => (
+            req.chunks,
+            req.reach
+                .unwrap_or_else(|| draw_distance(req.camera.pos, req.chunks)),
+        ),
         Some(n) => match served_rect(req.camera.pos, n, req.chunks) {
             Some(r) => (r, f32::from(n) * 16.0),
             None => {
@@ -476,6 +553,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             HqOptions {
                 spp,
                 exposure: HQ_EXPOSURE,
+                water_plane: req.sea,
                 ..HqOptions::default()
             },
         ),
@@ -577,7 +655,83 @@ pub fn mean_luma(rgba: &[u8]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    /// The sea plane's one rule: an ocean horizon states the level above its
+    /// topmost water block; every other horizon, and none, state nothing.
+    #[test]
+    fn the_sea_plane_is_stated_for_an_ocean_horizon_only() {
+        assert_eq!(sea_plane_at(Some(62)), Some(63.0));
+        assert_eq!(sea_plane_at(None), None);
+        assert_eq!(
+            sea_plane(Some(scene::Horizon::Ocean { sea_level: 62 })),
+            Some(63.0)
+        );
+        assert_eq!(sea_plane(None), None);
+    }
+
     use super::*;
+
+    /// **A frame that looks out past the build loads its horizon** out to
+    /// where its fog closes, and a frame that sees nothing past the build
+    /// loads nothing more.
+    #[test]
+    fn a_frame_looking_past_the_build_loads_the_horizon_to_its_fog() {
+        // A 4×4-chunk build, its middle at (32, 32).
+        let loaded = ([0, 0], [3, 3]);
+        let sea = 63.0;
+        // Straight down from 200 blocks over the middle, a wide lens: the
+        // floor of the frame runs past the build on every side.
+        let down = Camera {
+            pos: [32.0, 263.0, 32.0],
+            yaw: 0.0,
+            pitch: 90.0,
+            fov: 110.0,
+        };
+        let (lo, hi) = horizon_cover(&down, 160, 90, loaded, sea).expect("past the build");
+        assert!(
+            lo[0] < 0 && lo[1] < 0 && hi[0] > 3 && hi[1] > 3,
+            "{lo:?}..{hi:?}"
+        );
+        // The cover reaches no farther along either axis than the fog of the
+        // build's extent (a chunk's width of rounding).
+        let reach = f64::from(draw_distance(down.pos, loaded));
+        for a in 0..2 {
+            let (l, h) = (f64::from(lo[a] * 16), f64::from(hi[a] * 16 + 16));
+            assert!(
+                32.0 - l <= reach + 16.0 && h - 32.0 <= reach + 16.0,
+                "axis {a}: {l}..{h} past the fog at {reach}"
+            );
+        }
+        // Out over the sea, level: the cover runs out to the fog and no
+        // further, however far the surface would carry the ray.
+        let out = Camera {
+            pos: [32.0, 70.0, 32.0],
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 60.0,
+        };
+        let (_, far) = horizon_cover(&out, 160, 90, loaded, sea).expect("past the build");
+        let reach = f64::from(draw_distance(out.pos, loaded));
+        assert!(
+            f64::from(far[1] * 16) <= 32.0 + reach + 16.0,
+            "{far:?} beyond {reach}"
+        );
+        assert!(far[1] > 3, "{far:?}");
+        // Looking down at the build's own floor from a few blocks up: nothing
+        // past it is in frame.
+        let near = Camera {
+            pos: [32.0, 70.0, 32.0],
+            yaw: 0.0,
+            pitch: 90.0,
+            fov: 60.0,
+        };
+        assert_eq!(horizon_cover(&near, 160, 90, loaded, sea), None);
+        // A lens under the surface meets no surface ground from above.
+        let under = Camera {
+            pos: [32.0, 40.0, 32.0],
+            ..down
+        };
+        assert_eq!(horizon_cover(&under, 160, 90, loaded, sea), None);
+    }
 
     #[test]
     fn the_sun_rises_in_the_east_and_sets_in_the_west() {

@@ -455,7 +455,7 @@ fn main() -> ExitCode {
             },
             *preview,
             draw,
-            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+            &mut |cams, ledger| camera_stands(campaign, &cli.prefabs, cli.json, cams, ledger),
         ),
         Command::View(delvec::compiler::view::cli::ViewCommand::Frames {
             campaign: Some(campaign),
@@ -513,7 +513,7 @@ fn main() -> ExitCode {
                 delete: *delete,
             },
             cli.json,
-            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+            &mut |cams, ledger| camera_stands(campaign, &cli.prefabs, cli.json, cams, ledger),
         ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),

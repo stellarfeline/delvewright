@@ -252,6 +252,8 @@ pub(crate) fn run_edit(
         &delvec::compiler::view::beat::load_laid(&plan, &nav),
         clock.day_time(&plan),
         &[],
+        None,
+        None,
     );
     let world_dir = out_dir.join("world");
     if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
@@ -303,6 +305,8 @@ pub(crate) fn run_edit(
                 width: FRAME_WIDTH,
                 height: FRAME_HEIGHT,
                 served: None,
+                reach: None,
+                sea: delvec::compiler::view::frames::sea_plane_at(maker.surface),
             },
             None,
         ) {

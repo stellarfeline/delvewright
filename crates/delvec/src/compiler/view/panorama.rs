@@ -520,6 +520,8 @@ pub struct Panorama {
     pub sky: scene::SceneSky,
     /// The chunk rectangle loaded: the layout and the ground its horizon built.
     pub chunks: ([i32; 2], [i32; 2]),
+    /// The sea an hq frame carries to the horizon ([`frames::sea_plane`]).
+    pub sea: Option<f64>,
     /// The subject box the camera was solved for.
     pub subject: ([i32; 3], [i32; 3]),
     /// How much of the frame that box occupies from the emitted camera.
@@ -618,6 +620,7 @@ pub fn panorama_from_plan(
         frame,
         sky,
         chunks: scene::chunk_rect(lmin, lmax),
+        sea: crate::compiler::view::frames::sea_plane(plan.horizon),
         subject,
         span,
         record: camera::Camera {
