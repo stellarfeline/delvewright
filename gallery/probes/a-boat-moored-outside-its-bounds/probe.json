@@ -1,0 +1,17 @@
+{
+  "code": "DW1099",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/2/bounds/extent",
+      "value": [
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the boat's `bounds` shrunk to a box round the yard's middle lane, which leaves its mooring on the basin outside. The re-seat would return it to a mark it is already outside of. Refused at build, naming the mark and the box. It declares no unit."
+}

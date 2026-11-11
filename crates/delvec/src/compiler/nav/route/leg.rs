@@ -1184,6 +1184,10 @@ pub(in crate::compiler::nav) fn route_with_links(
                     cur = *next;
                     continue;
                 }
+                // A vehicle out of its medium or its bounds is refused as that
+                // (`DW1097`, `DW1099`) by the proofs over the class, which run
+                // on every build; the leg is judged here as the walk it is.
+                Err(crate::compiler::nav::vehicle::RideMiss::Unseated) => {}
                 Err(miss) => {
                     result = Err(Failure {
                         code: DW_CRITICAL_UNROUTABLE,

@@ -1,0 +1,13 @@
+{
+  "code": "DW0311",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/vehicles/0/facing",
+      "value": "north"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the yard's cart faced north, at the north end of its line. It rests on its rail and faces along it, so it is seated; but a push that way runs it nowhere, and the leg `obj/ride-the-line` declares ridden on it is one it cannot carry. Refused at build, naming the vehicle and that its medium is its mark alone. It declares no unit."
+}

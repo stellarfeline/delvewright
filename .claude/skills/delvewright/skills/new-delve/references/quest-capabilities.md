@@ -213,8 +213,10 @@ Run each of these; each names what it judges and how many objects it bound.
 ## A boat, a cart, a mount
 
 - `vehicles[]` places a body a player boards and leaves: a boat on water, the rider's minecart on a rail, a saddled pig, horse, camel or strider on ground. Write the `entity`, the mark it is seated at (`at`) and the `bounds` it lives in; the kind, the seats and the steering item come from the engine. A chest boat, a cart that carries cargo and a llama carry no rider, and are refused.
-- The engine proves the seat is in its medium, that somebody can stand beside it and climb on, and that a rider who leaves anywhere it goes can walk back to the party's ground. A vehicle left riderless outside its `bounds` is put back at its mark every five seconds.
-- The walk is taken wherever it exists: a ride becomes part of the route only on a leg nothing else crosses, and then the vehicles there must seat the whole party of four — a boat seats two, so a crossing nobody can walk needs two boats.
+- The engine proves the seat is in its medium, that somebody can stand beside it and climb on, and that a rider who leaves anywhere it goes can get back to the party's ground. A vehicle nobody is riding returns to its mark within five seconds wherever it was left, so a ride always starts from the mark.
+- A leg is ridden only where you say so: put `"ride": "vehicle/<id>"` on the objective the party rides to. The party then walks to the vehicle, rides it as near the objective as its water, rail or ground reaches, and walks the rest; with no `ride` the leg is walked or swum and the vehicle is scenery the players may use. A ride the vehicle cannot make is refused by name. Where nobody could walk the leg either, the vehicles there must seat the whole party of four.
+- A minecart is seated on level plain rail and faces the way it will run (`facing`); the engine pushes it when a player sits down, and one push carries it about 45 rails. Do not seat it on a powered launcher: it would roll away empty.
+- A gate can wait for riders: `state[].counts` with `"of": {"riders": "vehicle/<id>"}` counts the players aboard inside its `region`, and a `body-enters` trigger over it fires when the first one boards.
 - A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride.
 - `seat-vehicle` puts a vehicle back at its mark from a beat; `despawn-vehicle` takes it away for good (its re-seat stops with it).
 

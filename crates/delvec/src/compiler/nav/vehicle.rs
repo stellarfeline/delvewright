@@ -708,7 +708,7 @@ mod tests {
     #[test]
     fn a_ride_nobody_walks_to_and_one_that_lands_nowhere_are_named() {
         let w = pond(8);
-        let b = boat([3, 1, 0], ([-10, -5, -5], [20, 5, 5]));
+        let b = boat([1, 1, 0], ([-10, -5, -5], [20, 5, 5]));
         let (from, goal) = ([-3, 1, 0], [10, 1, 0]);
         assert_eq!(
             ride_of(&w, 0, &b, from, &|_, _| false, goal),
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(ride.medium[0], b.seat);
         assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
         // Two boats at one dock seat four; one seats two.
-        let two = [b.clone(), boat([3, 1, 2], b.bounds)];
+        let two = [b.clone(), boat([1, 1, 2], b.bounds)];
         assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal), 4);
         assert_eq!(boardable_seats(&w, &two[..1], from, &|_, _| true, goal), 2);
     }

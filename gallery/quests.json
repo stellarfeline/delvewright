@@ -5310,11 +5310,11 @@
           "movement_speed": 0.25
         },
         "bounds": {
-          "anchor": "anchor/long-hall-yard",
+          "anchor": "anchor/long-hall-paddock",
           "extent": [
-            5,
             2,
-            17
+            2,
+            2
           ]
         },
         "entity": "minecraft:pig",

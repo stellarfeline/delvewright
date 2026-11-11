@@ -102,6 +102,8 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
 - An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
+- Every objective kind takes `ride`: the leg to it is ridden on the named vehicle.
+- A census counts a vehicle's riders: `state[].counts.of: {"riders": id}`.
 
 ### Changed
 

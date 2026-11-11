@@ -4989,11 +4989,11 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-hall-line-end",
-        pos: [LONG_HALL_RAIL_X + 1, 1, LONG_HALL_RAIL_TO],
+        pos: [LONG_HALL_RAIL_X + 3, 1, LONG_HALL_RAIL_TO],
         facing: None,
         trigger_block: None,
-        note: "the floor beside the rail line's last cell: where a rider who took the cart \
-               stands after it (spec-0135)",
+        note: "the middle lane abreast of the rail line's last cell: where a rider who took \
+               the cart walks to after it (spec-0135)",
         role: None,
     },
     Anchor {
@@ -5001,7 +5001,8 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         pos: [7, 1, LONG_HALL_END_Z + 5],
         facing: None,
         trigger_block: None,
-        note: "the end room's east floor: where the race pig is seated (spec-0135)",
+        note: "the end room's east floor: where the race pig is seated, the paddock round it \
+               its bounds (spec-0135)",
         role: None,
     },
     Anchor {
