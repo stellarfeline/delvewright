@@ -602,3 +602,50 @@ fn a_quest_start_clock_at_world_load_waits_for_the_first_arrival() {
     };
     assert!(driver.contains(arrival), "{driver}");
 }
+
+/// §8 and `DW0807`: every objective kind that may carry a `limit` keeps its
+/// generated PackTests' batch-state ownership. keep-trial has one objective of
+/// each of the five kinds (talk-to, kill, collect, interact, reach-anchor);
+/// with a limit on every one, the build must not refuse a template that reads
+/// an expired score it never writes, and each verb template that drives a
+/// limited objective writes that score itself.
+#[test]
+fn every_limited_objective_kind_owns_its_expired_score_in_packtest() {
+    let dir = scratch("kinds");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let mut kinds = Vec::new();
+    common::patch_file(&dir.join("quests.json"), |v| {
+        for q in v["content"]["quests"].as_array_mut().unwrap() {
+            for o in q["objectives"].as_array_mut().unwrap() {
+                kinds.push(o["type"].as_str().unwrap().to_string());
+                o["limit"] = json!({"ticks": 72000});
+            }
+        }
+    });
+    kinds.sort();
+    assert_eq!(
+        kinds,
+        ["collect", "interact", "kill", "reach-anchor", "talk-to"],
+        "the fixture binds every kind that may carry a limit"
+    );
+    let out = match build_result(&dir) {
+        Ok(out) => out,
+        Err(e) => panic!("a campaign whose every objective is limited builds: {e:?}"),
+    };
+    let ns = "keep-trial";
+    let mut judged = 0;
+    for name in ["verb_collect", "verb_interact", "collect_preheld"] {
+        let path = format!("packtest-datapack/data/{ns}/test/{name}.mcfunction");
+        let Some(bytes) = out.get(&path) else {
+            continue;
+        };
+        let t = String::from_utf8(bytes.clone()).unwrap();
+        assert!(
+            t.lines()
+                .any(|l| l.starts_with("scoreboard players set #party dw.x_")),
+            "`{name}` drives a limited objective and writes its expired score\n{t}"
+        );
+        judged += 1;
+    }
+    assert!(judged >= 2, "at least the collect and interact verb templates were judged: {judged}");
+}
