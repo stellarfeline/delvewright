@@ -8,13 +8,20 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The plain rail a ridden cart at speed coasts over without stopping, in
-/// rail cells (`docs/reference/vehicles-animals-and-targets.md` §6: a cart at
-/// 10.4 blocks a second held that speed over 45 blocks of plain rail).
+/// The plain rail a ridden cart coasts over without stopping, in rail cells
+/// (`docs/reference/vehicles-animals-and-targets.md` §6, §11): a cart at 10.4
+/// blocks a second held that speed over 45 cells, and a cart pushed once from
+/// rest was still rolling 57 cells on — 45 is inside both.
 pub const COAST_CELLS: usize = 45;
 
-/// The rate a pushed cart runs at, in blocks a second (the record §6).
-pub const CART_RATE: f64 = 10.4;
+/// The rate a ride on a cart is priced and waited for at, in blocks a second:
+/// the slowest whole run the record holds (§11: 57 cells of plain rail in
+/// 23.5 s from one push). A floor — a line with powered rails runs faster.
+pub const CART_RATE: f64 = 2.4;
+
+/// The motion the engine gives a cart the tick a body boards it, in blocks a
+/// tick along its `facing` — the push the record measured (§6, §11).
+pub const CART_PUSH: f64 = 0.3;
 
 /// One rail cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,47 +107,58 @@ pub fn rail_neighbours(rails: &BTreeMap<[i32; 3], Rail>, c: [i32; 3]) -> Vec<[i3
     out
 }
 
-/// **The run a cart pushed from `seat` takes** (spec-0135 §3): the seat must
-/// be a powered rail, powered, laid straight with a solid block (`solid`)
-/// behind one end — the vanilla launcher — and the run goes the other way,
-/// along the rails, through every stretch of unpowered rail no longer than
-/// [`COAST_CELLS`], to where the rail ends or an unpowered stretch outruns the
-/// coast. `None` when the seat is no launcher. The run is in order, the seat
-/// first.
-pub fn driven_run(
+/// **Whether a cart with nobody in it stays at `seat`** (the record §11): a
+/// level rail that does not launch it — a powered rail that is powered, with
+/// a solid block (`solid`) at one end, pushes a cart at rest away from the
+/// block whether or not anybody sits in it.
+pub fn rests(
     rails: &BTreeMap<[i32; 3], Rail>,
     solid: &dyn Fn([i32; 3]) -> bool,
     seat: [i32; 3],
+) -> bool {
+    let Some(r) = rails.get(&seat) else {
+        return false;
+    };
+    if r.exits.iter().any(|(_, rise)| *rise != 0) {
+        return false;
+    }
+    !(r.drives()
+        && r.exits
+            .iter()
+            .any(|(d, _)| solid([seat[0] + d[0], seat[1], seat[2] + d[1]])))
+}
+
+/// **The run a cart pushed from `seat` toward `facing` takes** (spec-0135 §3):
+/// along the rails from the seat, through every stretch of rail that does not
+/// drive it no longer than [`COAST_CELLS`], to where the rail ends, a brake —
+/// an unpowered powered rail — stops it, or such a stretch outruns the coast.
+/// `None` when the seat is no rail or its rail does not run toward `facing`.
+/// The run is in order, the seat first.
+pub fn driven_run(
+    rails: &BTreeMap<[i32; 3], Rail>,
+    seat: [i32; 3],
+    facing: [i32; 2],
     within: &dyn Fn([i32; 3]) -> bool,
 ) -> Option<Vec<[i32; 3]>> {
     let r = rails.get(&seat)?;
-    if !r.drives() || r.exits.iter().any(|(_, rise)| *rise != 0) {
+    if !r.exits.iter().any(|(d, _)| *d == facing) {
         return None;
     }
-    let [(a, _), (b, _)] = r.exits;
-    if a[0] != -b[0] || a[1] != -b[1] {
-        return None; // a curve launches nothing
-    }
-    let behind = |d: [i32; 2]| solid([seat[0] + d[0], seat[1], seat[2] + d[1]]);
-    let first = match (behind(a), behind(b)) {
-        (true, false) => [seat[0] + b[0], seat[1], seat[2] + b[1]],
-        (false, true) => [seat[0] + a[0], seat[1], seat[2] + a[1]],
-        _ => return None,
-    };
     let mut run = vec![seat];
     let mut seen: BTreeSet<[i32; 3]> = BTreeSet::from([seat]);
     let mut prev = seat;
     let mut coast = 0usize;
     let mut next = rail_neighbours(rails, seat)
         .into_iter()
-        .find(|n| n[0] == first[0] && n[2] == first[2]);
+        .find(|n| n[0] == seat[0] + facing[0] && n[2] == seat[2] + facing[1]);
     while let Some(c) = next {
         if !within(c) || !seen.insert(c) {
             break;
         }
         let rail = rails[&c];
         if rail.booster && !rail.powered {
-            break; // a brake stops the cart
+            run.push(c); // a brake stops the cart on it
+            break;
         }
         coast = if rail.drives() { 0 } else { coast + 1 };
         if coast > COAST_CELLS {
@@ -173,29 +191,64 @@ mod tests {
     }
 
     #[test]
-    fn a_launcher_drives_its_line_to_the_end() {
-        let rails = line(20, 3);
-        let solid = |c: [i32; 3]| c == [-1, 0, 0];
-        let run = driven_run(&rails, &solid, [0, 0, 0], &|_| true).unwrap();
+    fn a_pushed_cart_runs_its_line_to_the_end() {
+        let rails = line(20, 0);
+        let run = driven_run(&rails, [0, 0, 0], [1, 0], &|_| true).unwrap();
         assert_eq!(run.len(), 20);
         assert_eq!(*run.last().unwrap(), [19, 0, 0]);
     }
 
     #[test]
-    fn the_coast_cuts_the_run() {
-        let rails = line(60, 1);
-        let solid = |c: [i32; 3]| c == [-1, 0, 0];
-        let run = driven_run(&rails, &solid, [0, 0, 0], &|_| true).unwrap();
+    fn the_coast_cuts_the_run_and_a_powered_rail_renews_it() {
+        let rails = line(60, 0);
+        let run = driven_run(&rails, [0, 0, 0], [1, 0], &|_| true).unwrap();
         assert_eq!(run.len(), 1 + COAST_CELLS);
+        let mut renewed = line(60, 0);
+        renewed.insert(
+            [30, 0, 0],
+            rail_of("minecraft:powered_rail[powered=true,shape=east_west]").unwrap(),
+        );
+        let run = driven_run(&renewed, [0, 0, 0], [1, 0], &|_| true).unwrap();
+        assert_eq!(run.len(), 60);
     }
 
     #[test]
-    fn a_seat_with_nothing_behind_is_no_launcher() {
-        let rails = line(10, 3);
-        assert!(driven_run(&rails, &|_| false, [0, 0, 0], &|_| true).is_none());
-        let unpowered = line(10, 0);
-        let solid = |c: [i32; 3]| c == [-1, 0, 0];
-        assert!(driven_run(&unpowered, &solid, [0, 0, 0], &|_| true).is_none());
+    fn a_brake_stops_the_cart_on_it() {
+        let mut rails = line(20, 0);
+        rails.insert(
+            [8, 0, 0],
+            rail_of("minecraft:powered_rail[powered=false,shape=east_west]").unwrap(),
+        );
+        let run = driven_run(&rails, [0, 0, 0], [1, 0], &|_| true).unwrap();
+        assert_eq!(*run.last().unwrap(), [8, 0, 0]);
+    }
+
+    #[test]
+    fn a_cart_facing_across_its_rail_runs_nowhere() {
+        let rails = line(10, 0);
+        assert!(driven_run(&rails, [0, 0, 0], [0, 1], &|_| true).is_none());
+        // Facing the rail's dead end, the run is the seat alone.
+        assert_eq!(
+            driven_run(&rails, [0, 0, 0], [-1, 0], &|_| true).unwrap(),
+            vec![[0, 0, 0]]
+        );
+    }
+
+    #[test]
+    fn a_cart_rests_on_level_rail_and_not_on_a_launcher_or_a_slope() {
+        let plain = line(10, 0);
+        assert!(rests(&plain, &|c| c == [-1, 0, 0], [0, 0, 0]));
+        let launcher = line(10, 3);
+        assert!(!rests(&launcher, &|c| c == [-1, 0, 0], [0, 0, 0]));
+        // A powered rail with nothing solid at either end launches nothing.
+        assert!(rests(&launcher, &|_| false, [1, 0, 0]));
+        let mut slope = BTreeMap::new();
+        slope.insert(
+            [0, 0, 0],
+            rail_of("minecraft:rail[shape=ascending_east]").unwrap(),
+        );
+        assert!(!rests(&slope, &|_| false, [0, 0, 0]));
+        assert!(!rests(&plain, &|_| false, [0, 5, 0]));
     }
 
     #[test]

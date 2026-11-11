@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::serde_fields::{is_false, is_zero};
 use crate::{
     AnchorId, FlagId, Guidance, Happening, Highlight, NpcId, ObjectiveId, Prop, QuestEffect,
-    StateCompare, Visibility, WaveId,
+    StateCompare, VehicleId, Visibility, WaveId,
 };
 
 /// The fewest ticks a `limit` may run (one second).
@@ -141,6 +141,14 @@ pub enum Objective {
         /// completion bundle, and its `after`-dependents and its quest go on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<Limit>,
+        /// **The leg to this objective is ridden** (spec-0135 §4): the party
+        /// walks to the named vehicle, boards it at its mark, rides it through
+        /// its medium as near this objective as the medium reaches, leaves and
+        /// walks on. Absent, the leg is walked, and a vehicle carries it only
+        /// where no walk crosses. A leg the vehicle cannot carry is `DW0311`;
+        /// a vehicle nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ride: Option<VehicleId>,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -201,6 +209,14 @@ pub enum Objective {
         /// completion bundle, and its `after`-dependents and its quest go on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<Limit>,
+        /// **The leg to this objective is ridden** (spec-0135 §4): the party
+        /// walks to the named vehicle, boards it at its mark, rides it through
+        /// its medium as near this objective as the medium reaches, leaves and
+        /// walks on. Absent, the leg is walked, and a vehicle carries it only
+        /// where no walk crosses. A leg the vehicle cannot carry is `DW0311`;
+        /// a vehicle nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ride: Option<VehicleId>,
     },
     /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
@@ -264,6 +280,14 @@ pub enum Objective {
         /// completion bundle, and its `after`-dependents and its quest go on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<Limit>,
+        /// **The leg to this objective is ridden** (spec-0135 §4): the party
+        /// walks to the named vehicle, boards it at its mark, rides it through
+        /// its medium as near this objective as the medium reaches, leaves and
+        /// walks on. Absent, the leg is walked, and a vehicle carries it only
+        /// where no walk crosses. A leg the vehicle cannot carry is `DW0311`;
+        /// a vehicle nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ride: Option<VehicleId>,
     },
     /// Completed when `count` of `item` have been collected (v0.3).
     ///
@@ -422,6 +446,14 @@ pub enum Objective {
         /// completion bundle, and its `after`-dependents and its quest go on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<Limit>,
+        /// **The leg to this objective is ridden** (spec-0135 §4): the party
+        /// walks to the named vehicle, boards it at its mark, rides it through
+        /// its medium as near this objective as the medium reaches, leaves and
+        /// walks on. Absent, the leg is walked, and a vehicle carries it only
+        /// where no walk crosses. A leg the vehicle cannot carry is `DW0311`;
+        /// a vehicle nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ride: Option<VehicleId>,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
     /// set, the item must be **held in the main hand** (v0.3; held semantics since
@@ -531,6 +563,14 @@ pub enum Objective {
         /// completion bundle, and its `after`-dependents and its quest go on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<Limit>,
+        /// **The leg to this objective is ridden** (spec-0135 §4): the party
+        /// walks to the named vehicle, boards it at its mark, rides it through
+        /// its medium as near this objective as the medium reaches, leaves and
+        /// walks on. Absent, the leg is walked, and a vehicle carries it only
+        /// where no walk crosses. A leg the vehicle cannot carry is `DW0311`;
+        /// a vehicle nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ride: Option<VehicleId>,
     },
 }
 
@@ -875,6 +915,18 @@ impl Objective {
             | Objective::Kill { limit, .. }
             | Objective::Collect { limit, .. }
             | Objective::Interact { limit, .. } => limit.as_ref(),
+        }
+    }
+
+    /// The vehicle the leg to this objective is ridden on (spec-0135 §4),
+    /// when it declares one.
+    pub fn ride(&self) -> Option<&VehicleId> {
+        match self {
+            Objective::TalkTo { ride, .. }
+            | Objective::ReachAnchor { ride, .. }
+            | Objective::Kill { ride, .. }
+            | Objective::Collect { ride, .. }
+            | Objective::Interact { ride, .. } => ride.as_ref(),
         }
     }
 

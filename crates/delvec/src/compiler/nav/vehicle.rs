@@ -64,6 +64,8 @@ pub struct VehiclePlan {
     pub bounds: ([i32; 3], [i32; 3]),
     /// The spawn yaw.
     pub yaw: i32,
+    /// The way it faces, as a horizontal step: the way a cart is pushed.
+    pub facing: [i32; 2],
 }
 
 impl VehiclePlan {
@@ -85,7 +87,7 @@ impl VehiclePlan {
 
     /// The rate a ride on it is priced and driven at, in blocks a second
     /// (spec-0135 §4): a boat at 5 (the record §5 took 2, 5, 10 and 20 whole),
-    /// a cart at the measured run, a mount at its `movement_speed` scaled as a
+    /// a cart at the slowest run measured, a mount at its `movement_speed` scaled as a
     /// ridden mob walks (`movement_speed` × 43.17, vanilla's blocks a second
     /// per unit of speed).
     pub fn rate(&self, movement_speed: Option<f64>) -> f64 {
@@ -132,6 +134,12 @@ pub fn vehicle_plans(
                 Some(delvewright_dsl::Facing::North) => 180,
                 Some(delvewright_dsl::Facing::East) => 270,
             },
+            facing: match v.facing {
+                None | Some(delvewright_dsl::Facing::South) => [0, 1],
+                Some(delvewright_dsl::Facing::West) => [-1, 0],
+                Some(delvewright_dsl::Facing::North) => [0, -1],
+                Some(delvewright_dsl::Facing::East) => [1, 0],
+            },
         });
     }
     out
@@ -176,7 +184,14 @@ impl World {
         let fp = v.footprint();
         match v.medium {
             VehicleMedium::Water => self.floats(v.seat, &fp),
-            VehicleMedium::Rails => self.rails.contains_key(&v.seat),
+            VehicleMedium::Rails => {
+                let solid = |c: [i32; 3]| self.solid.contains(&c);
+                crate::compiler::rail::rests(&self.rails, &solid, v.seat)
+                    && self.rails[&v.seat]
+                        .exits
+                        .iter()
+                        .any(|(d, _)| *d == v.facing)
+            }
             VehicleMedium::Ground => self.mount_stands(v.seat, &fp),
         }
     }
@@ -211,9 +226,8 @@ impl World {
             return parent;
         }
         if v.medium == VehicleMedium::Rails {
-            let solid = |c: [i32; 3]| self.solid.contains(&c);
             let within = |c: [i32; 3]| v.within(c);
-            let run = crate::compiler::rail::driven_run(&self.rails, &solid, v.seat, &within)
+            let run = crate::compiler::rail::driven_run(&self.rails, v.seat, v.facing, &within)
                 .unwrap_or_else(|| vec![v.seat]);
             let mut prev = None;
             for c in run {
@@ -346,8 +360,8 @@ pub struct VehicleBinding {
     pub rows: Vec<VehicleRow>,
     /// Ride legs on the critical path.
     pub critical_rides: usize,
-    /// Ride legs on branch paths.
-    pub branch_rides: usize,
+    /// Objectives that declare their leg ridden.
+    pub declared: usize,
 }
 
 /// One vehicle's counts.
@@ -387,11 +401,11 @@ impl VehicleBinding {
             )
         };
         format!(
-            "vehicle binding (DW1097–DW1099): {} vehicle(s){rows}; {} ride leg(s) on the \
-             critical path and {} on branch paths",
+            "vehicle binding (DW1097–DW1099): {} vehicle(s){rows}; {} objective(s) declare \
+             their leg ridden; {} ride leg(s) on the critical path",
             self.rows.len(),
-            self.critical_rides,
-            self.branch_rides
+            self.declared,
+            self.critical_rides
         )
     }
 }
@@ -435,7 +449,12 @@ pub fn judge_vehicles(
             if verdict.is_ok() {
                 let medium = match v.medium {
                     VehicleMedium::Water => "water with open air above, across the boat's width",
-                    VehicleMedium::Rails => "a rail",
+                    VehicleMedium::Rails => {
+                        "a level rail a cart rests on, running the way the cart faces (a powered \
+                         rail that is powered, with a solid block at one end, launches a cart \
+                         nobody sits in; a slope rolls it away; `facing` is the way the engine \
+                         pushes it when a body boards)"
+                    }
                     VehicleMedium::Ground => {
                         "ground the mount stands on at its width and height, out of water"
                     }
@@ -479,14 +498,28 @@ pub fn judge_vehicles(
         let swim_off = v.medium == VehicleMedium::Water && world.water_body_lands(v, walk);
         for m in tree.keys() {
             let l = world.leaving_cells_of(v, *m);
-            let off = swim_off || l.iter().any(|c| walk.contains(c));
+            // A rider who leaves is never stranded when a leaving cell is
+            // ground the party walks, or a body there gets to such ground by
+            // the reach graph — walking, falling, jumping, climbing, swimming
+            // (`World::body_reach`). The flood is run only for a cell the walk
+            // region does not already touch, and only until the first refusal.
+            let off = swim_off
+                || l.iter().any(|c| walk.contains(c))
+                || (!l.is_empty()
+                    && verdict.is_ok()
+                    && world
+                        .body_reach(&l)
+                        .standing()
+                        .iter()
+                        .any(|c| walk.contains(c)));
             leaves.extend(l);
             if !off && verdict.is_ok() {
                 verdict = fail(
                     DW_VEHICLE_STRANDS,
                     format!(
-                        "vehicle `{}` reaches {m:?} through its medium, and no cell a rider stands \
-                         on after leaving there is in the region the party can walk — a rider who \
+                        "vehicle `{}` reaches {m:?} through its medium, and from no cell a rider \
+                         stands on after leaving there does a body get to the region the party \
+                         walks — walking, falling, jumping, climbing or swimming — so a rider who \
                          leaves at {m:?} is stranded (a rail into a pit, a far shore of cliff). \
                          Give that stretch a way off, cut it out of `bounds`, or end the medium \
                          before it.",
@@ -501,11 +534,119 @@ pub fn judge_vehicles(
     (b, verdict)
 }
 
-/// **A ride across a leg no walk crosses** (spec-0135 §4): over the leg's
-/// world, the first vehicle (declaration order) the party can walk from
-/// `from` to a boarding cell of, ride through its medium, and leave at a
-/// cell from which `goal` is walked. Among leaving cells the shortest ride
-/// wins, then cell order. `walks(a, b)` is the leg proof's own walk.
+/// Why a vehicle carries no ride from one cell to another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RideMiss {
+    /// Its seat is outside its medium or its bounds (`DW1097`/`DW1099` name it).
+    Unseated,
+    /// The party walks to none of its boarding cells from the leg's start.
+    NoBoard,
+    /// Its medium is its seat alone: it goes nowhere.
+    NoMedium,
+    /// The party walks to the leg's end from none of the cells it is left at.
+    NoLeave,
+}
+
+impl RideMiss {
+    /// The miss in a diagnostic's words.
+    pub fn words(self) -> &'static str {
+        match self {
+            RideMiss::Unseated => "its mark is outside its medium or its `bounds`",
+            RideMiss::NoBoard => {
+                "the party walks from the leg's start to no cell it can be boarded from"
+            }
+            RideMiss::NoMedium => {
+                "its medium inside `bounds` is its mark alone, so a ride on it goes nowhere"
+            }
+            RideMiss::NoLeave => {
+                "the party walks to the leg's end from no cell a rider stands on after leaving it, \
+                 wherever in its medium the ride ends"
+            }
+        }
+    }
+}
+
+/// How many leaving cells a ride tries, nearest the leg's end first.
+const RIDE_TRIES: usize = 256;
+
+/// **The ride vehicle `vi` carries from `from` to `goal`** (spec-0135 §4), over
+/// the leg's world: the party walks from `from` to a boarding cell, rides the
+/// medium from the seat, and leaves at a cell from which `goal` is walked. A
+/// ride takes the party **as near the leg's end as the medium reaches**: among
+/// the leaving cells that walk on to `goal`, the one nearest it wins, then the
+/// shorter ride, then cell order. A ride moves the vehicle — a medium cell
+/// other than the seat — and a cart is left only where its run ends, because
+/// the rails take it there. `walks(a, b)` is the leg proof's own walk.
+pub fn ride_of(
+    world: &World,
+    vi: usize,
+    v: &VehiclePlan,
+    from: [i32; 3],
+    walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
+    goal: [i32; 3],
+) -> Result<RideTake, RideMiss> {
+    if !world.seat_in_medium(v) || !v.within(v.seat) {
+        return Err(RideMiss::Unseated);
+    }
+    let Some(board) = world
+        .boarding_cells(v)
+        .into_iter()
+        .find(|c| walks(from, *c))
+    else {
+        return Err(RideMiss::NoBoard);
+    };
+    let tree = world.medium_tree(v);
+    // Leaving cell → the shortest ride that reaches it.
+    let mut best: BTreeMap<[i32; 3], (usize, [i32; 3])> = BTreeMap::new();
+    let mut longest = 0usize;
+    let mut rides: Vec<(usize, [i32; 3])> = Vec::new();
+    for m in tree.keys() {
+        let len = World::medium_path(&tree, *m).map_or(0, |p| p.len());
+        if len >= 2 {
+            longest = longest.max(len);
+            rides.push((len, *m));
+        }
+    }
+    if rides.is_empty() {
+        return Err(RideMiss::NoMedium);
+    }
+    for (len, m) in rides {
+        if v.kind == VehicleKind::Minecart && len != longest {
+            continue;
+        }
+        for l in world.leaving_cells_of(v, m) {
+            let e = best.entry(l).or_insert((len, m));
+            if (len, m) < *e {
+                *e = (len, m);
+            }
+        }
+    }
+    let far = |c: [i32; 3]| -> i64 {
+        (0..3)
+            .map(|i| i64::from(c[i] - goal[i]).pow(2))
+            .sum::<i64>()
+    };
+    let mut cands: Vec<(i64, usize, [i32; 3], [i32; 3])> = best
+        .into_iter()
+        .map(|(l, (len, m))| (far(l), len, l, m))
+        .collect();
+    cands.sort();
+    for (_, _, leave, m) in cands.into_iter().take(RIDE_TRIES) {
+        if walks(leave, goal) {
+            let medium = World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?;
+            return Ok(RideTake {
+                vehicle: vi,
+                board,
+                medium,
+                leave,
+            });
+        }
+    }
+    Err(RideMiss::NoLeave)
+}
+
+/// **A ride across a leg no walk crosses** (spec-0135 §4): the first vehicle
+/// (declaration order) that carries it ([`ride_of`]).
 pub fn find_ride(
     world: &World,
     vehicles: &[VehiclePlan],
@@ -513,44 +654,10 @@ pub fn find_ride(
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
 ) -> Option<RideTake> {
-    for (vi, v) in vehicles.iter().enumerate() {
-        if !world.seat_in_medium(v) || !v.within(v.seat) {
-            continue;
-        }
-        let Some(board) = world
-            .boarding_cells(v)
-            .into_iter()
-            .find(|c| walks(from, *c))
-        else {
-            continue;
-        };
-        let tree = world.medium_tree(v);
-        let mut cands: Vec<(usize, [i32; 3], [i32; 3])> = Vec::new();
-        for m in tree.keys() {
-            let len = World::medium_path(&tree, *m).map_or(0, |p| p.len());
-            for l in world.leaving_cells_of(v, *m) {
-                cands.push((len, l, *m));
-            }
-        }
-        cands.sort();
-        if v.kind == VehicleKind::Minecart {
-            // A cart is left where its run ends; the rails take it there.
-            let end = cands.iter().map(|c| c.0).max();
-            cands.retain(|c| Some(c.0) == end);
-        }
-        for (_, leave, m) in cands.into_iter().take(256) {
-            if walks(leave, goal) {
-                let medium = World::medium_path(&tree, m)?;
-                return Some(RideTake {
-                    vehicle: vi,
-                    board,
-                    medium,
-                    leave,
-                });
-            }
-        }
-    }
-    None
+    vehicles
+        .iter()
+        .enumerate()
+        .find_map(|(vi, v)| ride_of(world, vi, v, from, walks, goal).ok())
 }
 
 /// The seats every vehicle a ride leg's party can board carries
@@ -621,6 +728,7 @@ mod tests {
             seat,
             bounds,
             yaw: 0,
+            facing: [0, 1],
         }
     }
 

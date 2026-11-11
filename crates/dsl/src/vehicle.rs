@@ -284,6 +284,25 @@ pub(crate) fn vehicle_checks(
             }
         }
     }
+    // Every objective's `ride` names a declared vehicle.
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if let Some(id) = o.ride()
+                && !declared.contains(id.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    "quests",
+                    format!("/content/quests/{qi}/objectives/{oi}/ride"),
+                    format!(
+                        "objective `{}` rides unknown vehicle `{id}` — declare it in the stage-5 \
+                         `vehicles` list, or fix the reference",
+                        o.id()
+                    ),
+                ));
+            }
+        }
+    }
     // Every `seat-vehicle` / `despawn-vehicle` names a declared vehicle.
     crate::for_each_campaign_effect(c, &mut |path, _site, e| {
         if let Some(id) = e.vehicle_ref()

@@ -1,4 +1,5 @@
-//! Vehicles (spec-0135 §2, §3): the seat, the re-seat and the removal.
+//! Vehicles (spec-0135 §2, §3): the seat, the re-seat, the removal, and what
+//! boarding one does.
 
 use super::*;
 use crate::compiler::nav::vehicle::VehiclePlan;
@@ -12,16 +13,46 @@ pub(crate) const RESEAT_TICKS: u32 = 100;
 /// one function call that follows.
 const RESEAT_TAG: &str = "dw_vehicle_reseat";
 
+/// How far (blocks) a body may stand from its mark and still be at it.
+const AT_MARK: &str = "1.5";
+
+/// The advancement a boarding answers through, and its reward function.
+pub(super) const BOARD: &str = "vehicle_board";
+
+/// The id of the modifier that holds a riderless mount still.
+fn wait_modifier(ns: &str) -> String {
+    format!("{ns}:vehicle_wait")
+}
+
+/// Where a vehicle's body is summoned: the mark's cell centre, a boat on the
+/// water's top face, where it floats.
+fn summon_point(v: &VehiclePlan) -> [f64; 3] {
+    let p = crate::compiler::nav::cell_center(v.seat);
+    if v.kind == VehicleKind::Boat {
+        [p[0], p[1] + 1.0, p[2]]
+    } else {
+        p
+    }
+}
+
+/// **A riderless mount waits** (the record §11): its `movement_speed` is
+/// multiplied to nothing, so its own AI walks it nowhere; boarding takes the
+/// modifier off ([`emit_boarding`]).
+fn wait_line(ns: &str, v: &VehiclePlan) -> Option<String> {
+    (v.kind == VehicleKind::Mount).then(|| {
+        format!(
+            "attribute @e[tag={},limit=1] minecraft:movement_speed modifier add {} -1 add_multiplied_total",
+            v.tag(),
+            wait_modifier(ns)
+        )
+    })
+}
+
 /// The summon of one vehicle's body.
 pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     let decl = &plan.campaign.quests.content.vehicles[v.index];
-    let p = crate::compiler::nav::cell_center(v.seat);
-    // A boat is put on the water's top face and floats there.
-    let y = if v.kind == VehicleKind::Boat {
-        p[1] + 1.0
-    } else {
-        p[1]
-    };
+    let p = summon_point(v);
+    let y = p[1];
     let mut nbt: Vec<String> = vec!["Invulnerable:1b".to_string()];
     if v.kind == VehicleKind::Mount {
         nbt.push("PersistenceRequired:1b".to_string());
@@ -127,8 +158,10 @@ pub(super) fn vehicle_setup(plan: &Plan) -> Vec<String> {
 }
 
 /// Two functions per vehicle: `vehicle_seat_<s>` (any standing body removed
-/// unseen, then the summon) and `vehicle_reseat_<s>` (a body missing, or a
-/// riderless body outside `bounds`, seated again; the chain re-armed).
+/// unseen, then the summon, a mount held still) and `vehicle_reseat_<s>` (a
+/// body missing, or a riderless body away from its mark, seated again; the
+/// chain re-armed) — so a vehicle nobody rides is at its mark, which is where
+/// every proof of a ride starts.
 pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns = Vec::new();
@@ -136,12 +169,15 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         let tag = v.tag();
         let mut seat = vehicle_removal_lines(ns, v);
         seat.push(vehicle_summon(plan, v));
+        seat.extend(wait_line(ns, v));
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
-        let (lo, hi) = v.bounds;
+        let p = summon_point(v);
         let reseat = vec![
             format!(
-                "execute as @e[tag={tag}] unless entity @s[{}] run tag @s add {RESEAT_TAG}",
-                box_selector_args(lo, hi)
+                "execute as @e[tag={tag}] unless entity @s[x={},y={},z={},distance=..{AT_MARK}] run tag @s add {RESEAT_TAG}",
+                fmt_f64(p[0]),
+                fmt_f64(p[1]),
+                fmt_f64(p[2]),
             ),
             format!(
                 "execute as @e[tag={tag},tag={RESEAT_TAG}] on passengers on vehicle run tag @s remove {RESEAT_TAG}"
@@ -162,5 +198,55 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         ];
         fns.push((format!("vehicle_reseat_{}", v.safe), lines(&reseat)));
     }
+    if let Some(board) = boarding_lines(plan) {
+        fns.push((BOARD.to_string(), lines(&board)));
+    }
     fns
+}
+
+/// **What boarding a vehicle does** (the record §11), run as the player who
+/// boarded, by the `minecraft:started_riding` advancement: a cart is pushed
+/// the way it faces — the rails take it from there — and a mount is given its
+/// speed back. `None` for a campaign with no cart and no mount, which emits
+/// neither the function nor the advancement.
+fn boarding_lines(plan: &Plan) -> Option<Vec<String>> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for v in &plan.vehicles {
+        match v.kind {
+            VehicleKind::Minecart => {
+                let push = crate::compiler::rail::CART_PUSH;
+                out.push(format!(
+                    "execute on vehicle run data merge entity @s[tag={}] {{Motion:[{}d,0.0d,{}d]}}",
+                    v.tag(),
+                    fmt_f64(f64::from(v.facing[0]) * push),
+                    fmt_f64(f64::from(v.facing[1]) * push),
+                ));
+            }
+            VehicleKind::Mount => out.push(format!(
+                "execute on vehicle run attribute @s[tag={}] minecraft:movement_speed modifier remove {}",
+                v.tag(),
+                wait_modifier(ns)
+            )),
+            VehicleKind::Boat => {}
+        }
+    }
+    if out.is_empty() {
+        return None;
+    }
+    out.push(format!("advancement revoke @s only {ns}:{BOARD}"));
+    Some(out)
+}
+
+/// The advancement [`boarding_lines`] answers through, when the campaign has
+/// a cart or a mount.
+pub(super) fn boarding_advancement(plan: &Plan) -> Option<(String, Value)> {
+    boarding_lines(plan)?;
+    Some((
+        BOARD.to_string(),
+        json!({
+            "criteria": { "board": { "trigger": "minecraft:started_riding" } },
+            "rewards": { "function": format!("{}:{BOARD}", plan.namespace) }
+        }),
+    ))
 }

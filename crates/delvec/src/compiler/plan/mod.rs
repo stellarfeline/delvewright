@@ -282,6 +282,9 @@ pub struct Plan<'a> {
     /// **Every vehicle** (spec-0135), resolved: kind, seat, bounds. Empty for
     /// every campaign that declares none.
     pub vehicles: Vec<crate::compiler::nav::vehicle::VehiclePlan>,
+    /// **Every leg the campaign declares ridden** (spec-0135 §4): objective id
+    /// → the vehicle its `ride` names, as an index into [`Plan::vehicles`].
+    pub declared_rides: BTreeMap<String, usize>,
     /// Per critical-path step, the links live there (indices into
     /// [`Plan::links`]): the trigger's flag gate and every `when` on the way to
     /// the teleport hold under the flags the path holds walking up to the step,
@@ -1345,8 +1348,21 @@ impl<'a> Plan<'a> {
             acts: std::sync::OnceLock::new(),
             seats: std::sync::OnceLock::new(),
             vehicles: Vec::new(),
+            declared_rides: BTreeMap::new(),
         };
         plan.vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, &plan.anchors);
+        plan.declared_rides = campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter_map(|o| {
+                let id = o.ride()?;
+                let vi = plan.vehicles.iter().position(|v| v.id == id.as_str())?;
+                Some((o.id().as_str().to_string(), vi))
+            })
+            .collect();
         // The props the datapack sets at load, which only the finished plan can
         // list ([`Plan::load_prop_events`]).
         let props = plan.load_prop_events();

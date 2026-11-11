@@ -471,6 +471,7 @@ pub fn take_branch_links(
             live: &cp.live_links_by_step,
             steps: &cp.steps,
             vehicles: &plan.vehicles,
+            declared: &plan.declared_rides,
         },
     )
     .1
@@ -894,6 +895,7 @@ pub fn check_branch_path(
             live: &cp.live_links_by_step,
             steps: &cp.steps,
             vehicles: &plan.vehicles,
+            declared: &plan.declared_rides,
         },
     )
     .1
