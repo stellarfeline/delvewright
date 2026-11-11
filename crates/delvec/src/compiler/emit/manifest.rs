@@ -338,6 +338,9 @@ pub(super) fn critical_path_json(
     let keep_out = &firing.keep_out;
     // spec-0132 §5.3: the `outrun` bodies loose while each step is walked.
     let pursuers = plan::pursuers_by_step(plan.campaign, &plan.namespace, walked, firing);
+    // The latest a `kill` step's wave is seated after the step opens, when an
+    // earlier completion seats it later than at once (`combat::seat_ticks`).
+    let seats = crate::compiler::combat::seat_ticks(plan.campaign, walked);
     let steps: Vec<Value> = walked
         .iter()
         .enumerate()
@@ -360,10 +363,21 @@ pub(super) fn critical_path_json(
                     "action": "reach", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "radius": radius, "completion": completion.to_json()
                 }),
-                Step::Kill { objective_id, wave_id, pos, tag, count } => json!({
-                    "action": "kill", "objective": objective_id, "wave": wave_id,
-                    "pos": pos, "tag": tag, "count": count
-                }),
+                Step::Kill { objective_id, wave_id, pos, tag, count } => {
+                    let mut v = json!({
+                        "action": "kill", "objective": objective_id, "wave": wave_id,
+                        "pos": pos, "tag": tag, "count": count
+                    });
+                    // Present only on a kill whose wave a beat seats later
+                    // than the completion before it, so every other path is
+                    // byte-identical.
+                    if let Some(t) = seats[i]
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("seat_ticks".to_string(), json!(t));
+                    }
+                    v
+                }
                 Step::Collect { objective_id, item, count, pos, dropped } => {
                     let mut v = json!({
                         "action": "collect", "objective": objective_id, "item": item,
@@ -475,9 +489,13 @@ pub(super) fn critical_path_json(
                         })
                         .collect();
                     let stand = expire_stand(i, *pos, avoid, keep, *aggro, &bodies, routes);
+                    // `pos` is the critical position, where the path left the
+                    // party and the proven leg into this step ends, as every
+                    // positioned step names its leg; `stand` is the cell the
+                    // party waits on.
                     json!({
                         "action": "expire", "objective": objective_id,
-                        "wait_ticks": wait_ticks, "stand": stand, "pos": stand
+                        "wait_ticks": wait_ticks, "stand": stand, "pos": pos
                     })
                 }
                 Step::AssertComplete { objective, value } => {

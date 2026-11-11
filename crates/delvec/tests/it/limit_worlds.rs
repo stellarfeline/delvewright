@@ -201,6 +201,26 @@ fn one_limit_is_the_all_world_and_one_expiry_witness() {
         .position(|s| s["objective"] == "obj/exit")
         .unwrap();
     assert_eq!(pos_main, pos_exp);
+    // Every exported leg of the expired world is named, in order, by the
+    // position of the step that walks it (the harness's lockstep cursor),
+    // the expire's included: its `pos` is where the path left the party,
+    // where its leg ends, and its `stand` is only where it waits.
+    let legs = read(&out, "validation/world-waypoints-1.json")["legs"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let mut cursor = 0;
+    for s in steps {
+        if cursor < legs.len() && s.get("pos").is_some() && legs[cursor]["to"] == s["pos"] {
+            cursor += 1;
+        }
+    }
+    assert_eq!(
+        cursor,
+        legs.len(),
+        "the steps name {cursor} of the world's {} leg(s) in order: {path}",
+        legs.len()
+    );
     // The endings ledger: the late ending is reached by the witness alone.
     let endings = read(&out, "validation/endings.json");
     let late = endings["endings"]

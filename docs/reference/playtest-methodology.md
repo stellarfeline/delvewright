@@ -61,8 +61,10 @@ A `kill` step does three things, in order, and only the first is a measurement.
    a weapon's modifier and vanilla's own random spawn bonus. The harness compares
    the multiset of what it read against the multiset the plan declares. A
    declaration the bodies CONTRADICT fails the `critical-path` stage. A muster
-   that finds nothing standing at the step's open is provisional: a wave an
-   approach trigger seats is not there until the party walks in, so the step walks
+   that finds nothing standing at the step's open is provisional: a wave a beat
+   seats after the step opens (the step's `seat_ticks`, the compiler's date) is
+   waited for by the census up to that date and a grace, and read when it stands;
+   a wave an approach trigger seats is not there until the party walks in, so the step walks
    its route to the anchor, as a player does, and reads again (a body that comes
    to the bot on the way is read by the damage handlers first). Nothing standing
    at the anchor fails the stage as one zero-binding red: a declared wave whose

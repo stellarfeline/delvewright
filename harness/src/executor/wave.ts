@@ -13,7 +13,12 @@ import {
 } from "../combat.ts";
 import { parseCensusMob, parseCensusSummary } from "../markers.ts";
 import { nearestIndex, nextLegWaypoints } from "../waypoints.ts";
-import { beginCensusWatch, observeCensus, type WaveCensusWatch } from "../wave.ts";
+import {
+  beginCensusWatch,
+  observeCensus,
+  seatWindowMs,
+  type WaveCensusWatch,
+} from "../wave.ts";
 import { STAGED_REPLY_MS } from "./chat.ts";
 import { delay } from "./connection.ts";
 import { SCORE_POLL_MS } from "./score.ts";
@@ -28,6 +33,9 @@ import type { MineflayerExecutor } from "../executor.ts";
  * FAILS — a silent probe is never a cleared wave.
  */
 const CENSUS_SILENCE_LIMIT = 6;
+
+/** How often (ms) a kill step asks the census whether a late wave is seated. */
+const SEAT_POLL_MS = 1_000;
 
 /** How long (ms) a `kill` step may run before it is declared failed. */
 const KILL_TIMEOUT_MS = 90_000;
@@ -515,6 +523,15 @@ export const methods = {
       // empty anchor and reported three declared stacks missing, over a wave that
       // had spawned exactly as declared.
       await this.musterUnlessRead(enc, true);
+      // Nothing seated yet, and the compiler dates a beat that seats the wave
+      // after the step opens (`seat_ticks`: a landing a sequence schedules
+      // after the fight before it). The muster reads the wave the delve
+      // seats, when it seats it: the step waits for its first body, up to the
+      // compiler's date, and reads it then.
+      if (this.readingOwed(enc) && step.seatTicks !== undefined) {
+        await this.awaitSeat(step.seatTicks, enc);
+        await this.musterUnlessRead(enc, true);
+      }
       // Nothing seated yet: the wave is one an approach trigger seats as the
       // party walks in (the-stranding's wrecks, lice and Marrack's men read 0 on
       // every run, and the bot then fought them unread). Walk the step's route to
@@ -564,6 +581,35 @@ export const methods = {
     } finally {
       await this.holdChunk(enc.pos, false);
     }
+  },
+
+  /**
+   * Wait for a wave the compiler says a beat seats after its kill step opens:
+   * ask the server's census until it reads a body of the wave, up to
+   * {@link seatWindowMs} of the compiler's `seat_ticks`. Says what it found
+   * either way; a wave still unseated at the end is the kill step's next
+   * reading's to judge.
+   */
+  async awaitSeat(this: MineflayerExecutor, seatTicks: number, enc: Encounter): Promise<void> {
+    const started = Date.now();
+    const deadline = started + seatWindowMs(seatTicks);
+    for (;;) {
+      const answer = await this.census(enc);
+      const present = answer?.summary.present ?? 0;
+      if (present > 0) {
+        process.stderr.write(
+          `[seat] ${enc.wave}: ${present} body/bodies standing ${Date.now() - started}ms after ` +
+            `the step opened (the compiler dates the seat at most ${seatTicks} tick(s) after it)\n`,
+        );
+        return;
+      }
+      if (Date.now() >= deadline) break;
+      await delay(SEAT_POLL_MS);
+    }
+    process.stderr.write(
+      `[seat] ${enc.wave}: nothing of the wave standing ${Date.now() - started}ms after the ` +
+        `step opened, past the compiler's date of ${seatTicks} tick(s) and the grace\n`,
+    );
   },
 
   /**

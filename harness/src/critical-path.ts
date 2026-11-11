@@ -299,6 +299,14 @@ export interface KillStep extends PresentationMarkers, Pursued {
   readonly tag: string;
   /** Total mob count in the wave. */
   readonly count: number;
+  /**
+   * The latest game tick, after the step opens, at which a beat an earlier
+   * completion fires seats the wave (`seat_ticks`, the compiler's
+   * `combat::seat_ticks`) — absent when nothing seats it later than at once.
+   * A muster that reads nothing at the step's open waits this long for the
+   * wave before it walks to the anchor.
+   */
+  readonly seatTicks?: number;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -576,7 +584,9 @@ export interface ExpireStep extends PresentationMarkers, Pursued {
   readonly waitTicks: number;
   /** Where the bot waits. */
   readonly stand: Vec3Tuple;
-  /** The same cell, as every positioned step names its place. */
+  /** The critical position the path left the party on, where the proven leg
+   * into this step ends — as every positioned step names its leg. The walk
+   * to {@link stand} is not that leg, so the step consumes it unwalked. */
   readonly pos: Vec3Tuple;
 }
 
@@ -1234,9 +1244,13 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        ["action", "objective", "wave", "pos", "tag", "count", "seat_ticks", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
+      const seat = obj["seat_ticks"];
+      if (seat !== undefined && (typeof seat !== "number" || !Number.isInteger(seat) || seat <= 0)) {
+        fail(`${pointer}/seat_ticks`, `must be a positive integer when present, got ${describe(seat)}`);
+      }
       return {
         action: "kill",
         objective: requireObjectiveId(obj, pointer),
@@ -1244,6 +1258,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         tag: requireString(obj, "tag", pointer),
         count: requireInteger(obj, "count", pointer),
+        ...(seat === undefined ? {} : { seatTicks: seat as number }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };
@@ -1619,9 +1634,6 @@ function parseStepBody(value: unknown, pointer: string): Step {
       }
       const stand = requireVec3(obj, "stand", pointer);
       const pos = requirePos(obj, pointer);
-      if (pos.some((c, i) => c !== stand[i])) {
-        fail(`${pointer}/pos`, `must be the step's \`stand\` (${JSON.stringify(stand)}), got ${JSON.stringify(pos)}`);
-      }
       return {
         action: "expire",
         objective: requireObjectiveId(obj, pointer),
