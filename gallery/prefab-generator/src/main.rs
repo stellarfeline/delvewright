@@ -5039,7 +5039,11 @@ fn build_long_hall() -> Structure {
     // The rail line (spec-0135 §7): the stop, the launcher on its redstone
     // block, and the plain rail on.
     let (rx, r0, r1) = (LONG_HALL_RAIL_X, LONG_HALL_RAIL_FROM, LONG_HALL_RAIL_TO);
-    fill([rx, 1, r0 - 1], [rx, 1, r0 - 1], "minecraft:polished_deepslate");
+    fill(
+        [rx, 1, r0 - 1],
+        [rx, 1, r0 - 1],
+        "minecraft:polished_deepslate",
+    );
     fill([rx, 0, r0], [rx, 0, r0], "minecraft:redstone_block");
     fill(
         [rx, 1, r0],
