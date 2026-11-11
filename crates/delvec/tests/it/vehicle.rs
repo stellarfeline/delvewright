@@ -3,8 +3,8 @@
 //!
 //! The room is a 21 × 9 × 9 stone box whose floor is the course `y = 3`, so a
 //! body walks on `y = 4`. A pool fills `x = 6..=12` across the room, three deep
-//! (`y = 1..=3`), its surface the course `y = 3`: the walk cannot cross it, a
-//! boat can. The keeper stands west of it and the exit east, so the path's
+//! (`y = 1..=3`), its surface the course `y = 3`: the party swims it, and a
+//! boat floats on it. The keeper stands west of it and the exit east, so the path's
 //! second leg crosses the pool. Variants lay a bridge, move a mark, shrink a
 //! bounds box, lay a rail line across, raise a step or a ledge, and declare
 //! the second leg ridden.
@@ -37,13 +37,18 @@ struct Bay {
     /// The rail line's west end is a powered rail that is powered: with the
     /// wall behind it, a launcher.
     launcher: bool,
-    /// A block laid across the east floor at `x = 14`: a step the walk takes.
-    step: Option<&'static str>,
+    /// A stone course this many blocks high across the east floor at
+    /// `x = 14`: one is a step, two a wall.
+    step: Option<i32>,
     /// A platform two blocks over the east floor (`x = 14..=18`, `z = 1..=2`)
     /// with a rail along `z = 1`: no walk climbs it, a body drops from it.
     ledge: bool,
     /// The vehicle the leg to the exit is declared ridden on.
     ride: Option<&'static str>,
+    /// The anchor the second objective is reached at, when not the exit.
+    goal: Option<&'static str>,
+    /// Extra members of the quests document's content: `"state": […], …`.
+    more: &'static str,
     /// A carrot on a stick in every class's kit.
     carrot: bool,
     /// A rail cell at `[16, 4, 7]` in a nook walled off from the room: no
@@ -86,9 +91,11 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
         }
         by.insert([15, 4, 7], "minecraft:stone");
     }
-    if let Some(block) = bay.step {
+    if let Some(high) = bay.step {
         for z in 1..=7 {
-            by.insert([14, 4, z], block);
+            for y in 4..4 + high {
+                by.insert([14, y, z], "minecraft:stone");
+            }
         }
     }
     if bay.ledge {
@@ -135,7 +142,7 @@ fn anchors() -> serde_json::Value {
         "anchor/bay": { "pos": [9, 3, 4] },
         "anchor/floor": { "pos": [3, 4, 3] },
         "anchor/rail-end": { "pos": [1, 4, 7] },
-        "anchor/east-dock": { "pos": [11, 3, 3] },
+        "anchor/ledge-end": { "pos": [18, 6, 2] },
         "anchor/room": { "pos": [10, 4, 4] },
         "anchor/nook": { "pos": [16, 4, 7] }
     })
@@ -174,10 +181,16 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
         .ride
         .map(|v| format!(r#", "ride": "{v}""#))
         .unwrap_or_default();
-    let vehicles = if vehicles.is_empty() {
+    let goal = bay.goal.unwrap_or("anchor/exit-west");
+    let more = if bay.more.is_empty() {
         String::new()
     } else {
-        format!(r#", "vehicles": [ {vehicles} ]"#)
+        format!(", {}", bay.more)
+    };
+    let vehicles = if vehicles.is_empty() {
+        more
+    } else {
+        format!(r#", "vehicles": [ {vehicles} ]{more}"#)
     };
     let quests = format!(
         r#"{{
@@ -191,7 +204,7 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit-west",
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "{goal}",
              "radius": 1, "after": ["obj/talk"]{ride} }}
         ],
         "on_objective_complete": {{
@@ -325,11 +338,21 @@ fn two_boats() -> String {
     )
 }
 
-/// Criterion 4: a pool the walk cannot cross is a ride leg by boat, with its
-/// medium cells, board and leave; the contract carries it.
+/// Criterion 4: the party swims the pool until the leg is declared ridden;
+/// declared, it is a ride leg by boat, with its medium cells, board and leave,
+/// and the contract carries it.
 #[test]
-fn a_pool_the_walk_cannot_cross_is_ridden() {
-    let out = build("pool", Bay::default(), &two_boats());
+fn a_pool_is_swum_until_its_leg_is_declared_ridden() {
+    let gull = boat("gull", "dock", [8, 3, 4]);
+    assert!(rides(&build("pool-swum", Bay::default(), &gull)).is_empty());
+    let out = build(
+        "pool-ridden",
+        Bay {
+            ride: Some("vehicle/gull"),
+            ..Bay::default()
+        },
+        &gull,
+    );
     let r = rides(&out);
     assert_eq!(r.len(), 1, "{r:#?}");
     let ride = &r[0];
@@ -343,22 +366,20 @@ fn a_pool_the_walk_cannot_cross_is_ridden() {
         .iter()
         .map(|v| v.as_i64().unwrap())
         .collect();
-    // The piece is placed 64 over its own origin.
     assert_eq!(
         [first[0], first[2]],
         [8, 3],
         "the medium starts at the seat: {first:?}"
     );
-    let board = ride["board"].as_array().unwrap()[0].as_i64().unwrap();
-    let leave = ride["leave"].as_array().unwrap()[0].as_i64().unwrap();
+    let (board, leave) = (xs(&ride["board"]), xs(&ride["leave"]));
     assert!(
         board < i64::from(*POOL.start()) && leave > i64::from(*POOL.end()),
         "{ride}"
     );
-    assert!(ride["rate"].as_f64().unwrap() > 0.0);
+    assert_eq!(ride["rate"].as_f64().unwrap(), 5.0);
 }
 
-/// Criterion 4: the same pool with a bridge is walked; no ride leg.
+/// Criterion 4: the same pool with a bridge and no declaration is walked.
 #[test]
 fn a_bridged_pool_is_walked() {
     let out = build(
@@ -372,26 +393,105 @@ fn a_bridged_pool_is_walked() {
     assert!(rides(&out).is_empty());
 }
 
-/// Criterion 4's perturbation: bounds that exclude the far shore turn the
-/// leg to `DW0311`, with no other change.
+/// Criterion 4's perturbation: bounds that hold the boat off both shores turn
+/// the declared leg to `DW0311`, with no other change.
 #[test]
-fn bounds_short_of_the_far_shore_carry_nothing() {
-    let short = format!(
-        "{}, {}",
-        boat("gull", "dock", [1, 3, 4]),
-        boat("tern", "dock-two", [1, 3, 4])
+fn bounds_short_of_the_shore_carry_nothing() {
+    let (code, msg) = refused(
+        "short",
+        Bay {
+            ride: Some("vehicle/gull"),
+            ..Bay::default()
+        },
+        &boat("gull", "dock", [1, 3, 4]),
     );
-    let (code, msg) = refused("short", Bay::default(), &short);
     assert_eq!(code, "DW0311", "{msg}");
+    assert!(
+        msg.contains("declared ridden on `vehicle/gull`") && msg.contains("after leaving it"),
+        "{msg}"
+    );
 }
 
-/// Criterion 5: a two-seat boat on a leg no walk crosses is `DW1099`, and two
-/// boats are green (the first test).
+fn ledge_cart() -> &'static str {
+    r#"{ "id": "vehicle/v", "entity": "minecraft:minecart", "facing": "east",
+        "at": { "anchor": "anchor/floor", "offset": [11, 2, -2] },
+        "bounds": { "anchor": "anchor/room", "extent": [9, 3, 3] } }"#
+}
+
+/// Criterion 5: a declared ride on a leg no walk crosses carries the whole
+/// party or is `DW1099` — a one-seat cart up to a ledge nobody climbs.
 #[test]
-fn one_boat_cannot_carry_the_party() {
-    let (code, msg) = refused("one", Bay::default(), &boat("gull", "dock", [8, 3, 4]));
+fn a_required_ride_seats_the_party() {
+    let (code, msg) = refused(
+        "ledge-required",
+        Bay {
+            bridge: true,
+            ledge: true,
+            ride: Some("vehicle/v"),
+            goal: Some("anchor/ledge-end"),
+            ..Bay::default()
+        },
+        ledge_cart(),
+    );
     assert_eq!(code, "DW1099", "{msg}");
-    assert!(msg.contains("seat 2"), "{msg}");
+    assert!(msg.contains("seat 1 of the party's 4"), "{msg}");
+}
+
+/// Criterion 6: a census of a vehicle's riders is written by the tick — the
+/// datum set to nothing, then one added for every player in the box whose
+/// vehicle is the vehicle's body — and a `body-enters` over it fires on the
+/// first rider.
+#[test]
+fn a_census_counts_a_vehicles_riders() {
+    let more = r#""state": [ { "id": "state/aboard", "scope": "party",
+            "counts": { "region": { "anchor": "anchor/bay", "extent": [8, 3, 4] },
+                        "of": { "riders": "vehicle/gull" } } } ],
+        "triggers": [ { "id": "trigger/cast-off",
+            "on": { "on": "body-enters", "state": "state/aboard" },
+            "requires_state": [ { "state": "state/aboard", "op": "at-least", "value": 1 } ],
+            "effects": [ { "type": "narrate", "text": "The Gull casts off.", "style": "chat" } ] } ]"#;
+    let out = build(
+        "riders",
+        Bay {
+            more,
+            ..Bay::default()
+        },
+        &boat("gull", "dock", [8, 3, 4]),
+    );
+    let tick = function(&out, "census_tick");
+    let lines: Vec<&str> = tick.lines().collect();
+    assert_eq!(
+        lines[0], "scoreboard players set #party dw.s_aboard 0",
+        "{tick}"
+    );
+    assert!(
+        lines[1].starts_with("execute as @a[x=")
+            && lines[1].ends_with(
+                ",tag=!dw_cutscene] on vehicle if entity @s[tag=dw_vehicle_gull] run scoreboard players add #party dw.s_aboard 1"
+            ),
+        "{tick}"
+    );
+    assert!(
+        tick.contains("if score #party dw.s_aboard matches 1.. ")
+            && tick.contains("run function hello-world:be_cast_off"),
+        "{tick}"
+    );
+    // The riders of a vehicle nobody declared are a dangling reference.
+    let (dir, lib) = write(
+        "riders-dangling",
+        Bay {
+            more,
+            ..Bay::default()
+        },
+        &boat("tern", "dock", [8, 3, 4]),
+        "",
+    );
+    let d = validate(&dir, &lib);
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0112" && x.message.contains("vehicle/gull")),
+        "{d:#?}"
+    );
 }
 
 /// Criterion 5: a mark outside `bounds` is `DW1099`.
@@ -751,64 +851,50 @@ fn a_declared_ride_that_goes_nowhere_is_refused() {
     );
 }
 
-/// Criterion 4: a boat the leg's start cannot walk to carries no declared
-/// leg — `DW0311`, naming the boarding.
+/// Criterion 4: a mount rises a block and not two. Over a one-block step the
+/// declared ride takes the pig across to the leg's end; at a two-block wall
+/// its medium stops, and the leg — which no walk crosses either — is `DW0311`
+/// naming the ride.
 #[test]
-fn a_declared_ride_nobody_walks_to_is_refused() {
-    let far = boat("gull", "east-dock", [8, 3, 4]);
+fn a_mount_rises_a_block_and_not_two() {
+    let bay = Bay {
+        bridge: true,
+        step: Some(1),
+        ride: Some("vehicle/race-pig"),
+        carrot: true,
+        ..Bay::default()
+    };
+    let out = build("pig-step", bay, pig());
+    let r = rides(&out);
+    assert_eq!(r.len(), 1, "{r:#?}");
+    assert_eq!(r[0]["kind"], "mount");
+    assert_eq!(r[0]["steering_item"], "minecraft:carrot_on_a_stick");
+    let far = r[0]["medium"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(xs)
+        .max()
+        .unwrap();
+    assert!(
+        far > 14 && xs(&r[0]["leave"]) > 14,
+        "the step is crossed: {}",
+        r[0]
+    );
     let (code, msg) = refused(
-        "boat-far-side",
+        "pig-wall",
         Bay {
-            ride: Some("vehicle/gull"),
-            ..Bay::default()
+            step: Some(2),
+            ..bay
         },
-        &far,
+        pig(),
     );
     assert_eq!(code, "DW0311", "{msg}");
     assert!(
-        msg.contains("declared ridden on `vehicle/gull`") && msg.contains("boarded from"),
+        msg.contains("declared ridden on `vehicle/race-pig`")
+            && msg.contains("The party cannot walk this leg either"),
         "{msg}"
     );
-}
-
-/// Criterion 4: a mount rises a slab and not a block. Over a slab path the
-/// declared ride takes the pig across to the leg's end; over a full step its
-/// medium stops at the step, the ride ends there, and the party walks on.
-#[test]
-fn a_mount_rises_a_slab_and_not_a_block() {
-    let over = |tag: &str, block: &'static str| {
-        let out = build(
-            tag,
-            Bay {
-                bridge: true,
-                step: Some(block),
-                ride: Some("vehicle/race-pig"),
-                carrot: true,
-                ..Bay::default()
-            },
-            pig(),
-        );
-        let r = rides(&out);
-        assert_eq!(r.len(), 1, "{tag}: {r:#?}");
-        assert_eq!(r[0]["kind"], "mount");
-        assert_eq!(r[0]["steering_item"], "minecraft:carrot_on_a_stick");
-        let far = r[0]["medium"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(xs)
-            .max()
-            .unwrap();
-        (far, xs(&r[0]["leave"]))
-    };
-    let (far, leave) = over(
-        "pig-slab",
-        "minecraft:stone_slab[type=bottom,waterlogged=false]",
-    );
-    assert!(far > 14 && leave > 14, "the slab is crossed: {far} {leave}");
-    let (far, leave) = over("pig-step", "minecraft:stone");
-    // The rider steps off beside the pig — onto the step's top at the nearest.
-    assert!(far < 14 && leave <= 14, "the block is not: {far} {leave}");
 }
 
 /// Criterion 2 (the path's half): a ride on a pig with no carrot on a stick
@@ -854,9 +940,6 @@ fn a_ride_on_an_undeclared_vehicle_is_dangling() {
 /// drops to the floor the party walks.
 #[test]
 fn a_ledge_a_rider_drops_from_strands_nobody() {
-    let v = r#"{ "id": "vehicle/v", "entity": "minecraft:minecart", "facing": "east",
-        "at": { "anchor": "anchor/floor", "offset": [11, 2, -2] },
-        "bounds": { "anchor": "anchor/room", "extent": [9, 3, 3] } }"#;
     build(
         "ledge",
         Bay {
@@ -864,6 +947,6 @@ fn a_ledge_a_rider_drops_from_strands_nobody() {
             ledge: true,
             ..Bay::default()
         },
-        v,
+        ledge_cart(),
     );
 }

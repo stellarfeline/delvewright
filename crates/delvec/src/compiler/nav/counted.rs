@@ -140,7 +140,7 @@ pub fn check_censuses(plan: &Plan, world: &World) -> Result<CensusBinding, Failu
                     super::actor_body_entity(actor),
                 )]
             }
-            CensusOf::Kind(_) | CensusOf::Npc(_) => {
+            CensusOf::Kind(_) | CensusOf::Npc(_) | CensusOf::Riders(_) => {
                 b.unproven += 1;
                 continue;
             }

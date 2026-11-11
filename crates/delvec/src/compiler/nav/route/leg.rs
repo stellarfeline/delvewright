@@ -705,10 +705,10 @@ impl Carries<'_> {
 }
 
 /// **The ride that carries `from → end`** (spec-0135 §4), over the leg's own
-/// world: on the vehicle `only` names when the leg is declared ridden, else
-/// the first vehicle the party walks to a boarding cell of from `from`, rides,
-/// and leaves at a cell it walks to `end` from. Beside it, the seats of every
-/// vehicle that carries the leg.
+/// world, on vehicle `vi` — the one the leg is declared ridden on: the party
+/// walks from `from` to a boarding cell of it, rides, and leaves at a cell it
+/// walks to `end` from. Beside it, the seats of every vehicle that carries
+/// the leg.
 fn ride_leg(
     world: &World,
     from: &VisitedPos,
@@ -716,7 +716,7 @@ fn ride_leg(
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
     carries: &Carries<'_>,
-    only: Option<usize>,
+    vi: usize,
 ) -> Result<(crate::compiler::nav::vehicle::RideTake, u32), crate::compiler::nav::vehicle::RideMiss>
 {
     let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, end.src_step);
@@ -745,24 +745,14 @@ fn ride_leg(
         };
         judge_leg(world, &[pa, pb], region_events, ancestor).is_ok()
     };
-    let ride = match only {
-        Some(vi) => crate::compiler::nav::vehicle::ride_of(
-            leg,
-            vi,
-            &carries.vehicles[vi],
-            from.pos,
-            &walks,
-            end.pos,
-        )?,
-        None => crate::compiler::nav::vehicle::find_ride(
-            leg,
-            carries.vehicles,
-            from.pos,
-            &walks,
-            end.pos,
-        )
-        .ok_or(crate::compiler::nav::vehicle::RideMiss::NoLeave)?,
-    };
+    let ride = crate::compiler::nav::vehicle::ride_of(
+        leg,
+        vi,
+        &carries.vehicles[vi],
+        from.pos,
+        &walks,
+        end.pos,
+    )?;
     let seats = crate::compiler::nav::vehicle::boardable_seats(
         leg,
         carries.vehicles,
@@ -1179,15 +1169,7 @@ pub(in crate::compiler::nav) fn route_with_links(
         // refuses it when the vehicle does not carry it.
         if let Some(vi) = carries.declared_ride(next.src_step) {
             let v = &carries.vehicles[vi];
-            match ride_leg(
-                world,
-                &cur,
-                next,
-                region_events,
-                ancestor,
-                carries,
-                Some(vi),
-            ) {
+            match ride_leg(world, &cur, next, region_events, ancestor, carries, vi) {
                 Ok((_, seats))
                     if walked.is_err() && seats < crate::compiler::nav::vehicle::PARTY_SEATS =>
                 {
@@ -1255,28 +1237,6 @@ pub(in crate::compiler::nav) fn route_with_links(
                 taken.insert(format!("{}{:?}", l.trigger_id, l.to));
             }
             takes.spliced.insert(next.src_step, used);
-            cur = *next;
-            continue;
-        }
-        // A ride (spec-0135 §4): a leg no walk and no link crosses, carried by
-        // a vehicle the party walks to, rides and leaves.
-        if !carries.vehicles.is_empty()
-            && let Ok((ride, seats)) =
-                ride_leg(world, &cur, next, region_events, ancestor, carries, None)
-        {
-            if seats < crate::compiler::nav::vehicle::PARTY_SEATS {
-                result = Err(too_few_seats(
-                    &cur,
-                    next,
-                    &carries.vehicles[ride.vehicle],
-                    seats,
-                ));
-                break;
-            }
-            b.legs += 2;
-            b.walked += 2;
-            b.ridden += 1;
-            takes.rides.insert(next.src_step, ride);
             cur = *next;
             continue;
         }

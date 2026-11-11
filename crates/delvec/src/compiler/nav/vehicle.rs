@@ -1,7 +1,7 @@
 //! **A body that carries another** (spec-0135 §3, §4): where each vehicle is
 //! seated, the medium it moves through, where a body boards and leaves it, the
-//! proofs over the class (`DW1097`–`DW1099`) and the ride leg the route proof
-//! takes where no walk crosses.
+//! proofs over the class (`DW1097`–`DW1099`) and the ride the route proof
+//! takes on a leg an objective declares ridden.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -33,9 +33,11 @@ delvewright_dsl::dw_code! {
 /// The party a required ride carries: the engine never proves a party split.
 pub const PARTY_SEATS: u32 = 4;
 
-/// The highest rise a mount takes under a rider, in sixteenths: a slab, never
-/// a jump (spec-0135 §3, criterion 4).
-const MOUNT_RISE_16: i64 = 8;
+/// The highest rise a mount takes under a rider, in sixteenths: one block,
+/// the step the pinned server takes from a rider's client and refuses past
+/// (the record §4: a block taken whole, a two-block wall held at its face).
+/// Never a jump.
+const MOUNT_RISE_16: i64 = 16;
 
 /// A vehicle as the compiler resolved it.
 #[derive(Debug, Clone, PartialEq)]
@@ -159,15 +161,14 @@ pub struct RideTake {
 }
 
 impl World {
-    /// Whether the boat floats at `c`: every footprint column water (not
-    /// lava) at `c`, with open air above.
+    /// Whether the boat floats at `c`: every footprint column a surface cell
+    /// of the water a body swims (spec-0134 §10's relation,
+    /// [`World::is_water_surface`]) — a boat does not dive, and floats on
+    /// nothing a swimmer is refused.
     fn floats(&self, c: [i32; 3], fp: &Footprint) -> bool {
-        fp.cols.iter().all(|&[dx, dz]| {
-            let w = [c[0] + dx, c[1], c[2] + dz];
-            self.flooded.contains(&w)
-                && !self.lava.contains(&w)
-                && !self.is_occupied([w[0], w[1] + 1, w[2]])
-        })
+        fp.cols
+            .iter()
+            .all(|&[dx, dz]| self.is_water_surface([c[0] + dx, c[1], c[2] + dz]))
     }
 
     /// Whether a mount stands at `c`: footprint-standable, out of water.
@@ -263,39 +264,6 @@ impl World {
         }
         out.reverse();
         Some(out)
-    }
-
-    /// Whether a swimmer in the water body under `v`'s seat climbs out onto a
-    /// cell of `walk`: a standable cell beside a surface cell of the body, at
-    /// its height or one over. The water body is the flooded cells joined to
-    /// the seat, searched within `bounds` grown by two.
-    fn water_body_lands(&self, v: &VehiclePlan, walk: &BTreeSet<[i32; 3]>) -> bool {
-        let (lo, hi) = v.bounds;
-        let near = |c: [i32; 3]| (0..3).all(|i| lo[i] - 2 <= c[i] && c[i] <= hi[i] + 2);
-        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::from([v.seat]);
-        let mut queue = VecDeque::from([v.seat]);
-        while let Some(c) = queue.pop_front() {
-            for d in [
-                [1, 0, 0],
-                [-1, 0, 0],
-                [0, 0, 1],
-                [0, 0, -1],
-                [0, 1, 0],
-                [0, -1, 0],
-            ] {
-                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
-                if near(n) && self.flooded.contains(&n) && seen.insert(n) {
-                    queue.push_back(n);
-                }
-                if d[1] == 0
-                    && (walk.contains(&n) || walk.contains(&[n[0], n[1] + 1, n[2]]))
-                    && !self.flooded.contains(&n)
-                {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     /// **The boarding cells** (spec-0135 §4): standable cells from which a
@@ -492,26 +460,30 @@ pub fn judge_vehicles(
             );
         }
         let mut leaves: BTreeSet<[i32; 3]> = BTreeSet::new();
-        // A rider who leaves a boat in open water swims (the record §5): the
-        // water body the medium floats on is a way off when any shore it
-        // touches is in the walk region.
-        let swim_off = v.medium == VehicleMedium::Water && world.water_body_lands(v, walk);
         for m in tree.keys() {
             let l = world.leaving_cells_of(v, *m);
             // A rider who leaves is never stranded when a leaving cell is
             // ground the party walks, or a body there gets to such ground by
             // the reach graph — walking, falling, jumping, climbing, swimming
-            // (`World::body_reach`). The flood is run only for a cell the walk
-            // region does not already touch, and only until the first refusal.
-            let off = swim_off
-                || l.iter().any(|c| walk.contains(c))
-                || (!l.is_empty()
+            // (`World::body_reach`). A rider who leaves a boat in open water
+            // is in that water (the record §5), so the water under the hull
+            // is one more place the flood starts. The flood is run only for a
+            // cell the walk region does not already touch, and only until the
+            // first refusal; the graph keeps a closure it already took, so a
+            // bay is flooded once.
+            let off = l.iter().any(|c| walk.contains(c)) || {
+                let mut from = l.clone();
+                if v.medium == VehicleMedium::Water {
+                    from.push(*m);
+                }
+                !from.is_empty()
                     && verdict.is_ok()
                     && world
-                        .body_reach(&l)
+                        .body_reach(&from)
                         .standing()
                         .iter()
-                        .any(|c| walk.contains(c)));
+                        .any(|c| walk.contains(c))
+            };
             leaves.extend(l);
             if !off && verdict.is_ok() {
                 verdict = fail(
@@ -645,21 +617,6 @@ pub fn ride_of(
     Err(RideMiss::NoLeave)
 }
 
-/// **A ride across a leg no walk crosses** (spec-0135 §4): the first vehicle
-/// (declaration order) that carries it ([`ride_of`]).
-pub fn find_ride(
-    world: &World,
-    vehicles: &[VehiclePlan],
-    from: [i32; 3],
-    walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
-    goal: [i32; 3],
-) -> Option<RideTake> {
-    vehicles
-        .iter()
-        .enumerate()
-        .find_map(|(vi, v)| ride_of(world, vi, v, from, walks, goal).ok())
-}
-
 /// The seats every vehicle a ride leg's party can board carries
 /// (`DW1099`'s last arm): the seats of every vehicle with a boarding cell the
 /// party walks to from `from` and whose ride reaches `goal`.
@@ -671,9 +628,7 @@ pub fn boardable_seats(
     goal: [i32; 3],
 ) -> u32 {
     (0..vehicles.len())
-        .filter(|&i| {
-            find_ride(world, std::slice::from_ref(&vehicles[i]), from, walks, goal).is_some()
-        })
+        .filter(|&i| ride_of(world, i, &vehicles[i], from, walks, goal).is_ok())
         .map(|i| vehicles[i].seats)
         .sum()
 }
@@ -737,6 +692,29 @@ mod tests {
         let w = pond(8);
         assert!(w.seat_in_medium(&boat([3, 1, 0], ([-10, -5, -5], [20, 5, 5]))));
         assert!(!w.seat_in_medium(&boat([-3, 1, 0], ([-10, -5, -5], [20, 5, 5]))));
+    }
+
+    #[test]
+    fn a_ride_nobody_walks_to_and_one_that_lands_nowhere_are_named() {
+        let w = pond(8);
+        let b = boat([3, 1, 0], ([-10, -5, -5], [20, 5, 5]));
+        let (from, goal) = ([-3, 1, 0], [10, 1, 0]);
+        assert_eq!(
+            ride_of(&w, 0, &b, from, &|_, _| false, goal),
+            Err(RideMiss::NoBoard)
+        );
+        // Boarded, and no leaving cell walks on to the goal.
+        assert_eq!(
+            ride_of(&w, 0, &b, from, &|a, _| a == from, goal),
+            Err(RideMiss::NoLeave)
+        );
+        let ride = ride_of(&w, 0, &b, from, &|_, _| true, goal).expect("a ride");
+        assert_eq!(ride.medium[0], b.seat);
+        assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
+        // Two boats at one dock seat four; one seats two.
+        let two = [b.clone(), boat([3, 1, 2], b.bounds)];
+        assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal), 4);
+        assert_eq!(boardable_seats(&w, &two[..1], from, &|_, _| true, goal), 2);
     }
 
     #[test]
