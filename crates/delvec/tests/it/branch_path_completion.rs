@@ -125,8 +125,12 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
     // (spec-0117 §7).
     assert_eq!(strand.len(), 6, "branch `{id}`");
     assert!(
-        strand.iter().any(|s| s.objective == "obj/stand-at-the-arrival")
-            && !strand.iter().any(|s| s.objective == "obj/stand-at-the-vantage"),
+        strand
+            .iter()
+            .any(|s| s.objective == "obj/stand-at-the-arrival")
+            && !strand
+                .iter()
+                .any(|s| s.objective == "obj/stand-at-the-vantage"),
         "the default world walks the first lookout by id and lapses the other: {strand:?}"
     );
     p.steps = rest.into_iter().chain(strand).collect();

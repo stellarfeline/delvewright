@@ -79,7 +79,7 @@ fn a_wave_for_the_party_counts_the_players_and_guards_each_further_body() {
     let count_at = lines
         .iter()
         .position(|l| {
-            *l == "execute store result score #party_n dw.sys if entity @a[tag=!dw_cutscene]"
+            *l == "execute store result score #pn_guards dw.sys if entity @a[tag=!dw_cutscene]"
         })
         .unwrap_or_else(|| panic!("the party is counted:\n{s}"));
     let summons: Vec<&str> = lines
@@ -92,7 +92,7 @@ fn a_wave_for_the_party_counts_the_players_and_guards_each_further_body() {
     for (k, need) in [(2, 2), (3, 3), (4, 4)] {
         assert!(
             summons[k].starts_with(&format!(
-                "execute if score #party_n dw.sys matches {need}.. run summon "
+                "execute if score #pn_guards dw.sys matches {need}.. run summon "
             )),
             "body {k} needs {need} players: {}",
             summons[k]
@@ -119,7 +119,7 @@ fn a_wave_for_the_party_counts_the_players_and_guards_each_further_body() {
     let adds = lines
         .iter()
         .filter(|l| {
-            l.starts_with("execute if score #party_n dw.sys matches ")
+            l.starts_with("execute if score #pn_guards dw.sys matches ")
                 && l.ends_with(&format!(
                     "run scoreboard players add {holder} {objective} 1"
                 ))
@@ -193,7 +193,7 @@ fn a_packtest_seats_a_scaling_wave_for_a_party_of_one() {
     assert_eq!(
         own.lines().collect::<Vec<_>>(),
         vec![
-            "execute store result score #party_n dw.sys if entity @a[tag=!dw_cutscene]",
+            "execute store result score #pn_guards dw.sys if entity @a[tag=!dw_cutscene]",
             "function souls-bonfire:spawn_guards_party",
         ]
     );
@@ -213,11 +213,39 @@ fn a_packtest_seats_a_scaling_wave_for_a_party_of_one() {
                 seats += 1;
                 assert_eq!(
                     lines[i - 1],
-                    "scoreboard players set #party_n dw.sys 1",
+                    "scoreboard players set #pn_guards dw.sys 1",
                     "{path} states its party before it seats:\n{t}"
                 );
             }
         }
     }
     assert!(seats > 0, "some template seats the wave");
+}
+
+/// **A re-seat seats the wave the party met** (spec-0134 §4): it calls the
+/// seating at the size the wave's own spawn measured, never a fresh count —
+/// so a rest re-seats the same composition, and a PackTest that drives a rest
+/// after seating for a party of one meets one player's count.
+#[test]
+fn a_reseat_seats_the_wave_at_the_size_it_was_first_seated_for() {
+    let out = build_with(|c| {
+        c.quests.content.waves[0].mobs[0].count = two_plus_one();
+        c.quests.content.waves[0].respawns_on_rest = true;
+    });
+    let reseat = text(
+        &out,
+        "datapack/data/souls-bonfire/function/wave_reseat_guards.mcfunction",
+    );
+    assert!(
+        reseat
+            .lines()
+            .any(|l| l == "function souls-bonfire:spawn_guards_party"),
+        "{reseat}"
+    );
+    assert!(
+        !reseat
+            .lines()
+            .any(|l| l == "function souls-bonfire:spawn_guards"),
+        "{reseat}"
+    );
 }
