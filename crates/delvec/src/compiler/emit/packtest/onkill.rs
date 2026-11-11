@@ -91,7 +91,7 @@ pub(super) fn emit_kill_pays_packtests(
                 let safe = plan::safe_local(w.id.as_str());
                 (
                     plan::wave_tag(w.id.as_str()),
-                    vec![format!("function {ns}:spawn_{safe}")],
+                    super::super::wave::packtest_spawn_lines(plan, &safe),
                 )
             }
             Fight::Actor(a) => {

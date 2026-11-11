@@ -426,6 +426,7 @@ pub(super) fn wave_fns(
         // count; each further body adds itself below. A wave of constants
         // emits neither line and is byte-identical.
         let scales = w.mobs.iter().any(|m| m.count.scales());
+        let measured_at = body.len();
         if scales {
             body.push(format!(
                 "execute store result score {PARTY_SIZE} dw.sys if entity @a[tag=!dw_cutscene]"
@@ -579,6 +580,17 @@ pub(super) fn wave_fns(
         // the world. Absent without a bar → byte-identical.
         if let Some(bar) = crate::compiler::healthbar::wave_bar(c, w.id.as_str()) {
             body.push(bar.capture_call(ns));
+        }
+        // A scaling wave's seating is its own function, `spawn_<wave>_party`,
+        // which reads the party size the spawn measured — so a PackTest, whose
+        // party is its own dummy and not every player the shared server holds,
+        // states the size it judges and seats the wave at it.
+        if scales {
+            let measure = body.remove(measured_at);
+            let party = std::mem::take(&mut body);
+            body.push(measure);
+            body.push(format!("function {ns}:{}", party_spawn_fn(w.id.as_str())));
+            fns.push((party_spawn_fn(w.id.as_str()), lines(&party)));
         }
         fns.push((
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
@@ -769,6 +781,34 @@ pub(super) fn wave_removal_lines(ns: &str, w: &delvewright_dsl::Wave) -> Vec<Str
         wave_declares_drops(w),
         Exit::Unseen,
     )
+}
+
+/// The function that seats a scaling wave at the party size its spawn
+/// measured (spec-0134 §4).
+pub(super) fn party_spawn_fn(wave: &str) -> String {
+    format!("spawn_{}_party", plan::safe_local(wave))
+}
+
+/// **The lines a PackTest seats wave `safe` with**: a constant wave's own
+/// spawn; a scaling wave seated for a party of one — the template's own
+/// dummy — rather than for every player the shared batch server holds, whose
+/// other templates' dummies are present while it runs (spec-0134 §4).
+pub(super) fn packtest_spawn_lines(plan: &Plan, safe: &str) -> Vec<String> {
+    let ns = &plan.namespace;
+    match plan
+        .campaign
+        .quests
+        .content
+        .waves
+        .iter()
+        .find(|w| plan::safe_local(w.id.as_str()) == safe)
+    {
+        Some(w) if w.mobs.iter().any(|m| m.count.scales()) => vec![
+            format!("scoreboard players set {PARTY_SIZE} dw.sys 1"),
+            format!("function {ns}:{}", party_spawn_fn(w.id.as_str())),
+        ],
+        _ => vec![format!("function {ns}:spawn_{safe}")],
+    }
 }
 
 /// The `dw.sys` holder a scaling wave's spawn writes the party size to

@@ -591,7 +591,7 @@ pub(super) fn emit_verb_packtests(
         // Clear the wave tag before the fresh spawn — a sibling test may have
         // already fired this spawn-wave (`spawn_<wave>` is unguarded).
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
-        b.push(format!("function {ns}:spawn_{ws}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &ws));
         b.push(format!(
             "assert score {} {} matches {total}",
             plan::wave_counter(wave.as_str()),
@@ -670,7 +670,7 @@ pub(super) fn emit_verb_packtests(
         // Own init: `spawn_<wave>` is unguarded and a sibling may already have
         // fired it, so clear before spawning — the spawn is what writes the total.
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{ws}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &ws));
         b.push(format!("assert score {counter} {wobj} matches {total}"));
         // Every body dies, and no player is credited with any of it.
         b.push(format!("kill @e[tag={tag}]"));

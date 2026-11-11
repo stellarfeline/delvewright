@@ -51,11 +51,17 @@ fn text(out: &BuildOutput, path: &str) -> String {
     String::from_utf8(out.get(path).unwrap_or_else(|| panic!("no {path}")).clone()).unwrap()
 }
 
+/// The wave's spawn: its own function and, for a wave that scales, the
+/// seating it calls at the size it measured — in the order they run.
 fn spawn(out: &BuildOutput) -> String {
-    text(
+    let own = text(
         out,
         "datapack/data/souls-bonfire/function/spawn_guards.mcfunction",
-    )
+    );
+    match out.get("datapack/data/souls-bonfire/function/spawn_guards_party.mcfunction") {
+        Some(party) => format!("{own}{}", String::from_utf8(party.clone()).unwrap()),
+        None => own,
+    }
 }
 
 fn two_plus_one() -> MobCount {
@@ -169,4 +175,49 @@ fn a_name_on_a_stack_that_grows_is_dw0983() {
     assert_eq!(d.len(), 1, "{d:#?}");
     assert_eq!(d[0].code, "DW0983");
     assert!(d[0].message.contains("× 4"), "{}", d[0].message);
+}
+
+/// **A PackTest seats a scaling wave for its own party of one** (spec-0134
+/// §4). The batch runs every template on one shared server, so every other
+/// template's dummy is a player present at the spawn: a template that ran the
+/// wave's own spawn measured them all, seated more bodies than one player
+/// meets and failed its count. The spawn measures and then calls
+/// `spawn_<wave>_party`; every template states a party of one and calls that.
+#[test]
+fn a_packtest_seats_a_scaling_wave_for_a_party_of_one() {
+    let out = build_with(|c| c.quests.content.waves[0].mobs[0].count = two_plus_one());
+    let own = text(
+        &out,
+        "datapack/data/souls-bonfire/function/spawn_guards.mcfunction",
+    );
+    assert_eq!(
+        own.lines().collect::<Vec<_>>(),
+        vec![
+            "execute store result score #party_n dw.sys if entity @a[tag=!dw_cutscene]",
+            "function souls-bonfire:spawn_guards_party",
+        ]
+    );
+    let mut seats = 0;
+    for (path, bytes) in out.iter() {
+        if !path.starts_with("packtest-datapack/") || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let t = String::from_utf8_lossy(bytes);
+        let lines: Vec<&str> = t.lines().collect();
+        assert!(
+            !lines.contains(&"function souls-bonfire:spawn_guards"),
+            "{path} seats the wave for every player on the batch server:\n{t}"
+        );
+        for (i, l) in lines.iter().enumerate() {
+            if *l == "function souls-bonfire:spawn_guards_party" {
+                seats += 1;
+                assert_eq!(
+                    lines[i - 1],
+                    "scoreboard players set #party_n dw.sys 1",
+                    "{path} states its party before it seats:\n{t}"
+                );
+            }
+        }
+    }
+    assert!(seats > 0, "some template seats the wave");
 }

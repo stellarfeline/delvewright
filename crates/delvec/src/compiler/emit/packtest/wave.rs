@@ -106,7 +106,7 @@ fn emit_one_wave_census_packtest(plan: &Plan, w: &delvewright_dsl::Wave, out: &m
             "assert score #wcn_{src}_{safe} dw.sys matches {want}"
         ));
     };
-    b.push(format!("function {ns}:spawn_{safe}"));
+    b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
     // A BYSTANDER of the wave's own species, summoned on the wave's own anchor
     // cell: everything a silhouette probe uses to decide membership, and none of
     // what the census uses. It must not move a single count.
@@ -135,7 +135,7 @@ fn emit_one_wave_census_packtest(plan: &Plan, w: &delvewright_dsl::Wave, out: &m
     // A re-summon is a NEW mob: the brand cannot survive it, which is exactly the
     // property the die-retry fidelity verdict rests on.
     b.push(format!("kill @e[tag={tag}]"));
-    b.push(format!("function {ns}:spawn_{safe}"));
+    b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
     b.push(format!("function {ns}:wave_census_{safe}"));
     cen(&mut b, "n", &total.to_string());
     cen(&mut b, "b", "0");
@@ -183,7 +183,7 @@ pub(super) fn emit_kill_reward_packtests(
         // unguarded, so a sibling may already have fired it. Clear, then spawn —
         // which is what sets the countdown to this wave's own total.
         b.push(format!("kill @e[tag={tag}]"));
-        b.push(format!("function {ns}:spawn_{safe}"));
+        b.extend(super::super::wave::packtest_spawn_lines(plan, &safe));
         b.push(format!("assert score {counter} {obj} matches {total}"));
         // Grant the advancement exactly as a kill grants it. The grant is not a
         // setup step: this advancement's reward IS `k_reward_<wave>`, so granting
