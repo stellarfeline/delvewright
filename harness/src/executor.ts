@@ -494,6 +494,16 @@ export class MineflayerExecutor implements StepExecutor {
    * the body up for it.
    */
   crouchYielded = false;
+  /** The waypoint leg cursor as the current step began: where a step walked
+   * again after a death on it rewinds to (spec-0132 §5.2). */
+  stepStartCursor = 0;
+  /** How far along the current step's proven route this life has walked:
+   * `leg × 1_000_000 + waypoint index` of the furthest hop reached, -1 for none. */
+  lifeProgress = -1;
+  /** Per pursued step, the furthest any earlier life on it walked. */
+  readonly pursuedBest = new Map<number, number>();
+  /** Per pursued step, the deaths taken on it. */
+  readonly pursuedDeaths = new Map<number, number>();
   /**
    * The pursued step being walked (spec-0132 §5), while one is: nothing is
    * staged away, refunded or restored on it, and every act refused is recorded.

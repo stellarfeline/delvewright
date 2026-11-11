@@ -6266,7 +6266,7 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   };
   (bot as unknown as { health: number }).health = 8;
   const executor = attach(bot);
-  const pursued = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] as string[], rows: [], latest: new Map() };
+  const pursued = { index: 16, label: "loop loop/the-hall-that-runs-on", refusals: [] as string[] };
   executor.pursuedStep = pursued;
   const sent: string[] = [];
   (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => {
@@ -6286,82 +6286,33 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
 });
 
 // ---------------------------------------------------------------------------
-// spec-0132 §5.2: a move made standing on a pursued step waits for quiet.
+// spec-0132 §5.2: a pursued step walked again after a death, until a life gets
+// no further than the best before it.
 // ---------------------------------------------------------------------------
 
-import { distanceToMove, inEarshot } from "../src/executor/pursuit.ts";
-import type { PursuitReading } from "../src/pursuit.ts";
-import type { PursuerRow } from "../src/critical-path.ts";
-
-const HEARS: PursuerRow = {
-  actor: "actor/the-sleeper",
-  kind: "minecraft:warden",
-  census: "c:actor_census_the_sleeper",
-  entranceTicks: 133,
-  undated: false,
-  hearing: { reach: 16, forgetTicks: 3000 },
-};
-
-function reading(tick: number, feet: [number, number, number] | undefined): PursuitReading {
-  return {
-    actor: HEARS.actor,
-    tick,
-    alive: feet !== undefined,
-    ...(feet === undefined ? {} : { feet }),
-    botFeet: [0, 87, 0],
-    botHealth: 20,
-  };
-}
-
-test("a pursuer is in earshot of a move by its least distance to the move, in three axes", () => {
-  // The tower descent: from the deck at y=87 to the foot at y=65.
-  const from: [number, number, number] = [47, 87, 47];
-  const to: [number, number, number] = [47, 65, 48];
-  assert.ok(Math.abs(distanceToMove([57, 65, 47], from, to) - 10) < 0.1, "beside the foot");
-  const latest = new Map([[HEARS.actor, reading(1, [60, 65, 47])]]);
-  assert.deepEqual(inEarshot([HEARS], latest, from, to).map((n) => n.actor), [HEARS.actor]);
-  latest.set(HEARS.actor, reading(2, [70, 65, 47]));
-  assert.deepEqual(inEarshot([HEARS], latest, from, to), [], "23 blocks off");
-  latest.set(HEARS.actor, reading(3, undefined));
-  assert.deepEqual(inEarshot([HEARS], latest, from, to), [], "a body read absent hears nothing");
-  assert.equal(inEarshot([HEARS], new Map(), from, to).length, 1, "an unread body is not out of earshot");
-  const deaf: PursuerRow = { ...HEARS, actor: "actor/the-wither", kind: "minecraft:wither" };
-  delete (deaf as { hearing?: unknown }).hearing;
-  assert.deepEqual(inEarshot([deaf], new Map(), from, to), [], "a kind that hears nothing known");
-});
-
-test("a move made standing waits until every pursuer that hears is out of earshot", async () => {
-  const executor = attach(new FakeBot());
-  const latest = new Map([[HEARS.actor, reading(100, [52, 65, 47])]]);
-  executor.pursuedStep = { index: 9, label: "talk-to obj/meet-wren", refusals: [], rows: [HEARS], latest };
-  let done = false;
-  const wait = executor
-    .quietBeforeStanding([47, 87, 47], [47, 65, 48], "npc npc/wren")
-    .then(() => {
-      done = true;
-    });
-  await delay(700);
-  assert.equal(done, false, "the move went ahead with the warden 5 blocks from it");
-  latest.set(HEARS.actor, reading(140, [70, 65, 47]));
-  await within("the wait ends once the warden is out of earshot", wait, 2_000);
-  assert.equal(done, true);
-});
-
-test("a wait for quiet that spends its bound fails the step by name", async () => {
-  const executor = attach(new FakeBot());
-  const latest = new Map([[HEARS.actor, reading(100, [52, 65, 47])]]);
-  executor.pursuedStep = { index: 9, label: "talk-to obj/meet-wren", refusals: [], rows: [HEARS], latest };
-  const wait = executor.quietBeforeStanding([47, 87, 47], [47, 65, 48], "npc npc/wren");
-  await delay(300);
-  latest.set(HEARS.actor, reading(100 + 3000, [52, 65, 47]));
-  await assert.rejects(wait, /made standing and waited 3000 tick\(s\), its bound .*actor\/the-sleeper 5\.\d block\(s\) \(reach 16\)/);
-});
-
-test("off a pursued step, or beside nobody that hears, a move made standing does not wait", async () => {
-  const executor = attach(new FakeBot());
-  await within("off a pursued step", executor.quietBeforeStanding([0, 0, 0], [0, -1, 1], "x"), 500);
-  const deaf: PursuerRow = { ...HEARS };
-  delete (deaf as { hearing?: unknown }).hearing;
-  executor.pursuedStep = { index: 1, label: "x", refusals: [], rows: [deaf], latest: new Map() };
-  await within("beside a body that hears nothing", executor.quietBeforeStanding([0, 0, 0], [0, -1, 1], "x"), 500);
+test("a pursued step walked again resumes its leg where the bot respawned, and a life that gets no further is a death loop", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  (executor as unknown as { feetCell: () => [number, number, number] }).feetCell = () => [29, 65, 31];
+  executor.waypoints = parseWaypoints({
+    version: "0.4.0",
+    campaign_id: "c",
+    legs: [
+      { from: [0, 65, 0], to: [10, 65, 0], waypoints: [[0, 65, 0], [10, 65, 0]] },
+      { from: [10, 65, 0], to: [47, 65, 48], waypoints: [[10, 65, 0], [29, 65, 30], [47, 65, 30], [47, 65, 48]] },
+    ],
+  });
+  executor.legCursor = 1;
+  executor.beginStep(4);
+  executor.legCursor = 2; // the step's walk consumed its leg
+  executor.noteRouteProgress(1, 2);
+  executor.resumePursuedStep(4, "reach");
+  assert.equal(executor.legCursor, 1, "the cursor goes back to the step's leg");
+  assert.deepEqual(executor.legResume, { leg: 1, from: 1 }, "resumed from the waypoint nearest the respawn");
+  assert.equal(executor.pursuedDeaths.get(4), 1);
+  // A second life that gets further is walked again; one that does not is a loop.
+  executor.noteRouteProgress(1, 3);
+  executor.resumePursuedStep(4, "reach");
+  executor.noteRouteProgress(1, 2);
+  assert.throws(() => executor.resumePursuedStep(4, "reach"), /step 4 \(reach\): death loop — death 3 .*leg 1 waypoint 2.*leg 1 waypoint 3/);
 });
