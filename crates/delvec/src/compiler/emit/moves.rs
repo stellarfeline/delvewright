@@ -257,7 +257,7 @@ pub(super) fn emit_move(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) 
                 }
                 FaceTo::Mark(mark) => {
                     let Some(anchor) = anchor_point_any(plan, mark.anchor.as_str()) else {
-                        continue; // unresolved anchor (`DW0142` owns it)
+                        continue; // unresolved anchor (`DW0360` owns it)
                     };
                     let cell = mark.cell(anchor);
                     if watches {

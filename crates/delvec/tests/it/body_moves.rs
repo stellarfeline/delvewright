@@ -5,7 +5,7 @@
 //! (`DW0942`), an NPC in the audience of an effect that harms (`DW0942`), an
 //! undeclared body (`DW0112`), a number outside its bound (`DW0100`), an item
 //! the game does not hold (`DW0143`) or draw there (`DW0898`), a mark nobody
-//! placed (`DW0142`), a pose on a
+//! placed (`DW0360`, at build), a pose on a
 //! body that is not a mannequin and a watch handed back to a body with none
 //! (`DW1101`), and a cadence the effect cannot keep (`DW1102`).
 
@@ -69,6 +69,11 @@ fn errors(c: &Campaign) -> Vec<Diagnostic> {
 }
 
 fn build(c: &Campaign, inputs: &BTreeMap<String, Vec<u8>>) -> BuildOutput {
+    try_build(c, inputs).expect("emission succeeds")
+}
+
+/// The build, or the refusal it ends on as the build prints it.
+fn try_build(c: &Campaign, inputs: &BTreeMap<String, Vec<u8>>) -> Result<BuildOutput, String> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -89,7 +94,7 @@ fn build(c: &Campaign, inputs: &BTreeMap<String, Vec<u8>>) -> BuildOutput {
         None,
         &BTreeMap::new(),
     )
-    .expect("emission succeeds")
+    .map_err(|e| format!("{e:?}"))
 }
 
 /// Every function of the pack, by its name within the namespace.
@@ -520,12 +525,6 @@ fn a_number_outside_its_bound_and_a_misfit_item_are_refused() {
             "DW0898",
             "/slot",
         ),
-        // A mark nobody placed.
-        (
-            json!({"type": "face", "to": {"anchor": "anchor/nowhere"}}),
-            "DW0142",
-            "/to/anchor",
-        ),
     ] {
         let mut effect = effect;
         effect["audience"] = npc("npc/keeper");
@@ -535,6 +534,22 @@ fn a_number_outside_its_bound_and_a_misfit_item_are_refused() {
         assert_eq!(hit.len(), 1, "{effect}: {d:#?}");
         assert!(hit[0].path.ends_with(pointer), "{}", hit[0].path);
     }
+}
+
+/// A mark's anchor is resolved at build, with every other effect anchor.
+#[test]
+fn a_face_at_a_mark_nobody_placed_is_dw0360() {
+    let (c, inputs) = campaign(vec![json!({"type": "face",
+        "to": {"anchor": "anchor/nowhere"}, "audience": npc("npc/keeper")})]);
+    let refusal = try_build(&c, &inputs).expect_err("the build refuses the mark");
+    assert!(
+        refusal.contains("DW0360") && refusal.contains("anchor/nowhere"),
+        "{refusal}"
+    );
+    // Perturbation: the same face at a placed anchor builds.
+    let (c, inputs) = campaign(vec![json!({"type": "face",
+        "to": {"anchor": "anchor/gate"}, "audience": npc("npc/keeper")})]);
+    assert!(try_build(&c, &inputs).is_ok());
 }
 
 #[test]
