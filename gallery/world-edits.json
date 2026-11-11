@@ -149,6 +149,7 @@
         "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and the route stays open."
       },
       {
+        "applied": "at-build",
         "area": "area/hall",
         "edits": [
           {

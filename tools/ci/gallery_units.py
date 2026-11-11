@@ -394,6 +394,17 @@ class Binder:
 
     def _object(self, schema: dict, owner: str, value: dict, ptr: str, skip: str = "") -> None:
         props = schema.get("properties") or {}
+        # A `#[serde(flatten)]` UNTAGGED union inside a record — `give-item`'s
+        # stack-or-`from` (spec-0134 §8) — sits beside the record's own
+        # properties as an `anyOf`. serde hands the union the keys the record
+        # does not claim, so this walk does the same: the remaining keys are
+        # read against the union by fit. Without it the `from` branch, and
+        # `TakenFrom` beneath it, read as unbound on a gallery that writes them.
+        flat = [b for b in (schema.get("anyOf") or []) if not _null_branch(b)]
+        if flat and props:
+            rest = {k: v for k, v in value.items() if k not in props and k != skip}
+            if rest:
+                self._value({"anyOf": flat}, owner, rest, ptr, 1)
         for key, v in value.items():
             if key == skip:
                 continue
