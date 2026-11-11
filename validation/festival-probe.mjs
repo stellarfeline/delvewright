@@ -944,6 +944,13 @@ async function t13(bot) {
   const names = [BOT, 'dw-fest-two', 'dw-fest-three']
   const bots = [bot, await joinBot(names[1]), await joinBot(names[2])]
   const C = { x: H.x + 10.5, z: H.z + 20.5 }
+  // A player's saved `RootVehicle` is written only for a vehicle with exactly
+  // one player aboard, so the riders are counted from each player's side.
+  const riders = async () => {
+    await rcon.probe(`scoreboard players set #riders ${OBJ} 0`)
+    await rcon.probe(`execute as @a on vehicle if entity @s[tag=dw_camel] run scoreboard players add #riders ${OBJ} 1`)
+    return score('#riders')
+  }
   begin('T13-camel-seats', 'a tamed, saddled camel standing; three players stand beside it and click it one after another; the server\'s passenger list after each click')
   await rcon.run(`summon minecraft:camel ${C.x} ${FLOOR_Y + 1} ${C.z} {Tame:1b,PersistenceRequired:1b,NoAI:1b,Tags:["dw_camel"],equipment:{saddle:{id:"minecraft:saddle",count:1}}}`)
   for (let i = 0; i < 3; i++) {
@@ -962,11 +969,9 @@ async function t13(bot) {
     await sleep(200)
     b.mount(e)
     await sleep(1200)
-    const root = await entityGet(names[i], 'RootVehicle.Entity.id')
-    const riders = await countOf('@a[nbt={RootVehicle:{Entity:{id:"minecraft:camel"}}}]')
-    row(`click${i + 1}`, `player=${names[i]}`, `serverRootVehicle=${root ?? 'none'}`, `playersOnCamel=${riders}`)
+    row(`click${i + 1}`, `player=${names[i]}`, `playersOnCamel=${await riders()}`)
   }
-  row('byCommand', await rcon.probe(`ride ${names[2]} mount @e[tag=dw_camel,limit=1]`), `playersOnCamel=${await countOf('@a[nbt={RootVehicle:{Entity:{id:"minecraft:camel"}}}]')}`)
+  row('byCommand', await rcon.probe(`ride ${names[2]} mount @e[tag=dw_camel,limit=1]`), `playersOnCamel=${await riders()}`)
   for (const n of names) await rcon.probe(`ride ${n} dismount`)
   await rcon.probe('kill @e[tag=dw_camel]')
   bots[1].quit()
