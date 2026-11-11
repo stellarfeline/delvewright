@@ -1631,6 +1631,54 @@
                       "type": "resize"
                     }
                   ]
+                },
+                {
+                  "at_ticks": 100,
+                  "effects": [
+                    {
+                      "audience": {
+                        "actor": "actor/standard-bearer"
+                      },
+                      "pose": "swimming",
+                      "type": "pose"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 110,
+                  "effects": [
+                    {
+                      "audience": {
+                        "actor": "actor/standard-bearer"
+                      },
+                      "pose": "fall-flying",
+                      "type": "pose"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 120,
+                  "effects": [
+                    {
+                      "audience": {
+                        "actor": "actor/standard-bearer"
+                      },
+                      "pose": "sleeping",
+                      "type": "pose"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 130,
+                  "effects": [
+                    {
+                      "audience": {
+                        "actor": "actor/standard-bearer"
+                      },
+                      "pose": "standing",
+                      "type": "pose"
+                    }
+                  ]
                 }
               ],
               "type": "sequence"
