@@ -9,7 +9,7 @@ use delvewright_dsl::{EquipSlot, VehicleKind};
 /// costs nothing per tick (spec-0135 §3).
 pub(crate) const RESEAT_TICKS: u32 = 100;
 
-/// The tag a re-seat marks a riderless body outside its bounds with, for the
+/// The tag a re-seat marks a riderless body away from its mark with, for the
 /// one function call that follows.
 const RESEAT_TAG: &str = "dw_vehicle_reseat";
 

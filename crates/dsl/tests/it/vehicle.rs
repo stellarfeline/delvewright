@@ -43,6 +43,29 @@ fn the_surface_is_exported() {
     assert!(verbs.iter().any(|v| v == "despawn-vehicle"));
 }
 
+/// Criterion 1: every objective kind takes `ride`, and a census's `of` takes
+/// `riders`.
+#[test]
+fn every_objective_kind_takes_a_ride_and_a_census_counts_riders() {
+    let schema = delvewright_dsl::schema::stage_schema(delvewright_dsl::envelope::Stage::Quests);
+    let defs = &schema["$defs"];
+    let kinds: Vec<(&str, bool)> = defs["Objective"]["oneOf"]
+        .as_array()
+        .expect("Objective is a union")
+        .iter()
+        .map(|b| {
+            (
+                b["properties"]["type"]["const"].as_str().unwrap_or("?"),
+                b["properties"].get("ride").is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(kinds.len(), 5, "{kinds:?}");
+    assert!(kinds.iter().all(|(_, ride)| *ride), "{kinds:?}");
+    let of = serde_json::to_string(&defs["CensusOf"]).unwrap();
+    assert!(of.contains("\"riders\""), "{of}");
+}
+
 /// Criterion 1: the steering table lists the kinds the pinned jar steers,
 /// with their items and seats.
 #[test]

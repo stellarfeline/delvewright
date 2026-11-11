@@ -52,6 +52,7 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
     walkTo: async (to: Vec3Tuple) => {
       walked.push(to);
     },
+    resyncBody: async () => true,
     readRide: async () => {
       assert.ok(mounted, "the server is read only after the click");
       return reads.length > 1 ? reads.shift()! : reads[0]!;

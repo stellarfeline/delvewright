@@ -213,7 +213,7 @@ pub enum Step {
         /// player from, which the wait stands outside.
         aggro: Option<([i32; 3], f64)>,
     },
-    /// **Ride a vehicle across a leg no walk crosses** (spec-0135 §4, §6):
+    /// **Ride a vehicle on a leg its objective declares ridden** (spec-0135 §4, §6):
     /// walk to `pos` (the boarding cell), mount the vehicle, be carried along
     /// `medium`, leave and stand at `transport` (the leaving cell). Spliced in
     /// front of the step whose leg it carries.

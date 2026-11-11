@@ -27,13 +27,15 @@ pub struct Vehicle {
     /// The seat: the anchor's cell plus `offset` (spec-0066, `DW0897`). The
     /// body is placed here at load, by `seat-vehicle`, and by the re-seat.
     pub at: Mark,
-    /// Initial facing (default `south`).
+    /// Initial facing (default `south`). For a minecart, also the way along
+    /// its rail the engine pushes it when a body boards: a cart facing across
+    /// its rail is `DW1097`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
     /// The region the vehicle lives in — an anchor-centred box. It cuts the
-    /// medium the vehicle moves through, and a riderless body outside it is
-    /// re-seated at its mark. Required: a vehicle with no bounds is a ride
-    /// nobody can bring back. A mark outside it is `DW1099`.
+    /// medium the vehicle moves through: a ride never leaves it. Required. A
+    /// mark outside it is `DW1099`. (A riderless body away from its mark is
+    /// re-seated there wherever it stands.)
     pub bounds: StealthZone,
     /// A name tag over the body (`DW0983`: a vehicle is one body).
     #[serde(default, skip_serializing_if = "Option::is_none")]

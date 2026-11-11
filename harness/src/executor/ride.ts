@@ -17,6 +17,9 @@ const RIDE_READ_STORAGE = "dw_harness:ride_read";
 /** How long (ms) the server may take to seat the bot after the click. */
 export const MOUNT_GRACE_MS = 3000;
 
+/** How long (ms) the server may take to position the bot after a ride. */
+export const RESYNC_GRACE_MS = 3000;
+
 /** How far (blocks) a vehicle's body may stand from the seat and still be the one boarded. */
 export const VEHICLE_NEAR = 3;
 
@@ -143,6 +146,31 @@ export const methods = {
   },
 
   /**
+   * Have the server position the bot where it stands. mineflayer stops its
+   * physics at a mount and starts it again only at the server's next position
+   * packet, and a dismount by the sneak input sends none (the client's vehicle
+   * stays stale, the vanilla record §4): until one comes the bot cannot walk.
+   * A teleport to its own position is that packet and moves nothing. Returns
+   * whether it came.
+   */
+  async resyncBody(this: MineflayerExecutor): Promise<boolean> {
+    const bot = this.requireBot();
+    const moved = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        bot.removeListener("forcedMove", on);
+        resolve(false);
+      }, RESYNC_GRACE_MS);
+      const on = (): void => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      bot.once("forcedMove", on);
+    });
+    bot.chat("/tp @s ~ ~ ~");
+    return moved;
+  },
+
+  /**
    * Ride: walk to `board`, look at the vehicle's body and mount it, assert the
    * server seats the bot; drive a boat or a mount by reporting its position
    * along `medium` at `rate` (the steering item in hand for a mount that needs
@@ -236,6 +264,9 @@ export const methods = {
     reading = await this.readRide(tag);
     if (reading.riding) {
       failRide("the sneak input did not unseat the bot", { reported, serverSeen, seat: arrived });
+    }
+    if (!(await this.resyncBody())) {
+      failRide("the server did not position the bot after it left the vehicle", { reported, serverSeen, seat: arrived });
     }
     this.landingSwims = step.kind === "boat";
     try {

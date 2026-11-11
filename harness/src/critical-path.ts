@@ -578,7 +578,7 @@ export const VEHICLE_KINDS = ["boat", "minecart", "mount"] as const;
 export type VehicleKind = (typeof VEHICLE_KINDS)[number];
 
 /**
- * spec-0135 §6: ride a vehicle across a leg no walk crosses. Walk to `board`,
+ * spec-0135 §6: ride a vehicle on a leg its objective declares ridden. Walk to `board`,
  * mount the vehicle by its body, be carried along `medium` (the seat first) —
  * a boat or a mount by the rider's reported moves at `rate`, a minecart by its
  * rails — then leave by the sneak input and stand at `leave`. Every verdict is

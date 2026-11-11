@@ -65,7 +65,7 @@ export interface StepExecutor {
    * compiling; a path carrying one against an executor without it is a hard
    * failure, never a silent skip. */
   expire?(step: ExpireStep): Promise<void>;
-  /** Ride a vehicle across a leg no walk crosses (spec-0135 §6). Optional so
+  /** Ride a vehicle on a leg its objective declares ridden (spec-0135 §6). Optional so
    * existing fakes keep compiling; a path carrying one against an executor
    * without it is a hard failure, never a silent skip. */
   ride?(step: RideStep): Promise<void>;
