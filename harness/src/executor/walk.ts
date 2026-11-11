@@ -11,6 +11,7 @@ import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
+  hopStandsUp,
   describeStuckNeighbours,
   isDoorByHand,
   parkourFor,
@@ -555,7 +556,7 @@ export const methods = {
   ): Promise<void> {
     const bot = this.requireBot();
     const movements = new Movements(bot);
-    const restoreControls = configureLeg(bot, movements, sneak);
+    const restoreControls = configureLeg(bot, movements, sneak, () => this.crouchYielded);
     // No cave-specific Movements override is needed — the compiler-proven
     // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
     // and fences as impassable, so the route never crosses them, and gravity blocks
@@ -852,12 +853,15 @@ export const methods = {
           // other (spec-0113 §6): the bot walks what the proof proved.
           parkourFor(movements, spec.jump !== undefined);
           bot.pathfinder.setMovements(movements);
+          // A step down or a jump on a sneak leg is made standing (`hopStandsUp`).
+          this.crouchYielded = hopStandsUp(spec, bot.entity.position.y);
           try {
             await (spec.climb
               ? this.raceDeath(() => this.climbHop(spec, glabel))
               : this.gotoStaged(spec, glabel, sneak));
           } finally {
             parkourFor(movements, false);
+            this.crouchYielded = false;
           }
           await this.judgeWatchers(glabel);
         },

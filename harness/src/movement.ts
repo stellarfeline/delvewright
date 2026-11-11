@@ -7,6 +7,10 @@
 /** The subset of a mineflayer Bot this helper drives. */
 export interface ControlBot {
   setControlState(control: "sneak", state: boolean): void;
+  /** The control states as the client holds them (mineflayer's `bot.controlState`). */
+  readonly controlState: { readonly sneak: boolean };
+  on(event: "physicsTick", listener: () => void): unknown;
+  removeListener(event: "physicsTick", listener: () => void): unknown;
 }
 
 /**
@@ -187,10 +191,25 @@ export function describeStuckNeighbours(
 
 /**
  * Apply the standard adventure-mode movement locks, and — for a sneak leg — disable
- * sprinting in the Movements and turn the bot's sneak control state ON. Returns a
- * restore function that clears the sneak control state again; the caller MUST invoke
- * it (in a `finally`) so a later non-sneak leg is not left crouched. A non-sneak leg
- * returns a no-op restore.
+ * sprinting in the Movements and HOLD the bot's sneak control state on for the whole
+ * leg. Returns a restore function that releases the hold and clears the crouch; the
+ * caller MUST invoke it (in a `finally`) so a later non-sneak leg is not left
+ * crouched. A non-sneak leg returns a no-op restore.
+ *
+ * **The crouch is held every tick, not set once.** mineflayer-pathfinder clears
+ * every control state on `setMovements`, on every `setGoal` and on arrival
+ * (`resetPath`, `fullStop` → `bot.clearControlStates()`), and the leg calls the
+ * first two on every hop, so a crouch set once at the leg's start was gone before
+ * the body took a step: a sneak leg was walked upright on every tick
+ * (`test/sneak-leg.test.ts` reproduces it on the real library). The hold re-asserts
+ * the crouch on each `physicsTick` — after the library's steering ran and before
+ * the client sends that tick's position — so the server reads the body crouched
+ * at every move it is sent.
+ *
+ * `yieldCrouch` names the moments a crouched body cannot do what the leg asks
+ * and a player stands up for it: a downward climb (a crouching body holds on a
+ * ladder and does not slide, and it will not walk off the brink it climbs down
+ * from). While it answers `true` the hold stands the body up instead.
  *
  * `canOpenDoors` is enabled: some delve areas are entered only through a closed
  * door or fence gate (the ram pen's only opening is its oak_fence_gate). Opening one
@@ -204,6 +223,7 @@ export function configureLeg(
   bot: ControlBot,
   movements: LegMovements,
   sneak: boolean,
+  yieldCrouch: () => boolean = () => false,
 ): () => void {
   movements.canDig = false; // adventure mode: never break blocks
   movements.allow1by1towers = false;
@@ -216,8 +236,29 @@ export function configureLeg(
     return () => {};
   }
   movements.allowSprinting = false; // a sprinting bot is not sneaking
-  bot.setControlState("sneak", true);
-  return () => bot.setControlState("sneak", false);
+  const hold = (): void => {
+    const want = !yieldCrouch();
+    if (bot.controlState.sneak !== want) bot.setControlState("sneak", want);
+  };
+  hold();
+  bot.on("physicsTick", hold);
+  return () => {
+    bot.removeListener("physicsTick", hold);
+    bot.setControlState("sneak", false);
+  };
+}
+
+/**
+ * **Whether a sneak leg's hop is walked standing** ({@link configureLeg}'s
+ * `yieldCrouch`): a hop down onto a lower floor, or a declared jump. A crouched
+ * body stops at every brink (vanilla's edge back-off, which the client physics
+ * reproduces), so it can neither step down a block nor leap a gap; a player
+ * stands up for the one move and crouches again. `feetY` is the body's feet
+ * height when the hop starts; a climb hop is decided by the climb itself.
+ */
+export function hopStandsUp(hop: { readonly y: number; readonly jump?: unknown; readonly climb?: unknown }, feetY: number): boolean {
+  if (hop.climb !== undefined) return false;
+  return hop.jump !== undefined || hop.y < Math.floor(feetY + 1e-6);
 }
 
 /**

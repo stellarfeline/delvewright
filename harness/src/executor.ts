@@ -489,6 +489,11 @@ export class MineflayerExecutor implements StepExecutor {
   /** True while a `sneak` leg is walking: nothing is staged away on one. */
   sneaking = false;
   /**
+   * True while a climb hop the crouch cannot make is driven (a downward climb):
+   * a sneak leg's crouch hold (`configureLeg`) stands the body up for it.
+   */
+  crouchYielded = false;
+  /**
    * The pursued step being walked (spec-0132 §5), while one is: nothing is
    * staged away, refunded or restored on it, and every act refused is recorded.
    */

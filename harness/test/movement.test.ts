@@ -17,8 +17,17 @@ import {
 // A fake bot that records the sneak control-state toggles it is asked to make.
 class FakeControlBot implements ControlBot {
   readonly toggles: Array<[string, boolean]> = [];
+  readonly controlState = { sneak: false };
+  readonly ticks = new Set<() => void>();
   setControlState(control: "sneak", state: boolean): void {
     this.toggles.push([control, state]);
+    this.controlState.sneak = state;
+  }
+  on(_event: "physicsTick", listener: () => void): void {
+    this.ticks.add(listener);
+  }
+  removeListener(_event: "physicsTick", listener: () => void): void {
+    this.ticks.delete(listener);
   }
 }
 
@@ -78,8 +87,10 @@ test("configureLeg disables sprint and turns sneak ON for a sneak leg", () => {
   assert.equal(movements.canOpenDoors, true); // gate-opening applies to a sneak leg too
   assert.equal(movements.allowSprinting, false); // sprinting bot is not sneaking
   assert.deepEqual(bot.toggles, [["sneak", true]]);
+  assert.equal(bot.ticks.size, 1, "the crouch is held on every tick of the leg");
   // Restore clears the crouch so a later plain leg is not left sneaking.
   restore();
+  assert.equal(bot.ticks.size, 0, "the hold ends with the leg");
   assert.deepEqual(bot.toggles, [
     ["sneak", true],
     ["sneak", false],
