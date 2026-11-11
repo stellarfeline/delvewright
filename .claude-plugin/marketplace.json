@@ -11,7 +11,7 @@
       "name": "delvewright",
       "source": {
         "path": ".claude/skills/delvewright",
-        "ref": "delvewright--v1.16.0",
+        "ref": "delvewright--v1.16.1",
         "source": "git-subdir",
         "url": "stellarfeline/delvewright"
       }
