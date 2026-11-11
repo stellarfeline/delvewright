@@ -294,6 +294,18 @@ fn perception_one(
                 ),
             ));
         }
+        // spec-0136: an NPC is a body the story moves, never one it harms.
+        if eff.verb.addresses_bodies() && aud.names_an_npc() {
+            d.push(Diagnostic::error(
+                PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+                stage,
+                format!("{path}/audience"),
+                format!(
+                    "`{}` names an NPC in its audience, and an NPC is never harmed and never                      fights: it carries no status effect and takes no damage. A wave's or an                      actor's bodies are the audience of `give-effect`, `clear-effect` and                      `damage`; an NPC is the audience of a move (`hop`, `pose`, `turn`, `face`,                      `hold`, `resize`). Name the actor or the wave here",
+                    eff.verb.tag()
+                ),
+            ));
+        }
         let q = &c.quests.content;
         let (known, what, id) = match aud {
             crate::EffectAudience::Wave(w) => (
@@ -336,7 +348,12 @@ fn perception_one(
     }
     if !eff.addresses_players() {
         for (field, present) in [
-            ("audience", eff.audience.is_some()),
+            // spec-0136: a move's audience is the body that makes it, and
+            // `moves_checks` judges it.
+            (
+                "audience",
+                eff.audience.is_some() && !eff.verb.moves_a_body(),
+            ),
             ("in", eff.within.is_some()),
         ] {
             if present {

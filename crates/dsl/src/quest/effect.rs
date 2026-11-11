@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::moves::{BodyKey, Repeat};
 use crate::{
     ActorId, AnchorId, CameraShot, CameraSubject, Carrier, CutsceneParty,
     DEFAULT_COLLAPSE_FALLING_BLOCK, DEFAULT_VOLLEY_INTERVAL, DEFAULT_VOLLEY_PROJECTILE,
@@ -128,6 +129,18 @@ pub struct QuestEffect {
     /// none.
     #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
     pub within: Option<StealthZone>,
+    /// **The effect happens more than once** (spec-0136 §4): `times` firings,
+    /// `every_ticks` apart. On the envelope, reaching every verb that keeps a
+    /// cadence ([`Verb::keeps_cadence`]: a body's move, a `particle`, a
+    /// `play-sound`); refused on a verb that happens once (`DW1102`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<Repeat>,
+    /// **Each body of the cast starts this many ticks after the one before
+    /// it** (spec-0136 §4), in the order the effect lists them. Needs at
+    /// least two bodies (`DW1102`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub stagger_ticks: Option<u32>,
     /// What the effect does.
     #[serde(flatten)]
     pub verb: Verb,
@@ -153,6 +166,11 @@ pub enum EffectAudience {
     Wave(WaveId),
     /// The body of a stage-5 actor (`@e[tag=dw_actor_<id>,limit=1]`).
     Body(ActorId),
+    /// The body of a stage-2 NPC (spec-0136) — `{"npc": id}`.
+    Npc(NpcId),
+    /// A cast of staged bodies, in the order they are listed (spec-0136) —
+    /// `{"bodies": [{"npc": id}, {"actor": id}, …]}`.
+    Bodies(Vec<BodyKey>),
 }
 
 /// The players an [`EffectAudience`] names, as the document spells them.
@@ -192,6 +210,19 @@ pub enum AudienceWire {
     Wave(WaveAudience),
     /// `{"actor": id}`.
     Body(ActorAudience),
+    /// `{"npc": id}`.
+    Npc(crate::moves::NpcKey),
+    /// `{"bodies": […]}`.
+    Bodies(BodiesAudience),
+}
+
+/// `{"bodies": […]}` — a cast of staged bodies.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodiesAudience {
+    /// The bodies, in stagger order.
+    #[schemars(length(min = 1))]
+    pub bodies: Vec<BodyKey>,
 }
 
 impl From<AudienceWire> for EffectAudience {
@@ -201,6 +232,8 @@ impl From<AudienceWire> for EffectAudience {
             AudienceWire::Players(PlayerAudience::Actor) => EffectAudience::Actor,
             AudienceWire::Wave(w) => EffectAudience::Wave(w.wave),
             AudienceWire::Body(a) => EffectAudience::Body(a.actor),
+            AudienceWire::Npc(n) => EffectAudience::Npc(n.npc),
+            AudienceWire::Bodies(b) => EffectAudience::Bodies(b.bodies),
         }
     }
 }
@@ -212,6 +245,8 @@ impl From<EffectAudience> for AudienceWire {
             EffectAudience::Actor => AudienceWire::Players(PlayerAudience::Actor),
             EffectAudience::Wave(wave) => AudienceWire::Wave(WaveAudience { wave }),
             EffectAudience::Body(actor) => AudienceWire::Body(ActorAudience { actor }),
+            EffectAudience::Npc(npc) => AudienceWire::Npc(crate::moves::NpcKey { npc }),
+            EffectAudience::Bodies(bodies) => AudienceWire::Bodies(BodiesAudience { bodies }),
         }
     }
 }
@@ -232,12 +267,32 @@ impl EffectAudience {
             EffectAudience::Party => "party",
             EffectAudience::Actor | EffectAudience::Body(_) => "actor",
             EffectAudience::Wave(_) => "wave",
+            EffectAudience::Npc(_) => "npc",
+            EffectAudience::Bodies(_) => "bodies",
         }
     }
 
     /// Whether this audience names bodies rather than players.
     pub fn is_body(&self) -> bool {
-        matches!(self, EffectAudience::Wave(_) | EffectAudience::Body(_))
+        !matches!(self, EffectAudience::Party | EffectAudience::Actor)
+    }
+
+    /// Whether this audience names **staged** bodies (spec-0136) — an NPC,
+    /// an actor, or a cast of them — the bodies a move is made by.
+    pub fn is_staged(&self) -> bool {
+        matches!(
+            self,
+            EffectAudience::Body(_) | EffectAudience::Npc(_) | EffectAudience::Bodies(_)
+        )
+    }
+
+    /// Whether this audience names an NPC (spec-0136): alone, or in a cast.
+    pub fn names_an_npc(&self) -> bool {
+        match self {
+            EffectAudience::Npc(_) => true,
+            EffectAudience::Bodies(b) => b.iter().any(|k| matches!(k, BodyKey::Npc(_))),
+            _ => false,
+        }
     }
 }
 
@@ -250,6 +305,8 @@ impl From<Verb> for QuestEffect {
             happening: None,
             audience: None,
             within: None,
+            repeat: None,
+            stagger_ticks: None,
             verb,
         }
     }
@@ -509,6 +566,13 @@ impl QuestEffect {
             | Verb::FillLoot { .. }
             // spec-0134's `apply-edits`.
             | Verb::ApplyEdits { .. }
+            // spec-0136's moves.
+            | Verb::Hop { .. }
+            | Verb::Pose { .. }
+            | Verb::Turn { .. }
+            | Verb::Face { .. }
+            | Verb::Hold { .. }
+            | Verb::Resize { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -1337,18 +1401,6 @@ impl QuestEffect {
             Verb::StopSound { sound: Some(s), .. } => vec![("sound", s.as_str())],
             Verb::Narrate(Narration { sound: Some(s), .. }) => vec![("sound", s.as_str())],
             _ => Vec::new(),
-        }
-    }
-
-    /// The `play-sound` `at: actor` id, if this effect is a `play-sound`
-    /// targeting an actor (rejected `DW0335`).
-    pub fn play_sound_actor(&self) -> Option<&str> {
-        match &self.verb {
-            Verb::PlaySound {
-                at: Some(SoundAt::Actor { actor }),
-                ..
-            } => Some(actor.as_str()),
-            _ => None,
         }
     }
 

@@ -766,6 +766,8 @@ pub(super) fn actor_fns(
         if watches {
             start.push(crate::compiler::watching::yield_line(&body_sel));
         }
+        // spec-0136: the walk takes the puppet, so a hop in flight ends.
+        start.extend(moves::walk_ends_hop(plan.campaign, Walker::Actor, &m.actor));
         start.push(format!("scoreboard players set #arun_{bare} dw.sys 1"));
         start.push(format!("scoreboard players set #at_{bare} dw.sys 0"));
         start.push(format!("schedule function {ns}:ma_tick_{bare} 1t"));

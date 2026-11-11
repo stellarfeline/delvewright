@@ -13,7 +13,7 @@
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
 //! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
-//! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
+//! - [`atmos`]: sound-event validation (`DW0326`) and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
 //! - [`attached`]: every block the build writes is one the server keeps, by the jar's measured `canSurvive` (`DW1002`).
 //! - [`ballistics`]: the one-time ballistic instrument that measured the reach graph's simulator against the pinned jar (spec-0113 §8.2); no build emits it and no CI job runs it.

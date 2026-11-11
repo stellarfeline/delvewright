@@ -1,5 +1,5 @@
 //! Sound + art-title surface (DSL v0.6, spec-0014): sound-event validation
-//! (`DW0326`), the unsupported `play-sound at: actor` gate (`DW0335`), and the
+//! (`DW0326`) and the
 //! pixel-banner "art" title font (`delve:art`) with its compile-time glyph-coverage
 //! check (`DW0328`).
 //!
@@ -25,9 +25,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_dsl::{
-    Campaign, Diagnostic, L10nDoc, art_narrates, play_sound_actor_refs, sound_refs,
-};
+use delvewright_dsl::{Campaign, Diagnostic, L10nDoc, art_narrates, sound_refs};
 
 use crate::compiler::registry::FullSoundRegistry;
 use delvewright_dsl::{DwCode, ExitTier};
@@ -42,19 +40,13 @@ delvewright_dsl::dw_code! {
     /// a character outside the `delve:art` font's glyph inventory.
     pub const DW_ART_GLYPH_UNCOVERED: DwCode = DwCode::new("DW0328", ExitTier::Build);
 }
-delvewright_dsl::dw_code! {
-    /// `DW0335`: a `play-sound` targets `at: actor`. A sound is emitted either at
-    /// fixed coordinates or at each listener's own feet, and the compiler resolves no
-    /// position for a live actor, so such a sound would be silent.
-    pub const DW_PLAYSOUND_ACTOR_UNSUPPORTED: DwCode = DwCode::new("DW0335", ExitTier::Build);
-}
 
 // ---------------------------------------------------------------------------
-// Sound-event validation (DW0326) + unsupported actor gate (DW0335)
+// Sound-event validation (DW0326)
 // ---------------------------------------------------------------------------
 
 /// Validate every referenced sound-event id against the pinned 1.21.11 registry
-/// (`DW0326`), and reject the unsupported `play-sound at: actor` target (`DW0335`).
+/// (`DW0326`).
 /// Runs at validate-time (exit 1) so bad sounds never reach a build.
 pub fn check_sounds(c: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
@@ -73,20 +65,6 @@ pub fn check_sounds(c: &Campaign) -> Vec<Diagnostic> {
                 ),
             ));
         }
-    }
-    for r in play_sound_actor_refs(c) {
-        d.push(Diagnostic::error(
-            DW_PLAYSOUND_ACTOR_UNSUPPORTED,
-            r.stage,
-            r.path,
-            format!(
-                "`play-sound` `at: {{actor: {}}}` is not supported — a sound plays \
-                 either at fixed coordinates or at each listener's own position, and \
-                 the compiler resolves no position for a live actor. Use \
-                 `at: {{anchor: …}}` or `at: players`",
-                r.sound
-            ),
-        ));
     }
     d
 }

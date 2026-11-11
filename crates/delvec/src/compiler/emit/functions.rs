@@ -40,6 +40,8 @@ pub(super) fn emit_functions(
                 format!("execute unless score #init dw.sys matches 1 run function {ns}:setup"),
             ]
             .into_iter()
+            // spec-0136: the objectives a hopping body counts in.
+            .chain(moves::load_lines(c))
             // spec-0109 §3.6: a paint that may have outlived its cutscene.
             .chain(cutscene_paint_load_marks(plan))
             .collect::<Vec<_>>(),
@@ -1290,6 +1292,9 @@ pub(super) fn emit_functions(
     // spec-0101: every watching body turns to the player it watches. Empty for
     // a campaign that declares no watcher → byte-identical.
     tick.extend(crate::compiler::watching::tick_lines(plan));
+    // spec-0136: every body in the air takes its tick's step of the arc. Empty
+    // for a campaign with no `hop` → byte-identical.
+    tick.extend(moves::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
@@ -1476,6 +1481,9 @@ pub(super) fn emit_functions(
     // path names on each step it is loose on.
     fns.extend(actor_census_fns(plan));
     fns.extend(sequence_fns(plan));
+    // spec-0136: the hop driver and the functions of every cadenced effect.
+    fns.extend(moves::hop_fns(plan));
+    fns.extend(moves::cadence_fns(plan));
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));

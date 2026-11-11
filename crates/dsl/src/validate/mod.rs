@@ -178,6 +178,8 @@ pub fn validate_campaign_with(
     // spec-0085: the perception bundle — a particle's id, the envelope's audience
     // on a party fact, and a sight grant that ends under a camera.
     crate::perception::perception_checks(c, &mut d);
+    // spec-0136: a body's moves, the bodies an effect names, and its cadence.
+    crate::moves::moves_checks(c, items, &mut d);
     // spec-0073: a fight's health bar. The walk is over every wave and actor;
     // a campaign that declares no bar and bills no fight `boss` gets nothing.
     crate::healthbar::health_bar_checks(c, &mut d);
