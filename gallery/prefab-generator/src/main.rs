@@ -724,6 +724,17 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/mark",
+        pos: [12, 1, 9],
+        facing: None,
+        trigger_block: None,
+        note: "the archery mark standing on the floor at the west end of the pedestal row, \
+               under the hall sign, in sight of the arrival and of the hearth stone: a `shot` trigger lays its target block here (spec-0134 \
+               §2), and the near hall's floor gives a clear line to it from four to forty \
+               blocks off",
+        role: None,
+    },
+    Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),

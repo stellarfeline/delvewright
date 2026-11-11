@@ -1157,7 +1157,9 @@
             "id": "obj/take-the-seal",
             "item": "minecraft:paper",
             "item_name": "Hall Seal",
-            "requires_flags": [],
+            "requires_flags": [
+              "flag/mark-struck"
+            ],
             "stealth": false,
             "title": "Take the seal",
             "type": "collect"
@@ -5400,6 +5402,32 @@
           "range": 3
         },
         "once": true
+      },
+      {
+        "answers": {
+          "done": "The mark has been struck; the bolt stands in it."
+        },
+        "at": "anchor/mark",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "A clean hit. The mark rings against the wall.",
+            "type": "narrate"
+          },
+          {
+            "flag": "flag/mark-struck",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/hit-the-mark",
+        "on": {
+          "on": "shot"
+        },
+        "once": true,
+        "prop": {
+          "block": "minecraft:target"
+        }
       }
     ],
     "waves": [

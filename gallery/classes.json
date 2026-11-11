@@ -59,6 +59,14 @@
           {
             "count": 1,
             "item": "minecraft:spyglass"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Wanderer"
@@ -84,6 +92,14 @@
             "flask": true,
             "item": "minecraft:potion",
             "name": "Warder's Flask"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Warder"
