@@ -86,13 +86,15 @@ The entry leaves out documentation, tests and release machinery, which change no
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.72.0
+## delvewright-dsl 0.74.0
 
 ### Highlights
 
 - An objective can carry a time limit: the task is done in time or lost, and the story goes on either way.
+- A boat, a minecart or a saddled mount can be placed for players to ride, and a crossing nobody can walk can be ridden.
 
 ### Added
 
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
+- `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
