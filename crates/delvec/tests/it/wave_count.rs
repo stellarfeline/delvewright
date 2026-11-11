@@ -249,3 +249,42 @@ fn a_reseat_seats_the_wave_at_the_size_it_was_first_seated_for() {
         "{reseat}"
     );
 }
+
+/// **A kill-reward template counts one player's bodies** (spec-0134 §4): it
+/// seats the wave for its own party of one, so the bodies it expects standing
+/// after a rest and the payments it expects over two seatings are the
+/// one-player count, never the four-player maximum.
+#[test]
+fn a_kill_reward_template_counts_the_bodies_its_party_of_one_meets() {
+    let mut base = 0;
+    let mut max = 0;
+    let out = build_with(|c| {
+        let w = &mut c.quests.content.waves[0];
+        w.mobs[0].count = two_plus_one();
+        w.respawns_on_rest = true;
+        w.on_kill = Some(
+            serde_json::from_str(
+                r#"{ "fires": "every-kill",
+                     "effects": [ { "type": "play-sound", "sound": "minecraft:entity.experience_orb.pickup" } ] }"#,
+            )
+            .unwrap(),
+        );
+        base = w.mobs.iter().map(|m| m.count.base()).sum::<u32>();
+        max = w.mobs.iter().map(|m| m.count.max()).sum::<u32>();
+    });
+    assert!(max > base, "the perturbation scales the wave");
+    let t = text(
+        &out,
+        "packtest-datapack/data/souls-bonfire/test/kill_pays_across_rest_w_guards.mcfunction",
+    );
+    assert!(
+        t.lines()
+            .any(|l| l == format!("assert score #kpa_w_guards dw.sys matches {base}")),
+        "{t}"
+    );
+    assert!(
+        t.lines()
+            .any(|l| l == format!("assert score #kf_w_guards dw.sys matches {}", 2 * base)),
+        "{t}"
+    );
+}
