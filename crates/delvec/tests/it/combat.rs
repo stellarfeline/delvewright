@@ -1133,10 +1133,9 @@ fn guards_kill(path: &serde_json::Value) -> serde_json::Value {
         .unwrap_or_else(|| panic!("no kill of wave/guards: {path}"))
 }
 
-/// Move `obj/talk`'s `spawn-wave` into a `sequence`: `outer` ticks after the
-/// completion, and `inner` ticks into a sequence nested in that step when
-/// `inner` is given.
-fn delay_the_guards(quests: &mut serde_json::Value, outer: u32, inner: Option<u32>) {
+/// Move `obj/talk`'s `spawn-wave` into a `sequence`, one copy at each of
+/// `dates` ticks after the completion.
+fn delay_the_guards(quests: &mut serde_json::Value, dates: &[u32]) {
     let talk = quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
         .as_array_mut()
         .unwrap();
@@ -1145,15 +1144,11 @@ fn delay_the_guards(quests: &mut serde_json::Value, outer: u32, inner: Option<u3
         .position(|e| e["type"] == "spawn-wave")
         .expect("the fixture seats its guards on obj/talk");
     let spawn = talk.remove(at);
-    let effect = match inner {
-        Some(t) => serde_json::json!({"type": "sequence", "steps": [
-            {"at_ticks": t, "effects": [spawn]}
-        ]}),
-        None => spawn,
-    };
-    talk.push(serde_json::json!({"type": "sequence", "steps": [
-        {"at_ticks": outer, "effects": [effect]}
-    ]}));
+    let steps: Vec<serde_json::Value> = dates
+        .iter()
+        .map(|t| serde_json::json!({"at_ticks": t, "effects": [spawn.clone()]}))
+        .collect();
+    talk.push(serde_json::json!({"type": "sequence", "steps": steps}));
 }
 
 #[test]
@@ -1162,17 +1157,17 @@ fn a_kill_whose_wave_a_sequence_seats_later_carries_the_seat_date() {
     // schedules after the completion before the kill, so a muster at the
     // step's open reads no body. The exported step says when it stands.
     let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |quests, _| delay_the_guards(quests, 600, None));
+    campaign_with(tmp.path(), |quests, _| delay_the_guards(quests, &[600]));
     let (out, _) = build(tmp.path()).expect("the delayed seat builds");
     let (path, _) = path_and_plan(&out);
     assert_eq!(guards_kill(&path)["seat_ticks"], 600, "{path}");
 
-    // Dated at any depth along the timeline: 200 + 150.
+    // Of two seats on the timeline, the latest is the ceiling.
     let tmp = TempCampaign::new();
     campaign_with(tmp.path(), |quests, _| {
-        delay_the_guards(quests, 200, Some(150))
+        delay_the_guards(quests, &[200, 350])
     });
-    let (out, _) = build(tmp.path()).expect("the nested seat builds");
+    let (out, _) = build(tmp.path()).expect("the twice-seated wave builds");
     let (path, _) = path_and_plan(&out);
     assert_eq!(guards_kill(&path)["seat_ticks"], 350, "{path}");
 }
