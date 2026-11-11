@@ -317,11 +317,11 @@ pub fn muster(
         let attrs = mob.attributes;
         profiles.push(MusterProfile {
             type_index: ti,
-            count: mob.count,
+            count: mob.count.base(),
             mask,
             // Language-neutral, like every other field here: the stack index is
             // what a reader resolves against the campaign document.
-            label: format!("{} × {} (stack {stack})", mob.count, mob.entity),
+            label: format!("{} × {} (stack {stack})", mob.count.base(), mob.entity),
             max_health: attrs.and_then(|a| a.max_health),
             attack_damage: attrs.and_then(|a| a.attack_damage),
             movement_speed: attrs.and_then(|a| a.movement_speed),
@@ -335,7 +335,7 @@ pub fn muster(
         wave: wave.id.as_str().to_string(),
         types,
         profiles,
-        bodies: wave.mobs.iter().map(|m| m.count).sum(),
+        bodies: wave.mobs.iter().map(|m| m.count.base()).sum(),
     }
 }
 

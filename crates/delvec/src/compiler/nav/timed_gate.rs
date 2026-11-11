@@ -126,7 +126,7 @@ fn verify_timed_gate_disarms(
         let (Some(start), Some(goal)) = (start, goal) else {
             continue; // an unstandable entry or lever cell is another proof's concern
         };
-        if sealed.find_path(start, goal).is_some() {
+        if sealed.find_route(start, goal).is_some() {
             continue;
         }
         return Err(Failure {
@@ -507,6 +507,7 @@ mod tests {
             cells: vec![start],
             use_gates: Vec::new(),
             climbs: Vec::new(),
+            water: Vec::new(),
             region_state: RegionState::default(),
         }
     }

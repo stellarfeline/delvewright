@@ -361,6 +361,11 @@ pub struct Plan<'a> {
     /// ([`crate::compiler::nav::World::rest_seat`]); a proof with a world in
     /// hand reads [`crate::compiler::nav::World::rest_seat_of`].
     pub seats: std::sync::OnceLock<Vec<Option<[i32; 3]>>>,
+    /// **Each `shot` trigger's stance** (spec-0134 §2), by trigger id: the
+    /// cell `nav::shot_stance` proved sees the target, fixed from the build's
+    /// final world for the emitter, which holds no world, and exported on the
+    /// trigger's step as `stand`.
+    pub shot_stances: std::sync::OnceLock<BTreeMap<String, [i32; 3]>>,
     /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
     /// `validation/piece-mating.json`.
     ///
@@ -1349,6 +1354,7 @@ impl<'a> Plan<'a> {
             seats: std::sync::OnceLock::new(),
             vehicles: Vec::new(),
             declared_rides: BTreeMap::new(),
+            shot_stances: std::sync::OnceLock::new(),
         };
         plan.vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, &plan.anchors);
         plan.declared_rides = campaign

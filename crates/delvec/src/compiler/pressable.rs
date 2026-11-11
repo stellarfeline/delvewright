@@ -922,9 +922,11 @@ pub fn derive_answers(plan: &Plan) -> Vec<AnswerPlan> {
     // the trigger rides, on the trigger's own event.
     for t in &quests.triggers {
         let rides = match &t.on {
-            TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } | TriggerOn::Step => {
-                true
-            }
+            TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. }
+            | TriggerOn::StrikeActor { .. }
+            | TriggerOn::UseActor { .. }
+            | TriggerOn::Step => true,
             TriggerOn::Strike => t.at_anchor().is_some_and(|a| npc_stands_at(plan, a)),
             _ => false,
         };

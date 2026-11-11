@@ -133,6 +133,9 @@ export interface WaypointLeg {
    * proven route walks through (`use_gates`, spec-0123 §3.1): each a feet cell
    * and a waypoint of the leg. Empty for a leg that crosses none. */
   readonly doors: readonly Vec3Tuple[];
+  /** The cells the leg's proven route swims (`water`, spec-0134 §10), each a
+   * waypoint of the leg. Empty for a dry leg. */
+  readonly water: readonly Vec3Tuple[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -469,7 +472,22 @@ export function parseWaypoints(raw: unknown): Waypoints {
         return cell;
       });
     }
-    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, doors };
+    // spec-0134 §10: the water a leg swims is a kept waypoint by contract.
+    const waterValue = entry["water"];
+    let water: Vec3Tuple[] = [];
+    if (waterValue !== undefined) {
+      if (!Array.isArray(waterValue)) {
+        fail(`${pointer}/water`, `must be an array, got ${describe(waterValue)}`);
+      }
+      water = waterValue.map((d, j) => {
+        const cell = requireVec3(d, `${pointer}/water/${j}`);
+        if (!waypoints.some((w) => samePos(w, cell))) {
+          fail(`${pointer}/water/${j}`, "is not one of the leg's waypoints");
+        }
+        return cell;
+      });
+    }
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations, jumps, doors, water };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -582,6 +600,8 @@ export interface LegMatch {
   /** The doors a hand opens the matched leg's route walks through (empty when
    * none, or no match). */
   readonly doors: readonly Vec3Tuple[];
+  /** The water the matched leg swims (empty when none, or no match). */
+  readonly water: readonly Vec3Tuple[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -637,6 +657,7 @@ export function nextLegWaypoints(
       vibrations: leg.vibrations,
       jumps: leg.jumps,
       doors: leg.doors,
+      water: leg.water,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -650,6 +671,7 @@ export function nextLegWaypoints(
     vibrations: [],
     jumps: [],
     doors: [],
+    water: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,

@@ -651,7 +651,7 @@ fn the_in_car_lever_is_refused() {
 ///
 /// Every runtime region in the DSL is one type: `StealthZone { anchor, extent }`
 /// — a box **centred** on a prefab anchor with unsigned half-extents, shared by
-/// `begin-stealth`, `damage-players`'s `in`, `give-effect`'s `in`, `collapse`,
+/// `begin-stealth`, `damage`'s `in`, `give-effect`'s `in`, `collapse`,
 /// `fill-region` / `clear-region`, `teleport`'s `from` and `lethal_volumes[]`.
 /// Sharing one type is right; what it cannot say is an **offset**.
 ///

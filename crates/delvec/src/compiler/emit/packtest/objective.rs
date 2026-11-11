@@ -575,7 +575,7 @@ pub(super) fn emit_verb_packtests(
         && let Objective::Kill { id, wave, .. } = o
         && let Some(w) = plan::wave_of(c, wave.as_str())
     {
-        let total = plan::wave_total(w);
+        let total = plan::wave_base_total(w);
         let ws = plan::safe_local(wave.as_str());
         let (pin, sel) = pin_dummy("dw_t_vkil");
         let mut b = packtest_header(&format!(
@@ -653,7 +653,7 @@ pub(super) fn emit_verb_packtests(
         && let Objective::Kill { id, wave, .. } = o
         && let Some(w) = plan::wave_of(c, wave.as_str())
     {
-        let total = plan::wave_total(w);
+        let total = plan::wave_base_total(w);
         let ws = plan::safe_local(wave.as_str());
         let tag = plan::wave_tag(wave.as_str());
         let counter = plan::wave_counter(wave.as_str());

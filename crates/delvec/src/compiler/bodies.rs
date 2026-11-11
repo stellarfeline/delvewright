@@ -171,14 +171,24 @@ pub fn answer_of<'c>(c: &'c Campaign, trigger_id: &str) -> Option<BodyAnswer<'c>
     answers(c).into_iter().find(|a| a.trigger_id == trigger_id)
 }
 
-/// The `dw_trig_<id>` tags of every answer an actor's box carries, in press
-/// order. Empty for an actor that declares no `answers`, which therefore wears
+/// The `dw_trig_<id>` tags of every trigger an actor's box carries: its
+/// answers in press order, then every authored `strike-actor` / `use-actor`
+/// trigger naming it (spec-0134 §8), in declaration order. Empty for an actor
+/// that declares no `answers` and that no trigger names, which therefore wears
 /// no box.
 pub fn actor_box_trigger_tags(c: &Campaign, actor: &str) -> Vec<String> {
     answers(c)
         .into_iter()
         .filter(|a| matches!(a.body, BodyRef::Actor(x) if x.id.as_str() == actor))
         .map(|a| format!("dw_trig_{}", safe_local(&a.trigger_id)))
+        .chain(
+            c.quests
+                .content
+                .triggers
+                .iter()
+                .filter(|t| t.on.actor_target().is_some_and(|a| a.as_str() == actor))
+                .map(|t| format!("dw_trig_{}", safe_local(t.id.as_str()))),
+        )
         .collect()
 }
 

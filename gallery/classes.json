@@ -41,6 +41,21 @@
           {
             "count": 1,
             "item": "minecraft:carrot_on_a_stick"
+          },
+          {
+            "count": 2,
+            "fireworks": {
+              "explosions": [
+                {
+                  "colors": [
+                    "#a0e040"
+                  ],
+                  "shape": "large_ball"
+                }
+              ],
+              "flight": 1
+            },
+            "item": "minecraft:firework_rocket"
           }
         ],
         "name": "Wanderer"

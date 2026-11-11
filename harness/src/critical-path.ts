@@ -82,6 +82,11 @@ import type { GateTerm } from "./death-loop.ts";
  *   stand}` — walk to `stand`, perform nothing, and pass on the objective's
  *   anchored `[dw:expired …]` marker. A format-6 bot would refuse the kind.
  *
+ * * `8` — a step gated on a counted datum carries `census` (spec-0134 §1):
+ *   `[{state, objective, select, region, count}]` — the bodies the bot puts in
+ *   the box by command before the step, and the count it reads back. A
+ *   format-7 bot would wait on a count no body of its making raises.
+ *
  * * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board, medium,
  *   rate, leave, steering_item?}` — walk to `board`, mount, be carried along
  *   `medium` at `rate`, leave and stand at `leave`. A format-7 bot would refuse
@@ -90,6 +95,24 @@ import type { GateTerm } from "./death-loop.ts";
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
 export const CRITICAL_PATH_FORMAT_VERSION = 9;
+
+/**
+ * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
+ * objective (read on `#party`), the selector terms that pick its bodies, the
+ * box, and the bodies the step's gate needs inside it.
+ */
+export interface CensusRow {
+  readonly state: string;
+  readonly objective: string;
+  readonly select: string;
+  readonly region: readonly [Vec3Tuple, Vec3Tuple];
+  readonly count: number;
+}
+
+/** The censuses a step is gated on — empty for a step gated on none. */
+export function censusOf(step: Step): readonly CensusRow[] {
+  return step.census ?? [];
+}
 
 /**
  * One body a step is walked beside (spec-0132 §5.3): an `outrun` actor loose
@@ -115,6 +138,8 @@ export interface PursuerRow {
  */
 export interface Pursued {
   readonly pursuers?: readonly PursuerRow[];
+  /** The censuses the step is gated on (format 8); absent when none. */
+  readonly census?: readonly CensusRow[];
 }
 
 /** The bodies a step is walked beside — empty for a step walked beside none. */
@@ -362,7 +387,16 @@ export interface RestStep extends PresentationMarkers, Pursued {
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
-export const TRIGGER_KINDS = ["strike", "use", "approach", "step", "strike-npc", "strike-assembly"] as const;
+export const TRIGGER_KINDS = [
+  "strike",
+  "use",
+  "approach",
+  "step",
+  "strike-npc",
+  "strike-assembly",
+  "shot",
+  "use-item",
+] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -411,6 +445,8 @@ export interface TriggerStep extends PresentationMarkers, Pursued {
    * or button, which the bot right-clicks instead of a hitbox.
    */
   readonly block?: string;
+  /** The item a `use-item` trigger holds in use (spec-0134 §3). */
+  readonly item?: string;
 }
 
 /**
@@ -1053,13 +1089,46 @@ function parsePursuers(value: unknown, pointer: string): PursuerRow[] {
   });
 }
 
+/** A step's `census` (format 8): optional, each row whole. */
+export function parseCensus(value: unknown, pointer: string): CensusRow[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(pointer, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((row, i) => {
+    const at = `${pointer}/${i}`;
+    if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
+    rejectUnknownKeys(row, ["state", "objective", "select", "region", "count"], at);
+    const region = row["region"];
+    if (!Array.isArray(region) || region.length !== 2) {
+      fail(`${at}/region`, `must be [lo, hi], got ${describe(region)}`);
+    }
+    const count = requireInteger(row, "count", at);
+    if (count < 0) fail(`${at}/count`, `must not be negative, got ${count}`);
+    return {
+      state: requireString(row, "state", at),
+      objective: requireString(row, "objective", at),
+      select: requireString(row, "select", at),
+      region: [
+        requireVec3({ lo: region[0] }, "lo", `${at}/region`),
+        requireVec3({ hi: region[1] }, "hi", `${at}/region`),
+      ],
+      count,
+    };
+  });
+}
+
 function parseStep(value: unknown, pointer: string): Step {
   const obj = requireObject(value, pointer);
   const pursuers = parsePursuers(obj["pursuers"], `${pointer}/pursuers`);
+  const census = parseCensus(obj["census"], `${pointer}/census`);
   const body: Record<string, unknown> = { ...obj };
   delete body["pursuers"];
-  const step = parseStepBody(body, pointer);
-  return pursuers.length === 0 ? step : { ...step, pursuers };
+  delete body["census"];
+  let step = parseStepBody(body, pointer);
+  if (pursuers.length > 0) step = { ...step, pursuers };
+  if (census.length > 0) step = { ...step, census };
+  return step;
 }
 
 function parseStepBody(value: unknown, pointer: string): Step {
@@ -1273,6 +1342,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "en_route_cutscene_seconds",
           "keep_out",
           "block",
+          "item",
         ],
         pointer,
       );
@@ -1312,9 +1382,9 @@ function parseStepBody(value: unknown, pointer: string): Step {
         fail(`${pointer}/assembly`, `a ${kind} trigger watches no assembly`);
       }
       const range = obj["range"];
-      if (kind === "approach") {
+      if (kind === "approach" || kind === "use-item") {
         if (!Number.isInteger(range) || (range as number) <= 0) {
-          fail(`${pointer}/range`, `an approach trigger must carry a positive integer range, got ${describe(range)}`);
+          fail(`${pointer}/range`, `an ${kind} trigger must carry a positive integer range, got ${describe(range)}`);
         }
       } else if (range !== undefined) {
         fail(`${pointer}/range`, `a ${kind} trigger has no range`);
@@ -1331,7 +1401,15 @@ function parseStepBody(value: unknown, pointer: string): Step {
             "lands (`transport`)",
         );
       }
-      if (stand !== undefined && carried.transport === undefined && obj["keep_out"] === undefined) {
+      if (kind === "shot" && stand === undefined) {
+        fail(`${pointer}/stand`, "a shot trigger names the stance the compiler proved sees its target");
+      }
+      if (
+        stand !== undefined &&
+        carried.transport === undefined &&
+        obj["keep_out"] === undefined &&
+        kind !== "shot"
+      ) {
         fail(
           `${pointer}/stand`,
           "a trigger that carries nobody names a stand only when it keeps out of a volume " +
@@ -1376,7 +1454,8 @@ function parseStepBody(value: unknown, pointer: string): Step {
         ...(typeof npc === "string" ? { npc } : {}),
         ...(typeof assembly === "string" ? { assembly } : {}),
         pos: requirePos(obj, pointer),
-        ...(kind === "approach" ? { range: range as number } : {}),
+        ...(kind === "approach" || kind === "use-item" ? { range: range as number } : {}),
+        ...(kind === "use-item" ? { item: requireString(obj, "item", pointer) } : {}),
         ...(stand === undefined ? {} : { stand }),
         ...carried,
         ...presentationFields(obj, pointer),

@@ -39,6 +39,7 @@ mod actor;
 mod ambush;
 pub mod census;
 mod checkpoint;
+mod counted;
 mod cutscene;
 mod door;
 mod furniture;
@@ -57,6 +58,7 @@ mod sea;
 mod seat;
 mod separate;
 mod shortcut;
+mod shot;
 mod shutmodel;
 mod staging;
 mod stealth;
@@ -71,6 +73,7 @@ pub mod width;
 pub use actor::*;
 pub use ambush::*;
 pub use checkpoint::*;
+pub use counted::*;
 pub use cutscene::*;
 pub use door::*;
 pub use furniture::*;
@@ -89,6 +92,7 @@ pub use sea::*;
 pub use seat::*;
 pub use separate::*;
 pub use shortcut::*;
+pub use shot::*;
 pub use staging::*;
 pub use stealth::*;
 pub use threshold::*;
@@ -363,6 +367,19 @@ delvewright_dsl::dw_code! {
     /// so a tighter lane is a lane the engine quietly stops following — the squad
     /// wanders, and it reads as working-but-drunk rather than as a bug.
     pub const DW_LANE_GEOMETRY: DwCode = DwCode::new("DW0386", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1089` (spec-0134 §1): a body of a census `of` a wave or an actor
+    /// whose seat is not connected to the counted region at its footprint.
+    pub const DW_CENSUS_UNREACHED: DwCode = DwCode::new("DW1089", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1091` (spec-0134 §2): a `shot` trigger whose target no standable
+    /// cell of the walk region sees between 4 and 40 blocks, through air, from
+    /// a player's eye.
+    pub const DW_SHOT_UNSEEN: DwCode = DwCode::new("DW1091", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
     /// `DW0478`: **the respawn-point safe zone** (spec-0016 §1) — a cell the party

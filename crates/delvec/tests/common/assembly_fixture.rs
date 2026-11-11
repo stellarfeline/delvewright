@@ -123,7 +123,7 @@ pub fn quests() -> Value {
                 "pattern": [{
                     "windup": "windup", "hold": 10, "strike": "strike",
                     "on_land": [
-                        { "type": "damage-players", "amount": 4,
+                        { "type": "damage", "amount": 4,
                           "in": { "anchor": "anchor/exit", "extent": [0, 0, 0] } }
                     ]
                 }]

@@ -522,6 +522,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
         use_gates: Vec::new(),
         climbs: Vec::new(),
+        water: Vec::new(),
         // No runtime write on this leg: the bare world is the world it was
         // proven over, so the flooded cell has nothing to explain it away.
         region_state: RegionState::default(),
@@ -542,6 +543,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         cells: vec![[0, 65, 0], [1, 65, 0]],
         use_gates: Vec::new(),
         climbs: Vec::new(),
+        water: Vec::new(),
         region_state: RegionState::default(),
     }];
     assert!(verify_exported_routes(&world, &dry).is_ok());
@@ -884,4 +886,144 @@ fn the_exported_leg_names_its_climb() {
         verify_exported_routes(&w, std::slice::from_ref(leg)).is_ok(),
         "a held cell is a cell a body is in"
     );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0134 §10: water in the route proof
+// ---------------------------------------------------------------------------
+
+/// A corridor three wide (z 0..=2) between walls, floor at y 63 (feet 64),
+/// with a pool across its whole width at x 5..=9: floor at y 60, water from
+/// y 61 to y 64, level with the banks. `far_wall` walls the far bank's
+/// climb-out at x 10; `ceiling` roofs x 6..=8 at y 65 so the swimmer must dive.
+fn pool(far_wall: bool, ceiling: bool) -> World {
+    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut flooded: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for x in 0..15 {
+        for z in -1..=3 {
+            let wet = (5..=9).contains(&x) && (0..=2).contains(&z);
+            if z == -1 || z == 3 {
+                for y in 60..=67 {
+                    solid.insert([x, y, z]);
+                }
+                continue;
+            }
+            if wet {
+                solid.insert([x, 60, z]);
+                for y in 61..=64 {
+                    flooded.insert([x, y, z]);
+                }
+                if ceiling && (6..=8).contains(&x) {
+                    solid.insert([x, 65, z]);
+                }
+            } else {
+                solid.insert([x, 63, z]);
+                if far_wall && x == 10 {
+                    for y in 64..=67 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+    }
+    World::from_solid_and_flooded(solid, flooded)
+}
+
+#[test]
+fn a_leg_across_a_pool_the_walk_cannot_go_round_swims_it() {
+    let w = pool(false, false);
+    let (a, b) = ([1, 64, 1], [13, 64, 1]);
+    assert!(w.find_path(a, b).is_none(), "the dry walk does not cross");
+    let route = w.find_route(a, b).expect("the route swims the pool");
+    let water: Vec<[i32; 3]> = route.iter().copied().filter(|c| w.swims_in(*c)).collect();
+    assert_eq!(water.len(), 5, "{route:?}");
+    assert!(water.iter().all(|c| (5..=9).contains(&c[0])));
+    assert!(
+        route.iter().all(|c| w.holds_body(*c) || w.swims_in(*c)),
+        "DW0314 accepts every cell"
+    );
+    // Priced at the swim rate, slower than the walk.
+    assert!(swim_step_cost() > STEP_COST_16);
+}
+
+#[test]
+fn a_pool_walled_on_its_far_side_has_no_route() {
+    let w = pool(true, false);
+    assert!(w.find_route([1, 64, 1], [13, 64, 1]).is_none());
+}
+
+#[test]
+fn a_pool_under_a_ceiling_is_dived_and_its_submerged_run_is_counted() {
+    let w = pool(false, true);
+    let route = w
+        .find_route([1, 64, 1], [13, 64, 1])
+        .expect("the swimmer dives");
+    let (mut run, mut longest) = (0, 0);
+    for c in &route {
+        if w.submerged(*c) {
+            run += 1;
+            longest = longest.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    assert!(
+        longest >= 3,
+        "under the roof the body is submerged: {route:?}"
+    );
+}
+
+#[test]
+fn lava_stays_impassable() {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..9 {
+        if (3..=5).contains(&x) {
+            cells.push(([x, 60, 0], "minecraft:stone"));
+            for y in 61..=64 {
+                cells.push(([x, y, 0], "minecraft:lava"));
+            }
+        } else {
+            cells.push(([x, 63, 0], "minecraft:stone"));
+        }
+        for y in 60..=67 {
+            cells.push(([x, y, -1], "minecraft:stone"));
+            cells.push(([x, y, 1], "minecraft:stone"));
+        }
+    }
+    let w = blocks_world(&cells);
+    assert!(w.find_route([1, 64, 0], [7, 64, 0]).is_none());
+}
+
+/// The water ledger reads a dived leg (spec-0134 §10): the roofed pool's leg
+/// swims, its longest submerged run is at least the roof's three courses, and
+/// the binding line states it; a dry leg is a row with a run of zero.
+#[test]
+fn a_pool_under_a_ceiling_states_its_submerged_run_in_the_water_ledger() {
+    let w = pool(false, true);
+    let legs: Vec<LegRoute> = route_walked_legs(
+        &w,
+        &[
+            at_step([1, 64, 1], 1),
+            at_step([13, 64, 1], 2),
+            at_step([13, 64, 2], 3),
+        ],
+        &RegionEvents::default(),
+        &linear,
+    )
+    .into_iter()
+    .map(|(leg, _)| leg)
+    .collect();
+    assert_eq!(legs.len(), 2);
+    let doc = crate::compiler::waypoints::water_json(&w, &legs);
+    let rows = doc["legs"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "one row per leg, the dry one included");
+    assert!(rows[0]["longest_submerged"].as_u64().unwrap() >= 3, "{doc}");
+    assert_eq!(rows[1]["water"], 0);
+    assert_eq!(rows[1]["longest_submerged"], 0);
+    let line = crate::compiler::waypoints::water_line(&doc);
+    assert!(
+        line.starts_with("water binding: 1 of 2 leg(s) swim"),
+        "{line}"
+    );
+    assert!(line.contains("longest submerged run"), "{line}");
 }

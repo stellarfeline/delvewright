@@ -3,7 +3,7 @@
 //! While a player is in the cutscene state (`dw_cutscene`, held for exactly the
 //! cinematic's lifetime) campaign machinery must neither require anything of
 //! them nor punish them: the stealth judge is suspended for that player (grace
-//! neither accrues nor expires, `on_caught` cannot fire) and `damage-players`
+//! neither accrues nor expires, `on_caught` cannot fire) and `damage`
 //! skips them. Driven by the `v06-checkpoints` fixture, which carries both a
 //! stealth beat and a cutscene.
 

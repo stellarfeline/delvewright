@@ -74,6 +74,12 @@ pub enum Verb {
         /// the book's stored enchantments, the ones an anvil applies.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         enchantments: BTreeMap<String, u32>,
+        /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the
+        /// `minecraft:fireworks` component of a `minecraft:firework_rocket`
+        /// stack, the field a `loot` stack and a kit stack carry. On any other
+        /// item it is `DW1095`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fireworks: Option<crate::StackFireworks>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -147,6 +153,14 @@ pub enum Verb {
         /// The vehicle (stage-5 `vehicles` ref) to remove.
         vehicle: crate::VehicleId,
     },
+    /// Fills a `loot` holder whose fill waits for its beat (spec-0134 §6): the
+    /// `loot[]` entry declares `filled: "by-effect"`, and this verb runs its
+    /// fill — the supply chest is filled at dusk. Naming an `at-load` fill, and
+    /// a `by-effect` fill no bundle fires, are `DW1093`.
+    FillLoot {
+        /// The fill (stage-5 `loot` ref) to run.
+        loot: crate::LootId,
+    },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
     /// one [`Narration`] type every player-facing line declares.
@@ -184,7 +198,7 @@ pub enum Verb {
         /// The volume to fill, as an anchor-centred box (`anchor ± extent`).
         ///
         /// Deliberately the existing [`StealthZone`] — the engine's one
-        /// anchor-centred box object class, already shared by `damage-players`'s
+        /// anchor-centred box object class, already shared by `damage`'s
         /// `in` filter, `collapse`'s `region_anchor`, a `volley` kill zone and a
         /// `lethal_volumes[]` region, and resolved through the single
         /// `Plan::zone_box`. A private twin with the same two fields would be
@@ -465,12 +479,21 @@ pub enum Verb {
     /// **not** bypass totems (no `out_of_world`/`generic_kill`); default `generic`.
     /// (The field is `damage_type`, not `type`, because the effect enum is
     /// internally tagged on `type`.)
-    DamagePlayers {
+    ///
+    /// **Whom it damages is its audience** (spec-0134 §9): players by default;
+    /// `audience: {"wave": id}` or `{"actor": id}` damages those bodies, and
+    /// `by: "actor"` there credits the acting player as the source, so the
+    /// body is knocked back from them (`DW0503` where there is none).
+    Damage {
         /// Damage dealt, in half-hearts (1 = 1 HP; ≥ 40 is effectively lethal).
         amount: u32,
         /// The damage type (default [`DamageKind::Generic`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         damage_type: Option<DamageKind>,
+        /// The source the damage is credited to (spec-0134 §9): `actor`, the
+        /// acting player — admitted on a body audience only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<crate::DamageBy>,
     },
     /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
     /// `spawnpoint @a` at the anchor cell and mirrors the coords into
@@ -691,7 +714,7 @@ pub enum Verb {
         /// must be clear (a projectile spawned inside a wall never leaves it).
         from_anchor: AnchorId,
         /// The zone the volley must blanket, as an anchor-centred box
-        /// (`anchor ± extent`) — the same shape `damage-players`'s `in` and
+        /// (`anchor ± extent`) — the same shape `damage`'s `in` and
         /// `begin-stealth`'s `zones` use. Every standable cell in it receives
         /// fire each salvo.
         ///
@@ -832,7 +855,7 @@ pub enum Verb {
     Teleport {
         /// The volume whose contents are moved, as an anchor-centred box
         /// (`anchor ± extent`) — the same shape a `begin-stealth` zone, a
-        /// `damage-players` `in` filter and a `lethal_volumes[]` region take.
+        /// `damage` `in` filter and a `lethal_volumes[]` region take.
         ///
         /// Deliberately NOT a bare prefab `region` anchor, for the reason
         /// [`Verb::Collapse`] records: the assembled model clears every
@@ -1110,6 +1133,7 @@ impl Verb {
             Verb::DespawnWave { .. } => "despawn-wave",
             Verb::SeatVehicle { .. } => "seat-vehicle",
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
+            Verb::FillLoot { .. } => "fill-loot",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1123,7 +1147,7 @@ impl Verb {
             Verb::SetWeather { .. } => "set-weather",
             Verb::PlaySound { .. } => "play-sound",
             Verb::StopSound { .. } => "stop-sound",
-            Verb::DamagePlayers { .. } => "damage-players",
+            Verb::Damage { .. } => "damage",
             Verb::SetCheckpoint { .. } => "set-checkpoint",
             Verb::Bonfire { .. } => "bonfire",
             Verb::BeginStealth { .. } => "begin-stealth",
@@ -1149,6 +1173,18 @@ impl Verb {
         }
     }
 
+    /// **Can this verb address a body?** (spec-0134 §9) — `true` for the verbs
+    /// a wave's or an actor's bodies can be the audience of: a status effect
+    /// given or cleared, and damage. Every other player-facing verb reaches a
+    /// player only (a line, a sound, an item, a particle), so a body audience
+    /// on it is refused (`DW0942`).
+    pub fn addresses_bodies(&self) -> bool {
+        matches!(
+            self,
+            Verb::GiveEffect { .. } | Verb::ClearEffect { .. } | Verb::Damage { .. }
+        )
+    }
+
     /// **Whether the emitter addresses this verb to players** (spec-0085 §3.3) —
     /// whether its emitted commands name the effect's audience selector at all.
     ///
@@ -1171,7 +1207,7 @@ impl Verb {
             | Verb::PlaySound { .. }
             // spec-0109: a cut is heard by the audience it addresses.
             | Verb::StopSound { .. }
-            | Verb::DamagePlayers { .. }
+            | Verb::Damage { .. }
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
             | Verb::Particle { .. } => true,
@@ -1187,6 +1223,7 @@ impl Verb {
             | Verb::DespawnWave { .. }
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            | Verb::FillLoot { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1241,7 +1278,7 @@ impl Verb {
             | Verb::CloseGate { .. }
             | Verb::OpenWay { .. }
             | Verb::Teleport { .. }
-            | Verb::DamagePlayers { .. }
+            | Verb::Damage { .. }
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
             | Verb::GiveItem { .. }
@@ -1259,6 +1296,7 @@ impl Verb {
             | Verb::DespawnWave { .. }
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            | Verb::FillLoot { .. }
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::Volley { .. }

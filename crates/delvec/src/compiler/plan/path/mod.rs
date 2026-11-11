@@ -154,6 +154,9 @@ pub enum Step {
         /// `prop` when it is a lever or a button, which the bot right-clicks
         /// instead of a hitbox. `None` = the hitbox.
         block: Option<String>,
+        /// **The item a `use-item` trigger holds in use** (spec-0134 §3);
+        /// `None` for every other kind.
+        item: Option<String>,
     },
     /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
     /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
@@ -328,7 +331,7 @@ impl Step {
                 block,
                 ..
             } => match (*on, range) {
-                ("approach", Some(r)) => within(*pos, f64::from(*r)),
+                ("approach" | "use-item", Some(r)) => within(*pos, f64::from(*r)),
                 ("step", _) => within(*pos, STEP_REACH),
                 _ if block.is_some() => within(*pos, BLOCK_INTERACTION_REACH),
                 _ => within(*pos, INTERACTION_REACH),
@@ -434,6 +437,13 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   grace. A format change for `6`'s reason: a format-6 bot handed one would
 ///   refuse a step kind it does not know, and one that guessed would perform
 ///   the act the step is there to let lapse.
+///
+/// * `8` — a step gated on a counted datum carries `census` (spec-0134 §1):
+///   `[{state, objective, select, region, count}]`, the bodies the harness
+///   teleports into the box before the step and the count it reads back; a
+///   `shot` trigger step carries `stand`, the cell the compiler proved sees the
+///   target. A format change for `7`'s reason: a format-7 bot handed a census
+///   step would wait on a count no body of its making raises.
 ///
 /// * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board,
 ///   medium, rate, leave, steering_item?}` — walk to `board`, mount, be
@@ -1388,7 +1398,7 @@ pub(super) fn build_critical_path(
                         wave_id: wave.as_str().to_string(),
                         pos,
                         tag: wave_tag(wave.as_str()),
-                        count: wave_total(w),
+                        count: crate::compiler::plan::wave_base_total(w),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
@@ -1790,6 +1800,7 @@ pub(super) fn build_critical_path(
                     range: l.range,
                     stand: Some(stand),
                     block: pressed_block(campaign, &l.trigger_id),
+                    item: None,
                 });
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);

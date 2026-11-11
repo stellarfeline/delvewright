@@ -112,6 +112,7 @@ pub fn validate_campaign_with(
     crate::quest::check::quest_anchor_checks(c, &providers, &mut d);
     crate::trigger::trigger_anchor_checks(c, &providers, &mut d);
     crate::class::kit_item_checks(c, items, &mut d);
+    crate::trigger::use_item_checks(c, items, &mut d);
     crate::quest::check::cross_stage(c, &mut d);
     crate::dialogue::npc_tree_checks(c, &mut d);
     // `DW0849`: an item gate no class can bring. The walk is empty for a
@@ -174,6 +175,9 @@ pub fn validate_campaign_with(
     crate::wave::lane_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);
     crate::firework::firework_checks(c, &mut d);
+    crate::loot::stack_fireworks_checks(c, &mut d);
+    crate::loot::loot_fill_checks(c, &mut d);
+    crate::wave::mob_count_checks(c, &mut d);
     // spec-0085: the perception bundle — a particle's id, the envelope's audience
     // on a party fact, and a sight grant that ends under a camera.
     crate::perception::perception_checks(c, &mut d);

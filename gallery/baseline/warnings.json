@@ -34,6 +34,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
       "stage": "quests"
     },
@@ -231,6 +236,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ],
   "hard.en": [
@@ -251,6 +261,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
       "stage": "quests"
     },
@@ -448,6 +463,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ],
   "ocean-horizon.en": [
@@ -464,6 +484,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/3/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
       "stage": "quests"
     },
     {
@@ -670,6 +695,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ],
   "primary.en": [
@@ -690,6 +720,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
       "stage": "quests"
     },
@@ -887,6 +922,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ],
   "primary.zh-cn": [
@@ -907,6 +947,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
       "stage": "quests"
     },
@@ -1104,6 +1149,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ],
   "site-plan-solid.en": [
@@ -1235,6 +1285,11 @@
     },
     {
       "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/9/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/10/when/requires_state",
       "stage": "quests"
     },
@@ -1432,6 +1487,11 @@
       "code": "DW0380",
       "pointer": "/content/waves/wave/edge",
       "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "build:"
     }
   ]
 }

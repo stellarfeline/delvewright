@@ -166,14 +166,85 @@ pub struct WaveLane {
     pub aggro_radius: u32,
 }
 
+/// **How many bodies a mob stack summons** (spec-0134 §4): a constant, or a
+/// count that scales with the party present at the spawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MobCount {
+    /// A constant count, whatever the party.
+    Fixed(u32),
+    /// `base + per_player × (n − 1)` for `n` players present at the spawn, so
+    /// one player meets `base`.
+    Scaled(ScaledCount),
+}
+
+/// The scaled arm of [`MobCount`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScaledCount {
+    /// The bodies one player meets. At least 1.
+    #[schemars(range(min = 1))]
+    pub base: u32,
+    /// The bodies each further player adds.
+    pub per_player: u32,
+}
+
+/// The largest party a delve is made for (CLAUDE.md: 1–4 players): the
+/// count a scaled stack is proven at.
+pub const MAX_PARTY: u32 = 4;
+
+impl MobCount {
+    /// The count one player meets — what the muster expects of a single bot.
+    #[must_use]
+    pub fn base(self) -> u32 {
+        match self {
+            MobCount::Fixed(n) => n,
+            MobCount::Scaled(s) => s.base,
+        }
+    }
+
+    /// The count a full party meets ([`MAX_PARTY`]) — what every static proof
+    /// of the stack's bodies (`DW0312`, `DW0387`, `DW0983`) is judged at.
+    #[must_use]
+    pub fn max(self) -> u32 {
+        match self {
+            MobCount::Fixed(n) => n,
+            MobCount::Scaled(s) => s.base + s.per_player * (MAX_PARTY - 1),
+        }
+    }
+
+    /// The per-player term, `0` for a constant.
+    #[must_use]
+    pub fn per_player(self) -> u32 {
+        match self {
+            MobCount::Fixed(_) => 0,
+            MobCount::Scaled(s) => s.per_player,
+        }
+    }
+
+    /// Whether the count depends on the party.
+    #[must_use]
+    pub fn scales(self) -> bool {
+        self.per_player() > 0
+    }
+}
+
+impl From<u32> for MobCount {
+    fn from(n: u32) -> Self {
+        MobCount::Fixed(n)
+    }
+}
+
 /// One mob stack in a [`Wave`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WaveMob {
     /// Vanilla entity id, validated against the pinned 1.21.11 registry.
     pub entity: String,
-    /// How many to spawn.
-    pub count: u32,
+    /// How many to spawn: a constant, or `{base, per_player}` — `base +
+    /// per_player × (n − 1)` for the `n` players present at the spawn
+    /// (DSL v0.73, spec-0134 §4).
+    pub count: MobCount,
     /// Optional custom name (shown above the mob).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -893,7 +964,7 @@ pub(crate) fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
                 ),
             ));
         }
-        if w.mobs.iter().map(|m| m.count).sum::<u32>() < 2 {
+        if w.mobs.iter().map(|m| m.count.base()).sum::<u32>() < 2 {
             d.push(Diagnostic::error(
                 LANE_SQUAD_TOO_SMALL,
                 "quests",
@@ -1070,7 +1141,7 @@ pub(crate) fn check_drops(
         for m in &w.mobs {
             for dr in &m.drops {
                 if let MobDrop::Item(it) = dr {
-                    *per.entry(it.item.as_str()).or_default() += m.count;
+                    *per.entry(it.item.as_str()).or_default() += m.count.base();
                 }
             }
         }
@@ -1553,6 +1624,32 @@ pub(crate) fn check_enchantments(
                      dropped by the game, so declare the level you want or remove the entry."
                 ),
             ));
+        }
+    }
+}
+
+/// **A scaled count's bound** (spec-0134 §4): the schema states `base ≥ 1`
+/// and serde does not enforce it, so it is restated here at the schema tier
+/// (`DW0100`) — a stack one player meets none of is a stack nobody meets.
+/// `per_player` is unsigned, so its bound (`≥ 0`) is the type's.
+pub(crate) fn mob_count_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (wi, w) in c.quests.content.waves.iter().enumerate() {
+        for (mi, m) in w.mobs.iter().enumerate() {
+            if let MobCount::Scaled(s) = m.count
+                && s.base == 0
+            {
+                d.push(Diagnostic::error(
+                    crate::diagnostic::codes::SCHEMA,
+                    "quests",
+                    format!("/content/waves/{wi}/mobs/{mi}/count/base"),
+                    format!(
+                        "`{}`'s entry {mi} scales with the party from `base: 0`, so one player \
+                         meets no `{}` at all. `base` is the bodies one player meets — at least \
+                         1; a stack that only a larger party meets is a second wave.",
+                        w.id, m.entity
+                    ),
+                ));
+            }
         }
     }
 }

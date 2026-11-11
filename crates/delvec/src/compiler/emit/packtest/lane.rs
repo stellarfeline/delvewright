@@ -47,7 +47,7 @@ pub(super) fn emit_td_lane_packtests(
         let tag = plan::wave_tag(w.id.as_str());
         let lead = lane_leader_tag(w.id.as_str());
         let idx = lane_index_holder(w.id.as_str());
-        let total = plan::wave_total(w);
+        let total = plan::wave_base_total(w);
         let r = lane.aggro_radius;
         let t0 = wps[0];
         // A cell 200 blocks above the lane: no player in the batch is anywhere
@@ -211,7 +211,7 @@ pub(super) fn emit_td_lane_packtests(
     }) {
         let safe = plan::safe_local(w.id.as_str());
         let tag = plan::wave_tag(w.id.as_str());
-        let total = plan::wave_total(w);
+        let total = plan::wave_base_total(w);
         let mut b = packtest_header(&format!(
             "{title}: aggro-edge wave `{}` materializes on its perception ring, never on the \
              defended point (spec-0016 §6)",
@@ -235,7 +235,7 @@ pub(super) fn emit_td_lane_packtests(
             };
             *groups
                 .entry((m.entity.clone(), fmt_f64(radius)))
-                .or_default() += i64::from(m.count);
+                .or_default() += i64::from(m.count.base());
         }
         let c = ent_xyz(centre);
         for (i, ((entity, radius), count)) in groups.iter().enumerate() {

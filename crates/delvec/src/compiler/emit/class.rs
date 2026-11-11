@@ -102,6 +102,9 @@ pub(super) fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
     if let Some((id, count)) = flask_remainder(item) {
         parts.push(format!("use_remainder={}", flask_remainder_snbt(id, count)));
     }
+    if let Some(fw) = &item.fireworks {
+        parts.push(super::firework::stack_fireworks_component(fw));
+    }
     if parts.is_empty() {
         String::new()
     } else {

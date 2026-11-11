@@ -87,6 +87,11 @@ pub struct KitItem {
     /// no `contents` is `DW0487`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contents: Option<PotionContents>,
+    /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the `minecraft:fireworks`
+    /// component of a `minecraft:firework_rocket` kit stack. On any other item
+    /// it is `DW1095`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fireworks: Option<crate::StackFireworks>,
 }
 
 /// The items whose vanilla item definition carries a `minecraft:potion_contents`

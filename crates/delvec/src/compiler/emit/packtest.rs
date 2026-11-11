@@ -332,7 +332,7 @@ pub(super) fn watch_claims(
 ///
 /// A trigger template that asserts *which* trigger fired has to run the real `tick`,
 /// which runs the trigger's real effects — and a delve's effects include
-/// `damage-players` (the island's `his-house` deals 40, twice a dummy's health).
+/// `damage` (the island's `his-house` deals 40, twice a dummy's health).
 /// PackTest runs every generated template as one batch against one shared server, so
 /// an unshielded pass would kill sibling templates' dummies for reasons that have
 /// nothing to do with what they test.

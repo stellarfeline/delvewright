@@ -97,4 +97,12 @@ The entry leaves out the release machinery itself, which changes nothing in what
 
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
+- A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
+- A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
+- A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
+- An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
+
+### Changed
+
+- The `damage-players` verb is named `damage`.

@@ -141,7 +141,7 @@ type OnsetStart = (String, [i32; 3]);
 /// charged [`ONSET_REACTION_TICKS`] of standing-start reaction.
 ///
 /// Scope: beats whose `on_caught` actually punishes ([`StealthBeat::is_punishing`]
-/// — `damage-players` or `spawn-wave`, at any nesting depth). A beat that only
+/// — `damage` or `spawn-wave`, at any nesting depth). A beat that only
 /// narrates when spotted has nothing to escape, so no timing obligation exists.
 pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), Failure> {
     let positions = critical_positions(plan);
@@ -495,14 +495,15 @@ mod tests {
         );
         assert!(
             beat(vec![
-                Verb::DamagePlayers {
+                Verb::Damage {
                     amount: 40,
                     damage_type: None,
+                    by: None,
                 }
                 .into(),
             ])
             .is_punishing(),
-            "damage-players makes the beat punishing"
+            "damage makes the beat punishing"
         );
     }
 

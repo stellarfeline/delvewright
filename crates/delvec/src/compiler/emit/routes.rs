@@ -1155,6 +1155,43 @@ pub(super) fn prove_world(
                     warnings.extend(gate.findings());
                     pulse_gate = Some(gate);
                 }
+                // spec-0134 §10: what the route swims, and the breath debt
+                // stated, not judged: the longest submerged run of every leg.
+                // spec-0134 §2: a shot owes a bow and arrows (`DW1090`) and a
+                // stance that sees its target (`DW1091`).
+                {
+                    let shots = crate::compiler::nav::check_shots(plan, world).map_err(|f| {
+                        BuildFailure::Diagnostic {
+                            code: f.code,
+                            message: f.message,
+                        }
+                    })?;
+                    crate::note!("{}", shots.line());
+                }
+                // spec-0134 §1: a census's bodies reach their box (`DW1089`).
+                {
+                    let census =
+                        crate::compiler::nav::check_censuses(plan, world).map_err(|f| {
+                            BuildFailure::Diagnostic {
+                                code: f.code,
+                                message: f.message,
+                            }
+                        })?;
+                    crate::note!("{}", census.line());
+                }
+                let water = crate::compiler::waypoints::water_json(world, &routes);
+                crate::note!("{}", crate::compiler::waypoints::water_line(&water));
+                if !routes.is_empty() {
+                    put_json(out, "validation/water.json", &water);
+                }
+                // A leg that swims was priced at the swim entry, which the gym
+                // has not walked: `DW0813` names it (spec-0134 §10).
+                if routes.iter().any(|l| !l.water.is_empty()) {
+                    let table = delvewright_dsl::metrics::Metrics::table();
+                    let mut reads = delvewright_dsl::metrics::Reads::new();
+                    let _ = table.swim_ticks_per_block(&mut reads);
+                    warnings.extend(table.notice(&reads, "build"));
+                }
                 if !routes.is_empty() {
                     let doc = crate::compiler::waypoints::waypoints_json(
                         plan,

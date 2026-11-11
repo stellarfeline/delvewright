@@ -6,7 +6,7 @@ use super::*;
 /// wording, and the damage type the kill is dealt with.
 ///
 /// Resolution is the shared [`Plan::zone_box`] — the same anchor-centred box a
-/// `begin-stealth` zone and a `damage-players` `in` filter resolve through — so a
+/// `begin-stealth` zone and a `damage` `in` filter resolve through — so a
 /// volume cannot drift into its own geometry rule. A volume whose anchor no placed
 /// piece provides is simply absent from this list (validation reports it as
 /// `DW0142`), never a blank box at the world origin.
@@ -109,7 +109,7 @@ impl LethalVolumePlan {
 /// layout, in declaration order.
 ///
 /// The box is `anchor ± extent`, resolved exactly as [`Plan::zone_box`] resolves a
-/// stealth zone and a `damage-players` `in` filter — one geometry rule for every
+/// stealth zone and a `damage` `in` filter — one geometry rule for every
 /// anchor-centred box in the engine. A volume whose anchor no placed piece
 /// provides is dropped (validation already reported `DW0142`) rather than
 /// silently becoming a box at the origin.

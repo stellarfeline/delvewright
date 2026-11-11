@@ -415,7 +415,7 @@ pub struct Station {
 /// else, and a piece anchor declaring a bare `region` with no `block` is read as
 /// a gate whose fill block is `minecraft:air`.
 ///
-/// Every volume-shaped consumer — a `lethal_volumes[]` region, `damage-players`'s
+/// Every volume-shaped consumer — a `lethal_volumes[]` region, `damage`'s
 /// `in`, a `volley` kill zone, `collapse`'s ceiling, `begin-stealth`,
 /// `fill-region`, `clear-region` — is a [`crate::StealthZone`], an
 /// **anchor-centred box** resolved from a *point* plus an extent. The engine

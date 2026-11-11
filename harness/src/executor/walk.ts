@@ -14,6 +14,7 @@ import {
   describeStuckNeighbours,
   isDoorByHand,
   parkourFor,
+  swimFor,
 } from "../movement.ts";
 import {
   doorsCrossed,
@@ -352,7 +353,7 @@ export const methods = {
    * **A `sneak` leg is exempt from all of it.** `sneak: true` is the delve
    * declaring that stealth, not combat, is the mechanic on this leg, and a stealth
    * section runs on a clock: nobodys-cave-island's `begin-stealth` gives 90 ticks
-   * of grace outside a safe zone and answers a miss with `damage-players 40` — an
+   * of grace outside a safe zone and answers a miss with `damage 40` — an
    * instant kill. The stealth damage itself carries NO source entity, so it is
    * attributed to the nearest hostile — the (Invulnerable) warden the delve wants
    * the player to creep past — and staging it away would be the harness answering
@@ -639,6 +640,12 @@ export const methods = {
           this.feetCell(),
         );
         legWaypoints = match.waypoints;
+        // spec-0134 §10: liquid is admitted on a leg the compiler proved swims.
+        if (swimFor(movements, match.matched && match.water.length > 0)) {
+          process.stderr.write(
+            `[swim] ${label}: the proven leg swims ${match.water.length} water cell(s); liquid admitted\n`,
+          );
+        }
         legClimbs = match.climbs;
         legJumps = match.jumps;
         legVibrations = match.vibrations;

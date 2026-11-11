@@ -443,6 +443,13 @@ pub struct World {
     /// fills a region with a fluid, which is what keeps every other campaign's
     /// proofs byte-identical.
     flood_written: CellSet,
+    /// The cells of `flood_written` a body does **not** swim (spec-0134 §10):
+    /// a runtime fill of lava, a fluid fill whose block the model does not know,
+    /// and a fluid fill the party may never cause — water that may as well be
+    /// what the world built, so the walk may neither swim it nor stand on it.
+    /// Read by [`World::is_water`] alone; a runtime water fill the party is
+    /// forced to cause is swum like any water.
+    unswum: CellSet,
     /// The boxes behind `flood_written`, in region order — who to blame for a route
     /// that only exists when a fluid is mistaken for floor. Same job as
     /// `lethal_regions`, for the same reason: without it the author gets "no
@@ -900,6 +907,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1328,6 +1336,7 @@ impl World {
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
             flood_written: CellSet::new(),
+            unswum: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: premises.ambient,
             base: premises.base,
@@ -1504,6 +1513,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1572,6 +1582,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1613,7 +1624,13 @@ impl World {
     /// `flood_written`/`flood_regions` for [`World::without_runtime_flood`], and are
     /// **pinned** for the same reason a seal is: they are this proof's premise, and
     /// a later `clear-region` laid over them may not quietly delete the water.
-    fn with_flooded(&self, extra: &BTreeSet<[i32; 3]>, regions: &[([i32; 3], [i32; 3])]) -> World {
+    fn with_flooded(
+        &self,
+        extra: &BTreeSet<[i32; 3]>,
+        regions: &[([i32; 3], [i32; 3])],
+        unswum: &BTreeSet<[i32; 3]>,
+        lava: &BTreeSet<[i32; 3]>,
+    ) -> World {
         let mut w = World {
             piece: self.piece,
             solid: self.solid.clone(),
@@ -1647,11 +1664,20 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,
             built: self.built.clone(),
         };
+        // A written water cell is held when what is under it holds water: a
+        // solid block, a cell of the same fill, or water already there. A sheet
+        // over open air runs down and is no pool a body swims (spec-0134 §10).
+        let held = |c: &[i32; 3]| {
+            let below = [c[0], c[1] - 1, c[2]];
+            extra.contains(&below) || self.solid.contains(&below) || self.is_water(below)
+        };
+        let unheld: Vec<[i32; 3]> = extra.iter().filter(|c| !held(c)).copied().collect();
         for c in extra {
             w.solid.remove(c);
             w.tall.remove(c);
@@ -1662,6 +1688,16 @@ impl World {
             w.pinned.insert(*c);
             w.flood_written.insert(*c);
             w.floors.footprints.remove(c);
+            if unswum.contains(c) || unheld.contains(c) {
+                w.unswum.insert(*c);
+            } else {
+                w.unswum.remove(c);
+            }
+            if lava.contains(c) {
+                w.lava.insert(*c);
+            } else {
+                w.lava.remove(c);
+            }
         }
         w.flood_regions.extend_from_slice(regions);
         w.drop_unheld_climbs(extra);
@@ -1719,6 +1755,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1767,7 +1804,12 @@ impl World {
         self.with_cleared(&st.cleared)
             .with_sealed_by(&st.solid, &st.fill_footprints, &st.fill_hides)
             .with_unforced(&walled)
-            .with_flooded(&st.flooded, &st.flood_regions)
+            .with_flooded(
+                &st.flooded,
+                &st.flood_regions,
+                &st.flood_unswum,
+                &st.flood_lava,
+            )
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
             .with_keep_out(&st.keep_out)
             .with_laid_hurting(&st.laid)
@@ -1882,6 +1924,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: CellSet::new(),
+            unswum: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
             base: self.base,
@@ -1889,6 +1932,7 @@ impl World {
         };
         for c in &self.flood_written {
             w.flooded.remove(&c);
+            w.lava.remove(&c);
             w.solid.insert(c);
         }
         w
@@ -1976,6 +2020,7 @@ impl World {
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
             flood_written: self.flood_written.clone(),
+            unswum: self.unswum.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
             base: self.base,

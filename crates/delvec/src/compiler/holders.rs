@@ -1260,6 +1260,9 @@ pub struct OwnedHolder {
     pub loot: Option<String>,
     /// The `collect` objective that claims it.
     pub collect: Option<String>,
+    /// The claiming `loot` fill waits for a `fill-loot` effect (spec-0134 §6):
+    /// the holder's body summons it and leaves its loot slots to the fill.
+    pub loot_by_effect: bool,
 }
 
 impl OwnedHolder {
@@ -1320,6 +1323,7 @@ pub fn own_holders(plan: &Plan, entities: &[PlacedHolder]) -> Vec<OwnedHolder> {
             fills: Vec::new(),
             loot: None,
             collect: None,
+            loot_by_effect: false,
         })
         .collect();
     let one_at = |cell: [i32; 3]| {
@@ -1339,6 +1343,7 @@ pub fn own_holders(plan: &Plan, entities: &[PlacedHolder]) -> Vec<OwnedHolder> {
         o.id = crate::compiler::plan::safe_local(&l.anchor);
         o.anchor = Some(l.anchor.clone());
         o.loot = Some(l.id.clone());
+        o.loot_by_effect = l.by_effect;
         for (slot, it) in slots.into_iter().zip(
             l.items
                 .iter()

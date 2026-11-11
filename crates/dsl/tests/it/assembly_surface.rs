@@ -167,7 +167,12 @@ fn the_trigger_union_gains_strike_assembly() {
             "approach",
             "step",
             "strike-npc",
-            "strike-assembly"
+            "strike-assembly",
+            "body-enters",
+            "shot",
+            "use-item",
+            "strike-actor",
+            "use-actor"
         ]
     );
     let b = branch(&s, "TriggerOn", "on", "strike-assembly");

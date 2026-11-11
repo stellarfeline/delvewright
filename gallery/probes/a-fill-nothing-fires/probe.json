@@ -1,0 +1,11 @@
+{
+  "code": "DW1093",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/on_objective_complete/obj~1board-the-ferry/1"
+    }
+  ],
+  "why": "The ferryman's barrel still waits for its beat (`filled: by-effect`), and the `fill-loot` that boarding the ferry fires is removed. Nothing ever fills the barrel, so it stays empty for the whole delve: a fill declared and never emitted into the world. Refused at the fill's `filled`."
+}

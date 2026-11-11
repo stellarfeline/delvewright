@@ -44,6 +44,7 @@ mod atmosphere;
 mod boundary;
 mod branch;
 mod cast;
+mod census;
 mod checkpoint;
 mod class;
 mod coords;

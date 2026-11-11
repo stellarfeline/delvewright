@@ -607,3 +607,16 @@ fn cell_floor_is_the_library_floor_cast() {
         );
     }
 }
+
+/// spec-0134 §10: the swim rate is finite, slower than the sprint, and is the
+/// figure the metrics table carries.
+#[test]
+fn a_swimmer_crosses_a_pool_slower_than_a_sprinter() {
+    let swim = super::swim_ticks_per_block();
+    eprintln!("swim ticks per block: {swim}");
+    assert!(swim.is_finite() && swim > 0.0, "{swim}");
+    assert!(
+        swim > 20.0 / crate::metrics::SPRINT_SPEED_BLOCKS_PER_SECOND,
+        "{swim}"
+    );
+}

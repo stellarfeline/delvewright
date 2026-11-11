@@ -196,7 +196,7 @@ fn endings_read_parses_and_refuses_an_unknown_term() {
 /// it is classified.
 #[test]
 fn every_verb_is_in_exactly_one_aftermath_class() {
-    const CHANGES: [&str; 41] = [
+    const CHANGES: [&str; 42] = [
         "set-block",
         "fill-region",
         "clear-region",
@@ -205,7 +205,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         "close-gate",
         "open-way",
         "teleport",
-        "damage-players",
+        "damage",
         "give-effect",
         "clear-effect",
         "give-item",
@@ -223,6 +223,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         "despawn-wave",
         "seat-vehicle",
         "despawn-vehicle",
+        "fill-loot",
         "spawn-assembly",
         "despawn-assembly",
         "volley",
@@ -254,7 +255,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
     let before = named.len();
     named.dedup();
     assert_eq!(named.len(), before, "a verb is named in both classes");
-    assert_eq!(named.len(), 49);
+    assert_eq!(named.len(), 50);
     // Every effect the gallery declares (spec-0039: one instance of every
     // surface, probes included), parsed as the engine parses it. A verb the
     // lists above do not name fails here the day its gallery element lands.

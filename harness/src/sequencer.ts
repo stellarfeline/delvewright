@@ -21,7 +21,7 @@ import type {
   ExpireStep,
   RideStep,
 } from "./critical-path.ts";
-import { landingCarrier, pursuersOf } from "./critical-path.ts";
+import { landingCarrier, pursuersOf, censusOf } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
 
 /**
@@ -115,6 +115,12 @@ export interface StepExecutor {
    * retry loop, so a death during it is the step's death.
    */
   beforeStep?(step: Step): Promise<void>;
+  /**
+   * Optional (spec-0134 §1): put the bodies a step's gate counts in their box
+   * by command and read the count back. A step gated on a census against an
+   * executor without it is a hard error.
+   */
+  performCensus?(step: Step): Promise<void>;
   /**
    * Optional: anything the run owes at the boundary AFTER step `index` has
    * completed and before the next step begins — the death loop's trial of
@@ -340,6 +346,16 @@ export async function runSequence(
     for (;;) {
       try {
         await executor.beforeStep?.(step);
+        if (censusOf(step).length > 0) {
+          if (!executor.performCensus) {
+            throw new Error(
+              `step ${i} (${step.action}) is gated on the census of ${censusOf(step)
+                .map((c) => c.state)
+                .join(", ")}, and this executor cannot perform a census`,
+            );
+          }
+          await executor.performCensus(step);
+        }
         if (pursuersOf(step).length > 0) {
           if (!executor.pursue) {
             throw new Error(

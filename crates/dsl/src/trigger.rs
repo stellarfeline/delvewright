@@ -233,6 +233,41 @@ pub enum TriggerOn {
         /// The assembly (stage-5 `assemblies` ref) whose hitbox is the target.
         assembly: AssemblyId,
     },
+    /// **A body enters a counted box** (spec-0134 §1): fires when the counted
+    /// datum `state` rises from zero — the first body of its set inside its
+    /// box. Named by the datum, so the one count has one home; the datum must
+    /// carry `counts` (`DW1088`). Polled by the census tick, with no acting
+    /// player; with `once: false` it re-arms when the count returns to 0.
+    BodyEnters {
+        /// The counted datum (stage-5 `state` ref carrying `counts`).
+        state: crate::StateId,
+    },
+    /// **A target block is shot** (spec-0134 §2): a projectile the player
+    /// launched lands on the `minecraft:target` the trigger's `prop` places at
+    /// `at` (`DW1090` otherwise). The shooter is the presser.
+    Shot,
+    /// **An item is raised** (spec-0134 §3): a player inside `range` blocks of
+    /// `at` holds `item` in use. `item` is held to the pinned registry
+    /// (`DW0143`); refusing an item the game never reports in use waits on the
+    /// use-duration table (spec-0134 §3, a recorded debt).
+    UseItem {
+        /// The item held in use (pinned registry id).
+        item: String,
+        /// The box's half-extent around the anchor, in blocks.
+        range: u32,
+    },
+    /// The player attacks (left-clicks) an **actor's body** (spec-0134 §8): the
+    /// actor's twin of [`TriggerOn::StrikeNpc`], riding the actor's answer box.
+    StrikeActor {
+        /// The actor (stage-5 `actors` ref) whose body is the target.
+        actor: crate::ActorId,
+    },
+    /// The player uses (right-clicks) an **actor's body** (spec-0134 §8),
+    /// riding the actor's answer box.
+    UseActor {
+        /// The actor (stage-5 `actors` ref) whose body is the target.
+        actor: crate::ActorId,
+    },
 }
 
 impl TriggerOn {
@@ -246,6 +281,11 @@ impl TriggerOn {
             TriggerOn::Step => "step",
             TriggerOn::StrikeNpc { .. } => "strike-npc",
             TriggerOn::StrikeAssembly { .. } => "strike-assembly",
+            TriggerOn::BodyEnters { .. } => "body-enters",
+            TriggerOn::Shot => "shot",
+            TriggerOn::UseItem { .. } => "use-item",
+            TriggerOn::StrikeActor { .. } => "strike-actor",
+            TriggerOn::UseActor { .. } => "use-actor",
         }
     }
 
@@ -260,6 +300,8 @@ impl TriggerOn {
                 | TriggerOn::Use
                 | TriggerOn::StrikeNpc { .. }
                 | TriggerOn::StrikeAssembly { .. }
+                | TriggerOn::StrikeActor { .. }
+                | TriggerOn::UseActor { .. }
         )
     }
 
@@ -269,7 +311,11 @@ impl TriggerOn {
     pub fn needs_anchor(&self) -> bool {
         !matches!(
             self,
-            TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. }
+            TriggerOn::StrikeNpc { .. }
+                | TriggerOn::StrikeAssembly { .. }
+                | TriggerOn::StrikeActor { .. }
+                | TriggerOn::UseActor { .. }
+                | TriggerOn::BodyEnters { .. }
         )
     }
 
@@ -277,7 +323,18 @@ impl TriggerOn {
     /// but an `approach`, which has no carrier entity. The one table
     /// [`EnvTrigger::attributes_its_actor`] reads.
     pub fn attributes_its_actor(&self) -> bool {
-        !matches!(self, TriggerOn::Approach { .. })
+        !matches!(
+            self,
+            TriggerOn::Approach { .. } | TriggerOn::BodyEnters { .. }
+        )
+    }
+
+    /// The actor whose body the trigger rides (spec-0134 §8).
+    pub fn actor_target(&self) -> Option<&crate::ActorId> {
+        match self {
+            TriggerOn::StrikeActor { actor } | TriggerOn::UseActor { actor } => Some(actor),
+            _ => None,
+        }
     }
 
     /// The assembly whose hitbox this event watches (`strike-assembly` only).
@@ -444,6 +501,13 @@ crate::dw_code! {
     /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
     /// duplicated within the stage-5 `triggers` namespace.
     pub const TRIGGER_INVALID: DwCode = DwCode::new("DW0194", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0134 §2) A `shot` trigger with no `prop`, or a prop that is not
+    /// `minecraft:target` — the game records a shot on no other block — or one
+    /// before which no path puts a bow or a crossbow and arrows in a hand.
+    pub const SHOT_UNTARGETED: DwCode = DwCode::new("DW1090", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -797,6 +861,69 @@ pub(crate) fn trigger_decl_checks(
                     t.id
                 ),
             ));
+        }
+        // spec-0134 §8: an actor's twin of `strike-npc` names a declared
+        // actor, and never a `vulnerable` one, whose answer box would take the
+        // blows the body must take.
+        if let Some(actor) = t.on.actor_target() {
+            match quests.actors.iter().find(|a| a.id == *actor) {
+                None => d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    "quests",
+                    format!("/content/triggers/{i}/on/actor"),
+                    format!(
+                        "`{}` trigger `{}` targets actor `{actor}`, which stage 5 does not \
+                         declare — use a declared actor id",
+                        t.on.kind(),
+                        t.id
+                    ),
+                )),
+                Some(a) if a.vulnerable => d.push(Diagnostic::error(
+                    crate::body::BODY_ANSWER_UNSHOWABLE,
+                    "quests",
+                    format!("/content/triggers/{i}/on/actor"),
+                    format!(
+                        "`{}` trigger `{}` rides the answer box of actor `{actor}`, which is \
+                         `vulnerable` — a box over a body that must take blows takes every blow \
+                         meant for it. Make the actor invulnerable, or fire the trigger from a \
+                         place",
+                        t.on.kind(),
+                        t.id
+                    ),
+                )),
+                Some(_) => {}
+            }
+        }
+        // spec-0134 §2: a shot lands on the target block its prop places.
+        if matches!(t.on, TriggerOn::Shot) {
+            let target = t.prop.as_ref().map(|p| {
+                crate::blockshape::bare_id(crate::blockshape::base_id(&p.block)) == "target"
+            });
+            match target {
+                Some(true) => {}
+                Some(false) => d.push(Diagnostic::error(
+                    SHOT_UNTARGETED,
+                    "quests",
+                    format!("/content/triggers/{i}/prop/block"),
+                    format!(
+                        "`shot` trigger `{}` places `{}`, and the game records a shot only on a \
+                         `minecraft:target` — set the prop's block to `minecraft:target`",
+                        t.id,
+                        t.prop.as_ref().map_or("", |p| p.block.as_str())
+                    ),
+                )),
+                None => d.push(Diagnostic::error(
+                    SHOT_UNTARGETED,
+                    "quests",
+                    format!("/content/triggers/{i}"),
+                    format!(
+                        "`shot` trigger `{}` has no `prop` — the game records a shot only on a \
+                         `minecraft:target`, which the trigger places: add \
+                         `\"prop\": {{\"block\": \"minecraft:target\"}}`",
+                        t.id
+                    ),
+                )),
+            }
         }
         if let TriggerOn::Approach { range } = &t.on
             && *range == 0
@@ -1271,12 +1398,18 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
     }
     for (ti, t) in quests.triggers.iter().enumerate() {
         let kind = match &t.on {
-            TriggerOn::Use => PressKind::Use,
-            TriggerOn::Strike | TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => {
-                PressKind::Strike
-            }
+            TriggerOn::Use | TriggerOn::UseActor { .. } => PressKind::Use,
+            TriggerOn::Strike
+            | TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. }
+            | TriggerOn::StrikeActor { .. } => PressKind::Strike,
             TriggerOn::Step => PressKind::Step,
-            TriggerOn::Approach { .. } => continue,
+            // No hand presses these: a census, a shot landing on a target, an
+            // item held in use.
+            TriggerOn::Approach { .. }
+            | TriggerOn::BodyEnters { .. }
+            | TriggerOn::Shot
+            | TriggerOn::UseItem { .. } => continue,
         };
         let (serves_shut, serves_settled) = match &t.serves {
             None => (false, false),
@@ -1779,4 +1912,30 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
         b.refused_answers += refused_here;
     }
     (d, b)
+}
+
+/// spec-0134 §3: a `use-item` trigger names an item of the pinned registry
+/// (`DW0143`).
+pub(crate) fn use_item_checks(
+    c: &Campaign,
+    items: &dyn crate::registry::ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        let TriggerOn::UseItem { item, .. } = &t.on else {
+            continue;
+        };
+        if !items.contains(item) {
+            d.push(Diagnostic::error(
+                codes::ITEM_UNKNOWN,
+                "quests",
+                format!("/content/triggers/{i}/on/item"),
+                format!(
+                    "`use-item` trigger `{}` names `{item}`, which is not an item of the pinned \
+                     1.21.11 registry — use a namespaced item id (`minecraft:spyglass`)",
+                    t.id
+                ),
+            ));
+        }
+    }
 }

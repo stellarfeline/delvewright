@@ -60,7 +60,7 @@ fn verify_shortcuts(
         };
 
         // (1) the long route exists while the gate is sealed.
-        let Some(long) = sealed.find_path(start, goal).map(|p| p.len()) else {
+        let Some(long) = sealed.find_route(start, goal).map(|p| p.len()) else {
             return Err(Failure {
                 code: DW_SHORTCUT_NO_LONG_ROUTE,
                 message: format!(
@@ -77,7 +77,7 @@ fn verify_shortcuts(
 
         // (2) opening the gate strictly shortens that same walk (anti-leak).
         let short = world
-            .find_path(start, goal)
+            .find_route(start, goal)
             .map(|p| p.len())
             .unwrap_or(long);
         if short >= long {

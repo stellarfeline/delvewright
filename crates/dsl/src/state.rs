@@ -103,6 +103,53 @@ pub struct StateDecl {
     /// `DW0919`. Absent ⇒ the datum announces itself and stands nowhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<StateDisplay>,
+    /// **A census** (spec-0134 §1): the datum counts the bodies of a set
+    /// inside a box, and the engine writes it — every 10 ticks, the count of
+    /// the set's bodies whose hitbox meets the box. A counted datum is
+    /// derived: an author's `set-state`, `add-state` or `clear-state` naming
+    /// it, or a `player` scope, is `DW1088`. Absent ⇒ the datum is written by
+    /// its verbs alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<StateCounts>,
+}
+
+/// What a counted datum counts (spec-0134 §1): the bodies of one set inside
+/// one anchor-centred box.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StateCounts {
+    /// The box, `anchor ± extent` — the region every box verb takes,
+    /// resolved through the one `Plan::zone_box`.
+    pub region: crate::StealthZone,
+    /// Whose bodies are counted.
+    pub of: CensusOf,
+}
+
+/// The bodies a census counts (spec-0134 §1), by the tag the engine already
+/// puts on them or by type.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum CensusOf {
+    /// Every body a wave spawns (`dw_wave_<id>`).
+    Wave(crate::WaveId),
+    /// An actor's body (`dw_actor_<id>`).
+    Actor(crate::ActorId),
+    /// An NPC's body (`dw_npc_<n>`).
+    Npc(crate::NpcId),
+    /// Every entity of a type (a pinned registry id).
+    Kind(String),
+}
+
+impl CensusOf {
+    /// The wire key (`wave` / `actor` / `npc` / `kind`).
+    pub fn key(&self) -> &'static str {
+        match self {
+            CensusOf::Wave(_) => "wave",
+            CensusOf::Actor(_) => "actor",
+            CensusOf::Npc(_) => "npc",
+            CensusOf::Kind(_) => "kind",
+        }
+    }
 }
 
 /// The vanilla display slot a named datum stands in (spec-0076).
@@ -277,6 +324,14 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// (spec-0134 §1) A counted datum is derived — the census writes it — so
+    /// an author's `set-state`/`add-state`/`clear-state` naming one, a `player`
+    /// scope on one, or a `body-enters` trigger naming a datum with no
+    /// `counts`, is refused.
+    pub const STATE_CENSUS: DwCode = DwCode::new("DW1088", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// (v0.10, spec-0032) **A comparison read after the bundle has already changed
     /// what it compares.** An effect's `requires_state` names a datum that an
     /// EARLIER effect in the same bundle writes, so the gate is evaluated against
@@ -359,6 +414,9 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ));
         }
     }
+
+    // --- the census (spec-0134 §1): a counted datum is derived ----------------
+    census_decl_checks(c, d);
 
     // --- the standing display (spec-0076): what the sidebar can draw -----------
     //
@@ -534,11 +592,28 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     id.as_str()
                 ),
             )),
+            Some(decl) if decl.counts.is_some() => d.push(Diagnostic::error(
+                STATE_CENSUS,
+                "quests",
+                format!("{path}/state"),
+                format!(
+                    "`{}` writes `{}`, which counts bodies in a box — the engine writes a \
+                     counted datum from the census every 10 ticks, and any other write is \
+                     overwritten at the next count. Write a datum of your own, or take \
+                     `counts` off this one",
+                    eff.verb.tag(),
+                    id.as_str()
+                ),
+            )),
             Some(_) => {
                 written.insert(id.as_str().to_string());
             }
         }
     });
+    // A census is a write: the engine counts the bodies (spec-0134 §1).
+    for s in decls.iter().filter(|s| s.counts.is_some()) {
+        written.insert(s.id.as_str().to_string());
+    }
     // A loop's `counts` is a write: every move raises it by one (spec-0086 §3.4).
     for l in &c.quests.content.loops {
         if let Some(counts) = &l.counts
@@ -685,6 +760,27 @@ fn check_player_state_not_scheduled(
         // spec-0085 §3.3: the fourth shape — an actor-addressed effect where
         // emission has no acting player. One rule, *no `@s` where emission has
         // none*, and one remedy.
+        if scheduled
+            && matches!(
+                e.verb,
+                crate::Verb::Damage {
+                    by: Some(crate::DamageBy::Actor),
+                    ..
+                }
+            )
+        {
+            d.push(Diagnostic::error(
+                STATE_SCOPE_UNREACHABLE,
+                stage,
+                format!("{path}/by"),
+                "a `damage` effect declares `by: actor` in a bundle that runs with no acting \
+                 player (a polled trigger's effects, a trap's payload, a shortcut's `on_unlock`, \
+                 an `on_arrive`, an `on_rest`, a cutscene's `then`, and every step of a timeline \
+                 started there). There is no player to credit the blow to. Move the beat onto a \
+                 site a player drives, or drop `by`"
+                    .to_string(),
+            ));
+        }
         if scheduled && e.audience == Some(crate::EffectAudience::Actor) {
             d.push(Diagnostic::error(
                 STATE_SCOPE_UNREACHABLE,
@@ -881,4 +977,81 @@ fn volume_id_at(c: &Campaign, path: &str) -> String {
         .and_then(|i| i.parse::<usize>().ok())
         .and_then(|i| c.quests.content.lethal_volumes.get(i))
         .map_or_else(|| path.to_string(), |v| v.id.as_str().to_string())
+}
+
+/// The census declarations (spec-0134 §1): a counted datum is `party`-scoped
+/// (`DW1088`), and the set it counts is declared (`DW0112`); a `body-enters`
+/// trigger names a counted datum (`DW1088`).
+fn census_decl_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let q = &c.quests.content;
+    for (i, s) in q.state.iter().enumerate() {
+        let Some(counts) = &s.counts else {
+            continue;
+        };
+        if s.scope == crate::StateScope::Player {
+            d.push(Diagnostic::error(
+                STATE_CENSUS,
+                "quests",
+                format!("/content/state/{i}/scope"),
+                format!(
+                    "`{}` counts bodies in a box and is `player`-scoped — a count of bodies \
+                     is one number the whole party shares, not one per player. Declare it \
+                     `party`",
+                    s.id.as_str()
+                ),
+            ));
+        }
+        let (known, what) = match &counts.of {
+            CensusOf::Wave(w) => (q.waves.iter().any(|x| x.id == *w), w.as_str().to_string()),
+            CensusOf::Actor(a) => (q.actors.iter().any(|x| x.id == *a), a.as_str().to_string()),
+            CensusOf::Npc(n) => (
+                c.npcs.content.npcs.iter().any(|x| x.id == *n),
+                n.as_str().to_string(),
+            ),
+            CensusOf::Kind(_) => (true, String::new()),
+        };
+        if !known {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/state/{i}/counts/of/{}", counts.of.key()),
+                format!(
+                    "`{}` counts the bodies of `{what}`, which the campaign never declares",
+                    s.id.as_str()
+                ),
+            ));
+        }
+    }
+    for (i, t) in q.triggers.iter().enumerate() {
+        let crate::TriggerOn::BodyEnters { state } = &t.on else {
+            continue;
+        };
+        match q.state_decl(state.as_str()) {
+            None => d.push(Diagnostic::error(
+                codes::STATE_UNDECLARED,
+                "quests",
+                format!("/content/triggers/{i}/on/state"),
+                format!(
+                    "trigger `{}` fires when a body enters the box `{}` counts, which the \
+                     campaign never declares",
+                    t.id.as_str(),
+                    state.as_str()
+                ),
+            )),
+            Some(decl) if decl.counts.is_none() => d.push(Diagnostic::error(
+                STATE_CENSUS,
+                "quests",
+                format!("/content/triggers/{i}/on/state"),
+                format!(
+                    "trigger `{}` fires when a body enters the box `{}` counts, but `{}` \
+                     counts nothing — give it `counts {{region, of}}`, the one box the \
+                     trigger and the gates read",
+                    t.id.as_str(),
+                    state.as_str(),
+                    state.as_str()
+                ),
+            )),
+            Some(_) => {}
+        }
+    }
 }

@@ -133,9 +133,14 @@ pub struct QuestEffect {
     pub verb: Verb,
 }
 
-/// **Who a player-facing effect addresses** (spec-0085 §3.2).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
+/// **Who an effect addresses** (spec-0085 §3.2, spec-0134 §9): `party` or
+/// `actor` — players — or the bodies of one wave (`{"wave": id}`) or one
+/// actor (`{"actor": id}`), through the tag the engine puts on them. A body
+/// audience is admitted on the verbs that act on a body
+/// ([`Verb::addresses_bodies`]: `give-effect`, `clear-effect`, `damage`) and
+/// refused on a verb that only reaches a player (`DW0942`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "AudienceWire", into = "AudienceWire")]
 pub enum EffectAudience {
     /// Every player — `@a`.
     Party,
@@ -144,15 +149,95 @@ pub enum EffectAudience {
     /// Emitted `@s`, so it exists only where emission has an acting player
     /// (`DW0503`).
     Actor,
+    /// The standing bodies of a stage-5 wave (`@e[tag=dw_wave_<id>]`).
+    Wave(WaveId),
+    /// The body of a stage-5 actor (`@e[tag=dw_actor_<id>,limit=1]`).
+    Body(ActorId),
+}
+
+/// The players an [`EffectAudience`] names, as the document spells them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlayerAudience {
+    /// Every player.
+    Party,
+    /// The acting player.
+    Actor,
+}
+
+/// `{"wave": id}` — a wave's bodies.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WaveAudience {
+    /// The wave (stage-5 `waves` ref).
+    pub wave: WaveId,
+}
+
+/// `{"actor": id}` — an actor's body.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActorAudience {
+    /// The actor (stage-5 `actors` ref).
+    pub actor: ActorId,
+}
+
+/// The wire form of [`EffectAudience`]: a player token, or a body object.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(rename = "EffectAudience")]
+pub enum AudienceWire {
+    /// `party` or `actor`.
+    Players(PlayerAudience),
+    /// `{"wave": id}`.
+    Wave(WaveAudience),
+    /// `{"actor": id}`.
+    Body(ActorAudience),
+}
+
+impl From<AudienceWire> for EffectAudience {
+    fn from(w: AudienceWire) -> Self {
+        match w {
+            AudienceWire::Players(PlayerAudience::Party) => EffectAudience::Party,
+            AudienceWire::Players(PlayerAudience::Actor) => EffectAudience::Actor,
+            AudienceWire::Wave(w) => EffectAudience::Wave(w.wave),
+            AudienceWire::Body(a) => EffectAudience::Body(a.actor),
+        }
+    }
+}
+
+impl From<EffectAudience> for AudienceWire {
+    fn from(a: EffectAudience) -> Self {
+        match a {
+            EffectAudience::Party => AudienceWire::Players(PlayerAudience::Party),
+            EffectAudience::Actor => AudienceWire::Players(PlayerAudience::Actor),
+            EffectAudience::Wave(wave) => AudienceWire::Wave(WaveAudience { wave }),
+            EffectAudience::Body(actor) => AudienceWire::Body(ActorAudience { actor }),
+        }
+    }
+}
+
+impl JsonSchema for EffectAudience {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "EffectAudience".into()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        AudienceWire::json_schema(generator)
+    }
 }
 
 impl EffectAudience {
-    /// The token the document spells.
-    pub fn token(self) -> &'static str {
+    /// The token the document spells (`wave` / `actor` for a body audience's key).
+    pub fn token(&self) -> &'static str {
         match self {
             EffectAudience::Party => "party",
-            EffectAudience::Actor => "actor",
+            EffectAudience::Actor | EffectAudience::Body(_) => "actor",
+            EffectAudience::Wave(_) => "wave",
         }
+    }
+
+    /// Whether this audience names bodies rather than players.
+    pub fn is_body(&self) -> bool {
+        matches!(self, EffectAudience::Wave(_) | EffectAudience::Body(_))
     }
 }
 
@@ -273,6 +358,14 @@ impl QuestEffect {
         }
     }
 
+    /// The fill id if this is `fill-loot` (spec-0134 §6).
+    pub fn fill_loot(&self) -> Option<&crate::LootId> {
+        match &self.verb {
+            Verb::FillLoot { loot } => Some(loot),
+            _ => None,
+        }
+    }
+
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match &self.verb {
@@ -357,7 +450,7 @@ impl QuestEffect {
             | Verb::PlaySound { .. }
             // spec-0109's `stop-sound`.
             | Verb::StopSound { .. }
-            | Verb::DamagePlayers { .. }
+            | Verb::Damage { .. }
             | Verb::SetCheckpoint { .. }
             | Verb::Bonfire { .. }
             | Verb::BeginStealth { .. }
@@ -402,6 +495,8 @@ impl QuestEffect {
             // spec-0135's vehicle verbs.
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            // spec-0134's `fill-loot`.
+            | Verb::FillLoot { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -445,7 +540,7 @@ impl QuestEffect {
             Verb::BeginStealth { .. } => Some("begin-stealth"),
             Verb::EndStealth => Some("end-stealth"),
             Verb::PlaySound { .. } => Some("play-sound"),
-            Verb::DamagePlayers { .. } => Some("damage-players"),
+            Verb::Damage { .. } => Some("damage"),
             Verb::SpawnActor { .. } => Some("spawn-actor"),
             Verb::DespawnActor { .. } => Some("despawn-actor"),
             Verb::MoveActor { .. } => Some("move-actor"),
@@ -675,12 +770,12 @@ impl QuestEffect {
         }
     }
 
-    /// The `within` filter zone if this is a v0.6 `damage-players` effect that
+    /// The `within` filter zone if this is a v0.6 `damage` effect that
     /// declares one (the `in` spatial scope). `None` for an unscoped
-    /// `damage-players` and for every other effect.
+    /// `damage` and for every other effect.
     pub fn damage_within(&self) -> Option<&StealthZone> {
         match &self.verb {
-            Verb::DamagePlayers { .. } => self.within.as_ref(),
+            Verb::Damage { .. } => self.within.as_ref(),
             _ => None,
         }
     }

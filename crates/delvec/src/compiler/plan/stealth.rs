@@ -29,17 +29,14 @@ pub struct StealthBeat {
 
 impl StealthBeat {
     /// Whether being caught in this beat actually **punishes** the player — the
-    /// `on_caught` tree contains a `damage-players` (direct harm) or a
+    /// `on_caught` tree contains a `damage` (direct harm) or a
     /// `spawn-wave` (hostile mobs). A beat that only narrates has nothing to
     /// escape from, so the DW0355 onset-survivability obligation does not apply
     /// to it; a punishing beat must be escapable from every position a player can
     /// legally occupy when it starts.
     pub fn is_punishing(&self) -> bool {
         fn punishing(eff: &QuestEffect) -> bool {
-            if matches!(
-                &eff.verb,
-                Verb::DamagePlayers { .. } | Verb::SpawnWave { .. }
-            ) {
+            if matches!(&eff.verb, Verb::Damage { .. } | Verb::SpawnWave { .. }) {
                 return true;
             }
             eff.nested_effect_lists()
@@ -54,7 +51,7 @@ impl StealthBeat {
 impl<'a> Plan<'a> {
     /// Resolve an anchor-centred box (spec-0022) to absolute inclusive corners:
     /// `anchor ± extent`, the same shape `begin-stealth` zones and
-    /// `damage-players`'s `in` filter use. `None` when no placed piece provides
+    /// `damage`'s `in` filter use. `None` when no placed piece provides
     /// the anchor.
     ///
     /// This — not a prefab `region` anchor — is how the trap-payload verbs

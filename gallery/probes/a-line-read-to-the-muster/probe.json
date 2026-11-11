@@ -1,0 +1,18 @@
+{
+  "code": "DW0942",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1answer-the-marshal/4",
+      "value": {
+        "audience": {
+          "wave": "wave/muster"
+        },
+        "text": "Glow, muster.",
+        "type": "narrate"
+      }
+    }
+  ],
+  "why": "A line narrated to the muster's bodies, beside the glow the marshal's answer gives them, and nothing else changed. A wave's bodies read nothing: a line, a sound, an item and a particle reach a player only, and a body audience belongs on `give-effect`, `clear-effect` or `damage`. Refused at the line's `audience`."
+}

@@ -773,6 +773,14 @@ pub(super) fn emit_functions(
             setup.push(format!("schedule function {ns}:boundary_tick 20t"));
         }
     }
+    // spec-0134 §2: every `shot` trigger's target block. Empty for a
+    // campaign with no shot -> byte-identical.
+    for (_, [x, y, z], block) in plan.shot_targets() {
+        setup.push(format!("setblock {x} {y} {z} {block}"));
+    }
+    // spec-0134 §1: start the census. Empty for a campaign that counts
+    // nothing -> byte-identical.
+    setup.extend(census::census_setup(plan));
     // v0.6 night-vision mitigation: start the per-second `effect give` clock for the
     // areas that declare it. Empty otherwise → byte-identical.
     if has_night_vision_areas(plan) {
@@ -795,6 +803,7 @@ pub(super) fn emit_functions(
     // spec-0021: fill each declared container. Empty for a campaign with no
     // `loot` -> byte-identical.
     setup.extend(loot_setup(&plan.loot, holders));
+    fns.extend(loot_fill_fns(&plan.loot, holders));
     // spec-0128 §8: write each sign text into the sign the piece placed.
     // Empty for a campaign with no `signs` -> byte-identical.
     setup.extend(sign_setup(&plan.signs));
@@ -1468,6 +1477,9 @@ pub(super) fn emit_functions(
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));
+    // spec-0134 §1: the census tick and each `body-enters` dispatch. Empty
+    // for a campaign that counts nothing -> byte-identical.
+    fns.extend(census::census_fns(plan, chrome));
     fns.extend(trap_fns(plan, trap_gates));
     // spec-0022: the proven per-cell volley geometry and the settled collapse
     // debris. Empty for a campaign using neither verb (byte-identical).
