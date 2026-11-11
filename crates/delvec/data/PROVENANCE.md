@@ -581,6 +581,25 @@ not third-party reconstructions.
   `JAVA_HOME=<a JDK 21> python3 tools/maintenance/extract-peaceful-despawn.py`
   (`--check` to compare without writing).
 
+- **`entity-steering-1.21.11.json`** (in `crates/dsl/data/`) — the entity types
+  that **carry a player rider**, each with its vehicle kind (`boat`, `minecart`,
+  `mount`), the medium it moves in, the riders it seats, whether it is summoned
+  `Tame`, and the item a rider holds to steer it. 22 of the 157 types: 10 boats,
+  the minecart, 11 mounts, 2 steering items. Read out of the pinned server jar
+  (`versions.toml` `[minecraft]` `server_jar_sha256`
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`) with the
+  official server mappings: a boat's class extends `AbstractBoat` and not
+  `AbstractChestBoat` (cross-checked against the tag `#minecraft:boat`); the
+  minecart is the class `Minecart`; a mount is in `#minecraft:can_equip_saddle`
+  and overrides `LivingEntity#tickRidden` (cross-checked: it draws a `saddle`
+  slot in `entity-slots-1.21.11.json`); seats from the bytecode of the first
+  `Entity#canAddPassenger` on the class chain; a steering item is a
+  `FoodOnAStickItem` by its `canInteractWith` field (cross-checked: its type
+  implements `ItemSteerable`). It lives in the DSL crate because the vehicle's
+  kind is derived where the document is validated (`DW1096`). **Reproduce it**:
+  `JAVA_HOME=<a JDK 21> python3 tools/maintenance/extract-entity-steering.py`
+  (`--check` to compare without writing).
+
 - **`timeline-day-1.21.11.json`** and **`timeline-moon-1.21.11.json`** (in
   `crates/dsl/data/`) — **not** from the misode summary: read straight out of the
   pinned server jar, `versions.toml` `[minecraft]` `server_jar_sha256`

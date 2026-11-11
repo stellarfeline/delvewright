@@ -1,0 +1,121 @@
+{
+  "minecraft:acacia_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:bamboo_raft": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:birch_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:camel": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 3,
+    "tame": true
+  },
+  "minecraft:camel_husk": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 3,
+    "tame": true
+  },
+  "minecraft:cherry_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:dark_oak_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:donkey": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "tame": true
+  },
+  "minecraft:horse": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "tame": true
+  },
+  "minecraft:jungle_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:mangrove_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:minecart": {
+    "kind": "minecart",
+    "medium": "rails",
+    "seats": 1
+  },
+  "minecraft:mule": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "tame": true
+  },
+  "minecraft:nautilus": {
+    "kind": "mount",
+    "medium": "water",
+    "seats": 1
+  },
+  "minecraft:oak_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:pale_oak_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:pig": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "steering_item": "minecraft:carrot_on_a_stick"
+  },
+  "minecraft:skeleton_horse": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "tame": true
+  },
+  "minecraft:spruce_boat": {
+    "kind": "boat",
+    "medium": "water",
+    "seats": 2
+  },
+  "minecraft:strider": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "steering_item": "minecraft:warped_fungus_on_a_stick"
+  },
+  "minecraft:zombie_horse": {
+    "kind": "mount",
+    "medium": "ground",
+    "seats": 1,
+    "tame": true
+  },
+  "minecraft:zombie_nautilus": {
+    "kind": "mount",
+    "medium": "water",
+    "seats": 1
+  }
+}
