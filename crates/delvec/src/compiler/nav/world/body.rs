@@ -1189,7 +1189,10 @@ impl World {
 
     /// Water, not lava: a flooded cell a body could float in.
     pub(in crate::compiler::nav) fn is_water(&self, c: [i32; 3]) -> bool {
-        self.flooded.contains(&c) && !self.lava.contains(&c) && !self.lethal.contains(&c)
+        self.flooded.contains(&c)
+            && !self.lava.contains(&c)
+            && !self.lethal.contains(&c)
+            && !self.unswum.contains(&c)
     }
 
     /// A **surface cell** of water: water with open air over it, where a body

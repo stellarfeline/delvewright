@@ -34,6 +34,15 @@ pub(in crate::compiler::nav) struct RegionState {
     /// looks perfectly open, exactly as [`World::lethal_regions`] does for a lethal
     /// volume.
     pub(in crate::compiler::nav) flood_regions: Vec<([i32; 3], [i32; 3])>,
+    /// The cells of `flooded` a body does not swim (spec-0134 §10): a lava
+    /// fill, a fluid fill whose block the model does not know, and an unforced
+    /// fluid fill — the party may arrive to find the box as the world built it,
+    /// so the walk neither swims it nor stands on it. A forced water fill is
+    /// swum like any water.
+    pub(in crate::compiler::nav) flood_unswum: BTreeSet<[i32; 3]>,
+    /// The cells of `flooded` a lava fill writes: lava to every reader of the
+    /// world, the reach graph's included.
+    pub(in crate::compiler::nav) flood_lava: BTreeSet<[i32; 3]>,
     /// Cells an **unforced** fill has written by this point: a solid block laid from
     /// a beat the party may never play ([`crate::compiler::plan::RegionEvent::is_forced`]).
     ///
@@ -481,6 +490,17 @@ impl World {
                 RegionWrite::Clear | RegionWrite::Pass => &mut st.cleared,
                 RegionWrite::Flood => {
                     st.flood_regions.push(region);
+                    let lava = block
+                        .as_deref()
+                        .is_some_and(crate::compiler::assembled::is_lava);
+                    if lava || !forced || block.is_none() {
+                        st.flood_unswum
+                            .extend(crate::compiler::assembled::region_cells(region.0, region.1));
+                    }
+                    if lava {
+                        st.flood_lava
+                            .extend(crate::compiler::assembled::region_cells(region.0, region.1));
+                    }
                     &mut st.flooded
                 }
                 RegionWrite::Unseal => continue,
@@ -1281,8 +1301,10 @@ mod tests {
     ///
     /// The corridor's floor at `[2,64,0]` is the only footing between the two ends.
     /// A `Fill` there is a no-op (the cell was already solid) and the leg routes. A
-    /// `Flood` there — the same box, the same fire step, the same verb, a different
-    /// block — replaces the floor with water, and a body does not stand on water.
+    /// `Flood` of lava there — the same box, the same fire step, the same verb, a
+    /// different block — replaces the floor with a fluid no body stands on or swims.
+    /// (A water fill there is swum: spec-0134 §10,
+    /// `a_runtime_water_fill_a_body_climbs_out_of_is_swum`.)
     ///
     /// This is the whole defect in four lines: with `Flood` folded into `Fill`, the
     /// second case routed too, and the compiler proved a party walking across a
@@ -1304,7 +1326,8 @@ mod tests {
             .is_ok(),
             "filling a floor cell with a block leaves it floor"
         );
-        let fluid_fill = RegionEvent::forced(floor_box, RegionWrite::Flood, 0);
+        let fluid_fill =
+            RegionEvent::forced(floor_box, RegionWrite::Flood, 0).laying("minecraft:lava");
         let err = route_visited(
             &world,
             &[a, b],
@@ -1320,9 +1343,9 @@ mod tests {
         );
     }
 
-    /// A flooded cell blocks passage as hard as a wall does, on top of not being
-    /// floor — so a fluid fill laid **across** the corridor closes it exactly as a
-    /// `close-gate` would.
+    /// A cell flooded with lava blocks passage as hard as a wall does, on top of
+    /// not being floor — so a lava fill laid **across** the corridor closes it
+    /// exactly as a `close-gate` would.
     ///
     /// The code here is `DW0311`, not `DW0544`, and that is the counterfactual being
     /// honest rather than a gap. `DW0544` answers one question — *would this route
@@ -1337,7 +1360,8 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0);
+        let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:lava");
         let err = route_visited(
             &world,
             &[a, b],
@@ -1365,7 +1389,8 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let over_floor = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
+        let over_floor = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:lava");
         // A solid fill over a box that covers the same cell, declared either side of
         // the flood. Both orders must refuse.
         let wider_solid = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
@@ -1402,7 +1427,8 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let flood = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
+        let flood = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:lava");
         // A different box (so it is a different region, with its own latest write)
         // covering the flooded floor cell and the air above it.
         let clear = RegionEvent::forced(([2, 64, 0], [2, 65, 0]), RegionWrite::Clear, 1);
@@ -1729,7 +1755,8 @@ mod tests {
             RegionWrite::Flood,
             0,
             "the payload of trap `t`",
-        );
+        )
+        .laying("minecraft:lava");
         let err = route_visited(
             &world,
             &[a, b],
@@ -1738,5 +1765,83 @@ mod tests {
         )
         .expect_err("a fluid fill takes the floor away whoever fires it");
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+    }
+
+    // --- a runtime water fill is swum (spec-0134 §10) ------------------------
+
+    /// **A runtime water fill is swum like any water.** The floor cell the
+    /// corridor crosses is filled with water by a beat the party cannot skip:
+    /// the body steps down into it, swims, and climbs out onto the floor beyond
+    /// over the one-block rim, so the leg routes through the water cell. The
+    /// same box filled with lava is the wall `DW0544` names
+    /// (`a_fluid_fill_takes_the_floor_away_and_a_solid_fill_does_not`).
+    #[test]
+    fn a_runtime_water_fill_a_body_climbs_out_of_is_swum() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let water = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:water");
+        let events = RegionEvents::from(vec![water]);
+        assert!(
+            route_visited(&world, &[a, b], &events, &linear).is_ok(),
+            "a forced water fill the body can climb out of is crossed"
+        );
+        let legs = route_walked_legs(&world, &[a, b], &events, &linear);
+        assert_eq!(legs.len(), 1);
+        assert!(
+            legs[0].0.cells.contains(&[2, 64, 0]),
+            "the leg swims the filled cell: {:?}",
+            legs[0].0.cells
+        );
+    }
+
+    /// **Water the body cannot climb out of is a wall.** The same water fill,
+    /// with the floor beyond it raised a block — the far rim two blocks over the
+    /// water, past the climb-out band — strands a swimmer, so the leg does not
+    /// route.
+    #[test]
+    fn a_runtime_water_fill_with_no_climb_out_is_not_crossed() {
+        // Near floor at y = 64 (stand at 65) for x ∈ {0,1}; the cell to fill at
+        // [2,64,0]; far floor at y = 65 (stand at 66) for x ∈ {3,4}. No ceiling.
+        let mut solid = BTreeSet::new();
+        for x in 0..2 {
+            solid.insert([x, 64, 0]);
+        }
+        solid.insert([2, 63, 0]);
+        for x in 3..5 {
+            solid.insert([x, 64, 0]);
+            solid.insert([x, 65, 0]);
+        }
+        let world = World::from_solid_cells(solid);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 66, 0], 2);
+        let water = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0)
+            .laying("minecraft:water");
+        assert!(
+            route_visited(&world, &[a, b], &RegionEvents::from(vec![water]), &linear).is_err(),
+            "water with no climb-out on the far side is not crossed"
+        );
+    }
+
+    /// **An unforced water fill is not swum.** The party may arrive to find the
+    /// box as the world built it, so the walk may neither swim it nor stand on
+    /// it — impassable and never floor, judged as `DW0544` as a forced lava fill
+    /// is.
+    #[test]
+    fn an_unforced_water_fill_is_not_swum() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent::unforced(
+            ([2, 64, 0], [2, 64, 0]),
+            RegionWrite::Flood,
+            0,
+            "the payload of trap `t`",
+        )
+        .laying("minecraft:water");
+        let err = route_visited(&world, &[a, b], &RegionEvents::from(vec![flood]), &linear)
+            .expect_err("water the party may never pour is no water to swim");
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
     }
 }

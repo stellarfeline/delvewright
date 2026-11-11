@@ -172,6 +172,12 @@ pub fn rotate_state(name: &str, r: crate::compiler::solver::Rotation) -> String 
     format!("{}[{}]", &name[..open], body.join(","))
 }
 
+/// Whether a block state is **lava**: a free fluid a body burns in and never
+/// swims — the one rule the occupancy model and a runtime fluid fill read.
+pub fn is_lava(name: &str) -> bool {
+    collision_class(name) == Collision::Fluid && bare_id(name) == "lava"
+}
+
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
 /// source** alongside the host block (MC 1.13+ waterlogging).
 ///
@@ -2313,7 +2319,7 @@ impl StateClass {
             waterlogged: is_waterlogged(name),
             material: delvewright_dsl::metrics::body::material_of_block(name),
             collision,
-            lava: collision == Collision::Fluid && bs::bare_id(name) == "lava",
+            lava: is_lava(name),
             ladder: collision == Collision::Climbable
                 && matches!(bs::climbable(name), Some(bs::Climbable::Ladder { .. })),
             footprint: match collision {
