@@ -6290,7 +6290,7 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
 // no further than the best before it.
 // ---------------------------------------------------------------------------
 
-test("a pursued step walked again resumes its leg where the bot respawned, and a life that gets no further is a death loop", () => {
+test("a pursued step walked again resumes its leg where the bot respawned, and dies at most as often as its route has waypoints", () => {
   const bot = new FakeBot();
   const executor = attach(bot);
   (executor as unknown as { feetCell: () => [number, number, number] }).feetCell = () => [29, 65, 31];
@@ -6304,15 +6304,17 @@ test("a pursued step walked again resumes its leg where the bot respawned, and a
   });
   executor.legCursor = 1;
   executor.beginStep(4);
-  executor.legCursor = 2; // the step's walk consumed its leg
-  executor.noteRouteProgress(1, 2);
+  executor.noteStepLeg(1); // the step's walk matched its leg …
+  executor.legCursor = 2; // … and consumed it
   executor.resumePursuedStep(4, "reach");
   assert.equal(executor.legCursor, 1, "the cursor goes back to the step's leg");
   assert.deepEqual(executor.legResume, { leg: 1, from: 1 }, "resumed from the waypoint nearest the respawn");
-  assert.equal(executor.pursuedDeaths.get(4), 1);
-  // A second life that gets further is walked again; one that does not is a loop.
-  executor.noteRouteProgress(1, 3);
-  executor.resumePursuedStep(4, "reach");
-  executor.noteRouteProgress(1, 2);
-  assert.throws(() => executor.resumePursuedStep(4, "reach"), /step 4 \(reach\): death loop — death 3 .*leg 1 waypoint 2.*leg 1 waypoint 3/);
+  // Progress is never asked: three more deaths, each no further, are walked again.
+  for (let d = 2; d <= 4; d++) executor.resumePursuedStep(4, "reach");
+  assert.equal(executor.pursuedDeaths.get(4), 4);
+  // The fifth death is past the leg's four proven waypoints: a death loop.
+  assert.throws(
+    () => executor.resumePursuedStep(4, "reach"),
+    /step 4 \(reach\): death loop — death 5 on this pursued step, past its bound of 4: the proven waypoints of the leg\(s\) it walks \(1\)/,
+  );
 });

@@ -21,9 +21,6 @@ export const PURSUIT_READING_TICKS = 20;
 /** Wall time (ms) between two looks at the server's clock while waiting for the next reading. */
 const PURSUIT_CLOCK_POLL_MS = 250;
 
-/** The weight of a leg in a route-progress value (`leg × this + waypoint`). */
-const ROUTE_PROGRESS_LEG = 1_000_000;
-
 /** How long (ms) a named hit stays the explanation of a death that follows it. */
 const DEATH_ATTRIBUTION_MS = 3_000;
 
@@ -52,46 +49,40 @@ export const methods = {
     return true;
   },
 
-  /** Note a hop reached on the matched leg `leg` at its proven waypoint `k`. */
-  noteRouteProgress(this: MineflayerExecutor, leg: number, k: number): void {
-    this.lifeProgress = Math.max(this.lifeProgress, leg * ROUTE_PROGRESS_LEG + k);
+  /** Note that the current step walks the proven leg `leg`. */
+  noteStepLeg(this: MineflayerExecutor, leg: number): void {
+    this.stepLegs.add(leg);
   },
 
   /**
    * **Walk a pursued step again after a death on it** (spec-0132 §5.2), the
    * respawn already taken where the game put the bot. The step is walked from
    * there: the leg cursor goes back to where the step began, and its first leg
-   * resumes from the proven waypoint nearest the bot. A life must get further
-   * along the step's proven route than every life before it; one that does not
-   * is a death loop and fails the step by name. So a step is walked at most
-   * once more than it has proven waypoints, and a run cannot die forever.
+   * resumes from the proven waypoint nearest the bot. The bound guards
+   * termination, never survival: a step may take at most as many deaths as its
+   * proven legs have waypoints, and the death past that is a death loop that
+   * fails the step by name. Whether a life got further than the last is not
+   * asked — that is the vanilla will of the pursuer, the designer's call.
    */
   resumePursuedStep(this: MineflayerExecutor, index: number, label: string): void {
     const deaths = (this.pursuedDeaths.get(index) ?? 0) + 1;
     this.pursuedDeaths.set(index, deaths);
-    const life = this.lifeProgress;
-    const best = this.pursuedBest.get(index);
-    const where = (v: number | undefined): string =>
-      v === undefined || v < 0
-        ? "no proven waypoint"
-        : `leg ${Math.floor(v / ROUTE_PROGRESS_LEG)} waypoint ${v % ROUTE_PROGRESS_LEG}`;
-    if (best !== undefined && life <= best) {
+    const legs = [...this.stepLegs].sort((a, b) => a - b);
+    const bound = legs.reduce((n, l) => n + (this.waypoints?.legs[l]?.waypoints.length ?? 0), 0);
+    if (deaths > bound) {
       throw new Error(
-        `step ${index} (${label}): death loop — death ${deaths} on this pursued step came at ` +
-          `${where(life)}, no further along its proven route than an earlier life (${where(best)}); ` +
-          `a body dying and retrying cannot finish this route`,
+        `step ${index} (${label}): death loop — death ${deaths} on this pursued step, past its bound ` +
+          `of ${bound}: the proven waypoints of the leg(s) it walks (${legs.length === 0 ? "none" : legs.join(", ")})`,
       );
     }
-    this.pursuedBest.set(index, life);
     this.legCursor = this.stepStartCursor;
     const leg = this.waypoints?.legs[this.legCursor];
     const feet = this.feetCell();
     if (leg !== undefined && feet !== undefined) {
       this.legResume = { leg: this.legCursor, from: nearestIndex(leg.waypoints, feet) };
     }
-    this.lifeProgress = -1;
     process.stderr.write(
-      `[pursuit] step ${index} (${label}): death ${deaths} at ${where(life)}; respawned at ` +
+      `[pursuit] step ${index} (${label}): death ${deaths} of at most ${bound}; respawned at ` +
         `[${feet?.join(", ") ?? "?"}], walking the step again` +
         (leg === undefined ? "" : ` from proven waypoint ${this.legResume?.from}`) +
         `\n`,

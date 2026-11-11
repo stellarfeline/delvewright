@@ -18,7 +18,6 @@ import {
 import {
   doorsCrossed,
   nextLegWaypoints,
-  nearestIndex,
   LEG_START_REACH,
   MAX_HOP_BLOCKS,
   retainStandableWaypoints,
@@ -608,10 +607,6 @@ export const methods = {
       let legClimbs: readonly Climb[] = [];
       let legJumps: readonly Jump[] = [];
       let legStandUps: readonly StandUp[] = [];
-      // spec-0132 §5.2: the matched leg and its whole proven route, against
-      // which each hop reached is noted as this life's progress.
-      let progressLeg: number | undefined;
-      let progressRoute: readonly Vec3Tuple[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
       // heard from the walk's start — or from the first walk along part of the
       // leg before it (a run-back approach, a pulse station walk), which is
@@ -663,10 +658,8 @@ export const methods = {
             heardFrom = await this.sculkLegStart(legVibrations);
           }
         }
-        if (match.matched && legWaypoints) {
-          progressLeg = this.legCursor;
-          progressRoute = legWaypoints;
-        }
+        // spec-0132 §5.2: the proven legs a step walks bound its deaths.
+        if (match.matched && legWaypoints) this.noteStepLeg(this.legCursor);
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
@@ -875,9 +868,6 @@ export const methods = {
           } finally {
             parkourFor(movements, false);
             this.crouchYielded = false;
-          }
-          if (progressLeg !== undefined) {
-            this.noteRouteProgress(progressLeg, nearestIndex(progressRoute, [spec.x, spec.y, spec.z]));
           }
           await this.judgeWatchers(glabel);
         },

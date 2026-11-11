@@ -96,8 +96,8 @@ export interface StepExecutor {
   /**
    * Optional (spec-0132 §5.2): after a death on a pursued step and the respawn,
    * ready the step to be walked again from where the game put the bot — or
-   * throw, naming a death loop, when this life got no further along the step's
-   * proven route than the best life before it.
+   * throw, naming a death loop, when the step has taken more deaths than its
+   * proven route has waypoints.
    */
   resumePursuedStep?(index: number, label: string): void;
   /**
@@ -365,7 +365,7 @@ export async function runSequence(
       } catch (cause) {
         // spec-0132 §5.2: a death on a pursued step is a measurement. The bot
         // respawns where the game puts it, as a player does, and walks the step
-        // again, until a life gets no further than the best before it.
+        // again, until it has died more often than its route has waypoints.
         if (
           cause instanceof BotDeathError &&
           pursuersOf(step).length > 0 &&

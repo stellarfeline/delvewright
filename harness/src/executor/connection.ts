@@ -491,7 +491,7 @@ export const methods = {
   beginStep(this: MineflayerExecutor, index: number): void {
     this.currentStep = index;
     this.stepStartCursor = this.legCursor;
-    this.lifeProgress = -1;
+    this.stepLegs.clear();
     // A trigger echo belongs to the step that sent it. Dropping it here keeps a
     // later step's timeout from quoting the previous step's `/trigger` as if it
     // were its own — a diagnostic that names the wrong command is worse than none.
