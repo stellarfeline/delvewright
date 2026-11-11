@@ -396,3 +396,56 @@ fn the_use_duration_table_is_the_pinned_games() {
     assert_eq!(item_use_duration("minecraft:snowball"), None);
     assert_eq!(item_use_duration("minecraft:stone"), None);
 }
+
+/// **A shot that counts up a gate is loosed by the path** (spec-0134 §2 ×
+/// `DW0985`). The mark is repeatable and adds one hit a time; the exit waits
+/// on three. Nothing on the quest DAG shoots, so the presses that drive the
+/// gate are the plan's: the critical path carries three `shot` steps in
+/// front of the exit, each from the proven stance. Red before: a `shot` was
+/// not a hand act the drive could schedule (`drive::pressable`), so the path
+/// walked to the exit and waited on a gate nobody opened.
+#[test]
+fn a_shot_that_counts_a_gate_up_is_on_the_path() {
+    let (c, q) = docs(|_, q| {
+        q["content"]["state"] = json!([{"id": "state/hits", "scope": "party"}]);
+        let t = &mut q["content"]["triggers"][0];
+        t["once"] = json!(false);
+        t["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/hits", "amount": 1}));
+        let exit = q["content"]["quests"][0]["objectives"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|o| o["id"] == "obj/exit")
+            .unwrap();
+        exit["requires_state"] = json!([{"state": "state/hits", "op": "at-least", "value": 3}]);
+    });
+    let d = diags(&c, &q);
+    assert!(
+        d.iter()
+            .all(|x| x.severity != delvewright_dsl::Severity::Error),
+        "{d:#?}"
+    );
+    let out = build(&c, &q, &[]).expect("builds");
+    let cp = json_at(&out, "critical-path.json");
+    let steps = cp["steps"].as_array().unwrap();
+    let exit = steps
+        .iter()
+        .position(|s| s["objective"] == "obj/exit")
+        .expect("the exit is on the path");
+    let shots: Vec<&Value> = steps[..exit]
+        .iter()
+        .filter(|s| s["action"] == "trigger" && s["trigger"] == "trigger/hit-the-mark")
+        .collect();
+    assert_eq!(
+        shots.len(),
+        3,
+        "three hits in front of the exit: {steps:#?}"
+    );
+    for s in shots {
+        assert_eq!(s["on"], "shot", "{s}");
+        assert!(s["stand"].is_array(), "loosed from the stance: {s}");
+    }
+}

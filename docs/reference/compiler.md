@@ -3469,8 +3469,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `DW0985`). A datum is *driven* when it is declared, no stake forfeits it, no
   loop counts it, it has one holder on the walk (`party`, or `player` with
   `min_players` 1), and every write to it anywhere is a top-level effect of a
-  `use` or `strike` trigger on an anchor; such a trigger also broadcasts the
-  fired marker. The plan replays, in path order, every press the path performs
+  `use`, `strike` or `shot` trigger on an anchor (a shot is loosed from the
+  stance `DW1091` proved); such a trigger also broadcasts the fired marker. The plan replays, in path order, every press the path performs
   — the trigger's own gate (`once`, flags, numeric terms), then each effect in
   order behind its own `when`, read against the value the earlier lines of the
   same bundle produced, as the datapack runs them — and at each objective whose
