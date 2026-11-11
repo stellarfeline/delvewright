@@ -151,14 +151,18 @@ const ARROWS: &[&str] = &["arrow", "spectral_arrow", "tipped_arrow"];
 /// critical-path step that performs it (the last step when the path does not)
 /// — read off `plan.movement`, the walk `DW1043` makes over every item the
 /// campaign puts in a hand — else `DW1090`; and a [`shot_stance`] in the walk
-/// region, else `DW1091`. The stances are fixed on the plan for the emitter.
+/// region (the reach graph's standing cells), else `DW1091`. The stances are fixed on the plan for the emitter.
 pub fn check_shots(plan: &Plan, world: &World) -> Result<ShotBinding, Failure> {
     let mut b = ShotBinding::default();
     let targets = plan.shot_targets();
     let walk = if targets.is_empty() {
         BTreeSet::new()
     } else {
-        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+        // Where a body can stand: the reach graph's standing states, the one
+        // answer to that question (`World::body_reach`).
+        world
+            .body_reach_rooted(&crate::compiler::edit::anchor_starts(plan))
+            .standing()
     };
     let mut fixed = std::collections::BTreeMap::new();
     for (id, cell, _) in &targets {
