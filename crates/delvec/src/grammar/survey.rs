@@ -258,16 +258,20 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
             .copied()
             .collect()
     };
-    let spaces: Vec<(&String, BTreeSet<[i32; 3]>)> =
-        req.spaces.iter().map(|(n, c)| (n, floor_of(c))).collect();
+    let spaces: Vec<(&String, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>)> = req
+        .spaces
+        .iter()
+        .map(|(n, c)| (n, floor_of(c), c.iter().copied().collect()))
+        .collect();
     let mut joined = Vec::new();
-    for (i, (a, ca)) in spaces.iter().enumerate() {
-        for (b, cb) in spaces.iter().skip(i + 1) {
+    for (i, (a, ca, pa)) in spaces.iter().enumerate() {
+        for (b, cb, pb) in spaces.iter().skip(i + 1) {
             if ca.is_empty() || cb.is_empty() {
                 continue;
             }
             let graph: BTreeSet<[i32; 3]> = ca.union(cb).copied().collect();
-            if contract::walk_joined(&model, &graph, ca, cb) {
+            let pool: BTreeSet<[i32; 3]> = pa.union(pb).copied().collect();
+            if contract::walk_joined(&model, &graph, &pool, ca, cb) {
                 joined.push([(*a).clone(), (*b).clone()]);
             }
         }
@@ -456,6 +460,64 @@ mod tests {
         let b = survey(&open).unwrap();
         assert!(b.reached.contains(&[5, 1, 1]));
         assert_eq!(b.joined, vec![["east".to_string(), "west".to_string()]]);
+    }
+
+    /// **A walk joins two spaces across water a body swims** (spec-0134 §10).
+    /// Two banks of floor, a channel two courses deep between them: the route
+    /// proof's leg swims it ([`crate::compiler::nav::World::find_route`]) and
+    /// the dry walk does not ([`crate::compiler::nav::World::find_path`]), so
+    /// the survey's join — the relation a starter declares a `walk` edge on,
+    /// and the edge proof's own walk — must cross it too. Red before: the join
+    /// walked the floor alone, and the bay's shoals stood in a space nothing
+    /// joined.
+    #[test]
+    fn a_walk_joins_two_banks_across_water_the_route_swims() {
+        let size = [9u32, 5, 3];
+        let mut blocks = Vec::new();
+        for x in 0..9 {
+            for z in 0..3 {
+                blocks.push((x, 0, z, "minecraft:stone".to_string()));
+                if (3..6).contains(&x) {
+                    for y in 1..3 {
+                        blocks.push((x, y, z, "minecraft:water[level=0]".to_string()));
+                    }
+                } else {
+                    for y in 1..3 {
+                        blocks.push((x, y, z, "minecraft:stone".to_string()));
+                    }
+                }
+            }
+        }
+        let west: Vec<[i32; 3]> = (0..6)
+            .flat_map(|x| (0..3).flat_map(move |z| (1..4).map(move |y| [x, y, z])))
+            .collect();
+        let east: Vec<[i32; 3]> = (6..9)
+            .flat_map(|x| (0..3).map(move |z| [x, 3, z]))
+            .collect();
+        let mut spaces = BTreeMap::new();
+        spaces.insert("west".to_string(), west);
+        spaces.insert("east".to_string(), east);
+        let req = Request {
+            size,
+            blocks,
+            keep: None,
+            from: vec![[0, 3, 1]],
+            spaces,
+            palette: vec![],
+        };
+        let model = model_of(&req).unwrap();
+        let world = nav::body_world(&model);
+        assert!(
+            world.find_path([0, 3, 1], [8, 3, 1]).is_none(),
+            "the dry walk does not cross the channel, so the plant binds"
+        );
+        assert!(
+            world.find_route([0, 3, 1], [8, 3, 1]).is_some(),
+            "the route proof swims the channel"
+        );
+        let a = survey(&req).unwrap();
+        assert!(a.reached.contains(&[8, 3, 1]), "{:?}", a.reached);
+        assert_eq!(a.joined, vec![["east".to_string(), "west".to_string()]]);
     }
 
     /// **`sealed` is the out-of-walk gate's own object** (spec-0128 §3.2): a

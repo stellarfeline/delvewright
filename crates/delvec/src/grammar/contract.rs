@@ -268,6 +268,29 @@ fn body_connected(
     !body_reached(world, cells, from).is_disjoint(to)
 }
 
+/// **The cells of `pool` a body swims in** (spec-0134 §10): water rest states
+/// of the reach graph ([`crate::compiler::nav::RestKind::Afloat`] and
+/// [`crate::compiler::nav::RestKind::Submerged`]). Passed through, never owed:
+/// a walk crosses them as the route proof's leg swims them, so a piece's own
+/// contract and the route that walks it agree on what a body reaches in water.
+pub(crate) fn swum_cells(
+    world: &crate::compiler::nav::World,
+    pool: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    pool.iter()
+        .filter(|c| {
+            matches!(
+                world.rest_kind(**c),
+                Some(
+                    crate::compiler::nav::RestKind::Afloat
+                        | crate::compiler::nav::RestKind::Submerged
+                )
+            )
+        })
+        .copied()
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // The contingency, with `barred` normalised into it
 // ---------------------------------------------------------------------------
@@ -1431,12 +1454,14 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 /// the same code. `Ok(())` means the class holds; `Err` carries the class's own
 /// red, in its own words.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn prove_class(
     class: &str,
     model: &VoxelModel,
     graph: &BTreeSet<[i32; 3]>,
     via: &BTreeSet<[i32; 3]>,
     span: &BTreeSet<[i32; 3]>,
+    pool: &BTreeSet<[i32; 3]>,
     a: &BTreeSet<[i32; 3]>,
     b: &BTreeSet<[i32; 3]>,
     ends: (&str, &str),
@@ -1482,7 +1507,7 @@ fn prove_class(
             }
         }
         "walk" => {
-            if walk_joined(model, graph, a, b) {
+            if walk_joined(model, graph, pool, a, b) {
                 Ok(())
             } else {
                 Err("a walk connects both ways, and this one does not".to_string())
@@ -1520,17 +1545,21 @@ fn prove_class(
 /// **Does a `walk` join `a` and `b` both ways, over the floor `graph` names**
 /// — the edge proof's one answer for a walk: [`body_connected`] each way over
 /// the model with every standable cell outside `graph` walled up
-/// ([`nav::walled`]), so a jump cannot cross floor the edge was not given.
-/// `delvec grammar survey` asks this for an author's pair of spaces, so the
-/// edge a starter declares is the edge this gate proves.
+/// ([`nav::walled`]), so a jump cannot cross floor the edge was not given —
+/// and through the water of `pool` a body swims in ([`swum_cells`]), as the
+/// route proof's leg swims it (spec-0134 §10). `delvec grammar survey` asks
+/// this for an author's pair of spaces, so the edge a starter declares is the
+/// edge this gate proves.
 pub(crate) fn walk_joined(
     model: &VoxelModel,
     graph: &BTreeSet<[i32; 3]>,
+    pool: &BTreeSet<[i32; 3]>,
     a: &BTreeSet<[i32; 3]>,
     b: &BTreeSet<[i32; 3]>,
 ) -> bool {
     let world = body_world(&nav::walled(model, graph));
-    body_connected(&world, graph, a, b) && body_connected(&world, graph, b, a)
+    let cells: BTreeSet<[i32; 3]> = graph.union(&swum_cells(&world, pool)).copied().collect();
+    body_connected(&world, &cells, a, b) && body_connected(&world, &cells, b, a)
 }
 
 fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
@@ -1602,7 +1631,15 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 
         let class = proving_class(&edge.class);
         let ends = (edge.a.as_str(), edge.b.as_str());
-        let held = prove_class(class, model, &graph, &via, &span, &a, &b, ends);
+        // The water a walk between the two may swim: the two spaces' own
+        // cells and the edge's.
+        let pool: BTreeSet<[i32; 3]> = ix
+            .space(&edge.a)
+            .union(ix.space(&edge.b))
+            .chain(span.iter())
+            .copied()
+            .collect();
+        let held = prove_class(class, model, &graph, &via, &span, &pool, &a, &b, ends);
 
         let Some(cont) = cont else {
             // No contingency: the edge is what it claims to be as shipped, and
@@ -1669,6 +1706,7 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
             &open_graph,
             &open_via,
             &span,
+            &pool,
             &oa,
             &ob,
             ends,
@@ -2348,12 +2386,20 @@ impl Confined {
         // The cells of an element a body holds in on a climbable — a `climb`
         // edge's volume, or a ladder down into a space from its way in:
         // passed through, never owed — a target is a cell a body stands in.
-        let held: BTreeSet<[i32; 3]> = self
+        // And the water of an element a body swims in (spec-0134 §10): passed
+        // through as the route proof's leg swims it, never owed.
+        let element_cells: BTreeSet<[i32; 3]> = self
             .elements
             .iter()
             .flat_map(|e| e.cells.iter().copied())
-            .filter(|c| world.is_climb_cell(*c) && !self.excluded.contains(c))
+            .filter(|c| !self.excluded.contains(c))
             .collect();
+        let mut held: BTreeSet<[i32; 3]> = element_cells
+            .iter()
+            .filter(|c| world.is_climb_cell(**c))
+            .copied()
+            .collect();
+        held.extend(swum_cells(&world, &element_cells));
         // A start a body cannot stand or hold in — the mouth of a shaft, the
         // air over a doorway's sill — hands on the rest states a body let go
         // there comes to rest in.
@@ -2401,7 +2447,7 @@ pub(crate) fn class_proved(
     a: &BTreeSet<[i32; 3]>,
     b: &BTreeSet<[i32; 3]>,
 ) -> bool {
-    prove_class(class, model, cells, cells, span, a, b, ("a", "b")).is_ok()
+    prove_class(class, model, cells, cells, span, span, a, b, ("a", "b")).is_ok()
 }
 
 /// **Where the walk starts**: the mouth of every way into the entry space —
