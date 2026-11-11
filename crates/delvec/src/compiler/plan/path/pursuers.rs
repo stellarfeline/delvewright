@@ -41,9 +41,6 @@ pub struct Pursuer {
     pub entrance_ticks: u32,
     /// The unleash that looses it could not be dated on this path.
     pub undated: bool,
-    /// What its kind hears (`delvewright_dsl::senses`), or `None` for a kind
-    /// that hears nothing the engine knows of.
-    pub hearing: Option<&'static delvewright_dsl::senses::KindHearing>,
 }
 
 impl Pursuer {
@@ -59,14 +56,6 @@ impl Pursuer {
             && let Some(o) = v.as_object_mut()
         {
             o.insert("undated".to_string(), serde_json::json!(true));
-        }
-        // spec-0132 §5.2: the kind's hearing, which the bot waits out before
-        // a move it cannot make silently. Present only for a kind that hears.
-        if let (Some(h), Some(o)) = (self.hearing, v.as_object_mut()) {
-            o.insert(
-                "hearing".to_string(),
-                serde_json::json!({"reach": h.reach, "forget_ticks": h.forget_ticks}),
-            );
         }
         v
     }
@@ -212,7 +201,6 @@ pub(crate) fn pursuers_by_step(
             ),
             entrance_ticks: delvewright_dsl::entrance::entrance_ticks(a),
             undated,
-            hearing: delvewright_dsl::senses::kind_hearing(&a.entity),
         };
         let mut loose = undated;
         let mut k = 0;

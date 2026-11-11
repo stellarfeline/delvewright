@@ -97,9 +97,6 @@ export interface PursuerRow {
   readonly entranceTicks: number;
   /** The unleash that looses it could not be dated on this path. */
   readonly undated: boolean;
-  /** What its kind hears (`delvewright_dsl::senses`): the reach in blocks and
-   * the ticks until it forgets; absent for a kind that hears nothing known. */
-  readonly hearing?: { readonly reach: number; readonly forgetTicks: number };
 }
 
 /**
@@ -973,7 +970,7 @@ function parsePursuers(value: unknown, pointer: string): PursuerRow[] {
   return value.map((row, i) => {
     const at = `${pointer}/${i}`;
     if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
-    rejectUnknownKeys(row, ["actor", "kind", "census", "entrance_ticks", "undated", "hearing"], at);
+    rejectUnknownKeys(row, ["actor", "kind", "census", "entrance_ticks", "undated"], at);
     const actor = requireString(row, "actor", at);
     if (!/^actor\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(actor)) {
       fail(`${at}/actor`, `must be an \`actor/<kebab>\` id, got ${JSON.stringify(actor)}`);
@@ -984,24 +981,12 @@ function parsePursuers(value: unknown, pointer: string): PursuerRow[] {
     if (undated !== undefined && undated !== true) {
       fail(`${at}/undated`, `must be \`true\` when present, got ${describe(undated)}`);
     }
-    let hearing: PursuerRow["hearing"];
-    const heard = row["hearing"];
-    if (heard !== undefined) {
-      if (!isRecord(heard)) fail(`${at}/hearing`, `must be an object, got ${describe(heard)}`);
-      rejectUnknownKeys(heard, ["reach", "forget_ticks"], `${at}/hearing`);
-      const reach = requireInteger(heard, "reach", `${at}/hearing`);
-      const forgetTicks = requireInteger(heard, "forget_ticks", `${at}/hearing`);
-      if (reach <= 0) fail(`${at}/hearing/reach`, `must be positive, got ${reach}`);
-      if (forgetTicks <= 0) fail(`${at}/hearing/forget_ticks`, `must be positive, got ${forgetTicks}`);
-      hearing = { reach, forgetTicks };
-    }
     return {
       actor,
       kind: requireString(row, "kind", at),
       census: requireString(row, "census", at),
       entranceTicks,
       undated: undated === true,
-      ...(hearing === undefined ? {} : { hearing }),
     };
   });
 }
