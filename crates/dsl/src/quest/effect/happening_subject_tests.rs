@@ -88,6 +88,11 @@ fn every_verb_answers_the_census() {
             None,
         ),
         (
+            "apply-edits",
+            serde_json::json!({"type":"apply-edits","batch":"batch/bunting"}),
+            None,
+        ),
+        (
             "narrate",
             serde_json::json!({"type":"narrate","text":"The hall answers."}),
             None,

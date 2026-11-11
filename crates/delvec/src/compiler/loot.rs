@@ -750,12 +750,8 @@ mod tests {
             cell,
             items: (0..n)
                 .map(|_| crate::compiler::plan::LootItemPlan {
-                    item: "minecraft:bread".to_string(),
-                    count: 1,
-                    name: None,
-                    enchantments: BTreeMap::new(),
+                    stack: delvewright_dsl::Stack::of("minecraft:bread"),
                     slot: None,
-                    fireworks: None,
                 })
                 .collect(),
             by_effect: false,

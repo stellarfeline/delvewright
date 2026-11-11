@@ -724,6 +724,17 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/mark",
+        pos: [12, 1, 9],
+        facing: None,
+        trigger_block: None,
+        note: "the archery mark standing on the floor at the west end of the pedestal row, \
+               under the hall sign, in sight of the arrival and of the hearth stone: a `shot` trigger lays its target block here (spec-0134 \
+               §2), and the near hall's floor gives a clear line to it from four to forty \
+               blocks off",
+        role: None,
+    },
+    Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),
@@ -4989,10 +5000,10 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-hall-line-end",
-        pos: [LONG_HALL_RAIL_X + 4, 1, LONG_HALL_RAIL_TO],
+        pos: [LONG_HALL_RAIL_X + 3, 1, LONG_HALL_RAIL_TO],
         facing: None,
         trigger_block: None,
-        note: "the yard's floor abreast of the rail line's last cell, two cells clear of where a rider steps off: where a rider who took \
+        note: "the yard's middle lane abreast of the rail line's last cell, the groom in sight beyond it: where a rider who took \
                the cart walks to after it (spec-0135)",
         role: None,
     },
@@ -5052,7 +5063,7 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-hall-groom",
-        pos: [8, 1, LONG_HALL_END_Z + 33],
+        pos: [9, 1, LONG_HALL_END_Z + 33],
         facing: Some("west"),
         trigger_block: None,
         note: "the east yard's far end, abreast of the rail line's last cell: where the groom \

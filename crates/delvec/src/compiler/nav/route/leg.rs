@@ -753,7 +753,7 @@ fn ride_leg(
             objective_id.clone(),
             crate::compiler::reach::KeepOut {
                 objective: objective_id.clone(),
-                completion: completion.clone(),
+                completion: *completion,
             }
             .bounds(),
         ));

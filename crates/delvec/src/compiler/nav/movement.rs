@@ -258,6 +258,7 @@ fn enchantment_rule(item: &str, enchantment: &str) -> Option<(Kind, &'static str
 struct Reader<'a> {
     out: MovementItems,
     path: &'a [Step],
+    campaign: &'a delvewright_dsl::Campaign,
     /// The class whose kit is being read, when one is.
     kit: Option<usize>,
 }
@@ -349,10 +350,30 @@ impl Reader<'_> {
             Value::Object(m) => {
                 match m.get("type").and_then(Value::as_str) {
                     Some("give-item") => {
+                        let source = format!("a `give-item` at {doc}{pointer}");
                         if let Some(item) = m.get("item").and_then(Value::as_str) {
-                            let source = format!("a `give-item` at {doc}{pointer}");
                             let at = self.stage_of(pointer);
-                            self.stack(item, m.get("enchantments"), None, &source, at);
+                            self.stack(item, m.get("enchantments"), m.get("contents"), &source, at);
+                        } else if let Some(stack) = m
+                            .get("from")
+                            .and_then(|f| {
+                                serde_json::from_value::<delvewright_dsl::TakenFrom>(f.clone()).ok()
+                            })
+                            .and_then(|from| {
+                                delvewright_dsl::GiveSource::Taken { from }
+                                    .resolve(self.campaign)
+                                    .map(|s| s.into_owned())
+                            })
+                        {
+                            // A stack taken off an actor (spec-0134 §8) is the
+                            // piece its equipment declares in that slot.
+                            let at = self.stage_of(pointer);
+                            let ench = serde_json::to_value(&stack.enchantments).ok();
+                            let contents = stack
+                                .contents
+                                .as_ref()
+                                .and_then(|c| serde_json::to_value(c).ok());
+                            self.stack(&stack.item, ench.as_ref(), contents.as_ref(), &source, at);
                         }
                     }
                     Some("give-effect") => {
@@ -415,13 +436,10 @@ impl Reader<'_> {
 /// against the critical path `path`.
 #[must_use]
 pub fn movement_items(campaign: &delvewright_dsl::Campaign, path: &[Step]) -> MovementItems {
-    read_items(campaign, path).out
-}
-
-fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Reader<'a> {
     let mut r = Reader {
         out: MovementItems::default(),
         path,
+        campaign,
         kit: None,
     };
     for (ci, class) in campaign.classes.content.classes.iter().enumerate() {
@@ -433,7 +451,14 @@ fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Rea
                 .contents
                 .as_ref()
                 .and_then(|c| serde_json::to_value(c).ok());
-            r.stack(&k.item, None, contents.as_ref(), &source, (0, true));
+            let ench = serde_json::to_value(&k.enchantments).ok();
+            r.stack(
+                &k.item,
+                ench.as_ref(),
+                contents.as_ref(),
+                &source,
+                (0, true),
+            );
         }
     }
     r.kit = None;
@@ -461,7 +486,7 @@ fn read_items<'a>(campaign: &delvewright_dsl::Campaign, path: &'a [Step]) -> Rea
             r.walk(doc, &v, &mut pointer);
         }
     }
-    r
+    r.out
 }
 
 #[cfg(test)]

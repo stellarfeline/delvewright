@@ -1377,6 +1377,7 @@ pub(crate) fn resettle(blocks: &mut BlockMap) -> Vec<Settled> {
 
 /// The authoritative assembled-world model: the settled cell→block map plus the
 /// per-falling-block settle outcomes (for the gravity-despawn diagnostic).
+#[derive(Clone)]
 pub struct Assembled {
     /// The gravity-settled cell→block map (cells absent from it are air).
     ///

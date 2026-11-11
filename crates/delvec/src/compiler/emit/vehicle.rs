@@ -77,12 +77,7 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
         for slot in EquipSlot::ALL {
             let piece = decl.equipment.as_ref().and_then(|e| e.filled(slot));
             let item = match (piece, slot) {
-                (Some(p), _) => format!(
-                    "{}:{{id:\"{}\",count:1{}}}",
-                    slot.nbt(),
-                    p.item(),
-                    enchantment_components(p)
-                ),
+                (Some(p), _) => format!("{}:{}", slot.nbt(), super::stack::nbt(&p.stack())),
                 (None, EquipSlot::Saddle) => {
                     format!("{}:{{id:\"minecraft:saddle\",count:1}}", slot.nbt())
                 }

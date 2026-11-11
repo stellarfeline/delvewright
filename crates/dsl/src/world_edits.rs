@@ -40,6 +40,30 @@ pub struct EditBatch {
     /// Ordered edit verbs. `select` defines named regions; later verbs in the
     /// same batch refer back to them (strictly backward, like every DSL ref).
     pub edits: Vec<WorldEdit>,
+    /// **When the batch is applied** (DSL v0.73, spec-0134 §6): `at-build` (the
+    /// default) into the built world; `by-effect` by the `apply-edits` verb
+    /// from whichever bundle the story fires it in — resolved at build like any
+    /// batch, its writes emitted as `edit_<batch>`, the light proof judged with
+    /// it applied and without.
+    #[serde(default, skip_serializing_if = "EditApplied::is_at_build")]
+    pub applied: EditApplied,
+}
+
+/// When an [`EditBatch`] is applied (spec-0134 §6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EditApplied {
+    /// Into the built world (the default).
+    #[default]
+    AtBuild,
+    /// By an `apply-edits` effect.
+    ByEffect,
+}
+
+impl EditApplied {
+    fn is_at_build(&self) -> bool {
+        *self == EditApplied::AtBuild
+    }
 }
 
 /// One edit verb (spec-0017 L3). Every verb operates on named regions and every
@@ -435,6 +459,74 @@ crate::dw_code! {
     /// ids in recipes reuse [`BLOCK_UNKNOWN`] / `DW0193`; id-syntax and
     /// duplicate-name violations reuse `DW0110`/`DW0111`.)
     pub const EDIT_INVALID: DwCode = DwCode::new("DW0162", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0134 §6) A batch and its beat disagree: a `by-effect` batch no
+    /// bundle applies (declared and never written into the world), or an
+    /// `apply-edits` of an `at-build` batch (a second write of cells the build
+    /// already holds).
+    pub const EDITS_UNAPPLIED: DwCode = DwCode::new("DW1094", ExitTier::Build);
+}
+
+/// **A batch and the beat that applies it** (spec-0134 §6): every
+/// `apply-edits`, at every effect root and nesting depth, names a declared
+/// batch (`DW0112`) that waits for it (`DW1094`); every `by-effect` batch is
+/// named by at least one `apply-edits` (`DW1094`). One rule, two messages.
+pub(crate) fn apply_edits_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let batches: &[EditBatch] = c
+        .world_edits
+        .as_ref()
+        .map(|e| e.content.batches.as_slice())
+        .unwrap_or(&[]);
+    let mut applied: BTreeSet<String> = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(id) = eff.apply_edits() else {
+            return;
+        };
+        let stage = if path.starts_with("/content/dialogues") {
+            "dialogue"
+        } else {
+            "quests"
+        };
+        applied.insert(id.as_str().to_string());
+        match batches.iter().find(|b| b.id == *id) {
+            None => d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                format!("{path}/batch"),
+                format!("`apply-edits` names `{id}`, which no world-edits batch declares."),
+            )),
+            Some(b) if b.applied == EditApplied::AtBuild => d.push(Diagnostic::error(
+                EDITS_UNAPPLIED,
+                stage,
+                format!("{path}/batch"),
+                format!(
+                    "`apply-edits` applies `{id}`, and `{id}` is already in the built world \
+                     (`applied` is `at-build`, the default), so this would write its cells a \
+                     second time. Declare `\"applied\": \"by-effect\"` on `{id}` so the beat \
+                     is its only write, or remove the `apply-edits`."
+                ),
+            )),
+            Some(_) => {}
+        }
+    });
+    for (i, b) in batches.iter().enumerate() {
+        if b.applied == EditApplied::ByEffect && !applied.contains(b.id.as_str()) {
+            d.push(Diagnostic::error(
+                EDITS_UNAPPLIED,
+                Stage::WorldEdits.name(),
+                format!("/content/batches/{i}/applied"),
+                format!(
+                    "`{}` waits for its beat (`applied: by-effect`), and no bundle fires an \
+                     `apply-edits` of it, so its cells are never written. Add an `apply-edits` \
+                     naming `{}` to the beat that applies it, or remove `applied` so it is \
+                     applied at build.",
+                    b.id, b.id
+                ),
+            ));
+        }
+    }
 }
 
 /// Structural validation of the stage-7 edit script: id syntax/uniqueness

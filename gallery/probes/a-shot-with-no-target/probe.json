@@ -1,0 +1,26 @@
+{
+  "code": "DW1090",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/-",
+      "value": {
+        "at": "anchor/vantage",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "A clean hit.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/shoot-the-mark",
+        "on": {
+          "on": "shot"
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "A `shot` trigger with no `prop`. The game records a shot only on a `minecraft:target` the trigger places, so a shot at nothing could never fire. Refused at the trigger."
+}

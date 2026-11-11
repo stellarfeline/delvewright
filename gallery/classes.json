@@ -8,6 +8,9 @@
         "kit": [
           {
             "count": 1,
+            "enchantments": {
+              "minecraft:sharpness": 1
+            },
             "item": "minecraft:iron_sword",
             "name": "Gallery Blade"
           },
@@ -56,6 +59,18 @@
           {
             "count": 1,
             "item": "minecraft:carrot_on_a_stick"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:spyglass"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Wanderer"
@@ -85,6 +100,14 @@
           {
             "count": 1,
             "item": "minecraft:carrot_on_a_stick"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:bow"
+          },
+          {
+            "count": 16,
+            "item": "minecraft:arrow"
           }
         ],
         "name": "Warder"

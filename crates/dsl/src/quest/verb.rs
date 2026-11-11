@@ -52,34 +52,20 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ending: Option<EndingId>,
     },
-    /// Gives the party an item (v0.3; party-wide since v0.6/spec-0018).
+    /// Gives the party an item (v0.3; party-wide since v0.6/spec-0018): the one
+    /// [`crate::Stack`] every item site writes, or — `from: {actor, slot}`
+    /// (spec-0134 §8) — the stack an actor holds in a slot, emptied from the
+    /// actor in the same bundle.
     GiveItem {
-        /// Vanilla item id to give (validated against the registry).
-        item: String,
-        /// How many to give.
-        count: u32,
-        /// Optional display name (DSL v0.4), matching [`KitItem::name`].
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
+        /// The stack given, written out or taken off an actor.
+        #[serde(flatten)]
+        source: crate::GiveSource,
         /// Who receives it (DSL v0.6, spec-0018). Absent = [`Carrier::All`] — every
         /// party member. `one` hands a single copy to the player whose action fired
         /// the effect; it is rejected in a scheduler-only bundle (`DW0371`), which
         /// has no acting player.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier: Option<Carrier>,
-        /// Enchantments on the given stack (`{"minecraft:sharpness": 2}`) —
-        /// the field a `loot` stack and an equipped piece carry, under the same
-        /// checks (`DW0433`/`DW0434`) and written by the same rule
-        /// ([`enchantment_component`]): on a `minecraft:enchanted_book` they are
-        /// the book's stored enchantments, the ones an anvil applies.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        enchantments: BTreeMap<String, u32>,
-        /// **A rocket's stars** (DSL v0.73, spec-0134 §5): the
-        /// `minecraft:fireworks` component of a `minecraft:firework_rocket`
-        /// stack, the field a `loot` stack and a kit stack carry. On any other
-        /// item it is `DW1095`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fireworks: Option<crate::StackFireworks>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -160,6 +146,15 @@ pub enum Verb {
     FillLoot {
         /// The fill (stage-5 `loot` ref) to run.
         loot: crate::LootId,
+    },
+    /// Applies a world-edits batch that waits for its beat (spec-0134 §6): the
+    /// batch declares `applied: "by-effect"`, is resolved at build like any
+    /// batch, and this verb writes its cells — the bunting is hung at night.
+    /// Naming an `at-build` batch, and a `by-effect` batch no bundle applies,
+    /// are `DW1094`.
+    ApplyEdits {
+        /// The batch (stage-7 `batches` ref) to apply.
+        batch: crate::EditBatchId,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
@@ -1134,6 +1129,7 @@ impl Verb {
             Verb::SeatVehicle { .. } => "seat-vehicle",
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::FillLoot { .. } => "fill-loot",
+            Verb::ApplyEdits { .. } => "apply-edits",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1224,6 +1220,7 @@ impl Verb {
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
             | Verb::FillLoot { .. }
+            | Verb::ApplyEdits { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1297,6 +1294,7 @@ impl Verb {
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
             | Verb::FillLoot { .. }
+            | Verb::ApplyEdits { .. }
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::Volley { .. }

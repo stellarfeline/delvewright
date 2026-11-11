@@ -149,6 +149,7 @@
         "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and the route stays open."
       },
       {
+        "applied": "at-build",
         "area": "area/hall",
         "edits": [
           {
@@ -944,6 +945,54 @@
         ],
         "id": "batch/sink-the-pool",
         "note": "A pool across the long hall's whole width, a rim either side, so the party's route to the hall's end swims one course of water and climbs out over the far rim: the leg the route proof crosses by swimming (spec-0134 §10), exported with its `water` cells, and the course the bot swims. The hall's walls close it on both sides, so the walk cannot go round."
+      },
+      {
+        "applied": "by-effect",
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/west-floor-edge",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                1,
+                2,
+                12
+              ],
+              "min": [
+                1,
+                2,
+                4
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:stone",
+              "minecraft:cobblestone",
+              "minecraft:mossy_cobblestone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:sea_lantern",
+                  "weight": 1.0
+                }
+              ],
+              "scale": 0.35
+            },
+            "region": "region/west-floor-edge",
+            "verb": "replace"
+          }
+        ],
+        "id": "batch/light-the-floor-lamps",
+        "note": "A row of floor lamps along the west wall, set in when the party reaches the counter (spec-0134 §6). Exercises `applied: by-effect` and `apply-edits`: resolved and judged at build with and without it, written by `edit_light_the_floor_lamps`."
       }
     ]
   },

@@ -84,6 +84,7 @@ mod sequence;
 mod server;
 mod shortcut;
 mod sign;
+mod stack;
 mod stake;
 mod state;
 mod stealth;
@@ -1207,6 +1208,12 @@ fn emit_all(
         &guide,
         &assembly_ranges,
     );
+    // spec-0134 §6: each batch that waits for its beat is its own function.
+    if let Some(er) = edit_replay.as_ref() {
+        for (bid, cmds) in &er.by_effect {
+            functions.push((crate::compiler::edit::edit_fn(bid), lines(cmds)));
+        }
+    }
     // **The placements ledger** (spec-0112 §4): every block, container item and
     // body the datapack places outside the templates, and every removal, read
     // off the functions that place them and written back from the row, so a

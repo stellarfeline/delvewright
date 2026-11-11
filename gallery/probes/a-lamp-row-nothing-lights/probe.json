@@ -1,0 +1,12 @@
+{
+  "code": "DW1094",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/on_objective_complete/obj~1reach-the-counter/6"
+    }
+  ],
+  "units": [],
+  "why": "The floor lamps still wait for their beat (`applied: by-effect`), and the `apply-edits` that reaching the counter fires is removed. Nothing ever writes the row, so it is declared and never emitted into the world. Refused at the batch's `applied`."
+}

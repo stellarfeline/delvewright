@@ -525,25 +525,39 @@ fn a_pov_frame_stands_in_the_world_its_leg_is_walked_in() {
     build(&campaign, &prefabs, &out);
     let plan = json(&out.join("render-plan.json"));
     let shots = plan["shots"].as_array().unwrap();
+    // The leg the sentinel's strike starts, found by its start step rather
+    // than by its index: the path's legs move as the gallery gains steps.
+    let index = shots
+        .iter()
+        .find(|s| s["kind"] == "pov" && s["after"]["step"] == "trigger/strike-the-sentinel")
+        .map(|s| s["leg"].clone())
+        .expect("a leg starts at the sentinel's strike");
     let leg: Vec<&serde_json::Value> = shots
         .iter()
-        .filter(|s| s["kind"] == "pov" && s["leg"] == 1)
+        .filter(|s| s["kind"] == "pov" && s["leg"] == index)
         .collect();
-    assert!(!leg.is_empty(), "the gallery's second leg has frames");
+    assert!(!leg.is_empty(), "the sentinel's leg has frames");
+    // A world's key is `after-<step>`, suffixed with the arrival when a second
+    // world stands under the same step (`view::review`'s key rule).
     for s in &leg {
-        assert_eq!(
-            s["world"], "after-trigger-strike-the-sentinel",
+        let world = s["world"].as_str().unwrap_or_default();
+        assert!(
+            world == "after-trigger-strike-the-sentinel"
+                || world.starts_with("after-trigger-strike-the-sentinel-at-"),
             "the leg walked from the sentinel's strike stands in the world it leaves: {s}"
         );
+        assert_eq!(s["after"]["step"], "trigger/strike-the-sentinel", "{s}");
         assert!(
             s["after"]["cells_moved"].as_u64().unwrap_or(0) > 0,
             "and that world moves a cell from load: {s}"
         );
     }
     // The world is written beside the plan, as every world a shot names.
+    let world = leg[0]["world"].as_str().unwrap();
     assert!(
-        out.join("validation/worlds/after-trigger-strike-the-sentinel/level.dat")
-            .is_file()
+        out.join(format!("validation/worlds/{world}/level.dat"))
+            .is_file(),
+        "{world}"
     );
 }
 

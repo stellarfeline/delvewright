@@ -1,0 +1,13 @@
+{
+  "code": "DW1088",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/state/12/scope",
+      "value": "player"
+    }
+  ],
+  "units": [],
+  "why": "The muster's census is declared `player`-scoped. A count of bodies in a box is one number for the party, not a number per player, so the scope is refused. It declares no unit: `scope` and `counts` are bound by the primary."
+}

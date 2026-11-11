@@ -104,8 +104,11 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
                     .iter()
                     .filter_map(|e| match &e.verb {
                         Verb::GiveItem {
-                            item, enchantments, ..
-                        } if !enchantments.is_empty() => Some((e, item.as_str(), enchantments)),
+                            source: delvewright_dsl::GiveSource::Stack(s),
+                            ..
+                        } if !s.enchantments.is_empty() => {
+                            Some((e, s.item.as_str(), &s.enchantments))
+                        }
                         _ => None,
                     })
                     .collect();

@@ -629,20 +629,17 @@ pub(super) fn emit_quest_effect(
         Verb::CampaignComplete { .. } => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        Verb::GiveItem {
-            item,
-            count,
-            name,
-            enchantments,
-            fireworks,
-            ..
-        } => {
-            // One renderer for every stack a command writes: a given stack is
+        Verb::GiveItem { source, .. } => {
+            // One writer for every stack a command writes: a given stack is
             // described exactly as a container fill's is, name, enchantments
             // and stars alike, so a `give-item` and a `loot` entry for one item
-            // agree.
-            let comp =
-                container_stack_components(item, name.as_deref(), enchantments, fireworks.as_ref());
+            // agree. A stack taken `from` an actor (spec-0134 §8) is the one its
+            // `equipment` declares in that slot; an unresolved one emits
+            // nothing and is `DW0112`/`DW0490` long before here.
+            let Some(stack) = source.resolve(plan.campaign) else {
+                return;
+            };
+            let comp = super::stack::command_suffix(&stack, vec![]);
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
             // declares `carrier: "one"` — one quest prop, handed to the player
             // whose action earned it (`@s`), for the party to pass around. A
@@ -661,7 +658,19 @@ pub(super) fn emit_quest_effect(
             } else {
                 who
             };
-            body.push(format!("give {target} {item}{comp} {count}"));
+            body.push(format!(
+                "give {target} {}{comp} {}",
+                stack.item, stack.count
+            ));
+            // The taking empties the actor's slot in the same bundle, after the
+            // give, so the thing is never in two places.
+            if let Some(from) = source.taken() {
+                body.push(format!(
+                    "item replace entity @e[tag=dw_actor_{},limit=1] {} with minecraft:air",
+                    plan::safe_local(from.actor.as_str()),
+                    from.slot.item_slot()
+                ));
+            }
         }
         Verb::SetFlag { flag, .. } => {
             // Party state (spec-0018): one holder, so any player's action sets the
@@ -730,6 +739,14 @@ pub(super) fn emit_quest_effect(
             body.push(format!(
                 "function {ns}:{}",
                 super::loot::fill_fn(loot.as_str())
+            ));
+        }
+        // spec-0134 §6: a world-edits batch that waits for its beat writes its
+        // cells from its own function, emitted from the build's replay.
+        Verb::ApplyEdits { batch } => {
+            body.push(format!(
+                "function {ns}:{}",
+                crate::compiler::edit::edit_fn(batch.as_str())
             ));
         }
         // spec-0133 §2: the removal the wave's re-seat performs, alone.

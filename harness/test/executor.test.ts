@@ -6350,3 +6350,26 @@ test("an expiry marker for another campaign or another objective is not this ste
   assert.equal(executor.expiredObjectives.has("obj/exit"), false);
   assert.equal(executor.expiredObjectives.has("obj/talk"), true);
 });
+
+test("a shot walks to its target first — the leg the route proof ends there — then back to the stance it is loosed from", async () => {
+  const bot = new LinkFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  bot.entity.position = new FakeVec3(-20.5, 64, 0.5);
+  // The fake holds no bow, so the step stops at the draw: what is judged here
+  // is the walk, in order, before it.
+  await within(
+    "executor.fireTrigger(shot) to reject",
+    assert.rejects(
+      () => executor.fireTrigger({ ...STRIKE_STEP, on: "shot", stand: [-3, 64, 0] }),
+      /holds no bow/,
+    ),
+  );
+  assert.deepEqual(
+    bot.goals.map((g) => g.slice(0, 3)),
+    [
+      [1, 64, 0],
+      [-3, 64, 0],
+    ],
+  );
+});

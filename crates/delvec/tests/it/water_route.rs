@@ -112,7 +112,16 @@ fn room_of(moat: Moat, fluid: &str) -> Vec<u8> {
     gz.finish().unwrap()
 }
 
+/// One palette entry of the synthetic room. Every id the room is made of is
+/// judged against the pinned registry before a byte is written: an id the
+/// version lacks would load as air and quietly remove the cells it fills.
 fn pal_entry(name: &str) -> fastnbt::Value {
+    let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+    let verdict = registry.validate(name, &std::collections::BTreeMap::new());
+    assert!(
+        verdict.is_ok(),
+        "the room's `{name}` is not a block: {verdict:?}"
+    );
     let mut c = std::collections::HashMap::new();
     c.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
     fastnbt::Value::Compound(c)

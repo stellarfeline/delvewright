@@ -2,37 +2,14 @@
 
 use super::*;
 
-/// The `,components:{…}` SNBT tail carrying an equipped piece's enchantments,
-/// or `""` when it has none (which is what keeps every pre-enchantment campaign
-/// byte-identical).
-///
-/// 1.21 moved enchantments onto the **item component**
-/// `minecraft:enchantments`, whose value is a map of enchantment id → level.
-/// Emission order is the `BTreeMap`'s id order, never hash order (ADR-0006).
-pub(super) fn enchantment_components(piece: &EquipItem) -> String {
-    enchantment_component_tail(piece.item(), piece.enchantments())
-}
-
-/// The shared `,components:{"minecraft:enchantments":{…}}` renderer — one
-/// implementation for equipped gear and for container loot, so the two cannot
-/// disagree about the component's shape. Which component is the item's
-/// ([`delvewright_dsl::enchantment_component`]): an enchanted book stores.
-pub(super) fn enchantment_component_tail(
-    item: &str,
-    ench: &std::collections::BTreeMap<String, u32>,
-) -> String {
-    if ench.is_empty() {
-        return String::new();
+/// A worn piece as an entity's item NBT: the declared stack, written by the one
+/// stack writer ([`super::stack::nbt`]), or a bare stack of one `item` where the
+/// slot holds the armed-mob default.
+pub(super) fn piece_nbt(item: &str, piece: Option<&EquipItem>) -> String {
+    match piece {
+        Some(p) => super::stack::nbt(&p.stack()),
+        None => super::stack::nbt(&delvewright_dsl::Stack::of(item)),
     }
-    let body = ench
-        .iter()
-        .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        ",components:{{\"{}\":{{{body}}}}}",
-        delvewright_dsl::enchantment_component(item)
-    )
 }
 
 /// The default main-hand weapon for a summoned mob whose natural spawns are
@@ -280,8 +257,7 @@ pub(super) fn wave_equipment(
     let mut chances: Vec<String> = Vec::new();
     for (slot, it, piece) in wave_equipment_slots(entity, eq) {
         let key = slot.nbt();
-        let comps = piece.map(enchantment_components).unwrap_or_default();
-        items.push(format!("{key}:{{id:\"{it}\",count:1{comps}}}"));
+        items.push(format!("{key}:{}", piece_nbt(it, piece)));
         chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
     }
     if items.is_empty() {
@@ -340,11 +316,8 @@ pub(super) fn wrap_attribute_entries(entries: Vec<String>) -> String {
 /// v0.9), as `(namespace-local path, json)` pairs.
 ///
 /// One table per declaring body, one pool, one roll, one entry per declared
-/// item: nothing here rolls a die. The entry is the vanilla `minecraft:item`
-/// form, and a declared display `name` becomes the `minecraft:set_name` function
-/// with `target: "custom_name"` — the same component a `collect`'s `item_name`
-/// writes into a container stack, so the key a boss leaves on the ground and the
-/// key a barrel hands over are the same item.
+/// item: nothing here rolls a die. The entry is the declared stack
+/// ([`super::stack::loot_entry`]).
 ///
 /// Emitted only for bodies that declare an `{item}` drop, so a campaign without
 /// one writes no `loot_table` directory at all and stays byte-identical.
@@ -352,27 +325,14 @@ pub(super) fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let mut out: Vec<(String, Value)> = Vec::new();
     let table = |drops: &[delvewright_dsl::MobDrop]| {
+        // A drop is a stack, written by the one stack writer: its name, its
+        // enchantments and its stars as one `set_components`, so the key a boss
+        // leaves on the ground and the key a barrel hands over are one item.
         let entries: Vec<Value> = drops
             .iter()
-            .filter_map(|d| {
-                let item = d.item()?;
-                let mut entry = json!({ "type": "minecraft:item", "name": item });
-                if let Some(name) = d.name() {
-                    entry["functions"] = json!([{
-                        "function": "minecraft:set_name",
-                        "target": "custom_name",
-                        // `tr`, not a bare `{"text": …}`. An authored display
-                        // name arrives here still carrying its l10n marker, and
-                        // a raw text component ships the marker verbatim — which
-                        // `DW0185` refuses, so a drop that named itself did not
-                        // build AT ALL, at any version. The diagnostic was right
-                        // and nothing had ever reached it: no campaign and no
-                        // fixture had named a drop, which is the coverage gap
-                        // spec-0039 exists to close rather than a missing rule.
-                        "name": tr(name),
-                    }]);
-                }
-                Some(entry)
+            .filter_map(|d| match d {
+                delvewright_dsl::MobDrop::Item(s) => Some(super::stack::loot_entry(s)),
+                delvewright_dsl::MobDrop::Slot(_) => None,
             })
             .collect();
         json!({

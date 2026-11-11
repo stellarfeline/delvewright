@@ -183,7 +183,7 @@ fn declared_slot_is_guaranteed_and_the_rest_stays_zero() {
 /// The quest-token half: a declared `{item}` drop points the mob's own
 /// `DeathLootTable` at a compiler-emitted table with one roll and one entry, and
 /// the declared display name lands as the same `custom_name` component a
-/// container-provided quest item carries.
+/// container-provided quest item carries (`set_components`).
 #[test]
 fn quest_item_drop_rides_the_death_loot_table() {
     let out = build_hw(
@@ -209,10 +209,11 @@ fn quest_item_drop_rides_the_death_loot_table() {
         v["pools"][0]["entries"][0]["name"],
         "minecraft:tripwire_hook"
     );
+    // The drop is a stack, written by the one stack writer: its name is the
+    // `custom_name` component of a `set_components`, as a container's is.
     let f = &v["pools"][0]["entries"][0]["functions"][0];
-    assert_eq!(f["function"], "minecraft:set_name");
-    assert_eq!(f["target"], "custom_name");
-    assert_eq!(f["name"]["text"], "Gate Key");
+    assert_eq!(f["function"], "minecraft:set_components");
+    assert_eq!(f["components"]["minecraft:custom_name"]["text"], "Gate Key");
 }
 
 const BOSS_ACTOR: &str = r#""actors": [

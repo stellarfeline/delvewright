@@ -407,8 +407,7 @@ pub(super) fn actor_equipment(a: &delvewright_dsl::Actor, body: &str) -> Option<
     for (slot, piece) in eq.pieces() {
         if let Some(p) = piece {
             let key = slot.nbt();
-            let comps = enchantment_components(p);
-            items.push(format!("{key}:{{id:\"{}\",count:1{comps}}}", p.item()));
+            items.push(format!("{key}:{}", piece_nbt(p.item(), Some(p))));
             chances.push(format!("{key}:{}", drop_chance_for(key, &declared)));
         }
     }

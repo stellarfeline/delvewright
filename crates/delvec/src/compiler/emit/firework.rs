@@ -90,16 +90,3 @@ pub(super) fn fireworks_value(
         bursts.join(",")
     )
 }
-
-/// The `fireworks=…` component a rocket STACK carries (spec-0134 §5): the
-/// stack's flight (default [`delvewright_dsl::firework::MIN_FLIGHT`]) and its
-/// stars, in the item-stack syntax `give` and `item replace` read.
-pub(super) fn stack_fireworks_component(fw: &delvewright_dsl::StackFireworks) -> String {
-    format!(
-        "fireworks={}",
-        fireworks_value(
-            fw.flight.unwrap_or(delvewright_dsl::firework::MIN_FLIGHT),
-            &fw.explosions
-        )
-    )
-}
