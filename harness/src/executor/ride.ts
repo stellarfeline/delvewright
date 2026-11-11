@@ -222,9 +222,6 @@ export const methods = {
       reading = await this.readRide(tag);
     }
     if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
-    // DIAGNOSTIC (one run): does the bot hold the boarding advancement now.
-    bot.chat(`/execute if entity @s[advancements={gallery:vehicle_board=true}] run say DIAG ${step.kind} boarding advancement HELD`);
-    bot.chat(`/execute unless entity @s[advancements={gallery:vehicle_board=true}] run say DIAG ${step.kind} boarding advancement not held`);
     const start = reading.pos;
     let reported = 0;
     // Where the server held a waited-for rider, reading by reading: said when
