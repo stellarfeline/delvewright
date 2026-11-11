@@ -14,10 +14,16 @@
 //! taken into the scene and left at another test's position, no longer moved
 //! on its own `tp @s`, so its stamp read that place.
 //!
+//! A function that **counts** the party — a scaling wave's spawn storing
+//! `if entity @a[tag=!dw_cutscene]` as the party size (spec-0134 §4) — counts
+//! every dummy in the batch, and how many stand at that tick depends on which
+//! siblings have started and finished: the same template seated 3 bodies in
+//! one run and 6 in another, and its counts failed by turns.
+//!
 //! The rule is read off the finished tree, so it reaches templates not yet
 //! written: a template is **solo** when its body, or any function it dispatches
 //! (transitively, `tick` and `schedule` included), holds a line that teleports,
-//! re-modes or makes spectate a party-wide `@a`. Each solo template gains
+//! re-modes or makes spectate a party-wide `@a`, or stores a count of one. Each solo template gains
 //! `# @environment <ns>:solo/<template>` and the environment
 //! `test_environment/solo/<template>.json` (an empty `all_of`, the world as it
 //! is). Every other template stays in `minecraft:default`.
@@ -93,9 +99,25 @@ pub(crate) fn takes_every_body(line: &str) -> bool {
     target.is_some_and(|t| party_wide(t))
 }
 
-/// The first line in a function that takes every body, if any.
+/// Whether a line stores a count (or the presence) of every player:
+/// `execute … store … if|unless entity <party-wide @a> …`.
+pub(crate) fn counts_every_body(line: &str) -> bool {
+    let line = line.trim();
+    if !line.starts_with("execute ") {
+        return false;
+    }
+    let toks: Vec<&str> = line.split_whitespace().collect();
+    toks.contains(&"store")
+        && toks
+            .windows(3)
+            .any(|w| matches!(w[0], "if" | "unless") && w[1] == "entity" && party_wide(w[2]))
+}
+
+/// The first line in a function that takes or counts every body, if any.
 fn own_take(body: &str) -> Option<&str> {
-    body.lines().find(|l| takes_every_body(l)).map(str::trim)
+    body.lines()
+        .find(|l| takes_every_body(l) || counts_every_body(l))
+        .map(str::trim)
 }
 
 /// Make every body-taking template solo, in place, and return the binding.
@@ -186,6 +208,15 @@ mod tests {
             "execute if score #p dw.sys matches 1 run gamemode adventure @a[tag=!dw_free]"
         ));
         assert!(!takes_every_body("tp @a[tag=dw_t_x,limit=1] 0 0 0"));
+        assert!(counts_every_body(
+            "execute store result score #pn_w dw.sys if entity @a[tag=!dw_cutscene]"
+        ));
+        assert!(!counts_every_body(
+            "execute store result score #x dw.sys if entity @a[tag=dw_t_x]"
+        ));
+        assert!(!counts_every_body(
+            "execute if entity @a[tag=!dw_cutscene] run say hi"
+        ));
         assert!(!takes_every_body("tp @s 0 0 0"));
         assert!(!takes_every_body("spawnpoint @a 1 2 3"));
         assert!(!takes_every_body("tellraw @a \"x\""));
@@ -199,6 +230,44 @@ mod tests {
             .iter()
             .map(|(p, b)| (p.to_string(), b.as_bytes().to_vec()))
             .collect()
+    }
+
+    /// A template whose drive reaches a party count (a scaling wave's spawn,
+    /// through `tick`) runs alone, so it counts its own dummy only; one that
+    /// seats the wave for a stated party never counts and stays.
+    #[test]
+    fn a_template_reaching_a_party_count_runs_alone() {
+        let mut out = tree(&[
+            (
+                "datapack/data/n/function/spawn_w.mcfunction",
+                "execute store result score #pn_w dw.sys if entity @a[tag=!dw_cutscene]\nfunction n:spawn_w_party\n",
+            ),
+            (
+                "datapack/data/n/function/spawn_w_party.mcfunction",
+                "say seat\n",
+            ),
+            (
+                "datapack/data/n/function/tick.mcfunction",
+                "function n:spawn_w\n",
+            ),
+            (
+                "packtest-datapack/data/n/test/ticks.mcfunction",
+                "#> ticks\n# @dummy\nfunction n:tick\n",
+            ),
+            (
+                "packtest-datapack/data/n/test/states.mcfunction",
+                "#> states\n# @dummy\nscoreboard players set #pn_w dw.sys 1\nfunction n:spawn_w_party\n",
+            ),
+        ]);
+        let b = isolate("n", &mut out);
+        assert_eq!(
+            b.solo,
+            vec![(
+                "ticks".to_string(),
+                "spawn_w: execute store result score #pn_w dw.sys if entity @a[tag=!dw_cutscene]"
+                    .to_string()
+            )]
+        );
     }
 
     #[test]

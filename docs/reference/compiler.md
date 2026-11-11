@@ -2345,12 +2345,16 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   `batchstate::dispatch_target`); a template that reaches such a line gains
   `# @environment <ns>:solo/<template>` on its second line, and the build writes
   `packtest-datapack/data/<ns>/test_environment/solo/<template>.json`, an empty
-  `all_of`. A selector narrowed by `limit=`, `distance=`, `dx=`/`dy=`/`dz=`,
+  `all_of`. A line that **counts** a party-wide `@a` into a score
+  (`execute … store … if|unless entity @a…`, `solo::counts_every_body`) — a
+  scaling wave's party-size measurement (spec-0134 §4) — makes a template solo
+  too: in a shared batch it counts every sibling's dummy standing at that tick.
+  A selector narrowed by `limit=`, `distance=`, `dx=`/`dy=`/`dz=`,
   `name=` or a positive `tag=` is not party-wide. The build prints
   `packtest solo binding: S of T template(s) take every body and run in their own
   test environment` and writes `validation/packtest-solo.json` (`templates`,
   `solo_count`, and per solo template the function and line that took the
-  bodies). Gallery primary: 30 of 219.
+  bodies). Gallery primary: 50 of 325.
 - **Own name, fresh (`compiler::freshbody`).** A score belongs to a player's
   name, and PackTest names its dummies from a small pool, so a dummy is born
   holding whatever an earlier dummy of the same name left: a dummy that died
