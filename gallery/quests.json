@@ -619,6 +619,7 @@
     "loot": [
       {
         "anchor": "anchor/reliquary",
+        "filled": "at-load",
         "id": "loot/pedestal-case",
         "items": [
           {
