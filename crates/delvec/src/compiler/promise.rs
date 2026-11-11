@@ -218,16 +218,14 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PromiseBinding) {
     (d, b)
 }
 
-/// `DW0964` — a `prop` on a trigger that is not a `use`.
+/// `DW0964` — a `prop` on a trigger whose event has no cell of its own
+/// ([`delvewright_dsl::TriggerOn::places_prop`]).
 fn check_trigger_props(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (ti, t) in c.quests.content.triggers.iter().enumerate() {
         let Some(prop) = &t.prop else {
             continue;
         };
-        if matches!(
-            t.on,
-            delvewright_dsl::TriggerOn::Use | delvewright_dsl::TriggerOn::Strike
-        ) {
+        if t.on.places_prop() {
             continue;
         }
         d.push(Diagnostic::error(
@@ -235,12 +233,13 @@ fn check_trigger_props(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "quests",
             format!("/content/triggers/{ti}/prop"),
             format!(
-                "trigger `{}` is a `{}` and declares `prop` `{}`. A prop is the visible object a \
-                 click acts on — the block a `use` or a `strike` sits on at its own cell — and \
-                 this event has no cell of its own to place a block in: an approach is a body's \
-                 position, a `strike-npc` is a character and a `strike-assembly` is an assembly. \
-                 The block would be placed and nothing would read it. Remove `prop`, or make the \
-                 trigger a `use` or a `strike`.",
+                "trigger `{}` is a `{}` and declares `prop` `{}`. A prop is the block an event \
+                 at its own cell acts on — the block a `use` or a `strike` sits on, the target a \
+                 `shot` lands on — and this event has no cell of its own to place a block in: \
+                 an approach or a step is a body's position, a `strike-npc` is a character and \
+                 a `strike-assembly` is an assembly. The block would be placed and nothing \
+                 would read it. Remove `prop`, or make the trigger a `use`, a `strike` or a \
+                 `shot`.",
                 t.id.as_str(),
                 t.on.kind(),
                 prop.block
@@ -354,8 +353,9 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
 
 delvewright_dsl::dw_code! {
     /// `DW0964`: a `prop` on a trigger whose event has no cell of its own
-    /// (spec-0093 §7): an approach, a step, a `strike-npc` and a
-    /// `strike-assembly` have no cell to place a block in. The
+    /// (spec-0093 §7; `TriggerOn::places_prop`): an approach, a step, a
+    /// `strike-npc` and a `strike-assembly` have no cell to place a block in;
+    /// a `use`, a `strike` and a `shot` do. The
     /// field would place a block nothing reads, which is refused rather than
     /// ignored.
     pub const DW_TRIGGER_PROP_INERT: DwCode = DwCode::new("DW0964", ExitTier::Build);

@@ -33,8 +33,10 @@ pub struct EnvTrigger {
     /// press and it changes nothing the world keeps); a lever is pressed on its
     /// own where every press acts; every other block, and every `strike`, is
     /// pressed through an invisible click box fitted to the block's outline.
-    /// Required there (`DW1059`); a `prop` on an event with no cell of its own —
-    /// an approach, a step, a `strike-npc`, a `strike-assembly` — is `DW0964`;
+    /// Required there (`DW1059`); on a `shot` it is the `minecraft:target` the
+    /// shot lands on (`DW1090`); a `prop` on an event with no cell of its own
+    /// ([`TriggerOn::places_prop`]) — an approach, a step, a `strike-npc`, a
+    /// `strike-assembly` — is `DW0964`;
     /// on a gate's own answer (a `serves: {gate}` trigger anchored inside the
     /// gate region) it is `DW1052`, because the gate names its block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,6 +305,16 @@ impl TriggerOn {
                 | TriggerOn::StrikeActor { .. }
                 | TriggerOn::UseActor { .. }
         )
+    }
+
+    /// Whether this event happens **at a cell of its own** — a `use` or a
+    /// `strike` on the block at `at`, a `shot` landing on the target at `at` —
+    /// so the trigger's `prop` is the block placed there and read. Every other
+    /// event is a body's position, a character, an assembly or a box, with no
+    /// cell a prop could stand in (`DW0964`). The one table both the prop rule
+    /// and the shot's own target rule (`DW1090`) answer to.
+    pub fn places_prop(&self) -> bool {
+        matches!(self, TriggerOn::Use | TriggerOn::Strike | TriggerOn::Shot)
     }
 
     /// Whether this event needs an `at` anchor — true for everything that

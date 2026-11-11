@@ -140,7 +140,7 @@ impl World {
         fp: &Footprint,
         avoid: &dyn Fn([i32; 3]) -> bool,
     ) -> Option<Vec<[i32; 3]>> {
-        self.search(start, goal, fp, avoid, &|_| 1, false)
+        self.search(start, goal, fp, avoid, &|_| 1, false, false)
     }
 
     /// **The route leg's walk** (spec-0134 §10): [`World::find_path`] with the
@@ -151,8 +151,17 @@ impl World {
     /// (`DW0315`), the respawn walk, a shortcut's long route (`DW0373`/`DW0374`)
     /// and a timed gate's disarm (`DW0393`); a body that is not a
     /// player (an NPC, an actor, a wave's mob) keeps the dry walk.
+    ///
+    /// **And the hop** (spec-0113 §4.5): where that walk does not reach the
+    /// goal, the same search again with the jumps across a gap its frontier
+    /// meets that a body on cue makes ([`World::hops_fp`], proven by the
+    /// declared jump's own window) — so a leg that walks is routed exactly as
+    /// before, and a leg a hop carries is one the reach graph's simulator
+    /// proves a body makes, never one it merely could.
     pub fn find_route(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
-        self.search(start, goal, &Footprint::player(), &|_| false, &|_| 1, true)
+        let fp = Footprint::player();
+        self.search(start, goal, &fp, &|_| false, &|_| 1, true, false)
+            .or_else(|| self.search(start, goal, &fp, &|_| false, &|_| 1, true, true))
     }
 
     /// A player body afloat or submerged with its feet in `c`: water at the
@@ -232,12 +241,16 @@ impl World {
         fp: &Footprint,
         ways: &WalkWays<'_>,
     ) -> Option<Vec<[i32; 3]>> {
-        self.search(start, goal, fp, &|_| false, &|c| ways.toll(c), false)
+        self.search(start, goal, fp, &|_| false, &|c| ways.toll(c), false, false)
     }
 
     /// The one A* every route above asks: `avoid` withholds cells, `toll`
     /// multiplies the step cost of entering a cell. A toll is never under one,
-    /// so the flat-step heuristic stays admissible and consistent.
+    /// so the flat-step heuristic stays admissible and consistent. `swim` adds
+    /// the water moves, `hop` the hops ([`World::hops_fp`]), each priced at
+    /// one flat step more than the columns it crosses, so the heuristic stays
+    /// admissible over it too.
+    #[allow(clippy::too_many_arguments)]
     fn search(
         &self,
         start: [i32; 3],
@@ -246,6 +259,7 @@ impl World {
         avoid: &dyn Fn([i32; 3]) -> bool,
         toll: &dyn Fn([i32; 3]) -> u32,
         swim: bool,
+        hop: bool,
     ) -> Option<Vec<[i32; 3]>> {
         if avoid(start) || avoid(goal) {
             return None;
@@ -291,6 +305,16 @@ impl World {
                     }
                 }
             }
+            let hops = if hop && !wet {
+                self.hops_fp(cur, fp)
+            } else {
+                Vec::new()
+            };
+            for n in &hops {
+                if !next.contains(n) {
+                    next.push(*n);
+                }
+            }
             let here = if wet { 0 } else { self.feet_16_fp(cur, fp) };
             for n in next {
                 if avoid(n) {
@@ -299,7 +323,10 @@ impl World {
                 // spec-0134 §10: a step into or out of water is priced at the
                 // swim rate; the flat-step heuristic stays admissible because
                 // the swim is slower than the walk.
-                let cost = if wet || (swim && self.swims_in(n)) {
+                let cost = if hops.contains(&n) {
+                    let across = ((n[0] - cur[0]).abs() + (n[2] - cur[2]).abs()) as u32;
+                    STEP_COST_16 * (across + 1)
+                } else if wet || (swim && self.swims_in(n)) {
                     swim_step_cost()
                 } else {
                     step_cost_16(here, self.feet_16_fp(n, fp))
@@ -921,6 +948,13 @@ pub struct LegRoute {
     /// exported as the leg's `water` so the harness admits liquid on this leg
     /// and no other; empty for every dry leg.
     pub water: Vec<[i32; 3]>,
+    /// The hops the route takes (spec-0113 §4.5, [`World::hops_fp`]), in
+    /// route order, as `(from, to, sprint, run_up)`: jumps across a gap no
+    /// declaration names, proven by the declared jump's own window
+    /// ([`World::hop_sprint`]). Exported among the leg's `jumps` so the
+    /// harness drives each as it drives a declared one; empty for every leg
+    /// the walk carries.
+    pub hops: Vec<([i32; 3], [i32; 3], bool, u32)>,
     /// The runtime-region state in force while the player walks this leg — the
     /// world the A* above actually ran in ([`World::walked_leg_region_state`]).
     ///
