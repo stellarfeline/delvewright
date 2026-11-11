@@ -1321,3 +1321,90 @@ fn a_deed_no_stance_outside_an_armed_volume_performs_is_refused() {
     );
     assert!(!out.join("validation/world-path-3.json").exists());
 }
+
+/// **A `body-enters` entry deed is performed by its census** (spec-0134 §1):
+/// the bell made a trigger that fires when a villager enters the box at the
+/// door's knocker, writing the tally the final scene reads. The world that
+/// performs it carries the trigger step — no anchor, no cell the party walks
+/// to, and one body of the set put in the census's box; the world that
+/// leaves it alone carries none.
+#[test]
+fn a_body_enters_deed_is_performed_by_putting_one_body_in_the_box() {
+    let dir = reach_copy("body-enters-deed", |q| {
+        let t = &mut q["content"]["triggers"][0];
+        let o = t.as_object_mut().unwrap();
+        o.remove("at");
+        o.remove("prop");
+        o.remove("answers");
+        o.insert(
+            "on".into(),
+            json!({"on": "body-enters", "state": "state/villager-at-the-door"}),
+        );
+        t["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/tally", "amount": 1}));
+        t["effects"].as_array_mut().unwrap().push(json!({
+            "type": "narrate", "style": "chat", "text": "Someone is at the door.",
+            "when": {"requires_state": [
+                {"state": "state/villager-at-the-door", "op": "at-least", "value": 1}]}
+        }));
+        q["content"]["state"].as_array_mut().unwrap().push(json!({
+            "id": "state/villager-at-the-door", "scope": "party",
+            "counts": {"region": {"anchor": "anchor/door-knock", "extent": [1, 1, 1]},
+                       "of": {"kind": "minecraft:villager"}}
+        }));
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let read = |p: &str| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(out.join(p)).unwrap()).unwrap()
+    };
+    let plan = read("validation/branch-plan.json");
+    let (mut performed, mut skipped) = (0, 0);
+    for row in plan["branches"].as_array().unwrap() {
+        let Some(file) = row["path"].as_str() else {
+            continue;
+        };
+        let performs = row["participation"]["performs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "trigger/bell");
+        let path = read(&format!("validation/{file}"));
+        let deeds: Vec<&Value> = path["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["action"] == "trigger" && s["trigger"] == "trigger/bell")
+            .collect();
+        if !performs {
+            assert!(deeds.is_empty(), "{}: {deeds:?}", row["id"]);
+            skipped += 1;
+            continue;
+        }
+        assert_eq!(deeds.len(), 1, "{}: the deed is not performed", row["id"]);
+        let d = deeds[0];
+        assert_eq!(d["on"], "body-enters", "{d}");
+        assert!(d.get("anchor").is_none(), "{d}");
+        let census = d["census"].as_array().expect("the deed carries its census");
+        assert_eq!(census.len(), 1, "{d}");
+        assert_eq!(census[0]["state"], "state/villager-at-the-door", "{d}");
+        assert_eq!(census[0]["select"], "type=minecraft:villager", "{d}");
+        assert_eq!(census[0]["count"], 1, "{d}");
+        performed += 1;
+    }
+    assert!(
+        performed > 0 && skipped > 0,
+        "fixture premise: one world lets a villager in and one does not ({performed}/{skipped})"
+    );
+}

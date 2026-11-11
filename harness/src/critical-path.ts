@@ -402,6 +402,7 @@ export const TRIGGER_KINDS = [
   "strike-assembly",
   "shot",
   "use-item",
+  "body-enters",
 ] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
@@ -1144,6 +1145,11 @@ function parseStep(value: unknown, pointer: string): Step {
   delete body["pursuers"];
   delete body["census"];
   let step = parseStepBody(body, pointer);
+  // spec-0134 §1: a `body-enters` deed is performed by its census — without
+  // one, nothing would put the body in the box.
+  if (step.action === "trigger" && step.on === "body-enters" && census.length === 0) {
+    fail(`${pointer}/census`, "a body-enters trigger is performed by its census, and this step carries none");
+  }
   if (pursuers.length > 0) step = { ...step, pursuers };
   if (census.length > 0) step = { ...step, census };
   return step;
@@ -1377,7 +1383,9 @@ function parseStepBody(value: unknown, pointer: string): Step {
       // a character and no cell, a strike-assembly an assembly and no cell, an
       // approach has a radius and a click does not.
       const anchor = obj["anchor"];
-      const object = kind === "strike-npc" || kind === "strike-assembly";
+      // spec-0134 §1: a `body-enters` deed watches its census's box, which the
+      // step's own `census` row carries; it names no anchor either.
+      const object = kind === "strike-npc" || kind === "strike-assembly" || kind === "body-enters";
       if (object) {
         if (anchor !== undefined) fail(`${pointer}/anchor`, `a ${kind} trigger watches no anchor`);
       } else if (typeof anchor !== "string" || anchor.length === 0) {
