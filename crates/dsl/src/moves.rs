@@ -478,13 +478,13 @@ fn moves_one(
             stage,
             format!("{path}/audience"),
             format!(
-                "`{tag}` is a move a staged body makes — an NPC or an actor, standing where \
-                 the story put it — and this one names none: its `audience` is {}. Name the body — `\"audience\": {{\"npc\": \"npc/<id>\"}}`, \
-                 `{{\"actor\": \"actor/<id>\"}}`, or a cast, `{{\"bodies\": [{{\"npc\": …}}, \
-                 {{\"actor\": …}}]}}`",
+                "`{tag}` {}, and a `{tag}` is a move a staged body makes — an NPC or an actor, \
+                 standing where the story put it. This one names none. Name the body — \
+                 `\"audience\": {{\"npc\": \"npc/<id>\"}}`, `{{\"actor\": \"actor/<id>\"}}`, or a \
+                 cast, `{{\"bodies\": [{{\"npc\": …}}, {{\"actor\": …}}]}}`",
                 match &eff.audience {
-                    None => "absent".to_string(),
-                    Some(a) => format!("`{}`", a.token()),
+                    None => "states no `audience`".to_string(),
+                    Some(a) => format!("declares `audience` `{}`", a.token()),
                 }
             ),
         ));

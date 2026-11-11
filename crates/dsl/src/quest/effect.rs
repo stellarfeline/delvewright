@@ -1148,6 +1148,10 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // spec-0136: a body faces a mark, a location in the same shape.
+            Verb::Face {
+                to: crate::moves::FaceTo::Mark(m),
+            } => vec![("to/anchor".to_string(), &m.anchor, None)],
             // A bolt strikes a point and seats nothing, the same shape.
             Verb::Lightning { at } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // A particle at a mark names a location the same way; at `players`

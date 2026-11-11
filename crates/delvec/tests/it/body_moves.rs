@@ -455,7 +455,11 @@ fn a_move_names_a_staged_body_the_campaign_declares() {
         let hit = with(&d, "DW0942");
         assert_eq!(hit.len(), 1, "{effect}: {d:#?}");
         assert!(hit[0].path.ends_with(pointer), "{}", hit[0].path);
-        assert!(hit[0].message.contains("names none"), "{}", hit[0].message);
+        assert!(
+            hit[0].message.contains("This one names none"),
+            "{}",
+            hit[0].message
+        );
     }
     for (effect, pointer) in [
         (

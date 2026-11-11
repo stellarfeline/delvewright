@@ -13,8 +13,8 @@ Content checks (spec-0014) that need compiler-vendored data (the pinned
 **validation tier (exit 1)** like the `DW01xx` codes — not build-tier. No-op for a
 campaign that uses neither the `play-sound` effect nor the `narrate` `art` style.
 
-**Nested-effect consumer recursion.** These scans (`sound_refs`/
-`play_sound_actor_refs` → `DW0326`/`DW0335`, `art_narrates` → `DW0328`) descend
+**Nested-effect consumer recursion.** These scans (`sound_refs` → `DW0326`,
+`art_narrates` → `DW0328`) descend
 **every nested effect list** (`sequence` steps, `on_respawn`/`on_caught`/`on_arrive`
 bundles) through the one `each_effect_ref` traversal, keyed by the same position
 scheme as the l10n inventory — so a bad sound id / non-Latin art string buried in a
@@ -29,7 +29,6 @@ emission descend; a top-level effect keeps its own path/key.
 |------|---------|
 | `DW0326` | A `play-sound.sound` or `narrate.sound` id is not a known 1.21.11 sound event (validated against the vendored `sound_event` registry, `crates/delvec/data/sounds-1.21.11.json`; `minecraft:` prefix optional). |
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
-| `DW0335` | A `play-sound` targets `at: {actor: …}`. A sound plays at fixed coordinates or at each listener's own position, and the compiler resolves no position for a live actor, so the sound would be silent. Use `at: {anchor}` or `at: players`. |
 
 #### The `delve:art` font
 

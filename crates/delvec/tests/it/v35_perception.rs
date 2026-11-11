@@ -537,6 +537,28 @@ fn samples() -> Vec<(&'static str, Value)> {
             "lightning",
             json!({"type":"lightning","at":{"anchor":"anchor/exit","offset":[0,5,0]}}),
         ),
+        // spec-0136: a move is made by a body; it addresses no player.
+        ("hop", json!({"type":"hop","audience":{"npc":"npc/keeper"}})),
+        (
+            "pose",
+            json!({"type":"pose","pose":"crouching","audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "turn",
+            json!({"type":"turn","by":20,"audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "face",
+            json!({"type":"face","to":90,"audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "hold",
+            json!({"type":"hold","slot":"main_hand","item":"minecraft:poppy","audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "resize",
+            json!({"type":"resize","scale":1.25,"audience":{"npc":"npc/keeper"}}),
+        ),
     ]
 }
 

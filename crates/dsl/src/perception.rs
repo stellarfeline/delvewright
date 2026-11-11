@@ -301,7 +301,11 @@ fn perception_one(
                 stage,
                 format!("{path}/audience"),
                 format!(
-                    "`{}` names an NPC in its audience, and an NPC is never harmed and never                      fights: it carries no status effect and takes no damage. A wave's or an                      actor's bodies are the audience of `give-effect`, `clear-effect` and                      `damage`; an NPC is the audience of a move (`hop`, `pose`, `turn`, `face`,                      `hold`, `resize`). Name the actor or the wave here",
+                    "`{}` names an NPC in its audience, and an NPC is never harmed and never \
+                     fights: it carries no status effect and takes no damage. A wave's or an \
+                     actor's bodies are the audience of `give-effect`, `clear-effect` and \
+                     `damage`; an NPC is the audience of a move (`hop`, `pose`, `turn`, \
+                     `face`, `hold`, `resize`). Name the actor or the wave here",
                     eff.verb.tag()
                 ),
             ));

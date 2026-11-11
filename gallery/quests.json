@@ -1438,6 +1438,202 @@
                   }
                 ]
               }
+            },
+            {
+              "steps": [
+                {
+                  "at_ticks": 0,
+                  "effects": [
+                    {
+                      "audience": {
+                        "npc": "npc/curator"
+                      },
+                      "item": "minecraft:poppy",
+                      "slot": "main_hand",
+                      "type": "hold"
+                    },
+                    {
+                      "audience": {
+                        "npc": "npc/curator"
+                      },
+                      "to": {
+                        "anchor": "anchor/pedestal",
+                        "offset": [
+                          0,
+                          3,
+                          0
+                        ]
+                      },
+                      "type": "face"
+                    },
+                    {
+                      "audience": {
+                        "bodies": [
+                          {
+                            "npc": "npc/curator"
+                          },
+                          {
+                            "npc": "npc/warden"
+                          },
+                          {
+                            "actor": "actor/standard-bearer"
+                          }
+                        ]
+                      },
+                      "repeat": {
+                        "every_ticks": 14,
+                        "times": 4
+                      },
+                      "stagger_ticks": 3,
+                      "type": "hop"
+                    },
+                    {
+                      "at": {
+                        "bodies": [
+                          {
+                            "npc": "npc/curator"
+                          },
+                          {
+                            "npc": "npc/warden"
+                          }
+                        ],
+                        "up": 2.25
+                      },
+                      "count": 3,
+                      "particle": "minecraft:heart",
+                      "repeat": {
+                        "every_ticks": 14,
+                        "times": 4
+                      },
+                      "spread": [
+                        0.3,
+                        0.2,
+                        0.3
+                      ],
+                      "stagger_ticks": 3,
+                      "type": "particle"
+                    },
+                    {
+                      "at": {
+                        "at": "bodies",
+                        "bodies": [
+                          {
+                            "npc": "npc/curator"
+                          }
+                        ]
+                      },
+                      "category": "neutral",
+                      "sound": "minecraft:entity.villager.celebrate",
+                      "type": "play-sound"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 60,
+                  "effects": [
+                    {
+                      "audience": {
+                        "bodies": [
+                          {
+                            "npc": "npc/curator"
+                          },
+                          {
+                            "actor": "actor/standard-bearer"
+                          }
+                        ]
+                      },
+                      "pose": "crouching",
+                      "repeat": {
+                        "every_ticks": 8,
+                        "times": 3
+                      },
+                      "type": "pose"
+                    },
+                    {
+                      "audience": {
+                        "npc": "npc/copyist"
+                      },
+                      "by": 20,
+                      "repeat": {
+                        "every_ticks": 1,
+                        "times": 18
+                      },
+                      "type": "turn"
+                    },
+                    {
+                      "audience": {
+                        "actor": "actor/hall-moth"
+                      },
+                      "height": 0.5,
+                      "type": "hop"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 64,
+                  "effects": [
+                    {
+                      "audience": {
+                        "bodies": [
+                          {
+                            "npc": "npc/curator"
+                          },
+                          {
+                            "actor": "actor/standard-bearer"
+                          }
+                        ]
+                      },
+                      "pose": "standing",
+                      "repeat": {
+                        "every_ticks": 8,
+                        "times": 3
+                      },
+                      "type": "pose"
+                    },
+                    {
+                      "audience": {
+                        "actor": "actor/hall-moth"
+                      },
+                      "scale": 1.25,
+                      "type": "resize"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 90,
+                  "effects": [
+                    {
+                      "audience": {
+                        "npc": "npc/curator"
+                      },
+                      "slot": "main_hand",
+                      "type": "hold"
+                    },
+                    {
+                      "audience": {
+                        "npc": "npc/curator"
+                      },
+                      "to": "watch",
+                      "type": "face"
+                    },
+                    {
+                      "audience": {
+                        "npc": "npc/copyist"
+                      },
+                      "to": 180,
+                      "type": "face"
+                    },
+                    {
+                      "audience": {
+                        "actor": "actor/hall-moth"
+                      },
+                      "scale": 1,
+                      "type": "resize"
+                    }
+                  ]
+                }
+              ],
+              "type": "sequence"
             }
           ],
           "obj/press-the-case": [
