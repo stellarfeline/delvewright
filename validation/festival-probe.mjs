@@ -22,7 +22,9 @@
 //       still move it;
 //   T12 the cart pushed at boarding under a delve's conditions: the summon a
 //       build emits, a north-south line of twelve with a stop, a bot that
-//       stands, walks into it, or has just left another vehicle.
+//       stands, walks into it, or has just left another vehicle;
+//   T13 a saddled camel and three players who each click it: how many it
+//       seats by a click.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -181,9 +183,9 @@ async function containerIp() {
   if (!ip) throw new Error('container has no IP address')
   return ip
 }
-async function joinBot() {
+async function joinBot(username = BOT) {
   const host = await containerIp()
-  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username: BOT, auth: 'offline' })
+  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username, auth: 'offline' })
   await new Promise((resolve, reject) => {
     bot.once('spawn', resolve)
     bot.once('kicked', (r) => reject(new Error(`kicked: ${JSON.stringify(r)}`)))
@@ -912,6 +914,8 @@ async function t12(bot) {
   begin('T12-after-a-ride', 'the bot rides a boat on the pad, leaves by the sneak input, is teleported to where it stands, walks to the cart and clicks')
   await rcon.run(`summon minecraft:oak_boat ${R.x - 6.5} ${y} ${R.z0 + 0.5} {Tags:["dw_boat"]}`)
   await home(bot, { x: R.x - 4.5, y: H.y, z: R.z0 + 0.5 })
+  await heal()
+  await sleep(800)
   bot.mount(entityNamed(bot, 'oak_boat'))
   await sleep(1200)
   bot._client.write('player_input', { inputs: { shift: true } })
@@ -930,6 +934,44 @@ async function t12(bot) {
   await sleep(150)
   await run('after-a-ride')
   await rcon.probe(`fill ${R.x} ${y} ${R.z0} ${R.x} ${y} ${R.z0 + R.n} minecraft:air`)
+}
+
+// ---- T13: a camel's seats by a click ---------------------------------------------
+async function t13(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.probe('kill @e[type=minecraft:camel]')
+  const names = [BOT, 'dw-fest-two', 'dw-fest-three']
+  const bots = [bot, await joinBot(names[1]), await joinBot(names[2])]
+  const C = { x: H.x + 10.5, z: H.z + 20.5 }
+  begin('T13-camel-seats', 'a tamed, saddled camel standing; three players stand beside it and click it one after another; the server\'s passenger list after each click')
+  await rcon.run(`summon minecraft:camel ${C.x} ${FLOOR_Y + 1} ${C.z} {Tame:1b,PersistenceRequired:1b,NoAI:1b,Tags:["dw_camel"],equipment:{saddle:{id:"minecraft:saddle",count:1}}}`)
+  for (let i = 0; i < 3; i++) {
+    await rcon.run(`gamemode survival ${names[i]}`)
+    await rcon.run(`tp ${names[i]} ${C.x - 2} ${H.y} ${C.z + (i - 1) * 1.2}`)
+  }
+  await sleep(1500)
+  for (let i = 0; i < 3; i++) {
+    const b = bots[i]
+    const e = Object.values(b.entities).find((x) => x.name === 'camel')
+    if (!e) {
+      row(`click${i + 1}`, `${names[i]} sees no camel`)
+      continue
+    }
+    await b.lookAt(e.position.offset(0, 1.2, 0), true)
+    await sleep(200)
+    b.mount(e)
+    await sleep(1200)
+    const root = await entityGet(names[i], 'RootVehicle.Entity.id')
+    const riders = await countOf('@a[nbt={RootVehicle:{Entity:{id:"minecraft:camel"}}}]')
+    row(`click${i + 1}`, `player=${names[i]}`, `serverRootVehicle=${root ?? 'none'}`, `playersOnCamel=${riders}`)
+  }
+  row('byCommand', await rcon.probe(`ride ${names[2]} mount @e[tag=dw_camel,limit=1]`), `playersOnCamel=${await countOf('@a[nbt={RootVehicle:{Entity:{id:"minecraft:camel"}}}]')}`)
+  for (const n of names) await rcon.probe(`ride ${n} dismount`)
+  await rcon.probe('kill @e[tag=dw_camel]')
+  bots[1].quit()
+  bots[2].quit()
+  await sleep(500)
 }
 
 // ---- T11: a mount that waits ------------------------------------------------------
@@ -1033,6 +1075,7 @@ try {
   if (wants('T10')) await t10(bot)
   if (wants('T11')) await t11(bot)
   if (wants('T12')) await t12(bot)
+  if (wants('T13')) await t13(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)
