@@ -268,9 +268,12 @@ fn body_connected(
     !body_reached(world, cells, from).is_disjoint(to)
 }
 
-/// **The cells of `pool` a body swims in** (spec-0134 §10): water rest states
-/// of the reach graph ([`crate::compiler::nav::RestKind::Afloat`] and
-/// [`crate::compiler::nav::RestKind::Submerged`]). Passed through, never owed:
+/// **The cells a body swims in with its body in `pool`** (spec-0134 §10):
+/// water rest states of the reach graph
+/// ([`crate::compiler::nav::RestKind::Afloat`] and
+/// [`crate::compiler::nav::RestKind::Submerged`]) whose feet cell or head cell
+/// lies in `pool` — a bay's water a course under the walk plane is swum by a
+/// body whose head stands in the space above it. Passed through, never owed:
 /// a walk crosses them as the route proof's leg swims them, so a piece's own
 /// contract and the route that walks it agree on what a body reaches in water.
 pub(crate) fn swum_cells(
@@ -278,16 +281,16 @@ pub(crate) fn swum_cells(
     pool: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
     pool.iter()
+        .flat_map(|c| [*c, [c[0], c[1] - 1, c[2]]])
         .filter(|c| {
             matches!(
-                world.rest_kind(**c),
+                world.rest_kind(*c),
                 Some(
                     crate::compiler::nav::RestKind::Afloat
                         | crate::compiler::nav::RestKind::Submerged
                 )
             )
         })
-        .copied()
         .collect()
 }
 
@@ -2296,8 +2299,11 @@ impl Confined {
     /// are its regions, every traversal edge licenses a walk between the
     /// elements it chains (both ways, a `drop` forward only) and a `drop` a
     /// fall, and a named way adds its relations only while it is open.
-    fn licence(&self, open: &BTreeSet<&str>) -> crate::compiler::nav::Licence {
-        let regions: Vec<&BTreeSet<[i32; 3]>> = self.elements.iter().map(|e| &e.cells).collect();
+    fn licence(
+        &self,
+        regions: &[&BTreeSet<[i32; 3]>],
+        open: &BTreeSet<&str>,
+    ) -> crate::compiler::nav::Licence {
         let opened: Vec<&WayGate> = self
             .ways
             .iter()
@@ -2305,7 +2311,7 @@ impl Confined {
             .map(|(_, gate)| gate)
             .collect();
         crate::compiler::nav::Licence::new(
-            &regions,
+            regions,
             self.walk
                 .iter()
                 .copied()
@@ -2386,8 +2392,19 @@ impl Confined {
         // The cells of an element a body holds in on a climbable — a `climb`
         // edge's volume, or a ladder down into a space from its way in:
         // passed through, never owed — a target is a cell a body stands in.
-        // And the water of an element a body swims in (spec-0134 §10): passed
-        // through as the route proof's leg swims it, never owed.
+        // And the water a body swims in with its body in an element (spec-0134
+        // §10): passed through as the route proof's leg swims it, never owed,
+        // and the element's own — a cell of it to the licence — so a swim is
+        // confined as a walk is.
+        let regions: Vec<BTreeSet<[i32; 3]>> = self
+            .elements
+            .iter()
+            .map(|e| {
+                let mut cells = e.cells.clone();
+                cells.extend(swum_cells(&world, &e.cells));
+                cells
+            })
+            .collect();
         let element_cells: BTreeSet<[i32; 3]> = self
             .elements
             .iter()
@@ -2410,7 +2427,7 @@ impl Confined {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let licence = self.licence(open);
+        let licence = self.licence(&regions.iter().collect::<Vec<_>>(), open);
         let keep = |next: [i32; 3]| targets.contains(&next) || held.contains(&next);
         let seen = world.body_flood(
             &seeds,

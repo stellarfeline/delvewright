@@ -489,8 +489,11 @@ mod tests {
                 }
             }
         }
+        // The spaces stand from the walk plane up, as a starter's do: the
+        // channel's water is a course under it, swum by a body whose head
+        // stands in the west space.
         let west: Vec<[i32; 3]> = (0..9)
-            .flat_map(|x| (0..3).flat_map(move |z| (1..4).map(move |y| [x, y, z])))
+            .flat_map(|x| (0..3).map(move |z| [x, 3, z]))
             .collect();
         let east: Vec<[i32; 3]> = (9..12)
             .flat_map(|x| (0..3).map(move |z| [x, 3, z]))
