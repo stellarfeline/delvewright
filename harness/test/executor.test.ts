@@ -3341,6 +3341,35 @@ test("a wave an approach trigger seats is read from its anchor, not reported as 
   assert.ok(musters.length === 2 && musters[0]! < firstWalk && firstWalk < musters[1]!, `read, walk, read: ${bot.calls.join(" | ")}`);
 });
 
+test("a wave a beat seats after the step opens is waited for, and read when it stands", async () => {
+  // The festival's beach landing: a sequence seats the wave 600 ticks after
+  // the dock's completion. The kill step read nothing at its open, walked to
+  // the anchor, read nothing there either, and failed a wave the delve was
+  // about to seat. The compiler dates the seat (`seat_ticks`); the step waits
+  // for the wave's first body, then reads it, and walks nowhere first.
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, false), false);
+  const step: KillStep = { ...KILL_STEP, count: 2, pos: [20, 64, 0], seatTicks: 40 };
+  const landing = setTimeout(() => bot.seat(2), 1_500);
+  try {
+    await within("executor.kill(step)", executor.kill(step));
+  } finally {
+    clearTimeout(landing);
+  }
+  const verdict = executor.waveMusters().get("wave/gate-assault")!;
+  assert.equal(verdict.read, 2, `the seated bodies were read: ${JSON.stringify(verdict)}`);
+  assert.deepEqual(executor.musterFailures(), [], "the zero before the landing is not a failure");
+  const musters = bot.calls.flatMap((c, i) => (c.includes(":wave_muster_") ? [i] : []));
+  const firstWalk = bot.calls.indexOf("goto");
+  assert.ok(
+    musters.length === 2 && (firstWalk === -1 || musters[1]! < firstWalk),
+    `read, wait, read — no walk before the reading: ${bot.calls.join(" | ")}`,
+  );
+});
+
 test("a declared wave with no body even at its anchor is a red", async () => {
   const bot = new CombatFakeBot();
   bot.seat(0);
@@ -6338,6 +6367,42 @@ test("an expire step whose objective completes first fails by name", async () =>
   setTimeout(() => bot.emit("messagestr", "[dw:complete hello-world obj/exit]"), 50);
   await assert.rejects(within("the expiry wait", run), /completed the objective it was to let lapse/);
   assert.deepEqual(log, ["walk 4,65,4"]);
+});
+
+test("an expire step consumes its leg unwalked, and its walk to the stand names no leg", async () => {
+  // The town's lamp window run out: the leg into the lapse ends where the
+  // climb left the party (the lamp room), the next step's leg ends there too
+  // (the spyglass at the lamp), and the leg after it is the stair's hops down.
+  // Left unconsumed, the spyglass walk took the lapse's leg and the stair walk
+  // met the spyglass leg: no proven route, no hop driven.
+  const log: string[] = [];
+  const bot = lapseBot(log);
+  const executor = attach(bot);
+  executor.campaignId = "hello-world";
+  const named: unknown[] = [];
+  (executor as unknown as {
+    walkTo: (p: readonly number[], ...rest: unknown[]) => Promise<void>;
+  }).walkTo = async (p: readonly number[], ...rest: unknown[]) => {
+    named.push(rest[5]);
+    log.push(`walk ${p.join(",")}`);
+  };
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.74.0",
+      campaign_id: "hello-world",
+      legs: [
+        { from: [2, 65, 2], to: [2, 65, 2], waypoints: [[2, 65, 2]] },
+        { from: [2, 65, 2], to: [2, 65, 2], waypoints: [[2, 65, 2]] },
+        { from: [2, 65, 2], to: [9, 60, 9], waypoints: [[2, 65, 2], [9, 60, 9]] },
+      ],
+    }),
+  );
+  const run = executor.expire({ ...lapse, pos: [2, 65, 2], stand: [3, 65, 2] });
+  setTimeout(() => bot.emit("messagestr", "[dw:expired hello-world obj/exit]"), 50);
+  await within("the expiry wait", run);
+  assert.equal(executor.legCursor, 1, "the lapse's own leg is consumed; the next step's is next");
+  assert.deepEqual(log, ["walk 3,65,2"]);
+  assert.deepEqual(named, [null], "the walk to the stand is matched against no leg");
 });
 
 test("an expiry marker for another campaign or another objective is not this step's", async () => {

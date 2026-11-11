@@ -278,3 +278,21 @@ export function pickWaveBody<T extends { readonly kind: string; readonly distanc
   const byDistance = [...matched].sort((a, b) => a.distance - b.distance);
   return byDistance.find((m) => waveKinds.has(m.kind)) ?? byDistance[0];
 }
+
+/**
+ * What a kill step allows a late seat beyond the compiler's date (ms): the
+ * server's own tick lag under a loaded world, and the census round trip that
+ * observes the seat.
+ */
+export const SEAT_GRACE_MS = 10_000;
+
+/**
+ * How long (ms) a kill step waits for a wave a beat seats after the step opens:
+ * the compiler's `seat_ticks` — the latest tick after the step's open at which
+ * the wave is seated — at the server's 20 ticks a second, plus
+ * {@link SEAT_GRACE_MS}. A ceiling: the wait ends at the first census that
+ * reads a body. Pure arithmetic.
+ */
+export function seatWindowMs(seatTicks: number): number {
+  return seatTicks * 50 + SEAT_GRACE_MS;
+}

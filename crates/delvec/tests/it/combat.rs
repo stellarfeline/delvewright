@@ -1117,3 +1117,74 @@ fn a_wave_that_stays_down_is_no_run_back() {
         "the guards stay down"
     );
 }
+
+// ---------------------------------------------------------------------------
+// When the wave stands: a beat that seats it after the step before it.
+// ---------------------------------------------------------------------------
+
+/// The exported `kill` step of `wave/guards`.
+fn guards_kill(path: &serde_json::Value) -> serde_json::Value {
+    path["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["action"] == "kill" && s["wave"] == "wave/guards")
+        .cloned()
+        .unwrap_or_else(|| panic!("no kill of wave/guards: {path}"))
+}
+
+/// Move `obj/talk`'s `spawn-wave` into a `sequence`: `outer` ticks after the
+/// completion, and `inner` ticks into a sequence nested in that step when
+/// `inner` is given.
+fn delay_the_guards(quests: &mut serde_json::Value, outer: u32, inner: Option<u32>) {
+    let talk = quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .unwrap();
+    let at = talk
+        .iter()
+        .position(|e| e["type"] == "spawn-wave")
+        .expect("the fixture seats its guards on obj/talk");
+    let spawn = talk.remove(at);
+    let effect = match inner {
+        Some(t) => serde_json::json!({"type": "sequence", "steps": [
+            {"at_ticks": t, "effects": [spawn]}
+        ]}),
+        None => spawn,
+    };
+    talk.push(serde_json::json!({"type": "sequence", "steps": [
+        {"at_ticks": outer, "effects": [effect]}
+    ]}));
+}
+
+#[test]
+fn a_kill_whose_wave_a_sequence_seats_later_carries_the_seat_date() {
+    // The festival's beach landing: the wave is seated by a beat a sequence
+    // schedules after the completion before the kill, so a muster at the
+    // step's open reads no body. The exported step says when it stands.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| delay_the_guards(quests, 600, None));
+    let (out, _) = build(tmp.path()).expect("the delayed seat builds");
+    let (path, _) = path_and_plan(&out);
+    assert_eq!(guards_kill(&path)["seat_ticks"], 600, "{path}");
+
+    // Dated at any depth along the timeline: 200 + 150.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        delay_the_guards(quests, 200, Some(150))
+    });
+    let (out, _) = build(tmp.path()).expect("the nested seat builds");
+    let (path, _) = path_and_plan(&out);
+    assert_eq!(guards_kill(&path)["seat_ticks"], 350, "{path}");
+}
+
+#[test]
+fn a_kill_whose_wave_is_seated_at_once_carries_no_seat_date() {
+    // The untouched fixture seats its guards in the completion's own tick:
+    // nothing to wait for, and no key, so every such path is byte-identical.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let (path, _) = path_and_plan(&out);
+    let kill = guards_kill(&path);
+    assert!(kill.get("seat_ticks").is_none(), "{kill}");
+}
