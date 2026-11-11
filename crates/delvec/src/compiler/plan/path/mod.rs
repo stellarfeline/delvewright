@@ -276,6 +276,11 @@ impl Step {
     /// ground it put there.
     pub fn pos(&self) -> Option<[i32; 3]> {
         match self {
+            // spec-0134 §1: a body entering a census's box is placed there by
+            // command; the party is required nowhere.
+            Step::Trigger {
+                on: "body-enters", ..
+            } => None,
             Step::TalkTo { pos, .. }
             | Step::Reach { pos, .. }
             | Step::Kill { pos, .. }
@@ -334,6 +339,7 @@ impl Step {
                 block,
                 ..
             } => match (*on, range) {
+                ("body-enters", _) => false,
                 ("approach" | "use-item", Some(r)) => within(*pos, f64::from(*r)),
                 ("step", _) => within(*pos, STEP_REACH),
                 _ if block.is_some() => within(*pos, BLOCK_INTERACTION_REACH),

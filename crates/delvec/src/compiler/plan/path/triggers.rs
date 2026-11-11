@@ -196,6 +196,36 @@ pub(super) fn path_triggers(
                     begun,
                     &flags_at[si],
                 ),
+                // spec-0134 §1: a body entering is placed in the census's own
+                // box; the deed stands where that box does. A vehicle's riders
+                // are placed by boarding, which no deed performs.
+                None if matches!(t.on, delvewright_dsl::TriggerOn::BodyEnters { .. }) => {
+                    let delvewright_dsl::TriggerOn::BodyEnters { state } = &t.on else {
+                        return None;
+                    };
+                    let k = campaign
+                        .quests
+                        .content
+                        .state_decl(state.as_str())?
+                        .counts
+                        .as_ref()?;
+                    if matches!(k.of, delvewright_dsl::CensusOf::Riders(_)) {
+                        return None;
+                    }
+                    let area = anchors
+                        .iter()
+                        .find(|((_, n), _)| n == k.region.anchor.as_str())
+                        .map(|((a, _), _)| a.clone())?;
+                    let (lo, hi) = crate::compiler::plan::zone_box_in(anchors, &k.region)?;
+                    Some((
+                        area,
+                        [
+                            lo[0] + (hi[0] - lo[0]) / 2,
+                            lo[1],
+                            lo[2] + (hi[2] - lo[2]) / 2,
+                        ],
+                    ))
+                }
                 None => {
                     let at = t.at_anchor()?;
                     anchors

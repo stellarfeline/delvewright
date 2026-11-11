@@ -804,6 +804,22 @@ pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value
 /// declaration order; empty for a step whose gate reads no census.
 pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
     let q = &plan.campaign.quests.content;
+    // A `body-enters` deed (a story world's entry deed, spec-0134 §1) is
+    // performed by its own census: one body of the set put in the box, which
+    // the census tick counts and the trigger fires on.
+    let entered: Option<delvewright_dsl::StateCompare> = s
+        .trigger()
+        .and_then(|t| q.triggers.iter().find(|x| x.id.as_str() == t))
+        .and_then(|t| match &t.on {
+            delvewright_dsl::TriggerOn::BodyEnters { state } => {
+                Some(delvewright_dsl::StateCompare {
+                    state: state.clone(),
+                    op: delvewright_dsl::CompareOp::AtLeast,
+                    value: 1,
+                })
+            }
+            _ => None,
+        });
     let terms: &[delvewright_dsl::StateCompare] = if let Some(o) = s.objective() {
         q.quests
             .iter()
@@ -820,6 +836,7 @@ pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
     };
     terms
         .iter()
+        .chain(entered.iter())
         .filter_map(|cmp| {
             let decl = q.state_decl(cmp.state.as_str())?;
             let k = decl.counts.as_ref()?;

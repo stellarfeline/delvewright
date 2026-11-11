@@ -944,6 +944,9 @@ fn keep_out_stance(
     else {
         return Ok(None);
     };
+    if s.pos().is_none() {
+        return Ok(None);
+    }
     let keep = region_events.keep_out_at(step);
     let reach = match (*on, range) {
         ("approach", Some(r)) => f64::from(*r),
