@@ -695,6 +695,16 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
         ));
     }
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
+    // spec-0133 §3: a limited objective's every guard also reads its expired
+    // score ([`expired_term`]), so the template owns it too — clear, as the
+    // objective is pending while the template drives it — in both directions,
+    // so a shut gate is shut by the one axis the caller varies.
+    if o.limit().is_some() {
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            expired_score(o.id().as_str())
+        ));
+    }
     p
 }
 

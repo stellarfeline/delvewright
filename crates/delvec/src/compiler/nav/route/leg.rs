@@ -64,6 +64,23 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                 .filter(|&c| leg_world.is_use_gate(c))
                 .collect();
             let climbs = leg_world.climb_runs(&cells);
+            // A pair of consecutive cells more than a step apart that no
+            // declared jump joins is a hop the route took.
+            let hops = cells
+                .windows(2)
+                .filter(|w| {
+                    (w[1][0] - w[0][0]).abs() + (w[1][2] - w[0][2]).abs() > 1
+                        && !leg_world.declared_jumps.contains(&(w[0], w[1]))
+                })
+                .map(|w| {
+                    (
+                        w[0],
+                        w[1],
+                        leg_world.hop_sprint(w[0], w[1]).unwrap_or(true),
+                        leg_world.run_up(w[0], w[1]),
+                    )
+                })
+                .collect();
             out.push((
                 LegRoute {
                     from: pair[0].pos,
@@ -74,6 +91,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                     use_gates,
                     climbs,
                     water,
+                    hops,
                     // The leg carries the world it was PROVEN over, not just the
                     // route. Anything that re-judges these cells has to ask this
                     // value for the world to judge them in — see

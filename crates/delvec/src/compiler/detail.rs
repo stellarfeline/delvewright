@@ -1147,9 +1147,10 @@ pub struct DetailBinding {
     /// Owed anchor names checked over every bound place — `DW0845`.
     pub owed: usize,
     /// Of those, names bound into a piece's `no_body` region and admitted
-    /// because the campaign's only use of the name is a killing volume's
-    /// centre ([`KillingSeats`]) — `DW0845`'s one admission, counted.
-    pub killing_seats: usize,
+    /// because every use the campaign makes of the name puts no body there —
+    /// a killing volume's centre, a shot's target ([`BodilessSeats`]) —
+    /// `DW0845`'s one admission, counted.
+    pub bodiless_seats: usize,
 }
 
 impl DetailBinding {
@@ -1163,7 +1164,8 @@ impl DetailBinding {
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
              declared face(s) examined ({os} answering an open side), {br} contract bar(s) \
              judged against the hand (DW1063), {o} owed anchor name(s) checked, {k} of them a \
-             killing volume's seat in out-of-walk floor.",
+             station no body is put at (a killing volume's centre, a shot's target) in \
+             out-of-walk floor.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -1173,37 +1175,42 @@ impl DetailBinding {
             os = self.open_side_faces,
             br = self.bars,
             o = self.owed,
-            k = self.killing_seats,
+            k = self.bodiless_seats,
         )
     }
 }
 
-/// **The stations whose only use is to centre a killing volume** — the one
-/// case `DW0845` admits into a piece's `no_body` region.
+/// **The stations at which the campaign puts no body** — the one case
+/// `DW0845` admits into a piece's `no_body` region.
 ///
 /// `DW0845` refuses an owed name bound into out-of-walk floor because the
-/// campaign puts a body at the name: an NPC, a quest, a wave, a spawn. A
-/// `lethal_volumes[]` entry puts no body at its anchor; it centres a box that
-/// kills whatever enters. And the place a killing volume belongs is exactly
-/// floor no body walks: `DW0891` refuses a volume whose keep-out reaches the
-/// walked floor and names the move — lower it onto an anchor at the pit's
-/// bottom, which a piece's contract declares `no_body`. Refusing that binding
-/// here made the remedy one gate prescribes a refusal of the other.
+/// campaign puts a body at the name: an NPC, a quest, a wave, a spawn. Two
+/// uses of a name put no body at it, and each belongs in floor no body walks:
+///
+/// * a `lethal_volumes[]` region anchor centres a box that kills whatever
+///   enters. `DW0891` refuses a volume whose keep-out reaches the walked floor
+///   and names the move — lower it onto an anchor at the pit's bottom, which a
+///   piece's contract declares `no_body`;
+/// * a `shot` trigger's `at` is the cell of the target block it places
+///   (spec-0134 §2). The shooter stands at a stance between 4 and 40 blocks
+///   off (`DW1091` finds it), so the target hangs where it is seen and never
+///   stood at — a belfry's opening, a gable, a cliff face.
 ///
 /// The admission is computed from the documents, never declared: a name
 /// qualifies when it is a declared station (never a synthesized
 /// `anchor/node-…`, `spawn` or `anchor/unlock-…`, which are places a body is
 /// put by construction) and **every** string in every stage document that
 /// spells it, other than the station's own declaration and the detail plan's
-/// binding, is a `lethal_volumes[]` region anchor. The scan reads every string
+/// binding, is one of those uses. The scan reads every string
 /// of every document rather than an enumeration of reference sites, so a site
 /// added later that puts a body at the name disqualifies it without anyone
 /// remembering this list: the defect (a body in a `no_body` region) cannot
 /// supply the property, because putting a body at the name is one more string.
 #[derive(Debug, Default)]
-pub struct KillingSeats {
-    /// Station name → every place a document spells it, as `doc:pointer`,
-    /// beside the volumes it centres.
+pub struct BodilessSeats {
+    /// Station name → every place a document spells it that may put a body
+    /// there, as `doc:pointer`, beside its uses that put none (each named for
+    /// the refusal: the volume it centres, the shot it is the target of).
     uses: BTreeMap<String, (Vec<String>, Vec<String>)>,
     /// Station name → the gates the triggers anchored at it answer for
     /// (spec-0117: a gate's own answer is anchored at a cell of the gate's
@@ -1211,7 +1218,7 @@ pub struct KillingSeats {
     gate_answers: BTreeMap<String, Vec<String>>,
 }
 
-impl KillingSeats {
+impl BodilessSeats {
     /// Index every declared station of the campaign's layout graph.
     #[must_use]
     pub fn of(c: &Campaign) -> Self {
@@ -1268,10 +1275,8 @@ impl KillingSeats {
                         .push(g);
                     continue;
                 }
-                match (*doc, volume_anchor_pointer(&pointer)) {
-                    ("quests", Some(i)) => {
-                        volumes.push(c.quests.content.lethal_volumes[i].id.as_str().to_string())
-                    }
+                match (*doc, bodiless_pointer(c, &pointer)) {
+                    ("quests", Some(what)) => volumes.push(what),
                     _ => others.push(format!("{doc}:{pointer}")),
                 }
             }
@@ -1279,11 +1284,11 @@ impl KillingSeats {
         out
     }
 
-    /// The volumes `name` seats, when centring them is the name's only use;
-    /// `None` when it is not a declared station, seats no volume, or anything
-    /// else spells it.
+    /// The uses of `name` that put no body there, when they are its only
+    /// uses; `None` when it is not a declared station, has no such use, or
+    /// anything else spells it.
     #[must_use]
-    pub fn only_volumes(&self, name: &str) -> Option<&[String]> {
+    pub fn only_bodiless(&self, name: &str) -> Option<&[String]> {
         match self.uses.get(name) {
             Some((others, volumes)) if others.is_empty() && !volumes.is_empty() => Some(volumes),
             _ => None,
@@ -1302,15 +1307,15 @@ impl KillingSeats {
         }
     }
 
-    /// The uses of `name` other than a killing volume's centre.
+    /// The uses of `name` that may put a body there.
     #[must_use]
     pub fn others(&self, name: &str) -> &[String] {
         self.uses.get(name).map_or(&[], |(o, _)| o.as_slice())
     }
 
-    /// The killing volumes `name` centres, whatever else uses it.
+    /// The uses of `name` that put no body there, whatever else uses it.
     #[must_use]
-    pub fn volumes(&self, name: &str) -> &[String] {
+    pub fn bodiless(&self, name: &str) -> &[String] {
         self.uses.get(name).map_or(&[], |(_, v)| v.as_slice())
     }
 }
@@ -1347,7 +1352,6 @@ fn station_pointer(p: &str) -> bool {
         if i.parse::<usize>().is_ok() && j.parse::<usize>().is_ok())
 }
 
-/// `/lethal_volumes/<i>/region/anchor` — a killing volume's centre, as `i`.
 /// The gate a quests-document pointer's trigger answers for, when the pointer
 /// is that trigger's `at` and it `serves` a gate.
 fn gate_answer_pointer(c: &Campaign, p: &str) -> Option<String> {
@@ -1362,10 +1366,25 @@ fn gate_answer_pointer(c: &Campaign, p: &str) -> Option<String> {
     }
 }
 
-fn volume_anchor_pointer(p: &str) -> Option<usize> {
+/// A quests-document pointer that names an anchor no body is put at, as the
+/// words a refusal names it by: `/lethal_volumes/<i>/region/anchor` (a killing
+/// volume's centre) or `/triggers/<i>/at` of a `shot` (its target's cell).
+fn bodiless_pointer(c: &Campaign, p: &str) -> Option<String> {
     let parts: Vec<&str> = p.split('/').collect();
     match parts.as_slice() {
-        ["", "lethal_volumes", i, "region", "anchor"] => i.parse().ok(),
+        ["", "lethal_volumes", i, "region", "anchor"] => {
+            let v = c
+                .quests
+                .content
+                .lethal_volumes
+                .get(i.parse::<usize>().ok()?)?;
+            Some(format!("the killing volume `{}`'s centre", v.id.as_str()))
+        }
+        ["", "triggers", i, "at"] => {
+            let t = c.quests.content.triggers.get(i.parse::<usize>().ok()?)?;
+            matches!(t.on, delvewright_dsl::TriggerOn::Shot)
+                .then(|| format!("the target `shot` trigger `{}` lands on", t.id.as_str()))
+        }
         _ => None,
     }
 }
@@ -1389,7 +1408,7 @@ fn check_owed(
     row: &delvewright_dsl::Detail,
     meta: &delvewright_dsl::PrefabMeta,
     path: &str,
-    (gates, seats): (&SeamGates, &KillingSeats),
+    (gates, seats): (&SeamGates, &BodilessSeats),
 ) {
     // ---- DW0842 / DW0845: the owed names ----
     let owed = delvewright_dsl::owed_anchors_in(c, &row.place, plan);
@@ -1551,10 +1570,11 @@ fn check_owed(
         if let Some(resolves) = anchor.resolves_to.as_deref()
             && !resolves.starts_with("space:")
         {
-            // The one admission: out-of-walk floor seating nothing but a
-            // killing volume, which is where `DW0891` sends one.
-            if resolves.starts_with("no_body:") && seats.only_volumes(name).is_some() {
-                binding.killing_seats += 1;
+            // The one admission: out-of-walk floor at which the campaign puts
+            // no body — a killing volume's centre, where `DW0891` sends one;
+            // a shot's target, seen from its stance.
+            if resolves.starts_with("no_body:") && seats.only_bodiless(name).is_some() {
+                binding.bodiless_seats += 1;
                 continue;
             }
             // spec-0117: a gate's own answer stands in the gate's bar — the
@@ -1568,19 +1588,13 @@ fn check_owed(
             {
                 continue;
             }
-            let why = if resolves.starts_with("no_body:") && !seats.volumes(name).is_empty() {
+            let why = if resolves.starts_with("no_body:") && !seats.bodiless(name).is_empty() {
                 let others = seats.others(name);
                 format!(
-                    " It centres the killing volume(s) {}, and a killing volume belongs in \
-                     out-of-walk floor, but {} other use(s) put something at it: {}. Seat the \
-                     volume(s) on a station nothing else names, and keep this name in play \
-                     space.",
-                    seats
-                        .volumes(name)
-                        .iter()
-                        .map(|v| format!("`{v}`"))
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    " It is {}, which puts no body there and belongs in out-of-walk floor, \
+                     but {} other use(s) put something at it: {}. Seat those on a station \
+                     nothing else names, and keep this name in play space.",
+                    seats.bodiless(name).join(", "),
                     others.len(),
                     others.join(", "),
                 )
@@ -1597,10 +1611,11 @@ fn check_owed(
                      puts bodies, quests and waves at this name; a body cannot be in a \
                      `no_body` region, inside a bar, or in a transit volume. Bind it to an \
                      anchor standing in one of the piece's declared spaces.{why} A station \
-                     whose only use is a `lethal_volumes[]` region anchor may stand in a \
-                     `no_body` region: that is a pit's bottom, where `DW0891` sends a \
-                     volume; one whose only use is the `at` of a gate's own answer may \
-                     stand in that gate's bar.",
+                     at which the campaign puts no body may stand in a `no_body` region: \
+                     one whose only uses are `lethal_volumes[]` region anchors (a pit's \
+                     bottom, where `DW0891` sends a volume) or the `at` of a `shot` \
+                     trigger (the target, shot from a stance); one whose only use is the \
+                     `at` of a gate's own answer may stand in that gate's bar.",
                     piece = row.piece,
                 ),
             ));
@@ -1653,7 +1668,7 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         .map(|(i, b)| (b.node.0.as_str(), i))
         .collect();
     binding.boxes = boxes.len();
-    let seats = KillingSeats::of(c);
+    let seats = BodilessSeats::of(c);
 
     // **A plan that resolves NO box is one finding, not one per row**
     // (`Diagnostic`'s "one cause, one line"). With zero boxes every `details[]`

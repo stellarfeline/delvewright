@@ -508,6 +508,7 @@ mod tests {
             use_gates: Vec::new(),
             climbs: Vec::new(),
             water: Vec::new(),
+            hops: Vec::new(),
             region_state: RegionState::default(),
         }
     }

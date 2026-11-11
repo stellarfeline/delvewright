@@ -523,6 +523,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         use_gates: Vec::new(),
         climbs: Vec::new(),
         water: Vec::new(),
+        hops: Vec::new(),
         // No runtime write on this leg: the bare world is the world it was
         // proven over, so the flooded cell has nothing to explain it away.
         region_state: RegionState::default(),
@@ -544,6 +545,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         use_gates: Vec::new(),
         climbs: Vec::new(),
         water: Vec::new(),
+        hops: Vec::new(),
         region_state: RegionState::default(),
     }];
     assert!(verify_exported_routes(&world, &dry).is_ok());
