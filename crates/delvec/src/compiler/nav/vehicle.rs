@@ -251,6 +251,39 @@ impl World {
         Some(out)
     }
 
+    /// Whether a swimmer in the water body under `v`'s seat climbs out onto a
+    /// cell of `walk`: a standable cell beside a surface cell of the body, at
+    /// its height or one over. The water body is the flooded cells joined to
+    /// the seat, searched within `bounds` grown by two.
+    fn water_body_lands(&self, v: &VehiclePlan, walk: &BTreeSet<[i32; 3]>) -> bool {
+        let (lo, hi) = v.bounds;
+        let near = |c: [i32; 3]| (0..3).all(|i| lo[i] - 2 <= c[i] && c[i] <= hi[i] + 2);
+        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::from([v.seat]);
+        let mut queue = VecDeque::from([v.seat]);
+        while let Some(c) = queue.pop_front() {
+            for d in [
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+                [0, 1, 0],
+                [0, -1, 0],
+            ] {
+                let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+                if near(n) && self.flooded.contains(&n) && seen.insert(n) {
+                    queue.push_back(n);
+                }
+                if d[1] == 0
+                    && (walk.contains(&n) || walk.contains(&[n[0], n[1] + 1, n[2]]))
+                    && !self.flooded.contains(&n)
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// **The boarding cells** (spec-0135 §4): standable cells from which a
     /// body's eye reaches the vehicle's hitbox at its seat within the
     /// interaction reach.
@@ -279,9 +312,19 @@ impl World {
     /// up or down — and, for a mount, the cell it stands in.
     pub fn leaving_cells_of(&self, v: &VehiclePlan, m: [i32; 3]) -> Vec<[i32; 3]> {
         let mut out = Vec::new();
+        // A body steps off the vehicle's own edge: a block past its widest
+        // column.
+        let r = v
+            .footprint()
+            .cols
+            .iter()
+            .map(|c| c[0].abs().max(c[1].abs()))
+            .max()
+            .unwrap_or(0)
+            + 1;
         for dy in [0, 1, -1] {
-            for dz in -1..=1 {
-                for dx in -1..=1 {
+            for dz in -r..=r {
+                for dx in -r..=r {
                     if dx == 0 && dz == 0 && v.kind != VehicleKind::Mount {
                         continue;
                     }
@@ -430,9 +473,13 @@ pub fn judge_vehicles(
             );
         }
         let mut leaves: BTreeSet<[i32; 3]> = BTreeSet::new();
+        // A rider who leaves a boat in open water swims (the record §5): the
+        // water body the medium floats on is a way off when any shore it
+        // touches is in the walk region.
+        let swim_off = v.medium == VehicleMedium::Water && world.water_body_lands(v, walk);
         for m in tree.keys() {
             let l = world.leaving_cells_of(v, *m);
-            let off = l.iter().any(|c| walk.contains(c));
+            let off = swim_off || l.iter().any(|c| walk.contains(c));
             leaves.extend(l);
             if !off && verdict.is_ok() {
                 verdict = fail(

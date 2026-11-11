@@ -295,6 +295,7 @@ mod v36_boundary;
 mod v36_lightning;
 mod v36_standin;
 mod validate_checks_the_graph;
+mod vehicle;
 mod view_cli;
 mod view_distance;
 mod view_float;

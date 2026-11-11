@@ -82,9 +82,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   stand}` — walk to `stand`, perform nothing, and pass on the objective's
  *   anchored `[dw:expired …]` marker. A format-6 bot would refuse the kind.
  *
+ * * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board, medium,
+ *   rate, leave, steering_item?}` — walk to `board`, mount, be carried along
+ *   `medium` at `rate`, leave and stand at `leave`. A format-7 bot would refuse
+ *   the kind.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 7;
+export const CRITICAL_PATH_FORMAT_VERSION = 9;
 
 /**
  * One body a step is walked beside (spec-0132 §5.3): an `outrun` actor loose
@@ -131,6 +136,7 @@ export const STEP_ACTIONS = [
   "loop",
   "mock",
   "expire",
+  "ride",
   "assert-complete",
 ] as const;
 
@@ -531,6 +537,36 @@ export interface ExpireStep extends PresentationMarkers, Pursued {
   readonly pos: Vec3Tuple;
 }
 
+/** The kinds of vehicle a ride step names (spec-0135 §1). */
+export const VEHICLE_KINDS = ["boat", "minecart", "mount"] as const;
+export type VehicleKind = (typeof VEHICLE_KINDS)[number];
+
+/**
+ * spec-0135 §6: ride a vehicle across a leg no walk crosses. Walk to `board`,
+ * mount the vehicle by its body, be carried along `medium` (the seat first) —
+ * a boat or a mount by the rider's reported moves at `rate`, a minecart by its
+ * rails — then leave by the sneak input and stand at `leave`. Every verdict is
+ * read on the server.
+ */
+export interface RideStep extends PresentationMarkers, Pursued {
+  readonly action: "ride";
+  /** The `vehicle/<id>` ridden. */
+  readonly vehicle: string;
+  readonly kind: VehicleKind;
+  /** Where the bot stands to mount. */
+  readonly board: Vec3Tuple;
+  /** The same cell, as every positioned step names its place. */
+  readonly pos: Vec3Tuple;
+  /** The medium cells, the seat first; at least two. */
+  readonly medium: readonly Vec3Tuple[];
+  /** Blocks a second the harness drives at; positive. */
+  readonly rate: number;
+  /** Where the bot stands after leaving. */
+  readonly leave: Vec3Tuple;
+  /** The item a rider holds to steer, where the kind needs one. */
+  readonly steeringItem?: string;
+}
+
 export type Step =
   | SelectClassStep
   | TalkToStep
@@ -544,6 +580,7 @@ export type Step =
   | LoopStep
   | MockStep
   | ExpireStep
+  | RideStep
   | AssertCompleteStep;
 
 /**
@@ -1486,6 +1523,51 @@ function parseStepBody(value: unknown, pointer: string): Step {
         waitTicks: wait as number,
         stand,
         pos,
+        ...presentationFields(obj, pointer),
+      };
+    }
+    case "ride": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        pointer,
+      );
+      const vehicle = requireString(obj, "vehicle", pointer);
+      if (!/^vehicle\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(vehicle)) {
+        fail(`${pointer}/vehicle`, `must be a \`vehicle/<kebab>\` id, got ${JSON.stringify(vehicle)}`);
+      }
+      const kind = obj["kind"];
+      if (typeof kind !== "string" || !(VEHICLE_KINDS as readonly string[]).includes(kind)) {
+        fail(`${pointer}/kind`, `must be one of ${VEHICLE_KINDS.join(", ")}, got ${describe(kind)}`);
+      }
+      const board = requireVec3(obj, "board", pointer);
+      const pos = requirePos(obj, pointer);
+      if (pos.some((c, i) => c !== board[i])) {
+        fail(`${pointer}/pos`, `must be the step's \`board\` (${JSON.stringify(board)}), got ${JSON.stringify(pos)}`);
+      }
+      const raw = obj["medium"];
+      if (!Array.isArray(raw) || raw.length < 2) {
+        fail(`${pointer}/medium`, `must be an array of at least two cells, got ${describe(raw)}`);
+      }
+      const medium = (raw as unknown[]).map((_, i) => requireVec3(raw as unknown as Record<string, unknown>, String(i), `${pointer}/medium`));
+      const rate = obj["rate"];
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+        fail(`${pointer}/rate`, `must be a positive number of blocks a second, got ${describe(rate)}`);
+      }
+      const item = obj["steering_item"];
+      if (item !== undefined && typeof item !== "string") {
+        fail(`${pointer}/steering_item`, `must be an item id, got ${describe(item)}`);
+      }
+      return {
+        action: "ride",
+        vehicle,
+        kind: kind as VehicleKind,
+        board,
+        pos,
+        medium,
+        rate: rate as number,
+        leave: requireVec3(obj, "leave", pointer),
+        ...(item === undefined ? {} : { steeringItem: item as string }),
         ...presentationFields(obj, pointer),
       };
     }

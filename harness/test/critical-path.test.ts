@@ -47,7 +47,7 @@ const parseCriticalPathJson = (text: string) => {
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 7,
+    format_version: CRITICAL_PATH_FORMAT_VERSION,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -223,7 +223,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, expire, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, expire, ride, assert-complete/.test(err.message),
   );
 });
 
@@ -1362,12 +1362,61 @@ test("format 7: an expire step without any one of its three fields is refused", 
   );
 });
 
-test("format 7: the constant moved, and a format-6 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 7);
+test("format 9: the constant moved, and a format-7 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 9);
   const raw = validRaw();
-  raw["format_version"] = 6;
+  raw["format_version"] = 7;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
   );
+});
+
+// spec-0135 §6: a ride step.
+function withRide(ride: Record<string, unknown>): Record<string, unknown> {
+  const raw = validRaw();
+  const steps = raw["steps"] as Record<string, unknown>[];
+  steps.splice(2, 0, ride);
+  return raw;
+}
+function boatRide(): Record<string, unknown> {
+  return {
+    action: "ride",
+    vehicle: "vehicle/gull",
+    kind: "boat",
+    board: [5, 68, 3],
+    pos: [5, 68, 3],
+    medium: [[8, 67, 3], [9, 67, 3], [10, 67, 3]],
+    rate: 5,
+    leave: [13, 68, 3],
+  };
+}
+
+test("a ride step parses with its fields per kind", () => {
+  const boat = parseCriticalPath(withRide(boatRide())).steps[2]!;
+  assert.equal(boat.action, "ride");
+  if (boat.action !== "ride") return;
+  assert.equal(boat.kind, "boat");
+  assert.equal(boat.medium.length, 3);
+  assert.deepEqual(boat.leave, [13, 68, 3]);
+  assert.equal(boat.steeringItem, undefined);
+  const pig = parseCriticalPath(
+    withRide({ ...boatRide(), vehicle: "vehicle/race-pig", kind: "mount", steering_item: "minecraft:carrot_on_a_stick" }),
+  ).steps[2]!;
+  assert.equal(pig.action === "ride" && pig.steeringItem, "minecraft:carrot_on_a_stick");
+  const cart = parseCriticalPath(withRide({ ...boatRide(), kind: "minecart", rate: 10.4 })).steps[2]!;
+  assert.equal(cart.action === "ride" && cart.kind, "minecart");
+});
+
+test("a ride step is refused without board, medium or leave, or with a rate at or under zero", () => {
+  for (const key of ["board", "medium", "leave"]) {
+    const r = boatRide();
+    delete r[key];
+    assert.throws(() => parseCriticalPath(withRide(r)), CriticalPathParseError, key);
+  }
+  for (const rate of [0, -1]) {
+    assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), rate })), CriticalPathParseError, String(rate));
+  }
+  assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), kind: "llama" })), CriticalPathParseError);
+  assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), medium: [[8, 67, 3]] })), CriticalPathParseError);
 });

@@ -435,9 +435,14 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   refuse a step kind it does not know, and one that guessed would perform
 ///   the act the step is there to let lapse.
 ///
+/// * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board,
+///   medium, rate, leave, steering_item?}` — walk to `board`, mount, be
+///   carried along `medium`, leave and stand at `leave`. A format change for
+///   `7`'s reason: an older bot handed one would refuse the kind.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 7;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 9;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
