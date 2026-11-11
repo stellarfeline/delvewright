@@ -86,7 +86,7 @@ The entry leaves out documentation, tests and release machinery, which change no
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.72.0
+## delvewright-dsl 0.73.0
 
 ### Highlights
 
