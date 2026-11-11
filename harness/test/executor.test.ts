@@ -3349,6 +3349,7 @@ test("a wave a beat seats after the step opens is waited for, and read when it s
   // for the wave's first body, then reads it, and walks nowhere first.
   const bot = new CombatFakeBot();
   bot.seat(0);
+  bot.moveOnGoto = true;
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(2, false), false);
