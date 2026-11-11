@@ -565,12 +565,10 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
         // writes it: `plan.checkpoints` is content-ordered, and a campaign
         // whose quests are written in another order than the path walks them
         // has an earlier checkpoint later in that list.
-        let checkpoint = plan
-            .checkpoints
-            .iter()
-            .filter(|cp| cp.fire_step < i)
-            .max_by_key(|cp| cp.fire_step)
-            .map(|cp| cp.index);
+        let checkpoint = governing_checkpoint(
+            plan.checkpoints.iter().map(|cp| (cp.fire_step, cp.index)),
+            i,
+        );
         out.push(Encounter {
             wave_id: wave_id.clone(),
             objective_id: objective_id.clone(),
@@ -1607,9 +1605,36 @@ pub fn combat_plan_json(
     })
 }
 
+/// The checkpoint that governs a death at step `i`: of `(fire_step, index)`
+/// rows in any order, the one fired latest strictly before `i` (the later row
+/// of two fired at one step).
+fn governing_checkpoint(rows: impl Iterator<Item = (usize, usize)>, i: usize) -> Option<usize> {
+    rows.filter(|(fire, _)| *fire < i)
+        .max_by_key(|(fire, _)| *fire)
+        .map(|(_, index)| index)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The governing checkpoint is the latest fired before the step, wherever
+    /// the document writes it: the fire steps a campaign whose last-written
+    /// quest is walked second lists (the gallery's: 12, 26, 28, 39, 13, 1, 1).
+    #[test]
+    fn the_governing_checkpoint_is_the_latest_fired_not_the_last_written() {
+        let rows = [12, 26, 28, 39, 13, 1, 1];
+        let at = |i| governing_checkpoint(rows.iter().copied().zip(0..), i);
+        assert_eq!(at(19), Some(4), "the checkpoint fired at 13");
+        assert_eq!(
+            at(13),
+            Some(0),
+            "a checkpoint fired by the step itself does not govern"
+        );
+        assert_eq!(at(30), Some(2));
+        assert_eq!(at(2), Some(6), "of two fired at one step, the later row");
+        assert_eq!(at(1), None);
+    }
 
     #[test]
     fn easy_does_not_halve_a_scripted_generic_hit() {
