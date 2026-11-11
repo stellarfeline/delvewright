@@ -4295,6 +4295,24 @@
         "id": "state/bay-knocks",
         "initial": 0,
         "scope": "party"
+      },
+      {
+        "counts": {
+          "of": {
+            "wave": "wave/muster"
+          },
+          "region": {
+            "anchor": "anchor/muster",
+            "extent": [
+              3,
+              1,
+              3
+            ]
+          }
+        },
+        "id": "state/muster-mustered",
+        "note": "How many of the muster stand on their own ground: the census the engine keeps of the wave's bodies in a box at its anchor (spec-0134 §1).",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -5137,6 +5155,29 @@
         },
         "serves": {
           "objective": "obj/open-the-bay-door"
+        }
+      },
+      {
+        "effects": [
+          {
+            "style": "chat",
+            "text": "Boots on stone: the muster forms up.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/muster-mustered",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/the-muster-forms",
+        "on": {
+          "on": "body-enters",
+          "state": "state/muster-mustered"
         }
       }
     ],
