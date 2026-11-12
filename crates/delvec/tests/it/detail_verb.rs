@@ -1346,6 +1346,20 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
 /// two of leaves, three of air over them — so every leaf top is a standable
 /// cell — and a contract whose one space is claimed in the top course of air
 /// and holds none of them.
+/// The leafy crown stands no wall, and the yard's west bank (spec-0138)
+/// brings ground within a jump of its edge, so the crown would be reached:
+/// the variant declares the yard's west side `sheer`, which keeps the drop
+/// the crown was drawn beside.
+fn the_yard_keeps_its_west_drop(dir: &Path) {
+    common::patch_file(&dir.join("site-plan.json"), |v| {
+        for b in v["content"]["boxes"].as_array_mut().unwrap() {
+            if b["node"] == "node/exit" {
+                b["sides"]["west"] = json!("sheer");
+            }
+        }
+    });
+}
+
 fn leafy_beacon() -> Value {
     let beacon: Value = serde_json::from_str(
         &std::fs::read_to_string(
@@ -1413,6 +1427,7 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
         delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
+    the_yard_keeps_its_west_drop(&dir);
     let detail_into = |prefabs: &Path| {
         std::fs::create_dir_all(prefabs).unwrap();
         delvec(&[
@@ -1579,6 +1594,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
         delvewright_dsl::to_canonical_string(&leafy_beacon()).unwrap(),
     )
     .unwrap();
+    the_yard_keeps_its_west_drop(&dir);
     let prefabs = tmp.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
     let out = delvec(&[
