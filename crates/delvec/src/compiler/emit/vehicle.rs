@@ -19,11 +19,6 @@ const AT_MARK: &str = "1.5";
 /// The advancement a boarding answers through, and its reward function.
 pub(super) const BOARD: &str = "vehicle_board";
 
-/// The id of the modifier that holds a riderless mount still.
-fn wait_modifier(ns: &str) -> String {
-    format!("{ns}:vehicle_wait")
-}
-
 /// Where a vehicle's body is summoned: the mark's cell centre, a boat on the
 /// water's top face, where it floats.
 fn summon_point(v: &VehiclePlan) -> [f64; 3] {
@@ -35,19 +30,6 @@ fn summon_point(v: &VehiclePlan) -> [f64; 3] {
     }
 }
 
-/// **A riderless mount waits** (the record §11): its `movement_speed` is
-/// multiplied to nothing, so its own AI walks it nowhere; boarding takes the
-/// modifier off ([`emit_boarding`]).
-fn wait_line(ns: &str, v: &VehiclePlan) -> Option<String> {
-    (v.kind == VehicleKind::Mount).then(|| {
-        format!(
-            "attribute @e[tag={},limit=1] minecraft:movement_speed modifier add {} -1 add_multiplied_total",
-            v.tag(),
-            wait_modifier(ns)
-        )
-    })
-}
-
 /// The summon of one vehicle's body.
 pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     let decl = &plan.campaign.quests.content.vehicles[v.index];
@@ -57,6 +39,11 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     if v.kind == VehicleKind::Mount {
         nbt.push("PersistenceRequired:1b".to_string());
         nbt.push("Silent:1b".to_string());
+        // **A riderless mount waits** (the record §11, §13): without its AI it
+        // neither walks nor turns, so it stands at its mark facing the way it
+        // was seated, and the save holds the yaw the summon wrote; boarding
+        // gives it its AI back ([`boarding_lines`]).
+        nbt.push("NoAI:1b".to_string());
         if v.tame {
             nbt.push("Tame:1b".to_string());
         }
@@ -141,13 +128,15 @@ pub(super) fn vehicle_named<'p>(plan: &'p Plan, id: &str) -> Option<&'p VehicleP
     plan.vehicles.iter().find(|v| v.id == id)
 }
 
-/// `setup_finish` lines: each vehicle seated, and its re-seat chain started.
+/// `setup_finish` lines: each vehicle seated at load seated, and its re-seat
+/// chain started; a vehicle seated `by-story` waits for its `seat-vehicle`.
 /// Empty for a campaign that declares none, so its `setup_finish` is
 /// byte-identical.
 pub(super) fn vehicle_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     plan.vehicles
         .iter()
+        .filter(|v| v.seated == delvewright_dsl::VehicleSeated::AtLoad)
         .flat_map(|v| vehicle_seat_lines(ns, v))
         .collect()
 }
@@ -164,10 +153,9 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         let tag = v.tag();
         let mut seat = vehicle_removal_lines(ns, v);
         seat.push(vehicle_summon(plan, v));
-        seat.extend(wait_line(ns, v));
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
         let p = summon_point(v);
-        let reseat = vec![
+        let mut reseat = vec![
             format!(
                 "execute as @e[tag={tag}] unless entity @s[x={},y={},z={},distance=..{AT_MARK}] run tag @s add {RESEAT_TAG}",
                 fmt_f64(p[0]),
@@ -191,6 +179,33 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
                 v.safe
             ),
         ];
+        if v.left == delvewright_dsl::VehicleLeft::WhereLeft {
+            // spec-0135 §3: a body its rider left stays where it was left —
+            // never re-seated while it stands, a mount held there without
+            // its AI as at its mark; only a missing body is seated again.
+            reseat = vec![
+                format!("tag @e[tag={tag}] add {RESEAT_TAG}"),
+                format!(
+                    "execute as @e[tag={tag},tag={RESEAT_TAG}] on passengers on vehicle run tag @s remove {RESEAT_TAG}"
+                ),
+            ];
+            if v.kind == VehicleKind::Mount {
+                reseat.push(format!(
+                    "execute as @e[tag={tag},tag={RESEAT_TAG}] run data merge entity @s {{NoAI:1b}}"
+                ));
+            }
+            reseat.extend([
+                format!("tag @e[tag={RESEAT_TAG}] remove {RESEAT_TAG}"),
+                format!(
+                    "execute unless entity @e[tag={tag}] run function {ns}:vehicle_seat_{}",
+                    v.safe
+                ),
+                format!(
+                    "schedule function {ns}:vehicle_reseat_{} {RESEAT_TICKS}t replace",
+                    v.safe
+                ),
+            ]);
+        }
         fns.push((format!("vehicle_reseat_{}", v.safe), lines(&reseat)));
     }
     if let Some(board) = boarding_lines(plan) {
@@ -219,9 +234,8 @@ fn boarding_lines(plan: &Plan) -> Option<Vec<String>> {
                 ));
             }
             VehicleKind::Mount => out.push(format!(
-                "execute on vehicle run attribute @s[tag={}] minecraft:movement_speed modifier remove {}",
-                v.tag(),
-                wait_modifier(ns)
+                "execute on vehicle run data merge entity @s[tag={}] {{NoAI:0b}}",
+                v.tag()
             )),
             VehicleKind::Boat => {}
         }

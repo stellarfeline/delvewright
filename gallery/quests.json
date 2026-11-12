@@ -5908,7 +5908,8 @@
         },
         "entity": "minecraft:minecart",
         "facing": "south",
-        "id": "vehicle/hall-cart"
+        "id": "vehicle/hall-cart",
+        "seated": "by-story"
       },
       {
         "at": {
@@ -5938,7 +5939,9 @@
         },
         "facing": "west",
         "id": "vehicle/race-pig",
-        "name": "Clover"
+        "left": "at-its-mark",
+        "name": "Clover",
+        "seated": "at-load"
       },
       {
         "at": {
@@ -5994,6 +5997,7 @@
         "entity": "minecraft:donkey",
         "facing": "south",
         "id": "vehicle/yard-jenny",
+        "left": "where-left",
         "name": "Jenny"
       }
     ],
@@ -6163,6 +6167,6 @@
       }
     ]
   },
-  "dsl_version": "0.75.0",
+  "dsl_version": "0.76.0",
   "stage": "quests"
 }

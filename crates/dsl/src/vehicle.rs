@@ -49,6 +49,57 @@ pub struct Vehicle {
     /// registry's defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attributes: Option<MobAttributes>,
+    /// When the body is first placed (spec-0135 §2): `at-load` (absent) seats
+    /// it in `setup_finish`; `by-story` places nothing until a `seat-vehicle`
+    /// fires — a ride the story hands out at a beat.
+    #[serde(default, skip_serializing_if = "VehicleSeated::is_at_load")]
+    pub seated: VehicleSeated,
+    /// Where a riderless body is once a rider has left it (spec-0135 §3):
+    /// `at-its-mark` (absent) re-seats it at its mark within 100 ticks, where
+    /// every proof of a ride starts; `where-left` keeps it where it was left —
+    /// a mount waits there without its AI — until the story seats it again.
+    #[serde(default, skip_serializing_if = "VehicleLeft::is_at_its_mark")]
+    pub left: VehicleLeft,
+}
+
+/// When a vehicle's body is first placed (spec-0135 §2).
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum VehicleSeated {
+    /// In `setup_finish`, with the re-seat armed.
+    #[default]
+    AtLoad,
+    /// Only by a `seat-vehicle`; nothing stands at the mark before it.
+    ByStory,
+}
+
+impl VehicleSeated {
+    /// Whether this is the default.
+    pub fn is_at_load(&self) -> bool {
+        *self == VehicleSeated::AtLoad
+    }
+}
+
+/// Where a riderless vehicle is once its rider has left it (spec-0135 §3).
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum VehicleLeft {
+    /// Re-seated at its mark within 100 ticks.
+    #[default]
+    AtItsMark,
+    /// Where its rider left it, until a `seat-vehicle` seats it at its mark.
+    WhereLeft,
+}
+
+impl VehicleLeft {
+    /// Whether this is the default.
+    pub fn is_at_its_mark(&self) -> bool {
+        *self == VehicleLeft::AtItsMark
+    }
 }
 
 /// What kind of vehicle an entity is (spec-0135 §1, §3).

@@ -516,6 +516,42 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// The elective acts a declared fork turns on (spec-0025): an ambient act
+    /// or an optional quest that sets one of a branch point's `forks_on` flags,
+    /// and the expiry of a limited objective whose completion or expiry sets
+    /// one — the participations a branch is taken or left by.
+    fn branch_acts(&self) -> BTreeSet<String> {
+        let forks: BTreeSet<&str> = self
+            .c
+            .quest_plan
+            .content
+            .branch_points
+            .iter()
+            .flat_map(|bp| bp.forks_on.iter().map(|f| f.as_str()))
+            .collect();
+        if forks.is_empty() {
+            return BTreeSet::new();
+        }
+        let acts = self.acts();
+        let mut out = BTreeSet::new();
+        for p in delvewright_dsl::producers::flag_producers(self.c) {
+            if !forks.contains(p.flag) {
+                continue;
+            }
+            use delvewright_dsl::producers::{ProducerSite, expiry_act};
+            let named: Vec<String> = match p.site {
+                ProducerSite::ObjectiveComplete { quest, objective }
+                | ProducerSite::ObjectiveExpire { quest, objective } => {
+                    vec![expiry_act(objective), quest.to_string()]
+                }
+                ProducerSite::QuestComplete { quest } => vec![quest.to_string()],
+                ProducerSite::Ambient { .. } => p.act.clone().into_iter().collect(),
+            };
+            out.extend(named.into_iter().filter(|a| acts.elective_ids.contains(a)));
+        }
+        out
+    }
+
     /// The elective acts whose writers write some final scene's input, by id.
     fn relevant_acts(&self) -> BTreeSet<String> {
         let scenes = Scenes::of(self.c);
@@ -816,6 +852,17 @@ impl<'a> Flow<'a> {
             .collect();
         let quorum_acts: Vec<String> = quorum_choice_acts(self.c);
         let relevant: Vec<String> = self.relevant_acts().into_iter().collect();
+        // The candidates are searched over the acts an ending's reading turns
+        // on and the acts a declared fork turns on: each is a choice a player
+        // may make or not, so every branch a participation takes has a witness.
+        let searched: Vec<String> = relevant
+            .iter()
+            .cloned()
+            .chain(self.branch_acts())
+            .collect::<BTreeSet<String>>()
+            .into_iter()
+            .collect();
+        let branches = crate::compiler::branch::enumerate(self.c);
         let mut worlds: Vec<StoryWorld> = Vec::new();
         let mut runs: Vec<StoryRun> = Vec::new();
         let mut targets: Vec<Target> = Vec::new();
@@ -825,13 +872,13 @@ impl<'a> Flow<'a> {
             // size then act id, bounded.
             let mut candidates: Vec<BTreeSet<String>> = Vec::new();
             let mut truncated = false;
-            'sizes: for size in 0..=relevant.len() {
-                for combo in combinations(relevant.len(), size) {
+            'sizes: for size in 0..=searched.len() {
+                for combo in combinations(searched.len(), size) {
                     if candidates.len() >= MAX_CANDIDATES {
                         truncated = true;
                         break 'sizes;
                     }
-                    candidates.push(combo.iter().map(|&i| relevant[i].clone()).collect());
+                    candidates.push(combo.iter().map(|&i| searched[i].clone()).collect());
                 }
             }
             if truncated {
@@ -977,6 +1024,28 @@ impl<'a> Flow<'a> {
                         witness,
                         reason,
                     });
+                }
+            }
+            // Per declared branch: the first coherent run of this selection
+            // whose flags realize its assignment, kept as a witness — a branch
+            // a participation takes is a world the branch proofs read.
+            for b in &branches {
+                let realized = |ri: usize| {
+                    let run = &local[ri].2;
+                    run.incoherent.is_none()
+                        && b.set.iter().all(|f| run.flags.contains(f))
+                        && !b.unset.iter().any(|f| run.flags.contains(f))
+                };
+                if chosen.iter().any(|&ri| realized(ri)) {
+                    continue;
+                }
+                let first = std::iter::once(i_none)
+                    .chain(cand_runs.iter().copied())
+                    .chain(expiry_runs.iter().copied())
+                    .chain(std::iter::once(i_all))
+                    .find(|&ri| realized(ri));
+                if let Some(ri) = first {
+                    chosen.insert(ri);
                 }
             }
             // This selection's worlds in canonical order: all, none, then the

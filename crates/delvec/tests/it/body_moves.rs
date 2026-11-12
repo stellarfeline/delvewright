@@ -765,6 +765,42 @@ fn dw1103_is_asked_at_the_bodys_placed_cell_by_the_build() {
     );
 }
 
+/// The rule is asked where the story stands the body when the hop fires,
+/// not at its home mark (the town's baker, refused under his bakery's eave
+/// while the festival's ledger stands him on the square). The hop fires as
+/// `obj/talk` completes, which opens `quest/trial`; with the trial's ledger
+/// taking the keeper out of the world, there is no body under the hall's
+/// ceiling to sweep, and the game's jump builds. With the ledger standing
+/// him at his stand, it is refused there as before.
+#[test]
+fn dw1103_is_asked_where_the_story_stands_the_body_when_the_hop_fires() {
+    let (mut c, inputs) = campaign(vec![json!({"type": "hop", "audience": npc("npc/keeper")})]);
+    let trial = c
+        .quests
+        .content
+        .quests
+        .iter_mut()
+        .find(|q| q.id.as_str() == "quest/trial")
+        .unwrap();
+    let key = trial
+        .cast
+        .keys()
+        .find(|k| k.as_str() == "npc/keeper")
+        .cloned()
+        .unwrap();
+    trial
+        .cast
+        .insert(key, serde_json::from_value(json!("offstage")).unwrap());
+    let out = try_build(&c, &inputs);
+    assert!(
+        out.is_ok(),
+        "the keeper is offstage when he would hop: {out:?}"
+    );
+    let (c, inputs) = campaign(vec![json!({"type": "hop", "audience": npc("npc/keeper")})]);
+    let refusal = try_build(&c, &inputs).expect_err("at his stand he is refused");
+    assert!(refusal.contains("[11, 68, 12]"), "{refusal}");
+}
+
 // ---------------------------------------------------------------------------
 // The running-server witness: a declared hop moves its body and returns it
 // ---------------------------------------------------------------------------

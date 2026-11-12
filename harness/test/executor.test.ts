@@ -6417,13 +6417,17 @@ test("an expiry marker for another campaign or another objective is not this ste
   assert.equal(executor.expiredObjectives.has("obj/talk"), true);
 });
 
-test("a shot walks to its target first — the leg the route proof ends there — then back to the stance it is loosed from", async () => {
+test("a shot walks to its stance alone — where the route proof's leg ends — and never to its target", async () => {
+  // The town's belfry target sits in the tower's opening where no body
+  // stands; the compiler's leg to the shot ends at the stance
+  // (`nav::route::positions_of`), so a walk to the target is a walk no leg
+  // proves, and one that cannot be made.
   const bot = new LinkFakeBot();
   const executor = attach(bot);
   executor.useCampaign("vesperhold");
   bot.entity.position = new FakeVec3(-20.5, 64, 0.5);
   // The fake holds no bow, so the step stops at the draw: what is judged here
-  // is the walk, in order, before it.
+  // is the walk before it.
   await within(
     "executor.fireTrigger(shot) to reject",
     assert.rejects(
@@ -6433,9 +6437,21 @@ test("a shot walks to its target first — the leg the route proof ends there �
   );
   assert.deepEqual(
     bot.goals.map((g) => g.slice(0, 3)),
-    [
-      [1, 64, 0],
-      [-3, 64, 0],
-    ],
+    [[-3, 64, 0]],
   );
+});
+
+test("a shot with no stance fails by name before any walk", async () => {
+  const bot = new LinkFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  bot.entity.position = new FakeVec3(-20.5, 64, 0.5);
+  await within(
+    "executor.fireTrigger(shot) to reject",
+    assert.rejects(
+      () => executor.fireTrigger({ ...STRIKE_STEP, on: "shot" }),
+      /names no stance/,
+    ),
+  );
+  assert.deepEqual(bot.goals, []);
 });
