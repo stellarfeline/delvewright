@@ -21,11 +21,12 @@ const FLIGHT_TICKS = 200;
  * How many arrows the bot looses for one hit before the step fails. The
  * server scatters every arrow (each component of its unit direction moved by
  * a triangular draw of half-width 0.0172275, the record §14), so an arc
- * through the centre is a chance per arrow, not a certainty: a target framed
- * by blocks a stray arrow strikes first takes about half (the town's belfry,
- * modelled), and sixteen leave about one hit in a quarter-million unmade.
+ * through the centre is a chance per arrow, not a certainty: on the town's
+ * belfry, a target over a slab a stray arrow strikes first, 3 arrows of 12
+ * hit (the model alone says about half), and at a quarter thirty-two leave
+ * about one hit in ten thousand unmade.
  */
-export const SHOT_TRIES = 16;
+export const SHOT_TRIES = 32;
 
 /** How long the bot holds the bow drawn: past a full charge (20 ticks). */
 export const SHOT_DRAW_MS = 1200;
