@@ -5053,6 +5053,24 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/long-hall-crate",
+        pos: [LONG_HALL_BASIN_X.1, 2, LONG_HALL_BASIN_Z.1],
+        facing: None,
+        trigger_block: None,
+        note: "the barrel afloat in the basin's far corner, one block over the water: the crate \
+               a rider opens from the boat's seat (spec-0135 §5)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-crate-alongside",
+        pos: [LONG_HALL_BASIN_X.1 - 1, 1, LONG_HALL_BASIN_Z.1 - 1],
+        facing: None,
+        trigger_block: None,
+        note: "the water beside the floating crate: where the boat comes alongside it \
+               (spec-0135 §5)",
+        role: None,
+    },
+    Anchor {
         name: "anchor/long-hall-stable",
         pos: [7, 1, LONG_HALL_END_Z + 26],
         facing: None,
@@ -5160,6 +5178,13 @@ fn build_long_hall() -> Structure {
         "minecraft:polished_deepslate",
     );
     fill([bx0, 1, bz0], [bx1, 1, bz1], "minecraft:water[level=0]");
+    // The crate afloat in its far corner (spec-0135 §5): a barrel one block
+    // over the water, touching its surface, opened from the boat's seat.
+    fill(
+        [bx1, 2, bz1],
+        [bx1, 2, bz1],
+        "minecraft:barrel[facing=up,open=false]",
+    );
     // The rail line (spec-0135 §7): level plain rail, and the stop past its
     // far end.
     let (rx, r0, r1) = (LONG_HALL_RAIL_X, LONG_HALL_RAIL_FROM, LONG_HALL_RAIL_TO);
