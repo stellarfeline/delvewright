@@ -1932,6 +1932,93 @@ pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
     Some(json!({ "party": plan::PARTY, "quests": quests }))
 }
 
+/// `validation/journal-records.json` (spec-0137 §8): every recorded
+/// objective — its scores, the keys its finished entry carries, each line's
+/// site and held score — and, per coherent story world, how each recorded
+/// objective ends and which lines its walk leaves written (`null` where a
+/// site's firing is not modelled in order). Keys are `null` in a `--lang`
+/// bake, whose pages carry text with no key. Written exactly when the
+/// campaign records an objective.
+pub(super) fn journal_records_ledger(plan: &Plan) -> Option<Value> {
+    let c = plan.campaign;
+    let flow = crate::compiler::flow::Flow::new(c);
+    let records = crate::compiler::recording::Records::ordered(c, &flow);
+    if !records.any() {
+        return None;
+    }
+    let key = |s: Option<&str>| -> Value {
+        s.and_then(|t| delvewright_dsl::l10n::untag(t).map(|(k, _)| json!(k)))
+            .unwrap_or(Value::Null)
+    };
+    let guidance = &c.quests.content.guidance;
+    let objectives: Vec<Value> = records
+        .objectives
+        .iter()
+        .map(|r| {
+            let o = r.objective;
+            let id = r.id();
+            let outcomes: Vec<Value> = r
+                .order
+                .iter()
+                .map(|&si| {
+                    let s = &records.sites[si];
+                    json!({
+                        "ordinal": s.ordinal,
+                        "key": key(Some(s.line)),
+                        "site": s.place(),
+                        "held": held(id, s.ordinal),
+                    })
+                })
+                .collect();
+            json!({
+                "objective": id,
+                "announced": o.announced(guidance),
+                "done": obj_score(id),
+                "expired": o.limit().map(|_| super::limit::expired_score(id)),
+                "title_key": key(o.title()),
+                "record_key": key(o.record()),
+                "outcomes": outcomes,
+            })
+        })
+        .collect();
+    let worlds = records.worlds(c, &flow);
+    let mut rows = 0usize;
+    let mut nulls = 0usize;
+    let worlds_json: Vec<Value> = worlds
+        .iter()
+        .map(|w| {
+            let finished: Vec<Value> = w
+                .finished
+                .iter()
+                .map(|f| {
+                    rows += 1;
+                    if f.written.is_none() {
+                        nulls += 1;
+                    }
+                    json!({
+                        "objective": records.objectives[f.objective].id(),
+                        "settles": f.settles.token(),
+                        "written": f.written,
+                    })
+                })
+                .collect();
+            json!({ "world": format!("world/{}", w.world), "finished": finished })
+        })
+        .collect();
+    Some(json!({
+        "party": plan::PARTY,
+        "mainline": flow.mainline_story_world().map(|k| format!("world/{k}")),
+        "objectives": objectives,
+        "worlds": worlds_json,
+        "counts": {
+            "objectives": records.objectives.len(),
+            "sites": records.sites.len(),
+            "rows": rows,
+            "rows_null": nulls,
+        },
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
