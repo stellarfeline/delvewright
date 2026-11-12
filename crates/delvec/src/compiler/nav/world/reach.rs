@@ -2238,12 +2238,80 @@ impl GraphMemo {
         let (base, diff) = self.lineage.as_ref()?;
         let e = base.flown_at(key)?;
         let (lo, hi) = e.read?;
-        let lo_i = diff.partition_point(|c| c[0] < lo[0]);
-        let clear = diff[lo_i..]
+        read_clear(diff, lo, hi).then_some(e)
+    }
+}
+
+/// Whether no cell of `diff` (sorted) lies in the inclusive box `lo..=hi`: a
+/// node whose launches read only that box flies the same in both worlds.
+fn read_clear(diff: &[[i32; 3]], lo: [i32; 3], hi: [i32; 3]) -> bool {
+    let lo_i = diff.partition_point(|c| c[0] < lo[0]);
+    diff[lo_i..]
+        .iter()
+        .take_while(|c| c[0] <= hi[0])
+        .all(|c| !(lo[1] <= c[1] && c[1] <= hi[1] && lo[2] <= c[2] && c[2] <= hi[2]))
+}
+
+/// **Every cell a world of the window `dense` differs from `base`'s in**,
+/// sorted: its snapshot's codes, its killing volumes' and furniture's cells,
+/// and its leaves — what a node's flight reads ([`GraphMemo::lineage`]).
+fn diff_against(
+    dense: &Dense,
+    premise_cells: &BTreeSet<[i32; 3]>,
+    leaf_cells: &BTreeMap<[i32; 3], u16>,
+    base: &GraphMemo,
+) -> Vec<[i32; 3]> {
+    let mut diff: Vec<[i32; 3]> = dense
+        .cells
+        .differences(&base.dense.cells)
+        .into_iter()
+        .map(|i| dense.coords(i))
+        .collect();
+    diff.extend(
+        premise_cells
+            .symmetric_difference(&base.premise_cells)
+            .copied(),
+    );
+    diff.extend(
+        leaf_cells
             .iter()
-            .take_while(|c| c[0] <= hi[0])
-            .all(|c| !(lo[1] <= c[1] && c[1] <= hi[1] && lo[2] <= c[2] && c[2] <= hi[2]));
-        clear.then_some(e)
+            .filter(|(c, l)| base.leaf_cells.get(*c) != Some(*l))
+            .chain(
+                base.leaf_cells
+                    .iter()
+                    .filter(|(c, _)| !leaf_cells.contains_key(*c)),
+            )
+            .map(|(c, _)| *c),
+    );
+    diff.sort_unstable();
+    diff.dedup();
+    diff
+}
+
+/// **The world a closure is charged against** (`DW1042`): the graph of the
+/// world this one was derived from by a batch of writes, the closure taken
+/// there from the same roots, and every cell the two worlds differ in. A
+/// flight of the closure that the earlier closure took, over a read box the
+/// writes leave alone, flies the same here ([`GraphMemo::lineage`]'s rule) and
+/// was paid for there: it is not charged again. What a closure is charged is
+/// therefore what the batch changes — the flights its writes reach and the
+/// states it opens — and a function of the two worlds and the roots alone,
+/// never of what any cache holds.
+pub(crate) struct Since {
+    base: Arc<GraphMemo>,
+    reach: Arc<Reach>,
+    diff: Vec<[i32; 3]>,
+}
+
+impl Since {
+    /// Whether the earlier closure flew `key` over a box `diff` leaves alone.
+    fn paid(&self, key: &FlownKey) -> bool {
+        self.reach.flown_mask(key.0) & key.1 == key.1
+            && self
+                .base
+                .flown_at(key)
+                .and_then(|e| e.read)
+                .is_some_and(|(lo, hi)| read_clear(&self.diff, lo, hi))
     }
 }
 
@@ -2646,30 +2714,7 @@ impl World {
             .map(|(c, l)| (*c, l.ordinal()))
             .collect();
         let lineage = seed.map(|base| {
-            let mut diff: Vec<[i32; 3]> = dense
-                .cells
-                .differences(&base.dense.cells)
-                .into_iter()
-                .map(|i| dense.coords(i))
-                .collect();
-            diff.extend(
-                premise_cells
-                    .symmetric_difference(&base.premise_cells)
-                    .copied(),
-            );
-            diff.extend(
-                leaf_cells
-                    .iter()
-                    .filter(|(c, l)| base.leaf_cells.get(*c) != Some(*l))
-                    .chain(
-                        base.leaf_cells
-                            .iter()
-                            .filter(|(c, _)| !leaf_cells.contains_key(*c)),
-                    )
-                    .map(|(c, _)| *c),
-            );
-            diff.sort_unstable();
-            diff.dedup();
+            let diff = diff_against(&dense, &premise_cells, &leaf_cells, &base);
             (base, diff)
         });
         // The bank's key: the lineage's, and what a node's flights and world
@@ -3999,6 +4044,50 @@ impl World {
         self.body_reach_at(&seats, &params)
     }
 
+    /// [`World::body_reach_snapped_within`] **charged against `base`**, the
+    /// world this one was derived from by a batch of writes ([`Since`]): the
+    /// closure over `base` from the same starts is taken first, under the
+    /// same ceiling, and returned beside this one — a `base` past the ceiling
+    /// is refused before this world is asked. Where the two worlds do not
+    /// share a window, an ambient, a fall rule and keep-out volumes, no flight
+    /// is shared and this world's closure is charged whole.
+    pub fn body_reach_snapped_since(
+        &self,
+        starts: &[[i32; 3]],
+        budget: u64,
+        base: &World,
+    ) -> (Arc<Reach>, Arc<Reach>) {
+        let prior = base.body_reach_snapped_within(starts, budget);
+        if prior.over_budget.is_some() {
+            return (Arc::clone(&prior), prior);
+        }
+        let mut params = ReachParams::shipped(self.unbounded_fall);
+        params.budget = budget;
+        let memo = self.graph_memo(&params);
+        let base_memo = base.graph_memo(&params);
+        let alike = memo.dense.lo == base_memo.dense.lo
+            && memo.dense.dims == base_memo.dense.dims
+            && self.unbounded_fall == base.unbounded_fall
+            && self.ambient.name() == base.ambient.name()
+            && self.keep_out_digest() == base.keep_out_digest();
+        let since = alike.then(|| Since {
+            diff: diff_against(
+                &memo.dense,
+                &memo.premise_cells,
+                &memo.leaf_cells,
+                &base_memo,
+            ),
+            base: base_memo,
+            reach: Arc::clone(&prior),
+        });
+        let seats: Vec<[i32; 3]> = starts
+            .iter()
+            .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
+            .collect();
+        let reach = self.body_reach_charged(&seats, &params, since.as_ref());
+        (prior, reach)
+    }
+
     /// **Every cell a body can stand in** from `starts` (snapped as
     /// [`World::body_reach_snapped`] snaps them): the standing states of the
     /// reach graph — the region every proof that asks "can a player be here"
@@ -4034,6 +4123,17 @@ impl World {
     /// that must grow it (`fly_toward`, `fly_cells`) takes its own copy then,
     /// and only then (`Arc::make_mut`).
     pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Arc<Reach> {
+        self.body_reach_charged(roots, params, None)
+    }
+
+    /// [`World::body_reach_at`], each flight `since` paid for left uncharged
+    /// ([`Since`], [`Reach::charged`]).
+    fn body_reach_charged(
+        &self,
+        roots: &[[i32; 3]],
+        params: &ReachParams,
+        since: Option<&Since>,
+    ) -> Arc<Reach> {
         let memo = self.graph_memo(params);
         let start: Vec<[i32; 3]> = roots
             .iter()
@@ -4048,7 +4148,7 @@ impl World {
             if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
                 // A lower ceiling than the closure was taken under refuses
                 // it (`DW1042`): that copy, and only that one, is its own.
-                if c.simulated + c.credited > params.budget {
+                if c.charged() > params.budget {
                     let mut r = (**c).clone();
                     r.over_budget = Some(params.budget);
                     return Arc::new(r);
@@ -4083,11 +4183,11 @@ impl World {
             if todo.is_empty() {
                 break;
             }
-            let new = self.fly_chunks(&memo, params, &mut reach, &todo, &mut visits);
+            let new = self.fly_chunks(&memo, params, &mut reach, &todo, &mut visits, since);
             // The budget is refused, never truncated (`DW1042`): a closure
             // whose round passed it stops there and says so, and every proof
             // that reads it refuses the build.
-            if reach.simulated + reach.credited > params.budget {
+            if reach.charged() > params.budget {
                 reach.over_budget = Some(params.budget);
                 reach.portals = visits.report();
                 return Arc::new(reach);
@@ -4232,7 +4332,7 @@ impl World {
         cells: &[([i32; 3], Quadrants)],
     ) {
         let mut visits = chunks::Visits::default();
-        let new = self.fly_chunks(memo, params, reach, cells, &mut visits);
+        let new = self.fly_chunks(memo, params, reach, cells, &mut visits, None);
         self.close(memo, params, reach, new, &mut visits, &mut Vec::new());
         let [p, f] = visits.report();
         reach.portals[0] += p;
@@ -4274,6 +4374,7 @@ impl World {
         reach: &mut Reach,
         cells: &[([i32; 3], Quadrants)],
         visits: &mut chunks::Visits,
+        since: Option<&Since>,
     ) -> Vec<[i32; 3]> {
         let side = chunks::side_here();
         let mut by_chunk: BTreeMap<chunks::Key, Vec<FlownKey>> = BTreeMap::new();
@@ -4316,6 +4417,9 @@ impl World {
                     *reach.flown.entry(*c).or_insert(0) |= *q;
                     reach.simulated += e.simulated;
                     reach.credited += e.credited;
+                    if since.is_some_and(|s| s.paid(&(*c, *q))) {
+                        reach.inherited += e.simulated + e.credited;
+                    }
                     if e.leaves_world {
                         reach.leaves_world.insert(*c);
                     }
@@ -4718,6 +4822,10 @@ pub struct Reach {
     pub simulated: u64,
     /// Template arcs credited, summed likewise.
     pub credited: u64,
+    /// Of `simulated` and `credited`, the work of flights the world this one
+    /// was derived from already paid for ([`Since`]): zero for a closure
+    /// charged whole.
+    pub inherited: u64,
     /// The standing and holding states whose launches have been flown, with
     /// the [`Quadrants`] flown.
     flown: BTreeMap<[i32; 3], Quadrants>,
@@ -4936,6 +5044,13 @@ impl Reach {
                 }
             }
         }
+    }
+
+    /// **The work this closure is charged** against its budget (`DW1042`):
+    /// launches simulated and template arcs credited, less what the world it
+    /// was derived from already paid for ([`Reach::inherited`]).
+    pub fn charged(&self) -> u64 {
+        (self.simulated + self.credited).saturating_sub(self.inherited)
     }
 
     fn flown_mask(&self, c: [i32; 3]) -> Quadrants {

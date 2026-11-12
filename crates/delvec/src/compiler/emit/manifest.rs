@@ -862,19 +862,7 @@ pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
             // A vehicle's riders are placed by no teleport: the count is
             // raised by a body that boards, which the ride step does.
             let select = super::census::census_terms(plan, &k.of)?;
-            let count = match cmp.op {
-                delvewright_dsl::CompareOp::AtLeast | delvewright_dsl::CompareOp::Equals => {
-                    cmp.value.max(0)
-                }
-                delvewright_dsl::CompareOp::NotEquals => {
-                    if cmp.value == 0 {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                delvewright_dsl::CompareOp::AtMost => 0,
-            };
+            let count = cmp.census_bodies();
             Some(json!({
                 "state": cmp.state.as_str(),
                 "objective": plan::state_score(cmp.state.as_str()),

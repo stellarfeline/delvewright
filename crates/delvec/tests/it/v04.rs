@@ -606,7 +606,7 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     // with the relight fixtures standing in it (spec-0010), matching emit::build.
     let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
     let geometry = delvec::compiler::light::geometry_world(&assembled);
-    let relight = delvec::compiler::light::relight_with(&plan, &assembled, &geometry);
+    let relight = delvec::compiler::light::relight_with(&plan, &assembled, &geometry, None);
     let world = delvec::compiler::light::lit_world(
         &assembled,
         &relight,

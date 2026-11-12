@@ -997,6 +997,9 @@ pub struct StateWalk {
     /// none, print the same `gates` figure, and the second is the one where a
     /// green means nothing. The pair is what separates them.
     pub undated: usize,
+    /// Gate terms on a counted datum, answered by the census the step itself
+    /// performs ([`delvewright_dsl::StateCompare::census_bodies`]).
+    pub census: usize,
 }
 
 impl StateWalk {
@@ -1010,6 +1013,7 @@ impl StateWalk {
         self.writes += other.writes;
         self.withheld += other.withheld;
         self.undated += other.undated;
+        self.census += other.census;
     }
 }
 
@@ -1543,6 +1547,22 @@ impl<'a> Flow<'a> {
                 for cmp in obj.requires_state() {
                     walk.gates += 1;
                     let id = cmp.state.as_str();
+                    // A census gate is answered by the census its step
+                    // performs: the bodies the term needs, put in the box.
+                    if self
+                        .c
+                        .quests
+                        .content
+                        .state_decl(id)
+                        .is_some_and(|d| d.counts.is_some())
+                    {
+                        if cmp.holds(cmp.census_bodies()) {
+                            walk.census += 1;
+                        } else {
+                            walk.undated += 1;
+                        }
+                        continue;
+                    }
                     let held = st.state.get(id).copied().unwrap_or(Datum::Undatable);
                     match held.satisfies(cmp) {
                         Some(true) => continue,
@@ -2877,6 +2897,14 @@ fn undatable_state(c: &Campaign) -> BTreeSet<String> {
     for l in &c.quests.content.loops {
         if let Some(counts) = &l.counts {
             out.insert(counts.as_str().to_string());
+        }
+    }
+    // A census (spec-0134 §1) is written by the engine from the bodies in its
+    // box, never by the path; at a step whose own gate reads it, the census the
+    // step performs answers the term (`StateCompare::census_bodies`).
+    for s in &c.quests.content.state {
+        if s.counts.is_some() {
+            out.insert(s.id.as_str().to_string());
         }
     }
     if crate::compiler::plan::min_players(c) >= 2 {

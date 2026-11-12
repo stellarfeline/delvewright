@@ -1118,9 +1118,13 @@ pub(super) fn build_critical_path(
         // spec-0133 §8: in a story world that expires this objective, the step
         // is a wait where the party already stands, passed on the expiry marker.
         if path.expires(&st.objective) {
+            // A shot's `pos` is the target it hits, never where the party
+            // stands (it stands at the stance, `nav::shot::fix_stances`): the
+            // wait is where the party last stood by any other step.
             let pos = steps
                 .iter()
                 .rev()
+                .filter(|s| !matches!(s, Step::Trigger { on: "shot", .. }))
                 .find_map(Step::pos)
                 .or_else(|| start.map(|(_, p)| *p))
                 .unwrap_or([0, 0, 0]);

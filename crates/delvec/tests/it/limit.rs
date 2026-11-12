@@ -658,3 +658,51 @@ fn every_limited_objective_kind_owns_its_expired_score_in_packtest() {
         "the kill, collect and interact verb templates were judged: {judged}"
     );
 }
+
+/// §8 and `DW0807`: a limited objective's templates write every score its
+/// guard reads, the numeric terms of its gate among them. `obj/exit` waits on
+/// `state/keys` (the keeper's talk hands one over) and carries a limit: the
+/// expiry template's closing guard reads `dw.s_keys`, so the template drives
+/// it open — at the start and again in the tick it reads the guard — and puts
+/// it back at the end. Red before: `limit_o_exit_expires` read the datum and
+/// never wrote it, and the build refused it (`DW0807`).
+#[test]
+fn a_limited_objectives_templates_own_its_numeric_gate() {
+    let dir = fixture("numeric", minute(), |v| {
+        v["content"]["state"] = json!([{"id": "state/keys", "scope": "party"}]);
+        let q = &mut v["content"]["quests"][0];
+        q["objectives"][1]["requires_state"] =
+            json!([{"state": "state/keys", "op": "at-least", "value": 1}]);
+        q["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/keys", "amount": 1}));
+    });
+    let out = match build_result(&dir) {
+        Ok(out) => out,
+        Err(e) => panic!("a limited objective with a numeric gate builds: {e:?}"),
+    };
+    let exp = template(&out, "limit_o_exit_expires");
+    let drive = "scoreboard players set #party dw.s_keys 1";
+    let open = line_of(&exp, "#lim_open_exit");
+    let first = line_of(&exp, drive);
+    assert!(
+        first < line_of(&exp, "await delay"),
+        "driven open before the clock runs:\n{exp}"
+    );
+    assert!(
+        exp.lines()
+            .take(open)
+            .skip(line_of(&exp, "await delay"))
+            .any(|l| l == drive),
+        "driven open again in the tick the guard is read:\n{exp}"
+    );
+    assert!(
+        exp.lines()
+            .skip(open)
+            .any(|l| l == "scoreboard players set #party dw.s_keys 0"),
+        "put back at the end:\n{exp}"
+    );
+    let done = template(&out, "limit_o_exit_done");
+    assert!(done.contains(drive), "{done}");
+}
