@@ -552,7 +552,7 @@ pub(super) fn dialog_handler_fns(
                         .sum::<usize>()
                         + option
                         + 1
-                        == opt.n
+                        == usize::try_from(opt.n).unwrap_or(0)
                 {
                     body.extend(super::guidance::record_lines(s.objective.as_str(), s.ordinal));
                 }
