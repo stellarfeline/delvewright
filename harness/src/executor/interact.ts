@@ -28,6 +28,7 @@ export const methods = {
       objective: step.objective,
       transport: step.transport,
     });
+    await this.atStance();
     if (step.block !== undefined) {
       // spec-0093 §6.5: the thing is a vanilla block a hand presses — a lever,
       // a button — and the datapack reads vanilla's own report of the press.

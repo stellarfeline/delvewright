@@ -248,35 +248,43 @@ export const methods = {
       );
     }
     if (step.on === "shot") {
+      await this.atStance();
       await this.loose(step, label, arrivalsBefore);
       await delay(EFFECT_SETTLE_MS);
       return;
     } else if (step.on === "use-item") {
       await this.walkTo(step.pos, Math.max(0, (step.range ?? 1) - 1), label);
+      await this.atStance();
       await this.raiseItem(step, label);
     } else if (step.on === "body-enters") {
       // spec-0134 §1: the body that enters was put in the box by the step's
-      // own census, performed before it; the bot only waits for the marker.
+      // own census, placed here at its stance; the bot then only waits for
+      // the marker.
+      await this.atStance();
     } else if (step.on === "approach") {
       if (!step.stand) {
         await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label);
       }
+      await this.atStance();
     } else if (step.on === "step") {
       // The tick fires on a body in the plate's own cell: a block goal on it.
       if (!step.stand) {
         await this.walkTo(step.pos, 0, label);
       }
+      await this.atStance();
     } else if (step.block !== undefined) {
       // spec-0093 §6.5: a `use` trigger whose prop a hand presses has no
       // hitbox; the bot right-clicks the block itself.
       if (!step.stand) {
         await this.walkTo(step.pos, INTERACT_RANGE, label);
       }
+      await this.atStance();
       await this.pressBlock(step.pos, step.block, label);
     } else {
       if (!step.stand) {
         await this.walkTo(step.pos, INTERACT_RANGE, label);
       }
+      await this.atStance();
       const acquired = this.requireCrosshair(step.pos, label, INTERACT_RANGE);
       const target = acquired ? bot.entities[acquired.target.id] : undefined;
       if (!acquired || !target) {

@@ -430,6 +430,8 @@ export const methods = {
         const landed = nextLegWaypoints(this.waypoints.legs, this.legCursor, reachGoal(step.completion).pos);
         this.legCursor = landed.cursor;
       }
+      // The landing put the party where it stands: that is the stance.
+      await this.atStance();
       const done = this.completedObjectives.get(step.objective);
       if (done !== undefined) {
         process.stderr.write(
@@ -456,6 +458,7 @@ export const methods = {
       objective: step.objective,
       transport: step.transport,
     });
+    await this.atStance();
     try {
       await this.requireObjective(step.objective, `reach ${step.anchor}`);
     } catch (err) {

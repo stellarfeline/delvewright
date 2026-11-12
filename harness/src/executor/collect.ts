@@ -100,6 +100,7 @@ export const methods = {
         objective: step.objective,
         transport: step.transport,
       });
+      await this.atStance();
       await this.pickUpDrop(step);
       await this.requireObjective(step.objective, `collect ${step.item}`);
       return;
@@ -108,6 +109,7 @@ export const methods = {
       objective: step.objective,
       transport: step.transport,
     });
+    await this.atStance();
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,
@@ -160,6 +162,7 @@ export const methods = {
       undefined,
       step.pos,
     );
+    await this.atStance();
     const body = holderAt(bot, holder, step.pos);
     if (!body) {
       throw new Error(

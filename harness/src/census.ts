@@ -1,6 +1,6 @@
 // spec-0134 §1: a census the bot performs by command — the pure half: the
-// commands that put a set's bodies in a box, and the verdict on the count the
-// game reads back.
+// commands that put a set's bodies in a box and hold them there, the commands
+// that let them go, and the verdict on the count the game reads back.
 
 import type { CensusRow } from "./critical-path.ts";
 import type { GateTerm } from "./death-loop.ts";
@@ -22,16 +22,41 @@ export function censusCentre(row: CensusRow): [number, number, number] {
   return [(lo[0] + hi[0] + 1) / 2, lo[1], (lo[2] + hi[2] + 1) / 2];
 }
 
+/** The tag a body carries between its selection and its teleport. */
+export const CENSUS_PLACED_TAG = "dw_census_placed";
+/** The tag a body carries while the census holds it still. */
+export const CENSUS_HELD_TAG = "dw_census_held";
+
 /**
- * The command that teleports `row.count` bodies of the set into the box —
- * the nearest ones, by the set's own selector terms. A count of zero teleports
- * nothing and asks only that the box hold none.
+ * The commands that put `row.count` bodies of the set in the box and hold them
+ * there — the nearest ones to the bot, by the set's own selector terms. The
+ * bodies are chosen once (tagged), teleported, and each that moves by its own
+ * AI is stilled (`NoAI`) until {@link censusReleaseCommands}: a goat moved into
+ * a pen leaves it again by its own wandering, and the herding is the
+ * playtest's, not the bot's. A body already without its AI (a puppet) is not
+ * held, so the release never wakes it. A count of zero teleports nothing and
+ * asks only that the box hold none.
  */
 export function censusCommands(row: CensusRow): string[] {
   // A vehicle's riders are placed by boarding (the `ride` step), never here.
   if (row.count === 0 || row.select === undefined) return [];
   const [x, y, z] = censusCentre(row);
-  return [`/tp @e[${row.select},limit=${row.count},sort=nearest] ${x} ${y} ${z}`];
+  return [
+    `/tag @e[${row.select},limit=${row.count},sort=nearest] add ${CENSUS_PLACED_TAG}`,
+    `/tp @e[tag=${CENSUS_PLACED_TAG}] ${x} ${y} ${z}`,
+    `/execute as @e[tag=${CENSUS_PLACED_TAG},nbt=!{NoAI:1b}] run tag @s add ${CENSUS_HELD_TAG}`,
+    `/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:1b}`,
+    `/tag @e[tag=${CENSUS_PLACED_TAG}] remove ${CENSUS_PLACED_TAG}`,
+  ];
+}
+
+/** The commands that give every held body its AI back, once the act gated on
+ * the census has ended. */
+export function censusReleaseCommands(): string[] {
+  return [
+    `/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:0b}`,
+    `/execute as @e[tag=${CENSUS_HELD_TAG}] run tag @s remove ${CENSUS_HELD_TAG}`,
+  ];
 }
 
 /** The term the game's count must meet: exactly the bodies placed. */

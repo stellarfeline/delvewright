@@ -193,8 +193,10 @@ export class MineflayerExecutor implements StepExecutor {
   aftermathResults: import("./aftermath.ts").AftermathResult[] = [];
   /** Every act this run performed by mock (spec-0108 §6.5), in path order. */
   mockResults: import("./mock.ts").MockResult[] = [];
-  /** spec-0134 §1: every census performed before a step gated on one. */
+  /** spec-0134 §1: every census performed at the stance of a step gated on one. */
   censusResults: import("./census.ts").CensusResult[] = [];
+  /** What the running step owes at its stance (its census), until the act reaches it. */
+  stanceDue: (() => Promise<void>) | undefined = undefined;
   /** spec-0134 §2: every shot that landed, with the arrows it spent. */
   shotsLoosed: { trigger: string; arrows: number }[] = [];
   /** The step index currently executing, for marker attribution. */

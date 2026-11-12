@@ -116,11 +116,13 @@ export interface StepExecutor {
    */
   beforeStep?(step: Step): Promise<void>;
   /**
-   * Optional (spec-0134 §1): put the bodies a step's gate counts in their box
-   * by command and read the count back. A step gated on a census against an
+   * Optional (spec-0134 §1): perform `act` (the step, as every other is
+   * performed) with the bodies its gate counts put in their box by command at
+   * the act's stance — once the step's walk has arrived, in the same breath as
+   * the act — and the count read back. A step gated on a census against an
    * executor without it is a hard error.
    */
-  performCensus?(step: Step): Promise<void>;
+  performCensus?(step: Step, act: () => Promise<void>): Promise<void>;
   /**
    * Optional: anything the run owes at the boundary AFTER step `index` has
    * completed and before the next step begins — the death loop's trial of
@@ -346,27 +348,30 @@ export async function runSequence(
     for (;;) {
       try {
         await executor.beforeStep?.(step);
-        if (censusOf(step).length > 0) {
-          if (!executor.performCensus) {
-            throw new Error(
-              `step ${i} (${step.action}) is gated on the census of ${censusOf(step)
-                .map((c) => c.state)
-                .join(", ")}, and this executor cannot perform a census`,
-            );
-          }
-          await executor.performCensus(step);
+        if (censusOf(step).length > 0 && !executor.performCensus) {
+          throw new Error(
+            `step ${i} (${step.action}) is gated on the census of ${censusOf(step)
+              .map((c) => c.state)
+              .join(", ")}, and this executor cannot perform a census`,
+          );
         }
-        if (pursuersOf(step).length > 0) {
-          if (!executor.pursue) {
-            throw new Error(
-              `step ${i} (${step.action}) is walked beside ${pursuersOf(step)
-                .map((p) => p.actor)
-                .join(", ")}, and this executor cannot walk a pursued step`,
-            );
-          }
-          await executor.pursue(i, step, () => dispatch(executor, step));
+        if (pursuersOf(step).length > 0 && !executor.pursue) {
+          throw new Error(
+            `step ${i} (${step.action}) is walked beside ${pursuersOf(step)
+              .map((p) => p.actor)
+              .join(", ")}, and this executor cannot walk a pursued step`,
+          );
+        }
+        const walked =
+          pursuersOf(step).length > 0
+            ? () => executor.pursue!(i, step, () => dispatch(executor, step))
+            : () => dispatch(executor, step);
+        // spec-0134 §1: a census is placed at the act's stance, inside the act —
+        // never before the walk to it, which a placed body would walk out of.
+        if (censusOf(step).length > 0) {
+          await executor.performCensus!(step, walked);
         } else {
-          await dispatch(executor, step);
+          await walked();
         }
         // Endgame discipline (AUDIT-P0): the campaign must not already be complete
         // while objective steps remain. Checked before the transport/cutscene waits
