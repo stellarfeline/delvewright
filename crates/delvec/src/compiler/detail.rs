@@ -485,7 +485,7 @@ pub struct HandedGround {
     /// owns under its plot; on an aloft place, the lowest underside course.
     pub bottom_y: i64,
     /// The terrain's surface height along the plot's perimeter (the ring's
-    /// columns), world `y`: each `[x, z, top]` piece-local `x`/`z`.
+    /// columns): each `[x, y, z]` piece-local, `y` the column's ground top.
     pub perimeter: Vec<[i64; 3]>,
     /// The lowest of those heights, piece-local `y`.
     pub min_y: i64,
@@ -498,6 +498,12 @@ pub struct HandedGround {
     /// cell, from that column's claim bottom: the piece reshapes it freely.
     /// Empty on an aloft place.
     pub columns: Vec<GroundColumn>,
+    /// The `y` of the sea's top water course, piece-local, on a horizon with
+    /// a sea; absent on one without. Where the place's floor course is at or
+    /// under it, an open side's ring meets the sea: it holds water from the
+    /// ground (the perimeter's top) up, as the sea beyond it does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sea_y: Option<i64>,
 }
 
 /// One fixed ring cell.
@@ -987,6 +993,9 @@ fn allocation_in(c: &Campaign, node: &NodeId, plan: &SitePlan) -> Option<Allocat
             })
             .collect(),
         columns,
+        sea_y: delvewright_dsl::horizon_base(&c.world.content.horizon)
+            .sea_level()
+            .map(|y| i64::from(y) - frame.lo[1]),
     };
     let roof = b.roof.filter(|_| !b.open).map(|r| HandedRoof {
         courses: r.courses,

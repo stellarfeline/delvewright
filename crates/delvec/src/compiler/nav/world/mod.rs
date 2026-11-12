@@ -1436,6 +1436,15 @@ impl World {
         }
     }
 
+    /// Whether a body in `c` is in the water — water the assembly wrote, or
+    /// the ambient sea ([`World::ambient_water`]): a cell a body rests in
+    /// afloat or submerged, never standing. Public so the leak proof
+    /// (`DW0838`) counts the open sea outside every claim as the commons, as
+    /// it counts the ground there.
+    pub fn holds_water(&self, c: [i32; 3]) -> bool {
+        self.is_water(c) || self.ambient_water(c)
+    }
+
     /// Whether a cell is occupied by a solid block in the assembled world.
     pub fn solid_at(&self, c: [i32; 3]) -> bool {
         self.is_solid(c)

@@ -749,6 +749,13 @@ pub enum Horizon {
 /// of it; the compiler's `SEA_LEVEL` is this number.
 pub const OCEAN_SEA_LEVEL: i32 = 62;
 
+/// **The sea floor of the `ocean` horizon**: the `y` of the superflat's top
+/// stone course, under its eight courses of water. The server holds that
+/// stone in every cell no build write reaches, so ground under the sea stands
+/// no lower than it. The one statement of it; the compiler's
+/// `SEA_FLOOR_TOP_Y` is this number.
+pub const OCEAN_SEA_FLOOR: i32 = OCEAN_SEA_LEVEL - 8;
+
 /// What surrounds the map.
 ///
 /// **One enumeration of bases.** The authorable form is the object
@@ -792,6 +799,12 @@ impl HorizonBase {
     /// the `ocean` superflat's ([`OCEAN_SEA_LEVEL`]).
     pub fn sea_level(self) -> Option<i32> {
         matches!(self, HorizonBase::Ocean).then_some(OCEAN_SEA_LEVEL)
+    }
+
+    /// The `y` of the top course of this base's sea floor, where it has a
+    /// sea: the `ocean` superflat's ([`OCEAN_SEA_FLOOR`]).
+    pub fn sea_floor(self) -> Option<i32> {
+        matches!(self, HorizonBase::Ocean).then_some(OCEAN_SEA_FLOOR)
     }
 
     /// Whether this base generates a surround — compiler-built terrain outside

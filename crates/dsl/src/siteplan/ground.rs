@@ -114,6 +114,21 @@ enum Tops {
     Unresolved,
 }
 
+impl Tops {
+    /// The same surface with every column under `floor` raised to it.
+    fn at_least(self, floor: i64) -> Tops {
+        match self {
+            Tops::Flat(y) => Tops::Flat(y.max(floor)),
+            Tops::Map { width, depth, tops } => Tops::Map {
+                width,
+                depth,
+                tops: tops.into_iter().map(|y| y.max(floor)).collect(),
+            },
+            Tops::Unresolved => Tops::Unresolved,
+        }
+    }
+}
+
 /// The surface `y` a heightmap pixel stands for: `base_y + value × range / 255`,
 /// integer division.
 #[must_use]
@@ -144,9 +159,13 @@ impl Ground {
             };
         };
         let seed = c.world.content.seed;
-        let sea = crate::horizon_base(&c.world.content.horizon)
-            .sea_level()
-            .map(i64::from);
+        let base = crate::horizon_base(&c.world.content.horizon);
+        let sea = base.sea_level().map(i64::from);
+        // The sea floor the horizon's generator lays: stone the server holds
+        // in every cell no build write reaches, so the terrain under the sea
+        // stands no lower than it. The fill writes ground and never water,
+        // so a surface read lower would be one the world does not hold.
+        let floor = base.sea_floor().map(i64::from);
         let region_min = plan.region.min;
         let region_max = plan.region.max();
         let (w, d) = (
@@ -176,6 +195,9 @@ impl Ground {
                 strata,
             } => {
                 let mut tops = Self::tops(plan, terrain, c.heightmap.as_ref());
+                if let Some(floor) = floor {
+                    tops = tops.at_least(floor);
+                }
                 let natural: Option<Vec<i64>> = match &tops {
                     Tops::Unresolved => None,
                     Tops::Flat(y) => Some(vec![*y; usize::try_from(w * d).unwrap_or(0)]),
@@ -558,7 +580,8 @@ impl Ground {
     }
 
     /// The terrain's surface `y` in column `(x, z)`, on an `open` site whose
-    /// terrain resolved. A column outside the region reads the nearest edge
+    /// terrain resolved — graded (spec-0138), and on a horizon with a sea no
+    /// lower than its sea floor, the stone its generator lays. A column outside the region reads the nearest edge
     /// column, so a ring standing one cell past the region's rim still meets
     /// the ground the rim has (`DW0826` refuses a claim that leaves the region).
     #[must_use]

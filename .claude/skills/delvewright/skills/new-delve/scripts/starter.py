@@ -18,6 +18,9 @@ emits, for any allocation the engine hands:
   in the blocks the whole hands each column (`ground.columns`, the terrain's
   own, every property written), the ring's run from its nearest column; an
   aloft place's one floor course under its walk plane and nothing beneath;
+  at the sea (`ground.sea_y`, the floor course at or under the sea's top
+  course), an open side's ring holds the sea's water from its ground up, as
+  the sea beyond it does;
 - a wall on every cell of the one-cell ring, from the walk plane up — a cell a
   neighbour or the whole owns is a void the verb replaces, so painting it is
   harmless and nothing depends on it — except on a side the place declares
@@ -84,6 +87,10 @@ PALETTE = {
     "lid": "minecraft:spruce_planks",
     "lamp": "minecraft:sea_lantern",
 }
+
+# The sea an open side's ring holds at the sea (`Place.sea_ring`): handed, not a
+# material choice — it is the water the sea beyond the ring is.
+SEA = "minecraft:water[level=0]"
 
 
 # ---- the grammar's expression and operation vocabulary (grammar.md §2) ----
@@ -175,6 +182,22 @@ class Place:
             self.ground_cols[(c["x"], c["z"])] = (top - len(blocks) + 1, blocks)
         kinds = sorted({b for _, bs in self.ground_cols.values() for b in bs if b != "minecraft:air"})
         self.ground_roles: dict[str, str] = {b: f"ground-{i}" for i, b in enumerate(kinds)}
+        # A place at the sea (`ground.sea_y`, its floor course at or under the
+        # sea's top course) meets the sea on an open side as it meets open
+        # ground: the ring of a side it declares open — a corner where both
+        # its sides are — holds water from the ring's ground (`ground.
+        # perimeter`) up under the walk plane, the role `sea`, as the sea
+        # beyond it does; never ground standing to the surface.
+        self.sea_ring: dict[tuple[int, int], int] = {}
+        sea_y = a["ground"].get("sea_y")
+        if sea_y is not None and not self.aloft and d - 1 <= sea_y:
+            (lx, _, lz), (hx, _, hz) = a["space"]
+            faces = {s["face"] for s in a.get("sides", []) or []}
+            for x, top, z in a["ground"].get("perimeter", []) or []:
+                need = ({"west"} if x == lx - 1 else {"east"} if x == hx + 1 else set()) | \
+                       ({"north"} if z == lz - 1 else {"south"} if z == hz + 1 else set())
+                if need and need <= faces and top < d - 1:
+                    self.sea_ring[(x, z)] = top
         # The way this place is, as the plan declares it (`way`: axis, clear
         # width, clear columns piece-local), or None: what a street's helpers
         # draw the run and the verge from, never retyped.
@@ -323,7 +346,7 @@ class Place:
         d = self.datum.value
         top = self.lid.value if self.lid is not None else self.wall_top.value
         plain = {("claim", "room", None), ("claim", "roof", None), ("fill", "floor"), ("fill", "wall"), ("fill", "lid"), ("fill", "lamp"), ("void",)}
-        plain |= {("fill", r) for r in getattr(self, "ground_roles", {}).values()}
+        plain |= {("fill", r) for r in getattr(self, "ground_roles", {}).values()} | {("fill", "sea")}
         special = set()
         for x in range(lo[0] - 1, hi[0] + 2):
             for z in range(lo[2] - 1, hi[2] + 2):
@@ -514,6 +537,9 @@ class Place:
         if y < d:
             if self.aloft and y < d - 1:
                 return ("void",)
+            top = self.sea_ring.get((x, z))
+            if top is not None and y > top:
+                return ("fill", "sea")
             g = None if self.aloft else self.ground_role(x, y, z)
             return ("fill", g or "floor")
         if self.lid is not None and y == self.lid.value:
@@ -578,6 +604,8 @@ class Place:
             out += [lit(g["lo"][axis]), lit(g["hi"][axis])]
             if axis == 0:
                 out += [lit(g["x"] - 1), lit(g["x"] + 2)]
+        for (x, z), top in self.sea_ring.items():
+            out += [lit(top + 1)] if axis == 1 else [lit((x, 0, z)[axis]), lit((x, 0, z)[axis] + 1)]
         if axis == 1:
             out += [self.datum.plus(-1), self.datum, self.datum.plus(1), self.datum.plus(2), self.wall_top]
             if self.lid is not None:
@@ -872,6 +900,8 @@ def program(a: dict) -> dict:
     rules.rules["place"] = start_rule(p, start)
     palette = dict(PALETTE)
     palette.update({r: b for b, r in p.ground_roles.items()})
+    if p.sea_ring:
+        palette["sea"] = SEA
     for s in p.seams:
         if s["bar"] is not None:
             palette[f"bar-{s['stem']}"] = full_state(s["seam"]["bar_block"])
@@ -1107,6 +1137,8 @@ class Model:
         self.palette: dict = dict(PALETTE)
         # the handed ground's blocks, each its own role (`Place.ground_role`)
         self.palette.update({r: b for b, r in place.ground_roles.items()})
+        if place.sea_ring:
+            self.palette["sea"] = SEA  # an open side's ring at the sea (`Place.sea_ring`)
         self.v: dict[tuple[int, int, int], str] = {}
         self.region: dict[tuple[int, int], str] = {}
         self.unparted: dict[tuple[int, int], tuple[str, str]] = {}  # column -> (part it was named for, why it was handed back)
