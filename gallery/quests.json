@@ -4367,8 +4367,9 @@
             "holder": "anchor/long-hall-crate",
             "id": "obj/open-the-crate",
             "item": "minecraft:cod",
+            "item_name": "Salted Cod",
             "ride": "vehicle/yard-skiff",
-            "title": "Open the floating crate",
+            "title": "Take the catch from the floating crate",
             "type": "collect"
           },
           {

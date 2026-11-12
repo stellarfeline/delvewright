@@ -5257,10 +5257,11 @@ fn write_long_hall(out: &Path) {
     for a in LONG_HALL_ANCHORS {
         let [x, y, z] = a.pos;
         // A holder's anchor names the container it stands on (a `collect`'s
-        // `holder`): its own cell is the barrel, and the cell over it clear.
-        let holds = cells
-            .get(&[x, y, z])
-            .is_some_and(|(name, _)| name.as_str() == "minecraft:barrel");
+        // `holder`), and a boat's alongside names the water it floats on:
+        // its own cell is the barrel or the water, and the cell over it clear.
+        let holds = cells.get(&[x, y, z]).is_some_and(|(name, _)| {
+            matches!(name.as_str(), "minecraft:barrel" | "minecraft:water")
+        });
         assert!(
             (holds || !solid.contains(&[x, y, z])) && !solid.contains(&[x, y + 1, z]),
             "{LONG_HALL_ID}: `{}` at {:?} is not a clear cell",
