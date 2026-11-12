@@ -64,6 +64,9 @@ fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
     common::plan_structures_with_trap_triggers(plan, &common::prefabs_dir())
 }
 
+/// One named edit of the fixture's plan.
+type Edit = Box<dyn Fn(&mut Value)>;
+
 // ---------------------------------------------------------------- criterion 7
 
 /// In every whole column no volume covers, the assembled world's highest
@@ -72,7 +75,7 @@ fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
 /// trees' — reads that one height.
 #[test]
 fn the_built_ground_is_the_graded_ground() {
-    let plans: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
+    let plans: Vec<(&str, Edit)> = vec![
         ("two open sides", Box::new(two_open_sides)),
         (
             "the loft steep",
