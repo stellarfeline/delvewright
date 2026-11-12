@@ -157,7 +157,7 @@ fn swim_battery() -> blockout::Battery {
     for x in 5..=10 {
         for y in 57..=62 {
             for z in (12..=16).chain(20..=24) {
-                blocks.insert([x, y, z], water.clone());
+                blocks.insert([x, y, z], water);
             }
         }
     }
