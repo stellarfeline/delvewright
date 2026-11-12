@@ -507,6 +507,14 @@ export const methods = {
     legTo?: Vec3Tuple | null,
   ): Promise<void> {
     this.requireBot();
+    if (this.aboard !== undefined) {
+      // spec-0135 §5: the compiler leads every leg after an act from a seat
+      // with a ride on; a walk while seated is no move it proved.
+      throw new Error(
+        `${label}: the bot sits in ${this.aboard.vehicle}, and the step walks — ` +
+          "the path has no ride off the vehicle in front of it",
+      );
+    }
     // A range of exactly 0 is a block goal: a link's stand cell, which the bot
     // must be IN to be carried (spec-0083 §4). Every other range keeps its floor.
     const r = range === 0 ? 0 : Math.max(1, Math.floor(range));

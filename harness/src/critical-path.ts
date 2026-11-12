@@ -606,16 +606,25 @@ export interface RideStep extends PresentationMarkers, Pursued {
   /** The `vehicle/<id>` ridden. */
   readonly vehicle: string;
   readonly kind: VehicleKind;
-  /** Where the bot stands to mount. */
+  /** Where the bot stands to mount — or, for a ride that does not board, the
+   * medium cell the last ride stayed aboard at. */
   readonly board: Vec3Tuple;
   /** The same cell, as every positioned step names its place. */
   readonly pos: Vec3Tuple;
-  /** The medium cells, the seat first; at least two. */
+  /** The medium cells, the start first; at least two for a ride that boards,
+   * one for a ride that goes on from aboard. */
   readonly medium: readonly Vec3Tuple[];
   /** Blocks a second the harness drives at; positive. */
   readonly rate: number;
-  /** Where the bot stands after leaving. */
+  /** Where the bot stands after leaving — or, for a ride that stays, the last
+   * medium cell, where it does the next step's act from the seat. */
   readonly leave: Vec3Tuple;
+  /** The bot walks to `board` and mounts; `false` when it is aboard already
+   * (spec-0135 §5). */
+  readonly boards: boolean;
+  /** The bot stays aboard at the ride's end; the next step's act is done from
+   * the seat (spec-0135 §5). */
+  readonly stays: boolean;
   /** The cells the vehicle's body stands in at its mark: the walk to `board`
    * goes round them — a body that walks into a vehicle shoves it. */
   readonly body: readonly Vec3Tuple[];
@@ -1646,7 +1655,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "ride": {
       rejectUnknownKeys(
         obj,
-        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "body", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "vehicle", "kind", "board", "pos", "medium", "rate", "leave", "body", "boards", "stays", "steering_item", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       const vehicle = requireString(obj, "vehicle", pointer);
@@ -1662,9 +1671,21 @@ function parseStepBody(value: unknown, pointer: string): Step {
       if (pos.some((c, i) => c !== board[i])) {
         fail(`${pointer}/pos`, `must be the step's \`board\` (${JSON.stringify(board)}), got ${JSON.stringify(pos)}`);
       }
+      const boards = obj["boards"];
+      if (typeof boards !== "boolean") {
+        fail(`${pointer}/boards`, `must be a boolean, got ${describe(boards)}`);
+      }
+      const stays = obj["stays"];
+      if (typeof stays !== "boolean") {
+        fail(`${pointer}/stays`, `must be a boolean, got ${describe(stays)}`);
+      }
+      const shortest = boards ? 2 : 1;
       const raw = obj["medium"];
-      if (!Array.isArray(raw) || raw.length < 2) {
-        fail(`${pointer}/medium`, `must be an array of at least two cells, got ${describe(raw)}`);
+      if (!Array.isArray(raw) || raw.length < shortest) {
+        fail(
+          `${pointer}/medium`,
+          `must be an array of at least ${shortest === 2 ? "two cells" : "one cell"}, got ${describe(raw)}`,
+        );
       }
       const medium = (raw as unknown[]).map((_, i) => requireVec3(raw as unknown as Record<string, unknown>, String(i), `${pointer}/medium`));
       const rawBody = obj["body"];
@@ -1672,7 +1693,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         fail(`${pointer}/body`, `must be an array of at least one cell, got ${describe(rawBody)}`);
       }
       const body = (rawBody as unknown[]).map((_, i) => requireVec3(rawBody as unknown as Record<string, unknown>, String(i), `${pointer}/body`));
-      if (body.some((c) => c.every((v, i) => v === board[i]))) {
+      if (boards && body.some((c) => c.every((v, i) => v === board[i]))) {
         fail(`${pointer}/body`, `holds the boarding cell ${JSON.stringify(board)}: a body cannot be boarded from inside itself`);
       }
       const rate = obj["rate"];
@@ -1693,6 +1714,8 @@ function parseStepBody(value: unknown, pointer: string): Step {
         rate: rate as number,
         leave: requireVec3(obj, "leave", pointer),
         body,
+        boards: boards as boolean,
+        stays: stays as boolean,
         ...(item === undefined ? {} : { steeringItem: item as string }),
         ...presentationFields(obj, pointer),
       };

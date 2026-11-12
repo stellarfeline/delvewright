@@ -24,11 +24,16 @@ export const methods = {
    */
   async interact(this: MineflayerExecutor, step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, INTERACT_RANGE, `interact ${step.anchor}`, step.sneak, {
-      objective: step.objective,
-      transport: step.transport,
-    });
-    await this.atStance();
+    if (this.aboard === undefined) {
+      await this.walkTo(step.pos, INTERACT_RANGE, `interact ${step.anchor}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.atStance();
+    } else {
+      // spec-0135 §5: done from the seat the ride before it stayed in.
+      process.stderr.write(`[seat] interact ${step.anchor}: from ${this.aboard.vehicle}'s seat\n`);
+    }
     if (step.block !== undefined) {
       // spec-0093 §6.5: the thing is a vanilla block a hand presses — a lever,
       // a button — and the datapack reads vanilla's own report of the press.

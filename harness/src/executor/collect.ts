@@ -91,6 +91,13 @@ export const methods = {
    */
   async collect(this: MineflayerExecutor, step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    const seated = this.aboard;
+    if (seated !== undefined && (step.holder !== undefined || step.droppedBy !== undefined)) {
+      throw new Error(
+        `collect ${step.item}: the bot sits in ${seated.vehicle}, and a take off a holder ` +
+          "or the floor is done on foot (spec-0135 §5)",
+      );
+    }
     if (step.holder !== undefined) {
       await this.takeFromHolder(step, step.holder);
       return;
@@ -105,11 +112,20 @@ export const methods = {
       await this.requireObjective(step.objective, `collect ${step.item}`);
       return;
     }
-    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
-      objective: step.objective,
-      transport: step.transport,
-    });
-    await this.atStance();
+    if (seated !== undefined) {
+      // spec-0135 §5: opened from the seat, at the eye the compiler proved
+      // has the container in reach and in sight.
+      process.stderr.write(
+        `[seat] collect ${step.item}: opening [${step.pos.join(", ")}] from ${seated.vehicle}'s seat at ` +
+          `${fmt(bot.entity.position)}\n`,
+      );
+    } else {
+      await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.atStance();
+    }
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,

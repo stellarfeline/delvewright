@@ -42,6 +42,15 @@ export interface RideRecord {
   readonly why?: string;
 }
 
+/** The vehicle the bot sits in after a ride that stayed aboard (spec-0135 §5). */
+export interface Aboard {
+  readonly vehicle: string;
+  /** The height the ride reported the vehicle at — a boat's, fixed at its float. */
+  readonly y: number;
+  /** The rider's server position where the ride ended. */
+  readonly at: Vec3Tuple;
+}
+
 /** What the server says of the bot and a vehicle. */
 export interface RideReading {
   /** The bot's root vehicle is the vehicle. */
@@ -178,6 +187,10 @@ export const methods = {
    * one), or wait for the rails to carry a cart; assert the server's rider is
    * at the last medium cell; leave by the sneak input, assert the server
    * unseats the bot, and walk to `leave`.
+   *
+   * A ride that does not board goes on from aboard (spec-0135 §5): the server
+   * must already seat the bot on the vehicle. A ride that stays ends aboard:
+   * the bot is not unseated, and the next step's act is done from the seat.
    */
   async ride(this: MineflayerExecutor, step: RideStep): Promise<void> {
     const bot = this.requireBot();
@@ -197,39 +210,54 @@ export const methods = {
       record({ reported: 0, serverSeen: null, seat: null, left: false, passed: false, why, ...partial });
       throw new Error(`ride ${step.vehicle} (${step.kind}): ${why}`);
     };
-    this.rideBody = step.body;
-    try {
-      await this.walkTo(step.board, 0, `the boarding of ${step.vehicle}`, step.sneak);
-    } finally {
-      this.rideBody = [];
-    }
-    if (step.steeringItem !== undefined) {
-      const want = step.steeringItem.replace(/^minecraft:/, "");
-      const item = bot.inventory.items().find((i) => i.name === want);
-      if (item === undefined) failRide(`the bot holds no ${step.steeringItem} to steer by`);
-      await bot.equip(item!, "hand");
-    }
-    const centre = cellCentre(seat, seat[1]);
-    const body: Entity | null = bot.nearestEntity(
-      (e) =>
-        e.type !== "player" &&
-        e.name !== "item" &&
-        Math.abs(e.position.x - centre[0]) <= VEHICLE_NEAR &&
-        Math.abs(e.position.z - centre[2]) <= VEHICLE_NEAR &&
-        Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
-    );
-    if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
-    await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
-    bot.mount(body!);
-    const mountBy = Date.now() + MOUNT_GRACE_MS;
-    let reading = await this.readRide(tag);
-    while (!reading.riding && Date.now() < mountBy) {
-      await delay(250);
+    const wasAboard = this.aboard;
+    this.aboard = undefined;
+    let reading: RideReading;
+    if (!step.boards) {
+      if (wasAboard?.vehicle !== step.vehicle) {
+        failRide(
+          `the ride goes on from aboard, and the bot sits in ${wasAboard?.vehicle ?? "nothing"} — ` +
+            "the ride before it did not stay in this vehicle",
+        );
+      }
       reading = await this.readRide(tag);
+      if (!reading.riding) failRide("the ride goes on from aboard, and the server does not seat the bot on the vehicle");
+    } else {
+      this.rideBody = step.body;
+      try {
+        await this.walkTo(step.board, 0, `the boarding of ${step.vehicle}`, step.sneak);
+      } finally {
+        this.rideBody = [];
+      }
+      if (step.steeringItem !== undefined) {
+        const want = step.steeringItem.replace(/^minecraft:/, "");
+        const item = bot.inventory.items().find((i) => i.name === want);
+        if (item === undefined) failRide(`the bot holds no ${step.steeringItem} to steer by`);
+        await bot.equip(item!, "hand");
+      }
+      const centre = cellCentre(seat, seat[1]);
+      const body: Entity | null = bot.nearestEntity(
+        (e) =>
+          e.type !== "player" &&
+          e.name !== "item" &&
+          Math.abs(e.position.x - centre[0]) <= VEHICLE_NEAR &&
+          Math.abs(e.position.z - centre[2]) <= VEHICLE_NEAR &&
+          Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
+      );
+      if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
+      await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
+      bot.mount(body!);
+      const mountBy = Date.now() + MOUNT_GRACE_MS;
+      reading = await this.readRide(tag);
+      while (!reading.riding && Date.now() < mountBy) {
+        await delay(250);
+        reading = await this.readRide(tag);
+      }
+      if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
     }
-    if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
     const start = reading.pos;
     let reported = 0;
+    let ridY = start[1];
     // Where the server held a waited-for rider, reading by reading: said when
     // the ride does not arrive.
     const trace: string[] = [];
@@ -245,7 +273,9 @@ export const methods = {
         );
       }
     } else {
-      const y0 = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y ?? start[1];
+      const y0 =
+        wasAboard?.y ?? (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y ?? start[1];
+      ridY = y0;
       const yOf =
         step.kind === "boat" ? (): number => y0 : (c: Vec3Tuple): number => c[1];
       let prev = cellCentre(seat, yOf(seat));
@@ -294,6 +324,20 @@ export const methods = {
       this.censusResults.push({ state: row.state, placed: 1, passed, detail });
       process.stderr.write(`[census] ${row.state}: ${passed ? "counted" : "FAILED"} — ${detail}\n`);
       if (!passed) failRide(`census ${row.state}: ${detail}`, { reported, serverSeen, seat: arrived });
+    }
+    if (step.stays) {
+      // spec-0135 §5: the act after this ride is done from the seat. The
+      // client's own body stands where the server holds the rider, so the act
+      // aims from the eye the server judges it by.
+      this.aboard = { vehicle: step.vehicle, y: ridY, at: arrived };
+      bot.entity.position.set(arrived[0], arrived[1], arrived[2]);
+      record({ reported, serverSeen, seat: arrived, left: false, passed: true });
+      process.stderr.write(
+        `[ride] ${step.vehicle} (${step.kind}): ${step.medium.length} cell(s), reported ` +
+          `${reported.toFixed(2)} block(s), server saw ${serverSeen.toFixed(2)}, aboard at ` +
+          `${JSON.stringify(arrived.map((v) => Number(v.toFixed(2))))} for the act from the seat\n`,
+      );
+      return;
     }
     bot._client.write("player_input", { inputs: { shift: true } });
     await delay(400);

@@ -763,6 +763,7 @@ impl Carries<'_> {
 /// walks from `from` to a boarding cell of it, rides, and leaves at a cell it
 /// walks to `end` from. Beside it, the seats of every vehicle that carries
 /// the leg.
+#[allow(clippy::too_many_arguments)]
 fn ride_leg(
     world: &World,
     from: &VisitedPos,

@@ -882,6 +882,10 @@ pub fn ride_of(
     Err(RideMiss::NoLeave)
 }
 
+/// Whether a rider of a vehicle at a medium cell does the leg's act from the
+/// seat.
+pub type SeatActOf<'a> = dyn Fn(&VehiclePlan, [i32; 3]) -> bool + 'a;
+
 /// The seats every vehicle a ride leg's party can board carries
 /// (`DW1099`'s last arm): the seats of every vehicle with a boarding cell the
 /// party walks to from `from` and whose ride reaches `goal` — by leaving, or
@@ -892,7 +896,7 @@ pub fn boardable_seats(
     from: [i32; 3],
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
-    seat_act: Option<&dyn Fn(&VehiclePlan, [i32; 3]) -> bool>,
+    seat_act: Option<&SeatActOf<'_>>,
 ) -> u32 {
     (0..vehicles.len())
         .filter(|&i| {
