@@ -157,6 +157,43 @@ fn alone(ns: &str, name: &str, out: &mut BuildOutput) -> String {
     format!("# @environment {ns}:solo/{name}")
 }
 
+/// **What a limit's templates hold still while the clock runs**: the lines
+/// after `setup` that take the objective's state out of every hand but the
+/// template's, and the lines at the end that give it back.
+///
+/// - A **census** the gate reads (spec-0134 §1) is written by the engine's
+///   `census_tick` every few ticks from the bodies in its box, which `setup`
+///   starts: over a window of thousands of ticks it puts the datum back to the
+///   bodies there (none), the objective is no longer pending, and its clock
+///   settles nothing. The template stops the tick and starts it again after.
+/// - A **collect** completes for any player holding its item (the `tick`
+///   driver reads `@a`), and a dummy an earlier template handed the item stays
+///   on the server after its own test ends: inside this window it completes
+///   the objective the template means to see expire. The template takes the
+///   item from every player first — it runs alone, so no running sibling is
+///   touched (`compiler::solo`).
+fn held_still(plan: &Plan, o: &Objective) -> (Vec<String>, Vec<String>) {
+    let ns = &plan.namespace;
+    let q = &plan.campaign.quests.content;
+    let (mut hold, mut give_back) = (Vec::new(), Vec::new());
+    let counted = o.requires_state().iter().any(|cmp| {
+        q.state_decl(cmp.state.as_str())
+            .is_some_and(|d| d.counts.is_some())
+    });
+    if counted {
+        let tick = super::super::census::CENSUS_TICK_FN;
+        hold.push(format!("schedule clear {ns}:{tick}"));
+        give_back.push(format!(
+            "schedule function {ns}:{tick} {}t replace",
+            super::super::census::CENSUS_PERIOD_TICKS
+        ));
+    }
+    if let Objective::Collect { item, .. } = o {
+        hold.push(format!("clear @a {item}"));
+    }
+    (hold, give_back)
+}
+
 /// Emit the two templates of every limit (spec-0133 §8). Nothing for a
 /// campaign with no limit.
 pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
@@ -174,6 +211,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
             let safe = plan::safe_local(oid);
             let step = l.ticks + 1;
             let (open, close) = open_and_close(plan, q, o, &latch);
+            let (hold, give_back) = held_still(plan, o);
             let expired = expired_score(oid);
             let done_score = obj_score(oid);
 
@@ -187,6 +225,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 String::new(),
                 format!("function {ns}:setup"),
             ];
+            b.extend(hold.iter().cloned());
             b.extend(open.iter().cloned());
             b.push(format!("function {ns}:{start}"));
             b.push(format!("await delay {step}t"));
@@ -228,6 +267,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
             ));
             b.push(format!("assert score #lim_open_{safe} dw.sys matches 0"));
             b.extend(close.iter().cloned());
+            b.extend(give_back.iter().cloned());
             if let Some(f) = &flag {
                 b.push(format!(
                     "scoreboard players set {} {} 0",
@@ -252,6 +292,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 String::new(),
                 format!("function {ns}:setup"),
             ];
+            b.extend(hold.iter().cloned());
             b.extend(open.iter().cloned());
             b.push(format!("function {ns}:{start}"));
             b.push(format!("function {ns}:complete_{}", safe_obj_fn(oid)));
@@ -266,6 +307,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
             ));
             b.push(format!("assert score #lim_x_{safe} dw.sys matches 0"));
             b.extend(close.iter().cloned());
+            b.extend(give_back.iter().cloned());
             out.insert(
                 format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
                 lines(&b).into_bytes(),
