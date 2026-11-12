@@ -15,13 +15,13 @@ pub const SEA_LEVEL: i32 = delvewright_dsl::OCEAN_SEA_LEVEL;
 /// Height of the `ocean` horizon superflat's water layer (spec-0013) — the `8`
 /// in the pinned `generator-settings` stack emission writes
 /// (`emit::emit_server`). Ambient water occupies `SEA_LEVEL - 7 ..= SEA_LEVEL`.
-pub const OCEAN_WATER_LAYERS: i32 = 8;
+pub const OCEAN_WATER_LAYERS: i32 = SEA_LEVEL - SEA_FLOOR_TOP_Y;
 /// Y of the topmost ambient **solid** block of the `ocean` horizon superflat: the
 /// sea floor (stone) directly under the water layers, at 54. The ambient model
 /// boundary safety reasons about (`nav::Sea`) starts here — below it the world is
 /// stone all the way to bedrock, which is why an ocean world has no void column
 /// anywhere.
-pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
+pub const SEA_FLOOR_TOP_Y: i32 = delvewright_dsl::OCEAN_SEA_FLOOR;
 /// The lowest y of the pinned overworld (`min_y`): the first layer of a
 /// superflat stack stands here.
 pub const BUILD_FLOOR_Y: i32 = -64;

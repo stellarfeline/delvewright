@@ -1967,6 +1967,11 @@ pub struct BatteryBinding {
     /// there is no commons, and `DW0838`'s second shape refuses a place that
     /// reaches one.
     pub unclaimed_standable: usize,
+    /// Cells of water a body swims in inside the region and outside every
+    /// claim — the open sea, on an `ocean` horizon: the commons as the
+    /// ground there is, and on a `solid` site a way out of the designed
+    /// places as the ground there is.
+    pub unclaimed_water: usize,
     /// Whether the site's fill is `open`, so that ground is the commons.
     pub commons: bool,
     /// Unordered place pairs walk-joined through the commons, with no
@@ -1998,7 +2003,7 @@ impl BatteryBinding {
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
              plot-edge column(s) examined, {ck} crack(s), {al} aloft place(s) with no ground \
-             to stitch (DW0990); {uc} standable cell(s) \
+             to stitch (DW0990); {uc} standable cell(s) and {uw} cell(s) of water \
              outside every claim ({kind}), {cp} place pair(s) joined through the commons, \
              {sb} seamless border(s) deleted as declared openings ({brc} cell(s) beyond the \
              open sides' runs), {inv} cell(s) of floor the deletion made kept off (DW0838).",
@@ -2016,6 +2021,7 @@ impl BatteryBinding {
             ck = self.cracks,
             al = self.aloft,
             uc = self.unclaimed_standable,
+            uw = self.unclaimed_water,
             s = self.seams,
             ct = self.contacts,
             cc = self.contact_columns,
@@ -3457,6 +3463,9 @@ fn crossings(
         rhi[2] = rhi[2].min(i64::from(jhi[1]) + 1);
     }
     let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // The water a body swims in, beside the ground it stands on: outside
+    // every claim it is the commons as the ground there is.
+    let mut wet: BTreeSet<[i32; 3]> = BTreeSet::new();
     for cell in cells_of(rlo, rhi) {
         let cell = narrow(cell);
         if seam.contains(&cell) {
@@ -3464,6 +3473,8 @@ fn crossings(
         }
         if world.is_standable(cell) {
             open.insert(cell);
+        } else if world.holds_water(cell) {
+            wet.insert(cell);
         }
     }
     binding.standable = open.len();
@@ -3507,6 +3518,11 @@ fn crossings(
     // **The second shape** (spec-0098 §2c): ground outside every claim. In a
     // bounded map every cell a body can reach is inside some place, so a
     // standable cell of the region no claim covers must be reached from none.
+    // **The sea outside every claim is the commons as the ground is**: a body
+    // swimming there is outside every place exactly as one walking there is,
+    // so a cell of water no claim covers is a cell of the commons — two places
+    // that both open onto the open sea are joined through it, as two that
+    // open onto open ground are.
     let site = Site::new(&b.boxes, &b.seams, &b.ground);
     type Bounds = ([i64; 3], [i64; 3]);
     let bounds: Vec<(usize, Bounds)> = (0..b.boxes.len())
@@ -3519,6 +3535,7 @@ fn crossings(
         .unwrap_or(([0; 3], [-1; 3]));
     let unclaimed: BTreeSet<[i32; 3]> = open
         .iter()
+        .chain(wet.iter())
         .filter(|cell| {
             let w = [i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2])];
             if (0..3).any(|a| w[a] < plo[a] || w[a] > phi[a]) {
@@ -3533,7 +3550,8 @@ fn crossings(
         })
         .copied()
         .collect();
-    binding.unclaimed_standable = unclaimed.len();
+    binding.unclaimed_water = unclaimed.iter().filter(|c| wet.contains(*c)).count();
+    binding.unclaimed_standable = unclaimed.len() - binding.unclaimed_water;
     binding.commons = b.ground.is_open();
     let commons: &BTreeSet<[i32; 3]> = &unclaimed;
     let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
@@ -3688,25 +3706,25 @@ fn crossings(
                 format!(
                     "`{a}` is a stand-in — the engine's closed shell, whose only openings are \
                      the seams the plan allocated — and a body standing in it can reach \
-                     {w:?} by a walk, climb, fall or jump, ground outside every place's claim, with every allocated opening \
+                     {w:?} by a walk, climb, fall, jump or swim, a cell outside every place's claim, with every allocated opening \
                      removed from the world. The stand-in leaks: its shell did not close. Detail \
                      the place (its own piece opens onto the commons where it means to), or \
-                     find what broke the shell. The route: {route}. {u} standable cell(s) of \
-                     the commons were examined.",
+                     find what broke the shell. The route: {route}. {u} cell(s) of the \
+                     commons a body stands or swims in were examined.",
                     a = x.node,
                     w = witness,
                     u = unclaimed.len(),
                 )
             } else {
                 format!(
-                    "a body standing in `{a}` can reach {w:?} by a walk, climb, fall or jump, \
-                     which is ground outside every place's claim, on a site whose fill is \
+                    "a body standing in `{a}` can reach {w:?} by a walk, climb, fall, jump or swim, \
+                     which is outside every place's claim, on a site whose fill is \
                      `solid`. A solid site has no commons: with every allocated opening removed \
                      from the world, a body still leaves the designed places. Close the edge — the place draws a wall \
                      on the ring it owns; make the ground a place, with seams to the places it \
                      joins; or declare the site's fill `open`, where ground outside every claim \
                      is the commons every place may open onto. The route: {route}. {u} \
-                     standable cell(s) outside every claim were examined.",
+                     cell(s) a body stands or swims in outside every claim were examined.",
                     a = x.node,
                     w = witness,
                     u = unclaimed.len(),

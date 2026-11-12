@@ -160,6 +160,58 @@ def test_the_ground_course_is_the_ground_the_whole_hands_each_column():
     assert st.Place(a).cell(lo[0], d - 1, lo[2]) == ("fill", "floor")
 
 
+def _at_the_sea(sea_below_floor: int) -> dict:
+    """The yard, its floor course at the sea's top course (`sea_below_floor`
+    0) or above it, its open south side's ring over a sea floor two courses
+    under the floor course, every other ring column at the floor course."""
+    a = next(x for x in json.loads(ALLOCATIONS.read_text(encoding="utf-8")) if x["place"] == "node/yard")
+    a = json.loads(json.dumps(a))
+    d = a["datum_y"] + 3
+    a["datum_y"] = d
+    a["space"][0][1] += 3
+    a["space"][1][1] += 3
+    lo, hi = a["space"]
+    for c in a["ground"]["columns"]:
+        c["top"] = d - 1
+        c["blocks"] = ["minecraft:sand"] * d
+    a["ground"]["perimeter"] = [[x, d - 3 if z == hi[2] + 1 else d - 1, z] for x, _, z in a["ground"]["perimeter"]]
+    a["ground"]["sea_y"] = d - 1 - sea_below_floor
+    return a
+
+
+def test_an_open_side_at_the_sea_meets_the_sea():
+    """A place whose floor course is the sea's top course meets the sea on a
+    side it leaves open: the side's ring holds the sea's water from its
+    ground up under the walk plane, never ground standing to the surface; a
+    walled side's ring, a place standing over the sea and a horizon with no
+    sea keep the ground course."""
+    st = _starter_module()
+    a = _at_the_sea(0)
+    lo, hi = a["space"]
+    d = a["datum_y"]
+    z = hi[2] + 1  # the open south side's ring
+    p = st.Place(a)
+    run = [(x, z) for x in range(lo[0], hi[0] + 1)]
+    assert run and all(p.cell(x, d - 1, z) == ("fill", "sea") for x, z in run), "the floor course at the sea"
+    assert all(p.cell(x, d - 2, z) == ("fill", "sea") for x, z in run), "the sea down to the ground"
+    assert all(p.cell(x, d - 3, z)[1] != "sea" for x, z in run), "the ground under it"
+    # the corners: the south side meets walled east and west sides
+    assert p.cell(lo[0] - 1, d - 1, z)[1] != "sea" and p.cell(hi[0] + 1, d - 1, z)[1] != "sea"
+    # inside the space the place's own ground course stands
+    assert p.cell(lo[0], d - 1, hi[2])[1] != "sea"
+    # a place standing a course over the sea, and no sea at all: ground
+    assert st.Place(_at_the_sea(1)).cell(lo[0], d - 1, z)[1] != "sea"
+    b = _at_the_sea(0)
+    del b["ground"]["sea_y"]
+    assert st.Place(b).cell(lo[0], d - 1, z)[1] != "sea"
+
+
+def test_the_sea_in_the_ring_is_written_as_water(tmp_path: pathlib.Path):
+    p = program_of(tmp_path, _at_the_sea(0))
+    assert p["palette"]["sea"] == "minecraft:water[level=0]"
+    assert "sea" not in program_of(tmp_path, _at_the_sea(1))["palette"]
+
+
 # ---------------------------------------------------------------- an opening touches the room
 
 
