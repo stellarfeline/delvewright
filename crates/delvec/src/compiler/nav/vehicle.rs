@@ -30,6 +30,14 @@ delvewright_dsl::dw_code! {
     pub const DW_VEHICLE_UNBOARDABLE: DwCode = DwCode::new("DW1099", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1107` (spec-0135 §3, §8): **a second ride on a vehicle that stays
+    /// where its rider left it** (`left: where-left`), with no `seat-vehicle`
+    /// the path fires between the two rides — every proof of a ride starts at
+    /// the mark, and the body is wherever the last ride left it. Build tier.
+    pub const DW_VEHICLE_LEFT_ELSEWHERE: DwCode = DwCode::new("DW1107", ExitTier::Build);
+}
+
 /// The party a required ride carries: the engine never proves a party split.
 pub const PARTY_SEATS: u32 = 4;
 
@@ -68,6 +76,10 @@ pub struct VehiclePlan {
     pub yaw: i32,
     /// The way it faces, as a horizontal step: the way a cart is pushed.
     pub facing: [i32; 2],
+    /// When its body is first placed (spec-0135 §2).
+    pub seated: delvewright_dsl::VehicleSeated,
+    /// Where a riderless body is once its rider has left it (spec-0135 §3).
+    pub left: delvewright_dsl::VehicleLeft,
 }
 
 impl VehiclePlan {
@@ -155,6 +167,8 @@ pub fn vehicle_plans(
                 Some(delvewright_dsl::Facing::North) => [0, -1],
                 Some(delvewright_dsl::Facing::East) => [1, 0],
             },
+            seated: v.seated,
+            left: v.left,
         });
     }
     out
@@ -795,6 +809,8 @@ mod tests {
             bounds,
             yaw: 0,
             facing: [0, 1],
+            seated: Default::default(),
+            left: Default::default(),
         }
     }
 

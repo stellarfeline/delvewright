@@ -655,7 +655,14 @@ fn each_kind_is_seated_in_its_medium() {
         board.ends_with("advancement revoke @s only hello-world:vehicle_board\n"),
         "{board}"
     );
-    assert!(!function(&out, "vehicle_seat_gull").contains("NoAI"));
+    let gull_seat = function(&out, "vehicle_seat_gull");
+    assert!(
+        gull_seat
+            .lines()
+            .filter(|l| l.starts_with("summon "))
+            .all(|l| !l.contains("NoAI")),
+        "{gull_seat}"
+    );
     let adv = text(
         &out,
         out.keys()
@@ -1216,4 +1223,143 @@ fn a_ledge_a_rider_drops_from_strands_nobody() {
         },
         ledge_cart(),
     );
+}
+
+fn with_vehicle_field(v: &str, field: &str) -> String {
+    let t = v.trim_end();
+    format!("{}, {field} }}", &t[..t.len() - 1])
+}
+
+/// spec-0135 §2: a vehicle seated `by-story` stands nowhere at load — no seat
+/// in `setup_finish` — and a leg ridden on it before any `seat-vehicle` is
+/// `DW0311`; seated at the talk's beat, the build rides it.
+#[test]
+fn a_vehicle_seated_by_story_stands_nowhere_until_its_seat() {
+    let bay = Bay {
+        rails: true,
+        ride: Some("vehicle/cart"),
+        ..Bay::default()
+    };
+    let late = with_vehicle_field(cart(), r#""seated": "by-story""#);
+    let (dir, lib) = write("by-story-unseated", bay, &late, "");
+    let c = campaign(&dir);
+    let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+    let err = match Plan::build(&c, &prefabs) {
+        Ok(_) => panic!("expected the plan to be refused"),
+        Err(e) => format!("{e:?}"),
+    };
+    assert!(
+        err.contains("DW0311") && err.contains("seated `by-story`"),
+        "{err}"
+    );
+    let seat = r#"{ "type": "seat-vehicle", "vehicle": "vehicle/cart" }"#;
+    let (dir, lib) = write("by-story-seated", bay, &late, seat);
+    let out = try_build(&dir, &lib).expect("seated at the talk, the ride stands");
+    assert_eq!(rides(&out).len(), 1);
+    let setup = function(&out, "setup_finish");
+    assert!(!setup.contains("vehicle_seat_cart"), "{setup}");
+    assert!(!setup.contains("vehicle_reseat_cart"), "{setup}");
+    // The same vehicle seated at load is seated in `setup_finish`.
+    let (dir, lib) = write("at-load-seated", bay, cart(), "");
+    let out = try_build(&dir, &lib).expect("seated at load");
+    assert!(function(&out, "setup_finish").contains("vehicle_seat_cart"));
+}
+
+/// spec-0135 §3: a vehicle left where its rider leaves it is never re-seated
+/// while it stands — its re-seat holds a riderless mount where it is without
+/// its AI and seats only a missing body — and its PackTest is `_stays`.
+#[test]
+fn a_vehicle_left_where_its_rider_leaves_it_stays() {
+    let bay = Bay {
+        bridge: true,
+        ..Bay::default()
+    };
+    let stays = with_vehicle_field(pig(), r#""left": "where-left""#);
+    let out = build("left-where-left", bay, &stays);
+    let reseat = function(&out, "vehicle_reseat_race_pig");
+    assert!(!reseat.contains("distance=..1.5"), "{reseat}");
+    assert!(
+        reseat.contains(
+            "execute as @e[tag=dw_vehicle_race_pig,tag=dw_vehicle_reseat] run data merge entity @s {NoAI:1b}"
+        ),
+        "{reseat}"
+    );
+    assert!(
+        reseat.contains(
+            "execute unless entity @e[tag=dw_vehicle_race_pig] run function hello-world:vehicle_seat_race_pig"
+        ),
+        "{reseat}"
+    );
+    assert!(
+        !reseat
+            .contains("if entity @e[tag=dw_vehicle_race_pig,tag=dw_vehicle_reseat] run function"),
+        "{reseat}"
+    );
+    let tests: Vec<&String> = out
+        .keys()
+        .filter(|k| k.contains("/test/vehicle_race_pig_"))
+        .collect();
+    assert!(
+        tests
+            .iter()
+            .any(|k| k.ends_with("vehicle_race_pig_stays.mcfunction")),
+        "{tests:?}"
+    );
+    assert!(
+        !tests
+            .iter()
+            .any(|k| k.ends_with("vehicle_race_pig_reseats.mcfunction")),
+        "{tests:?}"
+    );
+    let stays_t = text(
+        &out,
+        tests
+            .iter()
+            .find(|k| k.ends_with("_stays.mcfunction"))
+            .unwrap(),
+    );
+    assert!(
+        stays_t.contains("assert entity @e[tag=dw_vehicle_race_pig,nbt={NoAI:1b}]"),
+        "{stays_t}"
+    );
+    // At its mark (the default), the riderless body away from it is re-seated.
+    let out = build("left-at-its-mark", bay, pig());
+    let reseat = function(&out, "vehicle_reseat_race_pig");
+    assert!(reseat.contains("distance=..1.5"), "{reseat}");
+    assert!(!reseat.contains("NoAI"), "{reseat}");
+}
+
+/// spec-0135 §3, §8: a second ride on a vehicle that stays where its rider
+/// left it, with no `seat-vehicle` between the rides, is `DW1107`; the same
+/// two rides on a vehicle that returns to its mark are not.
+#[test]
+fn a_second_ride_on_a_vehicle_left_where_its_rider_left_it_is_dw1107() {
+    let bay = Bay {
+        rails: true,
+        ride: Some("vehicle/cart"),
+        ..Bay::default()
+    };
+    let twice = |tag: &str, v: &str| -> Result<(), String> {
+        let (dir, lib) = write(tag, bay, v, "");
+        common::patch_file(&dir.join("quests.json"), |q| {
+            let objs = q["content"]["quests"][0]["objectives"]
+                .as_array_mut()
+                .unwrap();
+            let mut again = objs[1].clone();
+            again["id"] = serde_json::json!("obj/again");
+            again["after"] = serde_json::json!(["obj/exit"]);
+            objs.push(again);
+        });
+        let c = campaign(&dir);
+        let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+        Plan::build(&c, &prefabs)
+            .map(|_| ())
+            .map_err(|e| format!("{e:?}"))
+    };
+    let stays = with_vehicle_field(cart(), r#""left": "where-left""#);
+    let err = twice("left-twice", &stays).expect_err("a second ride from where it was left");
+    assert!(err.contains("DW1107") && err.contains("obj/again"), "{err}");
+    if let Err(e) = twice("returns-twice", cart()) {
+        assert!(!e.contains("DW1107"), "{e}");
+    }
 }

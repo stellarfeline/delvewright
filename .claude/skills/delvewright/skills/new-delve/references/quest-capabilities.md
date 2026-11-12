@@ -225,6 +225,8 @@ Run each of these; each names what it judges and how many objects it bound.
 - A gate can wait for riders: `state[].counts` with `"of": {"riders": "vehicle/<id>"}` counts the players aboard inside its `region`, and a `body-enters` trigger over it fires when the first one boards. Put that datum in the `requires_state` of an objective that declares `ride` on the same vehicle and the objective completes only from the saddle: the ride then goes all the way in.
 - A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride.
 - `seat-vehicle` puts a vehicle back at its mark from a beat; `despawn-vehicle` takes it away for good (its re-seat stops with it).
+- A ride the story hands out later — a mount hired or stolen at a beat — is declared `"seated": "by-story"`: nothing stands at its mark until a `seat-vehicle` fires, and a ride on it before that is refused.
+- A vehicle nobody rides goes back to its mark within five seconds. A borrowed mount that should stay where its rider left it — so "not brought back" is a place the player can find — is declared `"left": "where-left"`; the story brings it home with `seat-vehicle`. A second ridden leg on it with no `seat-vehicle` between the two is refused (`DW1107`).
 
 ## Sealed things, and pacing
 

@@ -1,0 +1,13 @@
+{
+  "code": "DW1107",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/objectives/5/ride",
+      "value": "vehicle/yard-jenny"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the groom's errand declared ridden on Jenny, the donkey, instead of the mare. Jenny stays where her rider leaves her (`left: where-left`), and the hen was caught from her saddle earlier with no `seat-vehicle` between the two rides, so the second ride is proven from her mark while she stands wherever the first left her. Refused at the plan, naming both objectives. It declares no unit."
+}

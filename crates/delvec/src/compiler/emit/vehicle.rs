@@ -128,13 +128,15 @@ pub(super) fn vehicle_named<'p>(plan: &'p Plan, id: &str) -> Option<&'p VehicleP
     plan.vehicles.iter().find(|v| v.id == id)
 }
 
-/// `setup_finish` lines: each vehicle seated, and its re-seat chain started.
+/// `setup_finish` lines: each vehicle seated at load seated, and its re-seat
+/// chain started; a vehicle seated `by-story` waits for its `seat-vehicle`.
 /// Empty for a campaign that declares none, so its `setup_finish` is
 /// byte-identical.
 pub(super) fn vehicle_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     plan.vehicles
         .iter()
+        .filter(|v| v.seated == delvewright_dsl::VehicleSeated::AtLoad)
         .flat_map(|v| vehicle_seat_lines(ns, v))
         .collect()
 }
@@ -153,7 +155,7 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         seat.push(vehicle_summon(plan, v));
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
         let p = summon_point(v);
-        let reseat = vec![
+        let mut reseat = vec![
             format!(
                 "execute as @e[tag={tag}] unless entity @s[x={},y={},z={},distance=..{AT_MARK}] run tag @s add {RESEAT_TAG}",
                 fmt_f64(p[0]),
@@ -177,6 +179,33 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
                 v.safe
             ),
         ];
+        if v.left == delvewright_dsl::VehicleLeft::WhereLeft {
+            // spec-0135 §3: a body its rider left stays where it was left —
+            // never re-seated while it stands, a mount held there without
+            // its AI as at its mark; only a missing body is seated again.
+            reseat = vec![
+                format!("tag @e[tag={tag}] add {RESEAT_TAG}"),
+                format!(
+                    "execute as @e[tag={tag},tag={RESEAT_TAG}] on passengers on vehicle run tag @s remove {RESEAT_TAG}"
+                ),
+            ];
+            if v.kind == VehicleKind::Mount {
+                reseat.push(format!(
+                    "execute as @e[tag={tag},tag={RESEAT_TAG}] run data merge entity @s {{NoAI:1b}}"
+                ));
+            }
+            reseat.extend([
+                format!("tag @e[tag={RESEAT_TAG}] remove {RESEAT_TAG}"),
+                format!(
+                    "execute unless entity @e[tag={tag}] run function {ns}:vehicle_seat_{}",
+                    v.safe
+                ),
+                format!(
+                    "schedule function {ns}:vehicle_reseat_{} {RESEAT_TICKS}t replace",
+                    v.safe
+                ),
+            ]);
+        }
         fns.push((format!("vehicle_reseat_{}", v.safe), lines(&reseat)));
     }
     if let Some(board) = boarding_lines(plan) {
