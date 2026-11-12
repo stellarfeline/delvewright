@@ -457,6 +457,26 @@ pub struct Expansion {
     pub open_sides: Vec<([i32; 3], [i32; 3])>,
 }
 
+impl Expansion {
+    /// The item-holder entities the marks place (spec-0111 §3.2), by the cell
+    /// each stands at — what [`crate::grammar::contract::resolves_to`] reads
+    /// beside the model's container blocks.
+    pub fn entity_holders(&self) -> crate::grammar::contract::EntityHolders {
+        self.anchors
+            .values()
+            .filter_map(|a| {
+                let h = a.holder.as_ref()?;
+                let family = if h.kind.is_frame() {
+                    delvewright_dsl::holders::HolderFamily::Frame
+                } else {
+                    delvewright_dsl::holders::HolderFamily::Stand
+                };
+                Some((a.pos, family))
+            })
+            .collect()
+    }
+}
+
 /// The scope at a refusal site, in the terms guards read it.
 ///
 /// The dimensions here are **not** the region the author typed: the scope

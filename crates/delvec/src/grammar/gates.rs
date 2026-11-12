@@ -788,6 +788,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             &anchor_positions,
             place,
             &expansion.open_sides,
+            &expansion.entity_holders(),
         );
         gates.extend(checked.gates);
         findings.extend(checked.findings);

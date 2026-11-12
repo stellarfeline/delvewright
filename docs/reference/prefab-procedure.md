@@ -895,8 +895,10 @@ region and a trap's pre-wired hardware, each writing only the keys it means.
 reader acts on it, and a piece that says what each of its anchors is for can be
 reviewed without the campaign that binds them in hand.
 `resolves_to` is which element of the piece's own contract the anchor lands in —
-`space:`, `no_body:`, `via:`, `bar:` or `way:` and the element's name — resolved
-by whoever wrote the document, never by the reader.
+`space:`, `no_body:`, `via:`, `bar:` or `way:` and the element's name, or
+`holder:<family>` (`container`, `frame`, `stand`) for an anchor on the item
+holder at a cell no declared element holds — resolved by whoever wrote the
+document, never by the reader.
 
 `role` is **what the anchor is for**, from a closed vocabulary the compiler owns,
 and a term it does not know is refused by name (`DW0346`). There are two terms:

@@ -774,7 +774,13 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             // of any tile — so the checker's two arguments exist at zone scale
             // exactly as they do for one template. Tiling is packaging.
             let grid = settling::zone_grid(set.size, &tiles);
-            let door = Door::open(&grid, tiles.len(), nbt);
+            let holders = crate::admit::spatial::template_holders(
+                &tiles
+                    .iter()
+                    .map(|(part, s)| (part.offset, s))
+                    .collect::<Vec<_>>(),
+            );
+            let door = Door::open(&grid, &holders, tiles.len(), nbt);
             let facts = settling::ByteFacts::of(
                 &tiles
                     .iter()
@@ -813,7 +819,8 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
             let meta_path = nbt.with_extension("json");
             let grid = crate::admit::spatial::grid(&structure);
-            let door = Door::open(&grid, 1, &meta_path);
+            let holders = crate::admit::spatial::template_holders(&[([0, 0, 0], &structure)]);
+            let door = Door::open(&grid, &holders, 1, &meta_path);
             let facts = settling::ByteFacts::of(&[([0, 0, 0], &structure)]);
             let waterline = waterline_door(&meta_path, &grid, &facts);
             let claims = claims_door(&meta_path, &grid, &facts);

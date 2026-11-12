@@ -1165,6 +1165,84 @@ fn an_anchor_outside_every_declared_element_reds_and_one_inside_names_its_elemen
     assert!(g.detail.contains("land in nothing"), "{}", g.detail);
 }
 
+/// **An item holder's own cell lands in the holder.** A `loot` entry or an
+/// adopting `collect` names the cell of the holder the piece placed — a chest
+/// is a solid block, never a space a body stands in. The hall's east wall
+/// carries a chest, a frame's niche and a stand's niche, none of them inside a
+/// declared element: each anchor lands in its holder (`holder:<family>`), the
+/// family read off the piece — the container off the block, the frame and the
+/// stand off the entities the piece carries. The same cells with no holder
+/// (the chest laid back in stone, the entities not carried) land in nothing
+/// and red, so the holder is a fact the defect cannot supply.
+#[test]
+fn an_anchor_on_an_item_holder_lands_in_the_holder_and_the_same_cell_bare_in_nothing() {
+    use delvec::grammar::contract::{EntityHolders, Place, check_handed, resolves_to};
+    use delvewright_dsl::holders::HolderFamily;
+    let chest = [10, 1, 2];
+    let (frame, stand) = ([10, 3, 6], [10, 1, 6]);
+    let (mut b, c) = hall();
+    b.paint(chest, chest, "minecraft:chest");
+    b.air(frame, frame);
+    b.air(stand, stand);
+    let mut anchors = BTreeMap::new();
+    anchors.insert("anchor/stores".to_string(), chest);
+    anchors.insert("anchor/map".to_string(), frame);
+    anchors.insert("anchor/rack".to_string(), stand);
+    let carried: EntityHolders = [(frame, HolderFamily::Frame), (stand, HolderFamily::Stand)]
+        .into_iter()
+        .collect();
+
+    let report = check_handed(&b.model, &c, &anchors, Place::Reached, &[], &carried);
+    let g = gate(&report, "contract-anchors");
+    assert!(g.passed(), "{}", g.detail);
+    assert_eq!(g.bound, 3);
+    assert!(g.detail.contains("3 in a holder"), "{}", g.detail);
+    for (pos, element) in [
+        (chest, "holder:container"),
+        (frame, "holder:frame"),
+        (stand, "holder:stand"),
+    ] {
+        assert_eq!(
+            resolves_to(&b.model, &c, &carried, pos).as_deref(),
+            Some(element),
+            "{pos:?}"
+        );
+    }
+    // A declared element still names a holder's cell first: the same chest
+    // inside the hall's space lands in the space.
+    let mut inside = Build::new([11, 6, 9]);
+    inside.room([0, 0, 0], [10, 5, 8]);
+    inside.air([0, 1, 4], [0, 2, 4]);
+    inside.paint([5, 1, 4], [5, 1, 4], "minecraft:chest");
+    assert_eq!(
+        resolves_to(&inside.model, &c, &carried, [5, 1, 4]).as_deref(),
+        Some("space:hall")
+    );
+
+    // The perturbation: no holder at any of the three cells.
+    b.stone(chest, chest);
+    let report = check_handed(
+        &b.model,
+        &c,
+        &anchors,
+        Place::Reached,
+        &[],
+        &EntityHolders::new(),
+    );
+    let g = gate(&report, "contract-anchors");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("3 anchor(s) land in nothing"),
+        "{}",
+        g.detail
+    );
+    assert!(
+        g.detail.contains("no item holder stands there either"),
+        "{}",
+        g.detail
+    );
+}
+
 /// **The face contract counts doors, not standable cells** (spec-0036 §2.8).
 ///
 /// The hall has one declared way out and 63 cells of standable floor, some of
