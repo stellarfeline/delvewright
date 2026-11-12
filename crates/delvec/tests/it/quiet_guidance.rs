@@ -37,20 +37,25 @@ fn variant_with(name: &str, mut quests: Value, mut dialogue: Value, extra: Value
         serde_json::from_str(&std::fs::read_to_string(base.join("npcs.json")).unwrap()).unwrap();
     // The story helper also writes a `title` and a `hint` onto every `kill` —
     // the lines the old rule demanded of every fight. These tests are about a
-    // fight that is quiet on purpose, so a kill that declared no line keeps none.
-    let bare_kills: Vec<String> = quests["content"]["quests"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(|q| q["objectives"].as_array().cloned().unwrap_or_default())
-        .filter(|o| o["type"] == "kill" && o.get("title").is_none() && o.get("hint").is_none())
-        .map(|o| o["id"].as_str().unwrap().to_string())
-        .collect();
+    // fight that is quiet on purpose, so a kill keeps only the lines it declared.
+    let kills_without = |field: &str| -> Vec<String> {
+        quests["content"]["quests"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|q| q["objectives"].as_array().cloned().unwrap_or_default())
+            .filter(|o| o["type"] == "kill" && o.get(field).is_none())
+            .map(|o| o["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (untitled, unhinted) = (kills_without("title"), kills_without("hint"));
     common::declare_story(&mut quests, &npcs, &dialogue);
     for q in quests["content"]["quests"].as_array_mut().unwrap() {
         for o in q["objectives"].as_array_mut().unwrap() {
-            if bare_kills.iter().any(|id| o["id"] == *id) {
+            if untitled.iter().any(|id| o["id"] == *id) {
                 o.as_object_mut().unwrap().remove("title");
+            }
+            if unhinted.iter().any(|id| o["id"] == *id) {
                 o.as_object_mut().unwrap().remove("hint");
             }
         }
