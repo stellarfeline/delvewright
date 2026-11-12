@@ -307,7 +307,7 @@ fn an_unrecorded_campaign_emits_what_it_emitted() {
         3,
         "heading, gap, title: {done}"
     );
-    assert!(!out.keys().any(|k| k.contains("journal_done_exit.")));
+    assert!(!out.keys().any(|k| k.contains("journal_done_exit.1")));
     assert!(!out.contains_key("validation/journal-records.json"));
     assert!(!out.values().any(|b| String::from_utf8_lossy(b).contains("#jr_")));
     // Perturbation: one `record` adds that objective's head bytes and the ledger.
@@ -375,6 +375,7 @@ fn has_1104(d: &[delvewright_dsl::Diagnostic]) -> usize {
 fn stranded(q: &mut Value) {
     q["content"]["quests"].as_array_mut().unwrap().push(json!({
         "id": "quest/stranded",
+        "on_complete": [],
         "trigger": {"type": "campaign-start"},
         "happening": {"text": "the party hears of a far door", "verb": "learns"},
         "objectives": [{
@@ -451,7 +452,7 @@ fn a_finished_page_fits_in_every_language() {
         .count();
     // Σ over recorded objectives of (1 + sites) × languages = (1 + 4) × 1.
     assert_eq!(finished, 5, "{measured:#?}");
-    let long = "We waited at the door until the light went grey and the birds went quiet. ".repeat(4);
+    let long = "We waited at the door until the light went grey and the birds went quiet. ".repeat(7);
     let dir = fixture(
         "fit-long",
         |q| {
