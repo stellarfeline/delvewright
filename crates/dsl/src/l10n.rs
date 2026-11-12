@@ -45,6 +45,7 @@
 //! | `actor.<actor>.answers.struck` / `.touched` | what an actor's body answers a blow / a touch (spec-0119, only if set) |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
+//! | `obj.<quest>.<obj>.record` | what the task was, on its finished journal page (spec-0137, only if set) |
 //! | `obj.<quest>.<obj>.answers.not_yet` / `.missing_item` / `.done` | what a stage-5 `interact` answers a press outside its window (spec-0117, only if set) |
 //! | `trigger.<id>.answers.not_yet` / `.done` | what a stage-5 trigger answers a press outside its window (spec-0117, only if set) |
 //! | `shortcut.<id>.answers.not_yet` / `.done` | what a shortcut's sealed door says from the far side / its thrown unlock says (spec-0117, only if set) |
@@ -53,11 +54,13 @@
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
+//! | `dlg.<npc>.<node>.opt.<i>.fx.<j>.outcome` | a `record-outcome` line on that option (spec-0137) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `wave.<wave>.mob.<i>.drop.<n>.name` | a declared quest-item drop's display `name` (v0.9, only if set) |
 //! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
 //! | `wave.<wave>.mob.<i>.equipment.<slot>.name` / `actor.<actor>.equipment.<slot>.name` | a worn piece's display `name` (v0.73, spec-0134 §5, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
+//! | `fx.…​.outcome` | a `record-outcome` line in an effect list (spec-0137) |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.rest_tooltip` / `.save_tooltip` | a `bonfire` button's hover tooltip (spec-0078, only if set) |
 //! | `fx.…​.answers.not_yet` | what a `bonfire` answers a press before its arming beat (spec-0117, only if set) |
@@ -127,6 +130,8 @@ use crate::{NarrateStyle, QuestEffect};
 fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
     match &mut eff.verb {
         Verb::Narrate(crate::Narration { text, .. }) => f(&format!("{keybase}.narrate"), text),
+        // spec-0137: the way an objective ended, read on its finished page.
+        Verb::RecordOutcome { line, .. } => f(&format!("{keybase}.outcome"), line),
         Verb::GiveItem {
             source: crate::GiveSource::Stack(crate::Stack { name: Some(n), .. }),
             ..
@@ -406,6 +411,10 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(hint) = o.hint_mut().as_mut() {
                 f(&format!("obj.{ql}.{ol}.hint"), hint);
             }
+            // spec-0137: what the task was, read on its finished page.
+            if let Some(record) = o.record_mut().as_mut() {
+                f(&format!("obj.{ql}.{ol}.record"), record);
+            }
             // Stage 5 — spec-0117: what an `interact` answers a press outside
             // its window, read off the presser's action bar. Absent → no key.
             if let crate::Objective::Interact {
@@ -456,6 +465,12 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                 // coverage obligation), like every other `only if set` string.
                 if let Some(tip) = opt.tooltip.as_mut() {
                     f(&format!("dlg.{np}.{nd}.opt.{i}.tooltip"), tip);
+                }
+                // spec-0137: the way an answer ends an objective.
+                for (j, de) in opt.effects.iter_mut().enumerate() {
+                    if let crate::DialogueEffect::RecordOutcome { line, .. } = de {
+                        f(&format!("dlg.{np}.{nd}.opt.{i}.fx.{j}.outcome"), line);
+                    }
                 }
             }
         }
@@ -828,6 +843,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         "quest" if n == 3 && last == "goal" => Objective,
         "obj" if n == 4 => match last {
             "title" | "hint" => Objective,
+            // spec-0137: what the task was, on its finished page.
+            "record" => Narration,
             "item_name" => ItemName,
             _ => return None,
         },
@@ -846,6 +863,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             (4, "text") => Dialogue,
             (6, "label") if segs[3] == "opt" => OptionLabel,
             (6, "tooltip") if segs[3] == "opt" => ButtonTooltip,
+            // spec-0137: an answer's line on the journal's finished page.
+            (8, "outcome") if segs[3] == "opt" && segs[5] == "fx" => Narration,
             _ => return None,
         },
         "wave" | "actor" => match last {
@@ -875,6 +894,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         "fx" => match last {
             "narrate" => Narration,
+            // spec-0137: a way an objective ended, on its finished page.
+            "outcome" => Narration,
             "give" => ItemName,
             "rest_prompt" => Prompt,
             "rest_label" | "save_label" => OptionLabel,

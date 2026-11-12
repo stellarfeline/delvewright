@@ -402,6 +402,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"apply-edits","batch":"batch/light-the-floor-lamps"}),
         ),
         (
+            "record-outcome",
+            json!({"type":"record-outcome","objective":"obj/talk","line":"We asked, and he listened."}),
+        ),
+        (
             "narrate",
             json!({"type":"narrate","text":"The hall answers."}),
         ),
@@ -599,9 +603,17 @@ fn every_verb_is_classified_by_what_the_emitter_does() {
         .clone();
     // And the sample hop: its start names the arc the campaign declares.
     let hop = table.iter().find(|(t, _)| *t == "hop").unwrap().1.clone();
+    // And the sample line: its ordinal is the campaign's own site's.
+    let rec = table
+        .iter()
+        .find(|(t, _)| *t == "record-outcome")
+        .unwrap()
+        .1
+        .clone();
     let c = campaign(&quests(|d| {
         common::objective_effects(d, 0, "obj/talk").push(seq.clone());
         common::objective_effects(d, 0, "obj/talk").push(hop.clone());
+        common::objective_effects(d, 0, "obj/talk").push(rec.clone());
         d["content"]["on_death"] = json!([seq.clone()]);
     }));
     let prefabs = prefabs();

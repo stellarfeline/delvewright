@@ -89,11 +89,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -162,11 +171,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -232,11 +250,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -310,11 +337,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -471,11 +507,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -891,6 +936,28 @@ impl Objective {
         }
     }
 
+    /// **What the task was** (spec-0137 §2.1), when the objective states it.
+    pub fn record(&self) -> Option<&str> {
+        match self {
+            Objective::TalkTo { record, .. }
+            | Objective::ReachAnchor { record, .. }
+            | Objective::Kill { record, .. }
+            | Objective::Collect { record, .. }
+            | Objective::Interact { record, .. } => record.as_deref(),
+        }
+    }
+
+    /// Mutable access to the optional `record` (i18n localization).
+    pub fn record_mut(&mut self) -> &mut Option<String> {
+        match self {
+            Objective::TalkTo { record, .. }
+            | Objective::ReachAnchor { record, .. }
+            | Objective::Kill { record, .. }
+            | Objective::Collect { record, .. }
+            | Objective::Interact { record, .. } => record,
+        }
+    }
+
     /// Mutable access to the optional player-facing title (i18n localization).
     pub fn title_mut(&mut self) -> &mut Option<String> {
         match self {
@@ -965,6 +1032,15 @@ impl Objective {
                 .announcement()
                 .unwrap_or(guidance.announcements)
                 .is_shown()
+    }
+
+    /// **Does this objective have an open journal page** (spec-0104 §8,
+    /// spec-0137 §3): it is announced, or it is a hidden task with a `title`
+    /// and a `hint` — whose page is shown once it has started, while nothing
+    /// of it is told in chat or followed by the compass.
+    pub fn open_paged(&self, guidance: &Guidance) -> bool {
+        self.announced(guidance)
+            || (self.title().is_some_and(|t| !t.trim().is_empty()) && self.hint().is_some())
     }
 
     /// The flags that must be set before this objective activates (v0.3).

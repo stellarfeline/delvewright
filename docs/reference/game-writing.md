@@ -304,7 +304,9 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   restates what the story has already told the player, updating as they learn
   it (step one `Talk to the innkeeper`; once her dialogue has said where to go,
   step two `Go to the mill`), so a player who skimmed or forgot can look it up;
-  it never names a place, person or thing the player has not been told. A
+  it never names a place, person or thing the player has not been told. What
+  the journal keeps once a task is over — its `record` and the lines the story
+  wrote — is written by spec-0137 §7 ([`quest-capabilities.md`](../../.claude/skills/delvewright/skills/new-delve/references/quest-capabilities.md#what-the-journal-keeps)). A
   destination is recognised by its building, and must read as what it is at
   playable scale (a tavern looks like a tavern). Guidance cues in the level
   (a path, a handhold) are diegetic and consistent across the design, blended

@@ -98,6 +98,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
+- Every objective kind takes `record`, what the task was, and the `record-outcome` verb — in any effect bundle and on a dialogue option — writes a way the task went; the journal keeps a finished task with every line its play wrote.
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.

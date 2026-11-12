@@ -263,9 +263,9 @@ fn no_objective_summons_a_marker() {
 }
 
 /// An announcement is the objective's to hide and the campaign's to default:
-/// the announce function, its once-flag, its tick line and the completion line
-/// exist for exactly the announced objectives, and the bot's completion marker
-/// is broadcast either way.
+/// the announce function, its once-flag and its tick line exist for exactly
+/// the announced objectives; the completion line for every titled one
+/// (spec-0137 §3); and the bot's completion marker is broadcast either way.
 #[test]
 fn an_announcement_follows_the_objective_and_then_the_campaign() {
     let out = guided("announce-default", None, json!({}), json!({}));
@@ -297,10 +297,12 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
     assert!(!setup.contains("dw.ann_press"), "no once-flag: {setup}");
     let tick = fn_body(&out, "tick").unwrap();
     assert!(!tick.contains("announce_o_press"), "no tick line: {tick}");
+    // spec-0137 §3: a hidden task is hidden only before it starts — its
+    // completion is told as any titled objective's is.
     let complete = fn_body(&out, "complete_o_press").unwrap();
     assert!(
-        !complete.contains("ui.objective.complete"),
-        "no completion line: {complete}"
+        complete.contains("ui.objective.complete"),
+        "the completion is told: {complete}"
     );
     assert!(
         complete.contains("[dw:complete"),

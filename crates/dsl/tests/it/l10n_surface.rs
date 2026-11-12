@@ -102,6 +102,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Class", "blurb", Inventoried),
     ("Class", "name", Inventoried),
     ("DialogueEffect", "type", Machine),
+    // spec-0137: an answer's `record-outcome` line.
+    ("DialogueEffect", "line", Inventoried),
     ("DialogueNode", "text", Inventoried),
     ("DialogueOption", "label", Inventoried),
     ("DialogueOption", "tooltip", Inventoried),
@@ -194,6 +196,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Npc", "name", Inventoried),
     ("NpcSkin", "texture_id", Reference),
     ("Objective", "hint", Inventoried),
+    // spec-0137: what the task was, on its finished journal entry.
+    ("Objective", "record", Inventoried),
     ("Objective", "item", Reference),
     ("Objective", "item_name", Inventoried),
     ("Objective", "requires_item", Reference),
@@ -258,6 +262,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("QuestEffect", "item", Reference),
     ("QuestEffect", "particle", Reference),
     ("QuestEffect", "name", Inventoried),
+    // spec-0137: a `record-outcome` line, on its objective's finished entry.
+    ("QuestEffect", "line", Inventoried),
     ("QuestEffect", "projectile", Reference),
     ("QuestEffect", "prompt", Inventoried),
     ("QuestEffect", "rest_label", Inventoried),

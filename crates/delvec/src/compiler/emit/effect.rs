@@ -534,6 +534,35 @@ pub fn effect_commands(plan: &Plan, eff: &QuestEffect, solo: bool) -> Vec<String
     body
 }
 
+/// **The ordinal of the `record-outcome` being emitted** (spec-0137 §4), from
+/// the one numbering ([`delvewright_dsl::record::outcome_sites`]): the site
+/// that is this effect, else — for a bundle the plan carries as a copy (a
+/// dialogue option's `on_respawn`) — the first site of the same objective with
+/// the same English line, whose page reads the same.
+pub(super) fn outcome_ordinal(
+    plan: &Plan,
+    objective: &str,
+    line: &str,
+    is: impl Fn(&delvewright_dsl::record::OutcomeSite<'_>) -> bool,
+) -> usize {
+    let sites = delvewright_dsl::record::outcome_sites(plan.campaign);
+    let english = |l: &str| -> String {
+        delvewright_dsl::l10n::untag(l)
+            .map_or(l, |(_, e)| e)
+            .to_string()
+    };
+    sites
+        .iter()
+        .find(|s| is(s))
+        .or_else(|| {
+            sites
+                .iter()
+                .find(|s| s.objective.as_str() == objective && english(s.line) == english(line))
+        })
+        .map(|s| s.ordinal)
+        .expect("every emitted record-outcome is one of the campaign's outcome sites")
+}
+
 /// Emit a quest effect's commands into `body`, addressing `aud`.
 ///
 /// The envelope's `audience` and `in` (spec-0085 §3.2) are resolved here, once,
@@ -780,6 +809,11 @@ pub(super) fn emit_quest_effect(
                 "function {ns}:{}",
                 crate::compiler::edit::edit_fn(batch.as_str())
             ));
+        }
+        // spec-0137 §5: the line held, and every book rewritten.
+        Verb::RecordOutcome { objective, line } => {
+            let k = outcome_ordinal(plan, objective.as_str(), line, |s| s.is_effect(eff));
+            body.extend(super::guidance::record_lines(objective.as_str(), k));
         }
         // spec-0133 §2: the removal the wave's re-seat performs, alone.
         Verb::DespawnWave { wave } => {

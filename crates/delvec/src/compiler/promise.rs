@@ -33,11 +33,13 @@
 //! resolved `announcement` is `shown` ([`Objective::announced`]) — and the hint's
 //! `tellraw` is nested inside that announcement. So:
 //!
-//! * an objective that is not announced prints **nothing at all** — no chat
-//!   line, no cue sound;
-//! * an objective with a `hint` that is not announced shows **neither** — the
-//!   hint is authored prose the emitter drops on the floor, with nothing
-//!   anywhere saying so.
+//! * an objective that is not announced prints no activation line and no cue;
+//!   with a `title` its completion is still told, and with a `title` and a
+//!   `hint` it is a hidden task whose hint is on its journal page once it has
+//!   started (spec-0137 §3);
+//! * an objective with a `hint` and no `title` shows **neither** — the hint is
+//!   authored prose the emitter drops on the floor, with nothing anywhere
+//!   saying so.
 //!
 //! # Three obligations and one contradiction
 //!
@@ -98,16 +100,12 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0862`: an objective authors a `hint` and is **not announced** — it has
-    /// no `title`, or its resolved `announcement` is `hidden` (spec-0093) — so the
-    /// emitter shows **neither** and the prompt reaches no player.
+    /// `DW0862`: an objective authors a `hint` and has no `title`, so the
+    /// emitter shows it nowhere and the prompt reaches no player.
     ///
-    /// The activation announcement is emitted only for an announced objective, and
-    /// the hint's `tellraw` is nested inside that guard — so a hint on an
-    /// unannounced objective is prose that is inventoried for translation,
-    /// rendered into every language sidecar, and never once put on a screen.
-    /// Nothing else in the toolchain says so: it is not a warning, not a lint, and
-    /// the l10n inventory counts it as a live string.
+    /// An announced objective's hint is the second line of its announcement;
+    /// a hidden task's hint is shown on its journal page, under its title, once
+    /// it has started (spec-0137 §3). An objective with no title has neither.
     pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::new("DW0862", ExitTier::Build);
 }
 
@@ -266,29 +264,23 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
             let announced = o.announced(guidance);
             b.announced += usize::from(announced);
 
-            // DW0862 — a hint the emitter will never show.
-            if hint.is_some() && !announced {
-                let why = if title.is_none() {
-                    "has no `title`".to_string()
-                } else if o.announcement().is_some() {
-                    "states `announcement: hidden`".to_string()
-                } else {
-                    "falls under the campaign's `guidance.announcements: hidden`".to_string()
-                };
+            // DW0862 — a hint the emitter will never show. A hidden task with
+            // a title shows its hint on its journal page once it has started
+            // (spec-0137 §3); with no title there is no page to put it on.
+            if hint.is_some() && title.is_none() {
                 d.push(Diagnostic::error(
                     DW_PROMPT_UNSHOWN,
                     "quests",
                     format!("{path}/hint"),
                     format!(
-                        "objective `{id}` authors a `hint` and is not announced — it {why} — so \
-                         the party is shown neither: the activation announcement is emitted \
-                         only for an announced objective and the hint's line is nested inside \
-                         it, so this prose is inventoried for translation, rendered into every \
-                         language sidecar, and never put on a screen. Give `{id}` a `title` and \
-                         let it be announced — the hint is the second line of an announcement, \
-                         not an announcement. Do NOT delete the hint to clear this: the defect \
-                         is the silence, and deleting the hint silences the beat instead of \
-                         fixing it."
+                        "objective `{id}` authors a `hint` and has no `title`, so the party is \
+                         shown neither: an announced objective's hint is the second line of its \
+                         announcement, and a hidden task's hint is shown on its journal page \
+                         under its title once it has started — with no title there is neither, \
+                         so this prose is inventoried for translation, rendered into every \
+                         language sidecar, and never put on a screen. Give `{id}` a `title`. Do \
+                         NOT delete the hint to clear this: the defect is the silence, and \
+                         deleting the hint silences the beat instead of fixing it."
                     ),
                 ));
             }

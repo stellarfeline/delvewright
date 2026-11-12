@@ -207,6 +207,14 @@ pub enum DialogueEffect {
         /// The NPC (stage-2 ref) to summon.
         npc: NpcId,
     },
+    /// Writes the way an objective ended (spec-0137 §2.2), mirroring
+    /// [`Verb::RecordOutcome`]: an answer writes the way it chose.
+    RecordOutcome {
+        /// The objective whose way this writes (any quest's).
+        objective: ObjectiveId,
+        /// The sentence: what the party did, in the span grammar.
+        line: String,
+    },
 }
 
 impl DialogueEffect {
@@ -288,6 +296,14 @@ impl DialogueEffect {
 }
 
 impl DialogueEffect {
+    /// `(objective, line)` if this is `record-outcome` (spec-0137 §2.2).
+    pub fn record_outcome(&self) -> Option<(&ObjectiveId, &str)> {
+        match self {
+            DialogueEffect::RecordOutcome { objective, line } => Some((objective, line.as_str())),
+            _ => None,
+        }
+    }
+
     /// The `set-flag` flag id if this is a v0.4 `set-flag` dialogue effect.
     pub fn set_flag(&self) -> Option<&FlagId> {
         match self {

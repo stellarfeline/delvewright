@@ -396,11 +396,10 @@ pub(super) fn quest_completion_fns(
                 })
             ));
             // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
-            // sound so progress is legible. Announced objectives only (spec-0093);
-            // v0.2 unchanged.
-            if o.announced(&c.quests.content.guidance)
-                && let Some(title) = o.title()
-            {
+            // sound so progress is legible. Every objective with a title
+            // (spec-0137 §3): a hidden task is hidden only before it starts,
+            // and its completion is told as any task's is.
+            if let Some(title) = o.title().filter(|t| !t.trim().is_empty()) {
                 body.push(format!(
                     "tellraw @a {}",
                     tr_with(

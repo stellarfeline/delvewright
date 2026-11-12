@@ -994,6 +994,7 @@
             "hint": "The Curator stands at the lectern.",
             "id": "obj/hear-the-curator",
             "npc": "npc/curator",
+            "record": "The Curator keeps the cases of the near hall, and would not open the way on for anyone who had not heard her out.",
             "requires_flags": [],
             "requires_state": [
               {
@@ -1034,6 +1035,7 @@
             "prop": {
               "block": "minecraft:stone_button[face=floor,facing=north]"
             },
+            "record": "The case on the pedestal held what the hall was keeping.",
             "requires_flags": [],
             "requires_item": "minecraft:iron_pickaxe",
             "requires_state": [
@@ -1071,6 +1073,7 @@
             "id": "obj/take-the-emeralds",
             "item": "minecraft:emerald",
             "item_name": "Hall Emerald",
+            "record": "The emeralds were the price of the counter.",
             "requires_flags": [],
             "requires_state": [
               {
@@ -1860,6 +1863,21 @@
                   }
                 ]
               }
+            },
+            {
+              "line": "We pressed the case, and the hall gave up what it kept.",
+              "objective": "obj/press-the-case",
+              "type": "record-outcome"
+            },
+            {
+              "line": "We left the label's words with her, and she nodded as if we had paid.",
+              "objective": "obj/hear-the-curator",
+              "type": "record-outcome",
+              "when": {
+                "requires_flags": [
+                  "flag/read-the-label"
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [
@@ -2312,6 +2330,7 @@
             },
             "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
+            "record": "The sergeant's muster held the line across the far hall.",
             "requires_flags": [],
             "requires_state": [
               {
@@ -2397,11 +2416,17 @@
                   },
                   "type": "despawn-wave",
                   "wave": "wave/lane"
+                },
+                {
+                  "line": "We were too slow; the lamps went out before we climbed.",
+                  "objective": "obj/climb-the-loft",
+                  "type": "record-outcome"
                 }
               ],
               "ticks": 700
             },
             "radius": 1,
+            "record": "The mezzanine's lamps would burn only so long.",
             "requires_flags": [
               "flag/muster-cleared",
               "flag/treads-held"
@@ -2423,6 +2448,7 @@
             },
             "id": "obj/reach-the-end",
             "radius": 1,
+            "record": "Nobody had told us there was an end to the hall worth reaching.",
             "requires_flags": [
               "flag/muster-cleared"
             ],
@@ -3801,6 +3827,13 @@
               "type": "damage"
             }
           ],
+          "obj/climb-the-loft": [
+            {
+              "line": "We climbed while the lamps still burned.",
+              "objective": "obj/climb-the-loft",
+              "type": "record-outcome"
+            }
+          ],
           "obj/take-the-bone": [
             {
               "piece": "prefab/gallery-hall",
@@ -5058,6 +5091,11 @@
                 }
               ]
             }
+          },
+          {
+            "line": "We read the label under the case before we took a single stone.",
+            "objective": "obj/take-the-emeralds",
+            "type": "record-outcome"
           }
         ],
         "forbids_flags": [
