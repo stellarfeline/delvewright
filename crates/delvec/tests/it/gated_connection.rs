@@ -227,7 +227,12 @@ fn changing_the_seed_moves_no_bar() {
     // moves. It is the fill's, never a place's.
     let mut fixed = 0usize;
     for cell in &moved {
-        if site.owner(*cell) == delvewright_dsl::siteplan::Owner::Ground {
+        // A cell no place owns — the rings' fixed ground, or the fill under a
+        // column's claim bottom inside a claim's box — is the whole's.
+        if !matches!(
+            site.owner(*cell),
+            delvewright_dsl::siteplan::Owner::Place(_)
+        ) {
             fixed += 1;
             continue;
         }
@@ -239,8 +244,8 @@ fn changing_the_seed_moves_no_bar() {
         }
     }
     eprintln!(
-        "seed binding: {} cell(s) of the fill moved with the seed, {fixed} of them the rings' \
-         fixed ground, 0 inside any of {} claim(s) otherwise",
+        "seed binding: {} cell(s) of the fill moved with the seed, {fixed} of them the whole's \
+         (fixed ground or fill), 0 owned by a place of {} claim(s)",
         moved.len(),
         claims.len()
     );

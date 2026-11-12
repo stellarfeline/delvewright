@@ -783,7 +783,9 @@ def contract(p: Place) -> dict:
         if cls in ("stair", "drop", "climb"):
             edge["rise"] = 0  # the level beyond is the neighbour's to measure
         edges.append(edge)
-    for s in p.sides:
+    # Scenery (`reached: false`) is never entered, so an unwalled side of it
+    # is no way out: it claims no edge (the contract refuses one).
+    for s in [] if p.scenery else p.sides:
         # A frontage a body crosses: the open side's cells are the way out
         # (spec-0123 §5.4). A counter a body does not cross stands at the play
         # space's edge, inside, and the side stays this edge's. On a plot the

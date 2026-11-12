@@ -108,7 +108,7 @@ fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {
     let plan = read_json(&p.out.join("render-plan.json"));
     assert_eq!(
         plan["threshold_shots"],
-        serde_json::json!({"shots": 26, "places": 10, "doors": 18, "open_sides": 5, "parts": 3})
+        serde_json::json!({"shots": 26, "places": 12, "doors": 18, "open_sides": 5, "parts": 3})
     );
     let shots: Vec<&serde_json::Value> = plan["shots"]
         .as_array()
@@ -175,7 +175,7 @@ fn an_undeclared_side_owes_no_clear_width_and_has_no_front() {
     let plan = read_json(&out.join("render-plan.json"));
     assert_eq!(
         plan["threshold_shots"],
-        serde_json::json!({"shots": 25, "places": 10, "doors": 18, "open_sides": 4, "parts": 3})
+        serde_json::json!({"shots": 25, "places": 12, "doors": 18, "open_sides": 4, "parts": 3})
     );
     assert!(
         plan["shots"]
