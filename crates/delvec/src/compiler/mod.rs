@@ -96,6 +96,7 @@
 //! - [`rail`]: rails as a medium — the rail cells of the assembled world joined by their shapes, and the run a pushed minecart takes (spec-0135).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
+//! - [`recording`]: `DW1104` — a `record-outcome` some story world shows (spec-0137).
 //! - [`region_fill`]: what one region write of a block leaves in each cell — a two-high block's halves by course.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
@@ -221,6 +222,7 @@ pub mod pulse;
 pub mod rail;
 pub mod raster;
 pub mod reach;
+pub mod recording;
 pub mod region_fill;
 pub mod registry;
 pub mod rehearsal;

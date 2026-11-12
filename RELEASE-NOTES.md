@@ -99,6 +99,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A place's side takes `sheer` beside `wall` and `open`: no wall stands there and the ground beyond is left as the terrain has it. Every other unwalled side of a ground place is met by the land in steps, at the place's `grade: {rise, run}` (one block per two columns when absent).
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
+- Every objective kind takes `record`, what the task was, and the `record-outcome` verb — in any effect bundle and on a dialogue option — writes a way the task went; the journal keeps a finished task with every line its play wrote.
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
@@ -106,6 +107,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
 - Every objective kind takes `ride`: the leg to it is ridden on the named vehicle.
 - A census counts a vehicle's riders: `state[].counts.of: {"riders": id}`.
+- A vehicle takes `seated` (`at-load` or `by-story`: first placed by a `seat-vehicle`) and `left` (`at-its-mark` or `where-left`: a riderless body stays where its rider left it).
 - Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
 - A `particle` and a `play-sound` can happen at staged bodies: `at: {"bodies": [...], "up"?}` and `at: {"at": "bodies", "bodies": [...]}`.
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.

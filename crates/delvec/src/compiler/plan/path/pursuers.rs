@@ -262,9 +262,13 @@ pub(crate) fn check_outrun_loose(
 /// the party walks up to a mark nothing stands at. Dated as a pursuer's
 /// lines are ([`dated`]): a `seat-vehicle` the path cannot date may fire at
 /// any step, so it seats the vehicle for every step; a `despawn-vehicle` the
-/// path cannot date, or does not certainly fire, removes nothing. Every
-/// vehicle is seated at load. `DW0311`: the leg is one its vehicle does not
-/// carry.
+/// path cannot date, or does not certainly fire, removes nothing. A vehicle
+/// is seated at load unless it is seated `by-story`, which stands nowhere
+/// until a `seat-vehicle` fires. `DW0311`: the leg is one its vehicle does not
+/// carry. A vehicle that stays where its rider left it (`left: where-left`)
+/// ridden a second time with no `seat-vehicle` the path fires between the two
+/// rides is `DW1107`: its ride is proven from its mark, and its body is where
+/// the first ride left it.
 pub(crate) fn check_ridden_vehicles_stand(
     c: &Campaign,
     firing: &PathFiring,
@@ -305,7 +309,14 @@ pub(crate) fn check_ridden_vehicles_stand(
     delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
         walk(list, &site.path, false, &site.owner, &mut lines);
     });
-    for (objective, vehicle) in rides {
+    let decl = |id: &str| {
+        c.quests
+            .content
+            .vehicles
+            .iter()
+            .find(|v| v.id.as_str() == id)
+    };
+    for &(objective, vehicle) in &rides {
         let Some(&at) = firing.obj_step.get(objective) else {
             continue;
         };
@@ -333,6 +344,45 @@ pub(crate) fn check_ridden_vehicles_stand(
         // Within one step the lines keep the order their bundle writes them
         // in (the sort is stable over the reading order).
         events.sort_by_key(|(s, _)| *s);
+        let by_story =
+            decl(vehicle).is_some_and(|v| v.seated == delvewright_dsl::VehicleSeated::ByStory);
+        if by_story && !seated_undated && !events.iter().any(|(_, seats)| *seats) {
+            return Err(PlanError::new(
+                crate::compiler::nav::DW_CRITICAL_UNROUTABLE,
+                format!(
+                    "objective `{objective}` declares its leg ridden on `{vehicle}`, which is \
+                     seated `by-story`, and no `seat-vehicle` the path fires before step {at} \
+                     seats it — the party walks up to a mark nothing stands at. Seat it at a \
+                     beat before the ride, seat it at load, or drop the objective's `ride`"
+                ),
+            ));
+        }
+        // A vehicle left where its rider leaves it: an earlier ride on it,
+        // with no seat the path fires after that ride and before this one.
+        if decl(vehicle).is_some_and(|v| v.left == delvewright_dsl::VehicleLeft::WhereLeft) {
+            let earlier = rides
+                .iter()
+                .filter(|(o, v)| *v == vehicle && *o != objective)
+                .filter_map(|(o, _)| Some((*o, *firing.obj_step.get(*o)?)))
+                .filter(|(_, s)| *s < at)
+                .max_by_key(|(_, s)| *s);
+            if let Some((first, s0)) = earlier
+                && !seated_undated
+                && !events.iter().any(|(s, seats)| *seats && *s >= s0)
+            {
+                return Err(PlanError::new(
+                    crate::compiler::nav::vehicle::DW_VEHICLE_LEFT_ELSEWHERE,
+                    format!(
+                        "objective `{objective}` declares its leg ridden on `{vehicle}`, which \
+                         stays where its rider leaves it (`left: where-left`), and `{first}` \
+                         rode it at step {s0} with no `seat-vehicle` the path fires between — \
+                         its ride is proven from its mark, and its body is wherever the first \
+                         ride left it. Seat it again between the two rides, or let it return \
+                         to its mark (drop `left`)"
+                    ),
+                ));
+            }
+        }
         if let Some((s, false)) = events.last().copied()
             && !seated_undated
         {

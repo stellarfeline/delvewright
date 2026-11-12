@@ -166,47 +166,38 @@ fn an_objective_with_no_prompt_at_all_is_not_dw0862() {
     );
 }
 
-/// The same hint under a hidden announcement — the objective's own, or the
-/// campaign's default — is the same unshown prose, and the message says which
-/// hid it. Announced again, it is clean.
+/// A hint under a hidden announcement — the objective's own, or the
+/// campaign's default — is a hidden task's hint (spec-0137 §3): shown on its
+/// journal page once it has started, so it is not refused. Without a title
+/// there is no page to put it on, and it is.
 #[test]
-fn hint_under_a_hidden_announcement_is_dw0862() {
+fn hint_under_a_hidden_announcement_is_a_hidden_tasks_hint() {
     let hidden = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
         "radius": 2, "title": "Leave the Keep", "hint": "The gate stands open.",
         "announcement": "hidden" }"#;
-    let d = promise::check(&campaign(hidden, DONE))
-        .0
-        .into_iter()
-        .find(|d| d.code == promise::DW_PROMPT_UNSHOWN)
-        .expect("a hint under `announcement: hidden` is DW0862");
-    assert!(
-        d.message.contains("states `announcement: hidden`"),
-        "{}",
-        d.message
-    );
+    let c = campaign(hidden, DONE);
+    assert!(!codes(&c).iter().any(|c| c == "DW0862"), "{:?}", codes(&c));
 
     let by_campaign = campaign_under(
         r#""guidance": { "announcements": "hidden" },"#,
         CLEAN_REACH,
         DONE,
     );
-    let d = promise::check(&by_campaign)
+    assert!(
+        !codes(&by_campaign).iter().any(|c| c == "DW0862"),
+        "{:?}",
+        codes(&by_campaign)
+    );
+
+    // Perturbed toward the refused shape: the same hidden hint with no title.
+    let untitled = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "hint": "The gate stands open.", "announcement": "hidden" }"#;
+    let d = promise::check(&campaign(untitled, DONE))
         .0
         .into_iter()
         .find(|d| d.code == promise::DW_PROMPT_UNSHOWN)
-        .expect("a hint under `guidance.announcements: hidden` is DW0862");
-    assert!(
-        d.message.contains("`guidance.announcements: hidden`"),
-        "{}",
-        d.message
-    );
-
-    // Opted back in on the objective, the campaign default no longer hides it.
-    let shown = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
-        "radius": 2, "title": "Leave the Keep", "hint": "The gate stands open.",
-        "announcement": "shown" }"#;
-    let c = campaign_under(r#""guidance": { "announcements": "hidden" },"#, shown, DONE);
-    assert!(!codes(&c).iter().any(|c| c == "DW0862"), "{:?}", codes(&c));
+        .expect("a hint with no title is DW0862");
+    assert!(d.message.contains("has no `title`"), "{}", d.message);
 }
 
 // --- DW0961: a declaration that binds to nothing ------------------------------

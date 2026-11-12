@@ -4,10 +4,13 @@ import {
   JOURNAL_PAGES_COMMAND,
   JOURNAL_POLL_MS,
   JOURNAL_SETTLE_MS,
+  judgeRecordRow,
   pagesShow,
   scoreIsOne,
   scoreIsOneCommand,
   type JournalLedger,
+  type RecordsLedger,
+  type RecordVerdict,
 } from "../journal.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -77,5 +80,32 @@ export const methods = {
         });
       }
     }
+  },
+
+  /**
+   * After the walk's last step (spec-0137 §8): the book the bot holds is read,
+   * re-read until every row of `world` reads as the compiler's world left it
+   * or {@link JOURNAL_SETTLE_MS} passes, and each row is judged.
+   */
+  async judgeJournalRecords(
+    this: MineflayerExecutor,
+    ledger: RecordsLedger,
+    world: string,
+  ): Promise<readonly RecordVerdict[]> {
+    const rows = ledger.worlds.get(world) ?? [];
+    const deadline = Date.now() + JOURNAL_SETTLE_MS;
+    let verdicts: RecordVerdict[] = [];
+    for (;;) {
+      const [reply] = await this.bracketedReplies([JOURNAL_PAGES_COMMAND]);
+      const pages = reply !== undefined && reply.answered ? reply.lines : [];
+      verdicts = rows.flatMap((row) => {
+        const obj = ledger.objectives.find((o) => o.objective === row.objective);
+        return obj === undefined ? [] : [judgeRecordRow(world, pages, obj, row)];
+      });
+      if (verdicts.every((v) => v.outcome !== "missing")) break;
+      if (Date.now() >= deadline) break;
+      await delay(JOURNAL_POLL_MS);
+    }
+    return verdicts;
   },
 };

@@ -247,9 +247,11 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         "hold",
         "resize",
     ];
-    const SAYS: [&str; 9] = [
+    const SAYS: [&str; 10] = [
         // spec-0136: a hop ends where it began.
         "hop",
+        // spec-0137: a line in the journal is said, not left in the world.
+        "record-outcome",
         "narrate",
         "play-sound",
         "stop-sound",
@@ -264,7 +266,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
     let before = named.len();
     named.dedup();
     assert_eq!(named.len(), before, "a verb is named in both classes");
-    assert_eq!(named.len(), 57);
+    assert_eq!(named.len(), 58);
     // Every effect the gallery declares (spec-0039: one instance of every
     // surface, probes included), parsed as the engine parses it. A verb the
     // lists above do not name fails here the day its gallery element lands.

@@ -93,6 +93,11 @@ fn every_verb_answers_the_census() {
             None,
         ),
         (
+            "record-outcome",
+            serde_json::json!({"type":"record-outcome","objective":"obj/talk","line":"We asked."}),
+            None,
+        ),
+        (
             "narrate",
             serde_json::json!({"type":"narrate","text":"The hall answers."}),
             None,

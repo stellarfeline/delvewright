@@ -173,6 +173,8 @@ pub fn validate_campaign_with(
     crate::wave::difficulty_checks(c, &mut d);
     crate::firework::firework_checks(c, &mut d);
     crate::loot::loot_fill_checks(c, &mut d);
+    // spec-0137: what the journal keeps of a finished task.
+    crate::record::record_checks(c, &mut d);
     crate::world_edits::apply_edits_checks(c, &mut d);
     crate::wave::mob_count_checks(c, &mut d);
     // spec-0085: the perception bundle — a particle's id, the envelope's audience

@@ -11,8 +11,15 @@
 //!
 //! # What is swept
 //!
-//! For every `hop` and every body it names, at the cell the body is **placed**
-//! on (`Plan::body_point`, its mark): every cell above the cell its feet stand
+//! For every `hop` and every body it names, at the cell the body **stands on
+//! when the hop fires**: for an NPC whose hop the critical path fires (the
+//! flow journal's `fired` names the hop's pointer at one step), the station
+//! the cast ledger gives it at that moment — the one question the story
+//! pictures ask, [`crate::compiler::view::moment::cast_at`] over
+//! [`crate::compiler::view::moment::story_at`], a planned walk's end included —
+//! and otherwise the cell it is placed on (`Plan::body_point`, its mark). An
+//! NPC the ledger has out of the world at that moment is not swept. There:
+//! every cell above the cell its feet stand
 //! in, up to the cell the top of its body reaches at the arc's peak
 //! ([`delvewright_dsl::hop_arc`]'s greatest height plus the body's own height,
 //! `nav::entity_dims`), in every column its width covers. A cell holding a
@@ -21,9 +28,9 @@
 //!
 //! # What it does not catch
 //!
-//! A body hops wherever it stands when the effect fires, and the sweep is at
-//! its placed cell alone: a body a `move-npc` / `move-actor` has walked under a
-//! lower ceiling is not judged there. The body's size is its entity's: a
+//! A hop the critical path does not fire (a branch's, an ambient trigger's)
+//! and an actor's hop are swept at the placed cell alone: a body walked
+//! elsewhere for such a hop is not judged there. The body's size is its entity's: a
 //! `resize` and a declared `scale` attribute are not followed. The cell the
 //! feet stand in is not swept — a slab or a carpet under a body is its floor.
 
@@ -103,8 +110,8 @@ impl HopGate {
     /// assembles a world and declares a hop.
     pub fn line(&self) -> String {
         format!(
-            "hop binding: {} hop(s) declared, {} body arc(s) swept at the body's placed cell over \
-             {} cell(s), {} refused (DW1103)",
+            "hop binding: {} hop(s) declared, {} body arc(s) swept where the story stands the \
+             body when the hop fires over {} cell(s), {} refused (DW1103)",
             self.declared, self.bodies, self.cells, self.refused
         )
     }
@@ -145,20 +152,59 @@ pub fn declares_one(plan: &Plan) -> bool {
 /// hop's bodies against the solved layout and hands them to [`judge`].
 pub fn check(
     plan: &Plan,
+    world: &crate::compiler::nav::World,
     blocks: &crate::compiler::blockstate::BlockMap,
 ) -> (HopGate, Vec<Failure>) {
     let declared = declared_hops(plan);
     let mut hops: Vec<Hop> = Vec::new();
+    // Where the story stands each NPC when a hop the critical path fires
+    // fires: the moment after the step whose journal names the hop.
+    let path = crate::compiler::view::beat::PathModel::critical(plan);
+    let journal = path.journal(plan);
+    let moves = std::sync::OnceLock::new();
+    let cast_when = |pointer: &str| -> Option<Vec<crate::compiler::view::moment::CastMark>> {
+        let j = journal.iter().position(|j| j.fired.contains(pointer))?;
+        let objective = journal[j].objective.as_str();
+        let at = path
+            .steps
+            .iter()
+            .position(|s| s.objective() == Some(objective))?;
+        let story = crate::compiler::view::moment::story_at(&path.steps, journal, at + 1)?;
+        let moves: &Vec<crate::compiler::nav::MovePlan> =
+            moves.get_or_init(|| crate::compiler::nav::plan_moves(plan, world).unwrap_or_default());
+        Some(crate::compiler::view::moment::cast_at(plan, &story, moves))
+    };
     for (path, height, keys) in &declared {
         let peak = hop_arc(*height).into_iter().max().unwrap_or(0);
+        let cast = cast_when(path);
         for key in keys {
             // `DW0112` owns a body no stage declares; `DW0325` and its
             // siblings own a body whose mark resolves to nothing.
             let Some(body) = key.resolve(plan.campaign) else {
                 continue;
             };
-            let Some(cell) = plan.body_point(body) else {
-                continue;
+            let dated = match (&key, &cast) {
+                (BodyKey::Npc(k), Some(marks)) => {
+                    marks.iter().find(|m| m.npc == k.npc.as_str()).map(|m| {
+                        m.at.map(|(p, _)| {
+                            [
+                                p[0].floor() as i32,
+                                p[1].floor() as i32,
+                                p[2].floor() as i32,
+                            ]
+                        })
+                    })
+                }
+                _ => None,
+            };
+            let cell = match dated {
+                // The ledger has it out of the world when the hop fires.
+                Some(None) => continue,
+                Some(Some(c)) => c,
+                None => match plan.body_point(body) {
+                    Some(c) => c,
+                    None => continue,
+                },
             };
             let (width, tall) = crate::compiler::nav::entity_dims(body.worn_entity());
             hops.push(Hop {

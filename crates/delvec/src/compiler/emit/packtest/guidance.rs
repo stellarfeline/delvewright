@@ -10,7 +10,7 @@
 use super::*;
 use crate::compiler::emit::guidance::{
     COMPASS_DATA, GUIDE, Guide, HlAct, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched,
-    display_entity,
+    display_entity, has_head, held, settle_score,
 };
 
 /// Save, drive and restore `#party` scores for one template.
@@ -395,6 +395,111 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
     );
 }
 
+/// **`guide_journal_record_<obj>`** (spec-0137 §8), one per recorded
+/// objective: as the dummy, the objective's settle score and its lines' held
+/// scores are set as the emitted functions set them, `journal_rewrite` runs,
+/// and the book holds that state's pages and no other page of the objective —
+/// unsettled with every line written (nothing shown), settled with none,
+/// settled with each one line alone, and settled with every line.
+fn emit_record_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    g: &Guide,
+    chrome: &delvewright_dsl::Chrome,
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let title = artifact_title(c);
+    let _ = chrome;
+    for w in g
+        .journaled()
+        .filter(|w| w.record.is_some() || !w.outcomes.is_empty())
+    {
+        let o = &c.quests.content.quests[w.quest].objectives[w.objective];
+        let settle = settle_score(w);
+        let head: Option<String> = if !has_head(w, o) {
+            None
+        } else if let Some(t) = o.title().filter(|t| !t.trim().is_empty()) {
+            Some(format!("{{strikethrough:1b,{}}}", match_of(&tr(t))))
+        } else {
+            w.record
+                .as_ref()
+                .map(|r| format!("{{{}}}", match_of(&tr(r))))
+        };
+        let lines_of: Vec<(usize, String)> = w
+            .outcomes
+            .iter()
+            .filter_map(|k| {
+                g.sites
+                    .iter()
+                    .find(|(oid, n, _)| *oid == w.id && n == k)
+                    .map(|(_, _, l)| (*k, format!("{{{}}}", match_of(&tr(l)))))
+            })
+            .collect();
+        let mut b = packtest_header(&format!(
+            "{title}: `{}`'s finished entry shows its head and exactly the lines the story wrote, once it settles (spec-0137 §5)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("clear @s".to_string());
+        b.push(format!("function {ns}:guide_seed"));
+        let mut d = Drive::new("jrec");
+        d.put(&settle, 0);
+        b.extend(d.open());
+        let state = |b: &mut Vec<String>, settled: bool, written: &[usize]| {
+            b.push(format!(
+                "scoreboard players set {} {settle} {}",
+                plan::PARTY,
+                i32::from(settled)
+            ));
+            for (k, _) in &lines_of {
+                b.push(format!(
+                    "scoreboard players set {} {GUIDE} {}",
+                    held(&w.id, *k),
+                    i32::from(written.contains(k))
+                ));
+            }
+            b.push(format!("function {ns}:journal_rewrite"));
+            if let Some(h) = &head {
+                b.extend(count_pages("#jrec_h", std::slice::from_ref(h)));
+                b.push(format!(
+                    "assert score #jrec_h {GUIDE} matches {}",
+                    i32::from(settled)
+                ));
+            }
+            for (k, m) in &lines_of {
+                b.extend(count_pages("#jrec_l", std::slice::from_ref(m)));
+                b.push(format!(
+                    "assert score #jrec_l {GUIDE} matches {}",
+                    i32::from(settled && written.contains(k))
+                ));
+            }
+        };
+        let all: Vec<usize> = lines_of.iter().map(|(k, _)| *k).collect();
+        state(&mut b, false, &all);
+        state(&mut b, true, &[]);
+        for k in &all {
+            state(&mut b, true, &[*k]);
+        }
+        state(&mut b, true, &all);
+        for (k, _) in &lines_of {
+            b.push(format!(
+                "scoreboard players set {} {GUIDE} 0",
+                held(&w.id, *k)
+            ));
+        }
+        b.extend(d.close());
+        b.push("clear @s".to_string());
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/guide_journal_record_{}.mcfunction",
+                w.safe
+            ),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
 /// The journal's templates (§8): pages open and done, the mark, a dropped book
 /// removed and given back, and a joining player's book written from the state.
 pub(super) fn emit_journal_packtests(
@@ -415,6 +520,7 @@ pub(super) fn emit_journal_packtests(
         let o = &c.quests.content.quests[w.quest].objectives[w.objective];
         match_of(&tr(o.title().unwrap_or_default()))
     };
+    emit_record_packtests(plan, out, g, chrome);
     let Some(first) = g.announced().find(|w| drivable(plan, w)) else {
         return;
     };

@@ -225,13 +225,13 @@ export const methods = {
     // OUTSIDE it — the compiler names the cell either way. The bot walks there as a block
     // goal, and then acts without walking again; the sequencer awaits the
     // landing (`transport`) after the fired marker, as for every carried step.
-    // spec-0134 §2: the route proof's leg to a shot ends at its target, as
-    // every trigger's leg ends at what it acts on; the walk to the target
-    // consumes that leg (the lockstep order every later leg is matched in),
-    // and the stance the build proved sees the target is then a short walk
-    // of its own, back from it.
-    if (step.on === "shot") {
-      await this.walkTo(step.pos, INTERACT_RANGE, `${label} — to its target`);
+    // spec-0134 §2: the route proof's leg to a shot ends at its stance
+    // (`nav::route::positions_of`), the cell the build proved sees the
+    // target and exports as `stand`; the target itself may sit where no body
+    // stands. The bot walks to the stance alone, consuming that leg, and a
+    // shot with no stance has no cell to be loosed from.
+    if (step.on === "shot" && !step.stand) {
+      throw new Error(`${label}: the step names no stance to loose from (\`stand\`)`);
     }
     if (step.stand) {
       await this.walkTo(step.stand, 0, `${label} — to its stand cell`);

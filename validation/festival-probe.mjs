@@ -25,6 +25,15 @@
 //       stands, walks into it, or has just left another vehicle;
 //   T13 a saddled camel and three players who each click it: how many it
 //       seats by a click.
+//   T14 the yaw a summoned mount holds: saddled pigs summoned as a build seats a
+//       vehicle (`Rotation:[<yaw>f,0f]`, the wait modifier), one per facing, beside
+//       the same summon with `NoAI:1b` and one with no modifier; `Rotation` read
+//       live every second with no player within 300 blocks, then with one beside
+//       them, then from the saved entity region file.
+//   T15 a mount summoned with `NoAI:1b` beside the wait modifier: is it boarded
+//       by a click, does `started_riding` fire, does its reward's `NoAI:0b` give
+//       it back to the rider, does it hold its yaw while it waits; a pig and a
+//       tame horse.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -145,6 +154,7 @@ async function installPack() {
       `execute on vehicle run attribute @s[tag=dw_still] minecraft:movement_speed modifier remove dw_probe:still\n` +
       `execute on vehicle run data merge entity @s[tag=dw_push] {Motion:[0.3d,0.0d,0.0d]}\n` +
       `execute on vehicle run data merge entity @s[tag=dw_push_s] {Motion:[0.0d,0.0d,0.3d]}\n` +
+      `execute on vehicle run data merge entity @s[tag=dw_noai] {NoAI:0b}\n` +
       `advancement revoke @s only dw_probe:riding\n`,
   )
   for (const n of ['target_any', 'target_strong', 'spyglass']) {
@@ -229,7 +239,7 @@ async function rideState(bot) {
   return `clientVehicle=${bot.vehicle?.name ?? 'none'} serverRootVehicle=${server ?? 'none'}`
 }
 async function clearBodies() {
-  for (const t of ['arrow', 'snowball', 'firework_rocket', 'item', 'experience_orb', 'goat', 'pig', 'oak_boat', 'minecart', 'chicken']) {
+  for (const t of ['arrow', 'snowball', 'firework_rocket', 'item', 'experience_orb', 'goat', 'pig', 'horse', 'oak_boat', 'minecart', 'chicken']) {
     await rcon.probe(`kill @e[type=minecraft:${t}]`)
   }
   await sleep(600)
@@ -1043,6 +1053,120 @@ async function t11(bot) {
   await rcon.probe('kill @e[tag=dw_boat]')
 }
 
+// ---- T14: the yaw a summoned mount holds -------------------------------------------
+function parseRot(s) {
+  if (!s) return null
+  const m = s.match(/\[([-\d.E]+)f, ([-\d.E]+)f\]/)
+  return m ? [Number(m[1]), Number(m[2])] : null
+}
+async function t14(bot) {
+  await home(bot)
+  await clearBodies()
+  const P = { x: H.x - 20, z: H.z - 20 }
+  // The summon `emit::vehicle::vehicle_summon` writes for a saddled pig, at a
+  // cell centre, then its wait line.
+  const pigs = [
+    { tag: 'dw_y0', yaw: 0, dx: 0, wait: true, noai: false },
+    { tag: 'dw_y90', yaw: 90, dx: 4, wait: true, noai: false },
+    { tag: 'dw_y180', yaw: 180, dx: 8, wait: true, noai: false },
+    { tag: 'dw_y270', yaw: 270, dx: 12, wait: true, noai: false },
+    { tag: 'dw_y0_noai', yaw: 0, dx: 16, wait: true, noai: true },
+    { tag: 'dw_y0_free', yaw: 0, dx: 20, wait: false, noai: false },
+  ]
+  begin('T14-summoned', 'six saddled pigs as a build seats a vehicle: yaw 0/90/180/270 with the wait modifier, yaw 0 with NoAI, yaw 0 with no modifier; the bot 400 blocks off in the void')
+  await rcon.run(`gamemode creative ${BOT}`)
+  await rcon.run(`tp ${BOT} ${H.x + 400} -59 ${H.z}`)
+  await sleep(1500)
+  for (const p of pigs) {
+    await rcon.run(
+      `summon minecraft:pig ${P.x + p.dx + 0.5} ${FLOOR_Y + 1} ${P.z + 0.5} {Invulnerable:1b,PersistenceRequired:1b,Silent:1b,` +
+        `${p.noai ? 'NoAI:1b,' : ''}Rotation:[${p.yaw}f,0f],Tags:["dw_vehicle","${p.tag}"],` +
+        `equipment:{saddle:{id:"minecraft:saddle",count:1}},drop_chances:{saddle:0.0f}}`,
+    )
+    if (p.wait) {
+      await rcon.run(`attribute @e[tag=${p.tag},limit=1] minecraft:movement_speed modifier add dw_probe:vehicle_wait -1 add_multiplied_total`)
+    }
+  }
+  const readAll = async (label) => {
+    const out = []
+    for (const p of pigs) {
+      const r = parseRot(await entityGet(`@e[tag=${p.tag},limit=1]`, 'Rotation'))
+      const pos = parsePos(await entityGet(`@e[tag=${p.tag},limit=1]`, 'Pos'))
+      out.push(`${p.tag}=${r ? r.map(f2).join('/') : '-'}@${pos ? f2(dist2(pos, [P.x + p.dx + 0.5, 0, P.z + 0.5])) : '-'}`)
+    }
+    row(label, ...out)
+  }
+  await readAll('t=0')
+  for (let i = 1; i <= 30; i++) {
+    await sleep(1000)
+    await readAll(`far t=${i}s`)
+  }
+  begin('T14-player-beside', 'the bot stands 3 blocks south of the row, survival, for 15 s')
+  await rcon.run(`gamemode survival ${BOT}`)
+  await home(bot, { x: P.x + 10.5, y: FLOOR_Y + 1, z: P.z + 3.5 })
+  for (let i = 1; i <= 15; i++) {
+    await sleep(1000)
+    await readAll(`near t=${i}s`)
+  }
+  begin('T14-saved', 'save-all flush; the entity region file read back with tools/lib/anvil.py on the host')
+  await rcon.run(`tp ${BOT} ${H.x + 400} -59 ${H.z}`)
+  await rcon.run(`gamemode creative ${BOT}`)
+  await sleep(2000)
+  await readAll('live before save')
+  row('save', await rcon.probe('save-all flush'))
+  await sleep(3000)
+  // An existing directory: the save's `entities/` is copied into it.
+  const dir = process.env.T14_SAVE_DIR
+  if (dir) {
+    await execFileP('docker', ['cp', `${container}:/data/world/entities`, dir])
+    const { stdout } = await execFileP('python3', ['-I', '-c',
+      'import sys, json, pathlib; sys.path.insert(0, sys.argv[1]); import anvil\n' +
+      'for e in anvil.entities(pathlib.Path(sys.argv[2])):\n' +
+      '    t=[x for x in e.get("Tags",[]) if x.startswith("dw_y")]\n' +
+      '    if t: print(t[0], json.dumps(e.get("Rotation")))\n',
+      new URL('../tools/lib', import.meta.url).pathname, dir])
+    for (const l of stdout.trim().split('\n')) row('saved', l)
+  } else {
+    row('saved', 'T14_SAVE_DIR unset: the region file is not read')
+  }
+  await rcon.probe('kill @e[tag=dw_vehicle]')
+}
+
+// ---- T15: a mount that waits without its AI ------------------------------------------
+async function t15(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.run(`gamemode survival ${BOT}`)
+  const P = { x: H.x + 20, z: H.z + 20 }
+  const mounts = [
+    { kind: 'pig', name: 'pig', hand: 'carrot_on_a_stick', extra: '' },
+    { kind: 'horse', name: 'horse', hand: null, extra: 'Tame:1b,' },
+  ]
+  for (const m of mounts) {
+    const tag = `dw_t15_${m.kind}`
+    begin(`T15-${m.kind}`, `a saddled ${m.kind} summoned as a build seats a mount, with NoAI:1b and the wait modifier, yaw 90; the bot boards it by a click; the started_riding reward writes NoAI:0b and removes the modifier`)
+    await rcon.run(
+      `summon minecraft:${m.kind} ${P.x + 0.5} ${FLOOR_Y + 1} ${P.z + 0.5} {Invulnerable:1b,PersistenceRequired:1b,Silent:1b,${m.extra}NoAI:1b,` +
+        `Rotation:[90f,0f],Tags:["dw_vehicle","${tag}","dw_noai","dw_still"],` +
+        `equipment:{saddle:{id:"minecraft:saddle",count:1}},drop_chances:{saddle:0.0f}}`,
+    )
+    await rcon.run(`attribute @e[tag=${tag},limit=1] minecraft:movement_speed modifier add dw_probe:still -1 add_multiplied_total`)
+    for (let i = 1; i <= 5; i++) {
+      await sleep(1000)
+      row(`wait t=${i}s`, `rot=${await entityGet(`@e[tag=${tag},limit=1]`, 'Rotation')}`, `pos=${parsePos(await entityGet(`@e[tag=${tag},limit=1]`, 'Pos'))?.map(f2)}`)
+    }
+    await home(bot, { x: P.x + 0.5, y: H.y, z: P.z + 2.5 })
+    await hold(bot, m.hand)
+    const b = await score('#riding')
+    row('mount', await mountByClick(bot, m.name), `startedRidingCount=${(await score('#riding')) - b}`,
+      `noAI=${await entityGet(`@e[tag=${tag},limit=1]`, 'NoAI')}`, `speed=${await speedOf(tag)}`)
+    await clientDrive(bot, tag, 'clientMoveAfterBoarding', 1, 0, 2000)
+    await rcon.probe(`ride ${BOT} dismount`)
+    await sleep(500)
+    await rcon.probe(`kill @e[tag=${tag}]`)
+  }
+}
+
 async function teardown(bot) {
   try {
     await clearBodies()
@@ -1081,6 +1205,8 @@ try {
   if (wants('T11')) await t11(bot)
   if (wants('T12')) await t12(bot)
   if (wants('T13')) await t13(bot)
+  if (wants('T14')) await t14(bot)
+  if (wants('T15')) await t15(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)

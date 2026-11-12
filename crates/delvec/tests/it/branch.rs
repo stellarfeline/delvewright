@@ -502,6 +502,114 @@ fn an_elective_producer_of_a_sibling_flag_is_a_world_that_skips_it() {
     );
 }
 
+/// A free choice is a choice (the town's grey mare): a dialogue option that
+/// completes no objective sets a fork's flag, beside an option that sets
+/// nothing. A player may leave the Keeper's lore unasked, so a world that never
+/// takes it realizes the branch that pins its flag unset — neither unreachable
+/// (`DW0482`) nor leaking (`DW0484`).
+#[test]
+fn a_dialogue_option_that_completes_nothing_is_a_choice_a_player_may_decline() {
+    let c = campaign_with(|plan, _, dialogue| {
+        dialogue["content"]["dialogues"][0]["nodes"][1]["options"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "label": "Tell me where the old road ran.",
+                "effects": [{ "type": "set-flag", "flag": "flag/told" }],
+                "happening": { "subject": "npc/keeper", "text": "The Keeper tells the party where the old road ran.", "verb": "learns" }
+            }));
+        plan["content"]["branch_points"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "branch-point/road", "opens_at": "quest/decide", "forks_on": ["flag/told"],
+                "branches": [
+                    { "id": "branch/told", "flags": ["flag/told"], "leads_to": "quest/decide" },
+                    { "id": "branch/untold", "flags": [], "leads_to": "quest/decide" }
+                ]
+            }));
+    });
+    let d = branch::check_branches(&c);
+    let about: Vec<_> = d
+        .iter()
+        .filter(|x| (x.code == "DW0482" || x.code == "DW0484") && x.message.contains("told"))
+        .collect();
+    assert!(about.is_empty(), "{about:#?}");
+    let untold = branch::realize(&c)
+        .into_iter()
+        .filter(|r| r.branch.id.contains("branch/untold"))
+        .collect::<Vec<_>>();
+    assert_eq!(untold.len(), 2, "one per gate branch: {untold:#?}");
+    assert!(untold.iter().all(|r| r.world.is_some()), "{untold:#?}");
+}
+
+/// The same option where it is the only way to answer the Keeper — it
+/// completes the talk the mainline needs — is taken in every world, so its
+/// fork's unset branch is still `NOT REACHABLE` and still leaks.
+#[test]
+fn a_dialogue_option_that_completes_an_objective_is_still_taken_in_every_world() {
+    let c = campaign_with(|plan, quests, dialogue| {
+        let greeting = &mut dialogue["content"]["dialogues"][0]["nodes"][0]["options"];
+        for o in greeting.as_array_mut().unwrap() {
+            if o["label"] == "We hold." || o["label"] == "I run." {
+                o["effects"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({ "type": "set-flag", "flag": "flag/told" }));
+            }
+        }
+        let _ = quests;
+        plan["content"]["branch_points"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "branch-point/road", "opens_at": "quest/decide", "forks_on": ["flag/told"],
+                "branches": [
+                    { "id": "branch/told", "flags": ["flag/told"], "leads_to": "quest/decide" },
+                    { "id": "branch/untold", "flags": [], "leads_to": "quest/decide" }
+                ]
+            }));
+    });
+    let d = find(branch::check_branches(&c), "DW0482");
+    assert!(d.message.contains("branch/untold"), "{}", d.message);
+    let d = find(branch::check_branches(&c), "DW0484");
+    assert!(d.message.contains("branch/untold"), "{}", d.message);
+}
+
+/// Two elective acts on two forks (the town's shop offer and its stable-yard
+/// trigger): the all world performs both and the none world neither, so a
+/// branch that takes one and leaves the other has no world but a witness the
+/// story search runs over the acts a fork turns on.
+#[test]
+fn a_branch_one_elective_takes_and_another_leaves_has_a_witness() {
+    let c = campaign_with(|plan, quests, _| {
+        quests["content"]["triggers"] = serde_json::json!([
+            { "id": "trigger/bell", "at": "anchor/door", "on": { "on": "use" },
+              "effects": [{ "type": "set-flag", "flag": "flag/rang" }] },
+            { "id": "trigger/lamp", "at": "anchor/exit", "on": { "on": "use" },
+              "effects": [{ "type": "set-flag", "flag": "flag/lit" }] }
+        ]);
+        for (id, flag) in [("bell", "flag/rang"), ("lamp", "flag/lit")] {
+            plan["content"]["branch_points"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": format!("branch-point/{id}"), "opens_at": "quest/decide", "forks_on": [flag],
+                    "branches": [
+                        { "id": format!("branch/{id}-yes"), "flags": [flag], "leads_to": "quest/decide" },
+                        { "id": format!("branch/{id}-no"), "flags": [], "leads_to": "quest/decide" }
+                    ]
+                }));
+        }
+    });
+    let d = branch::check_branches(&c);
+    let about: Vec<_> = d
+        .iter()
+        .filter(|x| x.code == "DW0482" || x.code == "DW0484")
+        .collect();
+    assert!(about.is_empty(), "{about:#?}");
+}
+
 // --- DW0485: hard event contradictions -------------------------------------
 
 /// `dies` then acts, on one branch, with both chronicle lines shown.

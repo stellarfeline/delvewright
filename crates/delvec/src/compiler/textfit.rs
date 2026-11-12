@@ -79,7 +79,7 @@
 //! authored shape of the wine-beat pattern: **button = caption, tooltip = the full
 //! line.**
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
     Campaign, Diagnostic, L10nDoc, NarrateStyle, OptionLabel, bonfire_option_labels,
@@ -564,7 +564,7 @@ pub fn check_book_pages(
         .flat_map(|q| {
             q.objectives
                 .iter()
-                .filter(|o| o.announced(guidance))
+                .filter(|o| o.open_paged(guidance))
                 .map(move |o| {
                     (
                         format!(
@@ -579,6 +579,31 @@ pub fn check_book_pages(
         })
         .collect();
     let compass = announced.iter().any(|(_, _, t)| *t);
+    // spec-0137 §6: every recorded objective's finished entry — its head page
+    // and each line's page.
+    let sites = delvewright_dsl::record::outcome_sites(c);
+    let named: BTreeSet<&str> = sites.iter().map(|s| s.objective.as_str()).collect();
+    let recorded: Vec<(String, &delvewright_dsl::Objective)> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| {
+            q.objectives
+                .iter()
+                .filter(|o| o.record().is_some() || named.contains(o.id().as_str()))
+                .map(move |o| {
+                    (
+                        format!(
+                            "obj.{}.{}",
+                            delvewright_dsl::l10n::local_id(q.id.as_str()),
+                            delvewright_dsl::l10n::local_id(o.id().as_str())
+                        ),
+                        o,
+                    )
+                })
+        })
+        .collect();
     let mut d = Vec::new();
     let mut measured = Vec::new();
     let mut langs: Vec<(String, Option<&L10nDoc>)> = vec![("en".to_string(), None)];
@@ -654,6 +679,41 @@ pub fn check_book_pages(
                 format!("the open page of `{}`", o.id().as_str()),
                 page_lines(&p),
             ));
+        }
+        for (key, o) in &recorded {
+            let title = o
+                .title()
+                .filter(|t| !t.trim().is_empty())
+                .map(|t| text(&format!("{key}.title"), &delvewright_dsl::l10n::plain(t)));
+            let record = o
+                .record()
+                .map(|r| text(&format!("{key}.record"), &delvewright_dsl::l10n::plain(r)));
+            if title.is_some() || record.is_some() {
+                let head = chrome(ch::JOURNAL_DONE);
+                let mut p: Vec<(&str, bool)> = vec![(head.as_str(), false)];
+                if let Some(t) = &title {
+                    p.push((t.as_str(), false));
+                }
+                if let Some(r) = &record {
+                    p.push((r.as_str(), false));
+                }
+                pages.push((
+                    format!("finished page of `{}`", o.id().as_str()),
+                    page_lines(&p),
+                ));
+            }
+            for site in sites.iter().filter(|s| s.objective == o.id()) {
+                let line = text(&site.key, &delvewright_dsl::l10n::plain(site.line));
+                pages.push((
+                    format!(
+                        "finished page of `{}`, line {} (`{}`)",
+                        o.id().as_str(),
+                        site.ordinal,
+                        site.place()
+                    ),
+                    page_lines(&[(line.as_str(), false)]),
+                ));
+            }
         }
         for (page, n) in pages {
             if n > BOOK_LINES {

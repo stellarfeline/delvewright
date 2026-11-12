@@ -14,6 +14,11 @@ import {
   journalBindingLine,
   journalFailures,
   loadJournalLedgerForCriticalPath,
+  loadRecordsLedgerForCriticalPath,
+  recordsBinding,
+  recordsBindingLine,
+  recordsFailures,
+  worldOfPath,
 } from "./journal.ts";
 import {
   ShotSubjectObserver,
@@ -692,6 +697,19 @@ async function main(): Promise<number> {
     }
     // Every page a quest start owed was on the journal the bot held.
     const journalFails = journalFailures(executor.journalVerdicts);
+    // spec-0137 §8: the finished pages this world's walk leaves, read once the
+    // walk is over.
+    const recordsLedger = await loadRecordsLedgerForCriticalPath(pathArg);
+    if (recordsLedger && pathFailure === undefined) {
+      const world = worldOfPath(pathArg, recordsLedger);
+      const verdicts = world === null ? [] : await executor.judgeJournalRecords(recordsLedger, world);
+      const b = recordsBinding(verdicts);
+      process.stderr.write(`${recordsBindingLine(world, b)}\n`);
+      for (const f of recordsFailures(verdicts)) {
+        process.stderr.write(`[journal] FAIL ${f}\n`);
+        journalFails.push(f);
+      }
+    }
     if (journalLedger) {
       const b = journalBinding(journalLedger, executor.journalStarted, executor.journalVerdicts);
       const line = journalBindingLine(b);

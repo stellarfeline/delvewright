@@ -147,6 +147,7 @@ mod i18n_sidecar;
 mod i18n_v2;
 mod inline_styles;
 mod integration_pairs;
+mod journal_records;
 mod l10n_apply;
 mod laid_footing_root;
 mod lava_floor;

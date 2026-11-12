@@ -3,6 +3,7 @@
 - [Reference: what a quest can do](#reference-what-a-quest-can-do)
 - [Objectives](#objectives)
 - [A task that can be lost](#a-task-that-can-be-lost)
+- [What the journal keeps](#what-the-journal-keeps)
 - [Items, containers and loot](#items-containers-and-loot)
 - [State, flags and gates](#state-flags-and-gates)
 - [The story layer](#the-story-layer)
@@ -37,6 +38,16 @@ The verbs, effects and fields available in `quests.json` and `dialogue.json`. Ge
 - **The clock starts at `activation`** (when the objective is announced), **`quest-start`**, or **`{"objective": "obj/<ancestor>"}`** — one clock over a chain, from an earlier objective of the same quest the limited one comes `after`. A `quest-start` clock on the delve's first quest starts when the first player arrives; a task whose clock runs out before the party reaches it is already lost when it opens, and its `on_expire` fires then. The party watches it as a bar at the top of the screen; a limit on an objective with no title, or one whose announcement is hidden, is refused (`DW1085`), because a clock the player cannot see is a trap.
 - **Leave room beyond the walk.** The build measures the walk from where the clock starts to the objective at a sprint and refuses a window shorter than it (`DW1084`, its `limit binding` line printing the walk as a share of the window); a fight, a search, a shot or reading a line all take time the walk does not count. A window the walk fills is a sprint nobody makes on a first visit.
 - **Every limit is a world the build exports and the bot walks by waiting** (*Reference: ladder*, *Branch runs*): the party's run in which that one task lapses must still reach an ending.
+
+## What the journal keeps
+
+A finished task stays in the journal: its title struck through, then what the task was, then every way the party went about it, each line on a page of its own, in the order the story wrote them. The creator writes the words; the engine keeps the lines the play reached.
+
+- **`record`** on an objective is what the task was, said after it is over: *The road north was too long to walk, and the stable had one horse left.* It never says how the task went.
+- **`record-outcome {objective, line}`** is an effect: the way the task went, written by the event that decides it. Put it in the bundle the story already writes for that event — the answer that pays the keeper, the answer that sends him away, the completion bundle (behind a `when` on what the party holds), a trigger, the `on_expire` of a task that can be lost. Every line the play reaches is kept; a task with checkpoints gets a line for each branch at each checkpoint.
+- **A hidden task** (`announcement: hidden`) says nothing before it starts. Once it is under way its `hint`, if it has one, is on its journal page; when it is done, its completion is told like any task's; once it is over, its `record` and lines are kept like any task's.
+- **Mandatory step of quest expansion — write each line by this rule.** A `record` says what the task was and never how it went. An outcome line says what the party did, in the past, in a sentence or two, naming what was done and to whom — never what it will lead to. Each stands alone: the page shows it apart from the scene, and the reader may have forgotten the scene. The person and voice are the campaign's. A task with one way needs no outcome line. Write the line where the way is decided — where you are already writing the answer.
+- A line no play can reach is refused (`DW1104`): put it on the event that decides that way.
 
 ## Items, containers and loot
 
@@ -225,6 +236,8 @@ Run each of these; each names what it judges and how many objects it bound.
 - A gate can wait for riders: `state[].counts` with `"of": {"riders": "vehicle/<id>"}` counts the players aboard inside its `region`, and a `body-enters` trigger over it fires when the first one boards. Put that datum in the `requires_state` of an objective that declares `ride` on the same vehicle and the objective completes only from the saddle: the ride then goes all the way in.
 - A pig or a strider is steered by an item in the rider's hand: put a carrot on a stick (a warped fungus on a stick for a strider) in every class's kit, or give it before the ride.
 - `seat-vehicle` puts a vehicle back at its mark from a beat; `despawn-vehicle` takes it away for good (its re-seat stops with it).
+- A ride the story hands out later — a mount hired or stolen at a beat — is declared `"seated": "by-story"`: nothing stands at its mark until a `seat-vehicle` fires, and a ride on it before that is refused.
+- A vehicle nobody rides goes back to its mark within five seconds. A borrowed mount that should stay where its rider left it — so "not brought back" is a place the player can find — is declared `"left": "where-left"`; the story brings it home with `seat-vehicle`. A second ridden leg on it with no `seat-vehicle` between the two is refused (`DW1107`).
 
 ## Sealed things, and pacing
 

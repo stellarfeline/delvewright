@@ -431,6 +431,14 @@ impl QuestEffect {
         }
     }
 
+    /// `(objective, line)` if this is `record-outcome` (spec-0137 §2.2).
+    pub fn record_outcome(&self) -> Option<(&crate::ObjectiveId, &str)> {
+        match &self.verb {
+            Verb::RecordOutcome { objective, line } => Some((objective, line.as_str())),
+            _ => None,
+        }
+    }
+
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match &self.verb {
@@ -566,6 +574,8 @@ impl QuestEffect {
             | Verb::FillLoot { .. }
             // spec-0134's `apply-edits`.
             | Verb::ApplyEdits { .. }
+            // spec-0137's `record-outcome`.
+            | Verb::RecordOutcome { .. }
             // spec-0136's moves.
             | Verb::Hop { .. }
             | Verb::Pose { .. }

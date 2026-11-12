@@ -98,6 +98,9 @@ pub(super) fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     DialogueEffect::SpawnNpc { npc } => {
                         spawns_npcs.push(npc.as_str().to_string());
                     }
+                    // spec-0137: emitted from the option's own effect, which
+                    // the one numbering knows by identity.
+                    DialogueEffect::RecordOutcome { .. } => {}
                 }
             }
             options.push(OptionPlan {

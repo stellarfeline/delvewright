@@ -654,6 +654,16 @@ fn validate_loaded_with(
                 examined.extend(ebind.lines());
                 diags.extend(ed);
             }
+            // spec-0137: every line the journal can keep is shown in some
+            // story world (`DW1104`). Bound in the one funnel; the binding line
+            // prints whenever the campaign records an objective.
+            {
+                let (rd, rbind) = delvec::compiler::recording::check(&campaign);
+                if rbind.objectives > 0 {
+                    examined.push(rbind.line());
+                }
+                diags.extend(rd);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares
@@ -774,6 +784,12 @@ pub(crate) fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -
     }
     let adiags = analyze_campaign(&v.campaign, &v.prefabs);
     print_diags(&adiags, json);
+    // spec-0137 §9: the reviewer's table of what the journal keeps.
+    if !json {
+        for line in delvec::compiler::recording::review_table(&v.campaign) {
+            eprintln!("{line}");
+        }
+    }
     if adiags.is_empty() {
         ExitCode::SUCCESS
     } else {

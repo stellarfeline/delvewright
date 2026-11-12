@@ -1971,6 +1971,11 @@ fn emit_all(
     if let Some(j) = guidance::journal_ledger(plan, &guide) {
         put_json(&mut out, "validation/journal-starts.json", &j);
     }
+    // spec-0137 §8: what each walked world leaves on a recorded objective's
+    // finished page, read by the bot off the book it holds.
+    if let Some(j) = guidance::journal_records_ledger(plan) {
+        put_json(&mut out, "validation/journal-records.json", &j);
+    }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }

@@ -67,6 +67,11 @@
                   {
                     "npc": "npc/marshal",
                     "type": "spawn-npc"
+                  },
+                  {
+                    "line": "We stopped and read the label, as the Curator asked.",
+                    "objective": "obj/hear-the-curator",
+                    "type": "record-outcome"
                   }
                 ],
                 "happening": {
@@ -131,6 +136,11 @@
                   {
                     "npc": "npc/marshal",
                     "type": "spawn-npc"
+                  },
+                  {
+                    "line": "We walked past the label without reading it.",
+                    "objective": "obj/hear-the-curator",
+                    "type": "record-outcome"
                   }
                 ],
                 "happening": {

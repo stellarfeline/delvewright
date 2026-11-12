@@ -1544,6 +1544,20 @@ fn prove_class(
     }
 }
 
+/// **Where a body is in a space, for a walk's end**: the standable `floor`
+/// of it, and the water a body swims in with its body in the space's `cells`
+/// ([`swum_cells`]) — a space whose floor is the sea is reached and left by
+/// swimming, as the route proof's leg swims it (spec-0134 §10). The edge proof
+/// and `delvec grammar survey` both take a walk's ends here, so the edge a
+/// starter declares from the survey's join is the edge the gate proves.
+pub(crate) fn walk_ends(
+    world: &crate::compiler::nav::World,
+    floor: &BTreeSet<[i32; 3]>,
+    cells: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    floor.union(&swum_cells(world, cells)).copied().collect()
+}
+
 /// **Does a `walk` join `a` and `b` both ways, over the floor `graph` names**
 /// — the edge proof's one answer for a walk: [`body_connected`] each way over
 /// the model with every standable cell outside `graph` walled up
@@ -1567,6 +1581,7 @@ pub(crate) fn walk_joined(
 fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let mut proved = 0usize;
     let mut bad: Vec<String> = Vec::new();
+    let swim_world = std::cell::OnceCell::new();
 
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         let site = format!("edge {}--{}--{}", edge.a, edge.class, edge.b);
@@ -1581,8 +1596,13 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
         }
         proved += 1;
 
-        let a = ix.standable_in(&edge.a);
-        let b = ix.standable_in(&edge.b);
+        // An end is where a body is in that space: the floor it stands on
+        // and the water it swims in there ([`walk_ends`]) — a space whose
+        // floor is the sea is entered and left by swimming, as the route
+        // proof's leg swims it.
+        let swim_world = swim_world.get_or_init(|| body_world(model));
+        let a = walk_ends(swim_world, &ix.standable_in(&edge.a), ix.space(&edge.a));
+        let b = walk_ends(swim_world, &ix.standable_in(&edge.b), ix.space(&edge.b));
         let cont = ix.contingency[i].as_ref();
         // Every cell the edge could ever be walked through, whether or not it
         // is standable today: the two ends, the transit volume, and the
@@ -1605,7 +1625,8 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 
         if a.is_empty() || b.is_empty() {
             bad.push(format!(
-                "{site}: {} has no standable cell, so there is nothing to walk between",
+                "{site}: {} has no standable cell and no water a body swims, so there is nothing \
+                 to walk between",
                 if a.is_empty() { &edge.a } else { &edge.b }
             ));
             continue;
@@ -1684,8 +1705,10 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
         let mut open_graph: BTreeSet<[i32; 3]> = a.union(&b).copied().collect();
         open_graph.extend(span.iter().copied());
         let open_graph: BTreeSet<[i32; 3]> = open_graph.intersection(&free).copied().collect();
-        let oa: BTreeSet<[i32; 3]> = a.intersection(&free).copied().collect();
-        let ob: BTreeSet<[i32; 3]> = b.intersection(&free).copied().collect();
+        // The water an end swims stays an end on the opened copy.
+        let kept = |c: &&[i32; 3]| free.contains(*c) || !ix.standable.contains(*c);
+        let oa: BTreeSet<[i32; 3]> = a.iter().filter(kept).copied().collect();
+        let ob: BTreeSet<[i32; 3]> = b.iter().filter(kept).copied().collect();
         // **The opt-out, enumerated per instance** (spec-0036 §2.9, spec-0042
         // §4). A way is an opt-out from "reachable as built", so it is named —
         // by region, sign and cell count — rather than folded into a count.

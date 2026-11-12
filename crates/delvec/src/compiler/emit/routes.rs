@@ -536,7 +536,7 @@ pub(super) fn prove_world(
             // the plan and the assembled blocks alone. The line prints before
             // the verdict; a campaign with no hop prints none.
             if crate::compiler::hop::declares_one(plan) {
-                let (binding, findings) = crate::compiler::hop::check(plan, blocks);
+                let (binding, findings) = crate::compiler::hop::check(plan, world, blocks);
                 crate::note!("{}", binding.line());
                 if let Some((first, rest)) = findings.split_first() {
                     for extra in rest {

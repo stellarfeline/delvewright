@@ -1,0 +1,22 @@
+{
+  "code": "DW1104",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/-",
+      "value": {
+        "type": "record-outcome",
+        "objective": "obj/press-the-case",
+        "line": "We pried the case open with a knife.",
+        "when": {
+          "requires_flags": [
+            "flag/loft-went-dark"
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: a second way the case was opened, written in the case's own completion bundle behind `flag/loft-went-dark` — the flag the climb's expiry sets, long after the near hall's case is pressed and never before it in any story world. The line is a way the task ends that no play reaches: in every world either the line does not fire or the case never settles with it. Refused at build, naming the site, the objective and how many worlds fire it and settle it. It declares no unit: `record-outcome` is bound by the gallery's own lines; what the engine refuses is a way no story shows."
+}
