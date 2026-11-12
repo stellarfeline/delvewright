@@ -245,7 +245,13 @@ export const methods = {
         );
       }
     } else {
-      const y0 = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y ?? start[1];
+      const vehicleY = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y;
+      const y0 = vehicleY ?? start[1];
+      process.stderr.write(
+        `[ride] ${step.vehicle}: seated, the server holds the rider at ` +
+          `${JSON.stringify(start.map((v) => Number(v.toFixed(2))))}; the ${step.kind} is reported at y ` +
+          `${y0.toFixed(2)}, from ${vehicleY === undefined ? "the rider's seat" : "the client's vehicle"}\n`,
+      );
       const yOf =
         step.kind === "boat" ? (): number => y0 : (c: Vec3Tuple): number => c[1];
       let prev = cellCentre(seat, yOf(seat));
@@ -271,6 +277,10 @@ export const methods = {
       );
     }
     const arrived = reading.pos;
+    process.stderr.write(
+      `[ride] ${step.vehicle}: arrived; the server holds the rider at ` +
+        `${JSON.stringify(arrived.map((v) => Number(v.toFixed(2))))}\n`,
+    );
     // spec-0135 §5: a ride whose objective waits for its own rider carries
     // that census. The bot, aboard, is the one body it counts: one census
     // period, then the datum is read on the server, and a count that

@@ -39,6 +39,7 @@ Reader: the engine work that proves a level in which a target is shot, a rocket 
 ## 5. A boat **[cited, T5]**
 
 - **It floats where the water puts it.** Summoned at y = 101 over water flush with the pad, it settled at y = 100.52.
+- **Where it rests, to the save's precision.** Read from the pinned server's save of a delve (`tools/lib/anvil.py`'s `entities` over `world/entities/`) after the world had run: two boats summoned at y = 63.0 over source water cells at y = 62 each held `Pos` y = 62.52326431274413, `Motion` y 2.8e-15 — at rest, 0.52326431274413 over the water cell's floor, inside that cell. The engine summons a boat there (`compiler.md`, the `vehicles[]` emission row).
 - **Mounting and the rider's place.** A right-click seats the bot; `RootVehicle` reads `minecraft:oak_boat`; the rider's position on the server is the boat's cell at y = 100.11 (the client agrees); `execute as <player> on vehicle if entity @s[type=minecraft:oak_boat]` stores 1.
 - **The rider's input does not move it.** The forward input for 4 s moved the boat nothing.
 - **A `Motion` written to the boat moves it with its rider**: 0.6 south a tick carried boat and rider 28.5 blocks to the basin's end.

@@ -4,6 +4,10 @@
 // vibration senses gate on. This helper centralises the movement/control-state
 // setup so it is pure enough to unit-test the flag plumbing without a server.
 
+import { createRequire } from "node:module";
+
+const requireCjs = createRequire(import.meta.url);
+
 /** The subset of a mineflayer Bot this helper drives. */
 export interface ControlBot {
   setControlState(control: "sneak", state: boolean): void;
@@ -354,4 +358,115 @@ export function swimFor(
   movements.liquidCost = water ? SWIM_LIQUID_COST : Number.POSITIVE_INFINITY;
   movements.allowFreeMotion = false;
   return water;
+}
+
+/** A cell of mineflayer-pathfinder 2.4.5's search: `Movements.getBlock`'s answer. */
+export interface SwimCell {
+  readonly name: string;
+  readonly boundingBox: string;
+  readonly physical: boolean;
+  readonly safe: boolean;
+  readonly position?: { readonly x: number; readonly y: number; readonly z: number } | null;
+}
+
+/** A node of the library's search (its `Move`). */
+export interface SwimNode {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly remainingBlocks: number;
+}
+
+/** The part of a mineflayer-pathfinder `Movements` {@link installSwimMoves} extends. */
+export interface SwimMovements {
+  liquidCost?: number;
+  getNeighbors(node: SwimNode): SwimNode[];
+  getBlock(node: SwimNode, dx: number, dy: number, dz: number): SwimCell;
+  exclusionStep(block: SwimCell): number;
+}
+
+/** How high a body in water climbs out, in cells over the cell it swims in:
+ * the route proof's `AFLOAT_CLIMB_OUT_CELLS` (`compiler/nav/world/body.rs`). */
+export const SWIM_CLIMB_OUT_CELLS = 1;
+
+const { Move } = { Move: requireCjs("mineflayer-pathfinder/lib/move") } as {
+  Move: new (x: number, y: number, z: number, remainingBlocks: number, cost: number) => SwimNode;
+};
+
+const installed = new WeakSet<object>();
+
+/**
+ * **The water moves the route proof takes and mineflayer-pathfinder 2.4.5 does
+ * not** (spec-0134 §10). The library's search keeps a body in water at the
+ * height it is in: its `getMoveUp` refuses a node in liquid, and its
+ * `getMoveJumpUp` measures the rise from the floor block under the node, which
+ * in water is water whose height is its own cell's bottom, so a ledge one over
+ * the swim cell reads two blocks high and is refused. A body in water then has
+ * no way up and no way out onto a ledge flush with the surface, where a player
+ * swims up and steps out. The route proof (`World::swim_moves`,
+ * `compiler/nav/route/mod.rs`) crosses both: from a cell a body swims in, up
+ * to the swim cell over it, and out onto a standable cell beside it within
+ * {@link SWIM_CLIMB_OUT_CELLS}, with open or water headroom in its own column
+ * for the lift. This adds exactly those moves to the library's own, on a leg
+ * whose liquid is admitted ({@link swimFor}) and on no other; the library's
+ * steering already holds the jump in water, which rises the body and makes
+ * the fluid jump over the rim. Lava is never swum. Installed once per
+ * `Movements`.
+ */
+export function installSwimMoves(movements: SwimMovements): void {
+  if (installed.has(movements)) return;
+  installed.add(movements);
+  const base = movements.getNeighbors.bind(movements);
+  movements.getNeighbors = (node: SwimNode): SwimNode[] => {
+    const out = base(node);
+    const liquid = movements.liquidCost;
+    if (liquid === undefined || !Number.isFinite(liquid)) return out;
+    out.push(...swimMoves(movements, node, liquid));
+    return out;
+  };
+}
+
+/** Water, never lava: a cell a body floats in. */
+const isWater = (b: SwimCell): boolean => b.name === "water";
+/** A cell a body's box passes through. */
+const open = (b: SwimCell): boolean => b.boundingBox === "empty";
+
+/** The moves {@link installSwimMoves} adds out of `node`, each priced as the
+ * library prices a step with its feet in liquid. */
+export function swimMoves(movements: SwimMovements, node: SwimNode, liquidCost: number): SwimNode[] {
+  const at = (dx: number, dy: number, dz: number): SwimCell => movements.getBlock(node, dx, dy, dz);
+  const swimsIn = (dx: number, dy: number, dz: number): boolean =>
+    isWater(at(dx, dy, dz)) && (isWater(at(dx, dy + 1, dz)) || open(at(dx, dy + 1, dz)));
+  if (!swimsIn(0, 0, 0)) return [];
+  const out: SwimNode[] = [];
+  const push = (dx: number, dy: number, dz: number, cost: number): void => {
+    const total = cost + liquidCost + movements.exclusionStep(at(dx, dy, dz));
+    if (total > 100) return;
+    out.push(new Move(node.x + dx, node.y + dy, node.z + dz, node.remainingBlocks, total));
+  };
+  // A swimmer rises.
+  if (swimsIn(0, 1, 0)) push(0, 1, 0, 1);
+  // And climbs out: the first standable cell beside it, lowest first.
+  for (const [dx, dz] of [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ] as const) {
+    for (let rise = 0; rise <= SWIM_CLIMB_OUT_CELLS; rise++) {
+      let headroom = true;
+      for (let y = 1; y <= rise + 1; y++) {
+        const b = at(0, y, 0);
+        if (!open(b) && !isWater(b)) headroom = false;
+      }
+      const floor = at(dx, rise - 1, dz);
+      const feet = at(dx, rise, dz);
+      const head = at(dx, rise + 1, dz);
+      if (headroom && floor.physical && feet.safe && !isWater(feet) && head.safe) {
+        push(dx, rise, dz, 1 + rise);
+        break;
+      }
+    }
+  }
+  return out;
 }
