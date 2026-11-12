@@ -216,6 +216,50 @@
           "south": "wall",
           "west": "wall"
         }
+      },
+      {
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          4,
+          4
+        ],
+        "floor": {
+          "y": 79
+        },
+        "grade": {
+          "rise": 5,
+          "run": 1
+        },
+        "min": [
+          59,
+          27
+        ],
+        "node": "node/crag"
+      },
+      {
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          4,
+          4
+        ],
+        "floor": {
+          "y": 67
+        },
+        "min": [
+          1,
+          32
+        ],
+        "node": "node/dais",
+        "sides": {
+          "east": "sheer",
+          "north": "sheer",
+          "south": "sheer",
+          "west": "sheer"
+        }
       }
     ],
     "datums": [

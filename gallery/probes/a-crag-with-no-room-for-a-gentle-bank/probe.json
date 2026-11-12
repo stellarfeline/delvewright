@@ -1,0 +1,13 @@
+{
+  "code": "DW1108",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "remove",
+      "path": "/content/boxes/10/grade"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The crag stands fifteen blocks over the flat ground east of the far hall, its slope declared five blocks a column. Without that declaration its bank takes the default, one block every two columns, and a drop of fifteen needs twenty-nine columns: the bank runs into the foot of the far hall's east wall four columns away and would bury it. The plan cannot land the grade, and validation refuses it there, naming both places, the column and the columns the difference needs, with the remedies — move the places apart, declare the side `sheer`, or carry the rise in a place."
+}

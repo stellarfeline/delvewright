@@ -13,6 +13,7 @@ For the engine developer deciding what the terrain does beside a place whose flo
 | S3 | WorldEdit documentation, *Region Operations* (`worldedit.enginehub.org/en/latest/usage/regions/regionops/`) | No licence shown on the page; ideas only | **through a page summary only**; its quotations below are relayed |
 | S4 | Salge, Green, Canaan and Togelius, *Generative Design in Minecraft (GDMC), Settlement Generation Competition* (arXiv:1803.09853) | arXiv; licence not established here; short quotation | **through a search summary only**; the judging criterion below is relayed |
 | S5 | Salge and others, *Impressions of the GDMC AI Settlement Generation Challenge in Minecraft* (arXiv:2108.02955), the judges' appendix B | arXiv; licence not established here; short quotation | **through a page summary only**, which read all but the last 1,583 characters of the page; every quotation below is a relayed fragment |
+| S7 | The pinned client jar (`versions.toml [minecraft].client_jar_sha256` `1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd`) | Mojang's; read, nothing copied | `unzip -p` over `data/minecraft/worldgen/density_function/overworld/sloped_cheese.json`, `…/base_3d_noise.json`, `…/jaggedness.json` and `data/minecraft/worldgen/noise/jagged.json` |
 | S6 | This repository's `docs/reference/body-movement.md` §4 and `docs/reference/dsl/fluid.md` (`DW0800`) | ours | the page text |
 
 Two searches for a builder's rule of thumb — how many blocks of run a natural slope takes per block of rise — returned none: the terraforming guides found speak of irregular edges and of working from large shapes to small, and give no number. **No source read states a run per block of rise.**
@@ -57,4 +58,13 @@ S5's judges, on what goes wrong at the edge of a built thing:
 - **A run per block of rise.** None found (§1). Spec-0138's two columns per block is authored.
 - **A grade that scales with the drop.** The game's reach is fixed at 12 cells (§2); no source read describes ground that keeps a set slope over any height.
 - **When to leave the drop.** The game leaves 23 of its 34 structures unadapted (§2), and S5's judges fault the flattened site as they fault the pillar; no source gives a rule for which edges should stay sheer.
+- **An amplitude for the noise on a built bank.** S7 gives the form (shape plus noise scaled by the shape) and no number in blocks.
 - **A stepped grade in full blocks.** The game's adaptation is a change to a density, resolved to blocks by the generator; S3's is a filter over heights. Neither states the stepped profile as a rule.
+
+## 7. How the pinned game roughens a slope (S7)
+
+**A shape, plus noise scaled by the shape.** The overworld's terrain density `overworld/sloped_cheese` is `add(mul(4, quarter_negative(mul(add(overworld/depth, mul(overworld/jaggedness, half_negative(noise jagged, xz_scale 1500, y_scale 0))), overworld/factor))), overworld/base_3d_noise)`: the smooth shaped depth, plus the `jagged` noise multiplied by `jaggedness`, the whole then added to a 3D noise (`base_3d_noise`, an `old_blended_noise` with `xz_scale 0.25`, `y_scale 0.125`). `jaggedness` is a cached 2D spline over the terrain's own parameters (`continents`, `erosion`, `ridges`): the roughness a slope carries is a function of what the terrain is shaping there, not a constant. `jagged` is a 16-octave noise (`firstOctave −16`, every amplitude `1.0`).
+
+So in the pinned game a natural slope is never a regular surface: the noise is added to the shaped terrain, and its amplitude grows with the shape it roughens — the peaks, where `jaggedness` is greatest, are the roughest.
+
+**Not established:** how many blocks of height the noise moves a column on a given slope; the density is resolved to blocks by the generator, and no world was generated to measure it.

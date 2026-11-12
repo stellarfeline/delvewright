@@ -92,6 +92,16 @@
         },
         "piece": "prefab/gallery-perch",
         "place": "node/perch"
+      },
+      {
+        "anchors": {},
+        "piece": "prefab/gallery-crag",
+        "place": "node/crag"
+      },
+      {
+        "anchors": {},
+        "piece": "prefab/gallery-dais",
+        "place": "node/dais"
       }
     ],
     "palette": {

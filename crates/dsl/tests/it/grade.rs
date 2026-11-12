@@ -106,18 +106,74 @@ fn k_by_counting(q: i64, run: i64) -> i64 {
     k
 }
 
-/// `[lo, hi]` at column `c` over `places` by the second route.
-fn bound(places: &[(&PlacedBox, Vec<[i64; 2]>)], c: [i64; 2]) -> Option<(i64, i64)> {
+/// A place's allowance at `c` by the second route: rise × runs counted.
+fn allowance_at(p: &PlacedBox, edges: &[[i64; 2]], c: [i64; 2]) -> Option<i64> {
+    let q = edges
+        .iter()
+        .map(|e| (e[0] - c[0]).pow(2) + (e[1] - c[1]).pow(2))
+        .min()?;
+    Some(p.slope.rise() * k_by_counting(q, p.slope.run()))
+}
+
+/// Each place's bank by the second route: a flood from the columns beside
+/// its edge columns through whole columns (none of `boxes`' shells) whose
+/// natural height its own bound excludes, over an `n × n` region.
+fn banks(
+    places: &[(&PlacedBox, Vec<[i64; 2]>)],
+    boxes: &[&PlacedBox],
+    n: i64,
+    t: &dyn Fn(i64, i64) -> i64,
+) -> Vec<std::collections::BTreeSet<[i64; 2]>> {
+    let whole = |c: [i64; 2]| {
+        c[0] >= 0
+            && c[1] >= 0
+            && c[0] < n
+            && c[1] < n
+            && !boxes.iter().any(|b| in_shell(b, c[0], c[1]))
+    };
+    places
+        .iter()
+        .map(|(p, edges)| {
+            let s = p.floor - 1;
+            let mut bank = std::collections::BTreeSet::new();
+            let mut seen = std::collections::BTreeSet::new();
+            let mut todo: Vec<[i64; 2]> = Vec::new();
+            for e in edges {
+                for d in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
+                    todo.push([e[0] + d[0], e[1] + d[1]]);
+                }
+            }
+            while let Some(c) = todo.pop() {
+                if !whole(c) || !seen.insert(c) {
+                    continue;
+                }
+                let a = allowance_at(p, edges, c).expect("edges");
+                let nat = t(c[0], c[1]);
+                if nat >= s - a && nat <= s + a {
+                    continue;
+                }
+                bank.insert(c);
+                for d in [[1, 0], [-1, 0], [0, 1], [0, -1]] {
+                    todo.push([c[0] + d[0], c[1] + d[1]]);
+                }
+            }
+            bank
+        })
+        .collect()
+}
+
+/// `[lo, hi]` at column `c` over the places whose bank reaches it.
+fn bound(
+    places: &[(&PlacedBox, Vec<[i64; 2]>)],
+    banks: &[std::collections::BTreeSet<[i64; 2]>],
+    c: [i64; 2],
+) -> Option<(i64, i64)> {
     let mut b: Option<(i64, i64)> = None;
-    for (p, edges) in places {
-        let Some(q) = edges
-            .iter()
-            .map(|e| (e[0] - c[0]).pow(2) + (e[1] - c[1]).pow(2))
-            .min()
-        else {
+    for ((p, edges), bank) in places.iter().zip(banks) {
+        if !bank.contains(&c) {
             continue;
-        };
-        let a = p.slope.rise() * k_by_counting(q, p.slope.run());
+        }
+        let a = allowance_at(p, edges, c)?;
         let s = p.floor - 1;
         b = Some(b.map_or((s - a, s + a), |(l, h)| (l.max(s - a), h.min(s + a))));
     }
@@ -304,12 +360,17 @@ fn ground_that_already_meets_the_side_is_left() {
     let nat = natural(n, t);
     let g = grade(std::slice::from_ref(&b), n, &nat);
     let edges = vec![(&b, edge_columns(&b, &[]))];
+    let bk = banks(&edges, &[&b], n, &t);
     let (mut raised, mut lowered, mut kept) = (0, 0, 0);
     for x in 21..60 {
         for z in 21..59 {
-            let (lo, hi) = bound(&edges, [x, z]).expect("every column is in reach");
             let top = g.top(x, z).expect("inside");
             let nat = t(x, z);
+            let Some((lo, hi)) = bound(&edges, &bk, [x, z]) else {
+                assert_eq!(top, nat, "a column no bank reaches is left at [{x}, {z}]");
+                kept += 1;
+                continue;
+            };
             if nat < lo {
                 assert!(
                     top >= lo && top <= hi,
@@ -369,6 +430,8 @@ fn a_corner_is_rounded_and_a_wall_end_is_turned() {
             let edges = edge_columns(&b, &[]);
             assert_eq!(g.edge_columns, edges.len(), "edge columns, combo {combo}");
             let ring = vec![(&b, edges)];
+            let tf = |_: i64, _: i64| t;
+            let bk = banks(&ring, &[&b], n, &tf);
             let mut bounds = vec![None; (n * n) as usize];
             for x in 0..n {
                 for z in 0..n {
@@ -376,7 +439,7 @@ fn a_corner_is_rounded_and_a_wall_end_is_turned() {
                         continue;
                     }
                     let top = g.top(x, z).expect("inside");
-                    let want = match bound(&ring, [x, z]) {
+                    let want = match bound(&ring, &bk, [x, z]) {
                         Some((lo, hi)) => {
                             bounds[(z * n + x) as usize] = Some(lo);
                             // The default slope's rise is the noise's amplitude.
@@ -698,27 +761,40 @@ fn dw1108_a_grade_has_no_room_to_land() {
         !has_grade(&one_sheer),
         "the pair with one side sheer: {one_sheer:?}"
     );
-    // 2. A graded edge column outside another's bound: the shells touch.
-    let touch = codes(
+    // 2. A bank that moves another place's shoulder: one whole column
+    //    between a place four over the ground and one standing at it.
+    let shoulder = codes(
+        vec![
+            b("node/a", [4, 46], [6, 6], 68, json!({})),
+            b("node/b", [13, 46], [6, 6], 64, json!({})),
+        ],
+        vec![],
+    );
+    assert!(
+        has_grade(&shoulder),
+        "a bank at another's edge: {shoulder:?}"
+    );
+    let more = stated(&shoulder);
+    let shoulder_apart = codes(
+        vec![
+            b("node/a", [4, 46], [6, 6], 68, json!({})),
+            b("node/b", [13 + more, 46], [6, 6], 64, json!({})),
+        ],
+        vec![],
+    );
+    assert!(
+        !has_grade(&shoulder_apart),
+        "moved apart: {shoulder_apart:?}"
+    );
+    // Two places that meet draw their join: no refusal (settled ruling).
+    let meet = codes(
         vec![
             b("node/a", [4, 46], [6, 6], 68, json!({})),
             b("node/b", [12, 46], [6, 6], 64, json!({})),
         ],
         vec![],
     );
-    assert!(
-        has_grade(&touch),
-        "an edge outside the other's bound: {touch:?}"
-    );
-    let more = stated(&touch);
-    let touch_apart = codes(
-        vec![
-            b("node/a", [4, 46], [6, 6], 68, json!({})),
-            b("node/b", [12 + more, 46], [6, 6], 64, json!({})),
-        ],
-        vec![],
-    );
-    assert!(!has_grade(&touch_apart), "moved apart: {touch_apart:?}");
+    assert!(!has_grade(&meet), "two places that meet: {meet:?}");
     // 3. A bank burying another place's wall foot.
     let foot = codes(
         vec![

@@ -1,0 +1,107 @@
+{
+  "contract": {
+    "edges": [],
+    "entry": "room",
+    "spaces": {
+      "room": {
+        "envelope": "open"
+      }
+    }
+  },
+  "name": "gallery-crag",
+  "palette": {
+    "floor": "minecraft:polished_andesite",
+    "plinth": "minecraft:cobblestone"
+  },
+  "params": {},
+  "rules": {
+    "floor": [
+      {
+        "body": {
+          "material": {
+            "role": "floor"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "place": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "plinth"
+            },
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "plinth": [
+      {
+        "body": {
+          "material": {
+            "role": "plinth"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "room-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "room"
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "shown_faces": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "start": "place",
+  "version": "1.9.0"
+}

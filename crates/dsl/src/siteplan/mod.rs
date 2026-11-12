@@ -182,6 +182,14 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// `DW1108`: **a grade has no room to land** (spec-0138 §7): two places
+    /// that do not meet whose banks cannot share a column or change the
+    /// ground at the other's foot, or a cut beside a declared fluid.
+    /// Validation tier, from the plan and the terrain alone.
+    pub const DW_GRADE_NO_ROOM: DwCode = DwCode::new("DW1108", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// `DW1064`: a portal seam is cut in a side its place declares open
     /// (spec-0123 §5.4). An open side stands no wall, so there is nothing to
     /// cut an opening in; the side's crossing is a `contact`.

@@ -69,6 +69,14 @@ function for the place it details before it judges a piece.
 |------|---------|
 | `DW1073` | **A plot cannot hold its parts.** One code, three shapes, each named first in the message: *under a lid* — the plot's box has a `clearance` ceiling, raised at `/content/boxes/<i>/ceiling`, naming the parts and the two repairs (an `open` ceiling clearing the tallest ridge, or no `holds[]` and rooms instead); *too small* — the parts' `cells` sum past the box's play space `extent[0] × extent[1]`, at `/content/boxes/<i>/extent`, naming the sum, the area and the shortfall; *too low* — a `structure`'s `height` past the box's `open` courses, at `/content/boxes/<i>/ceiling/open`, naming the part, its use, both numbers and the shortfall. A plot whose parts fit is asked nothing, whatever its coverage: a declaration of 60 cells on 400 is stated (`validation/plot-program.json`), never refused. |
 
+### DW1108 — a grade has no room to land (`dsl::siteplan`; spec-0138)
+
+The whole's terrain beyond every graded side of a ground place — a side absent or `open`; `sheer` and `wall` have no bank — is stepped from the place's surface (its floor course's `y`) to the natural ground at the place's `grade` (`{rise, run}`, default one block per two columns), with a seeded noise carrying each moved column at most one rise back toward the place (`dsl::siteplan::grade`, read by every reader through `Ground::top`). Validation tier (exit 1), from the plan and the terrain alone; the `grade:` line states what was graded.
+
+| Code | Meaning |
+|------|---------|
+| `DW1108` | **A grade has no room to land.** Two shapes of one claim, that every bank can be laid inside what the whole may write. *Two settings meet*: for two places that do not meet (their shells neither overlap nor touch — two places that meet draw their join and are never refused), a whole column both banks reach where one must stand higher than the other may, or a column beside a ring column of one place (its wall, its sheer side or its graded edge) that the other's bank would hold anywhere but where the first place's own bank holds it. One refusal per pair, at the bank's place, naming both places and sides, the first column, the two heights, the count of columns and the first six, the whole columns between the two shells and the columns the greatest difference needs at the bank's slope; remedies: move the places apart by the stated columns, declare the side `sheer`, or join them with a place that carries the rise. *A cut beside water*: a lowered column whose removed cell (not filled by a solid volume, not inside the fluid) is beside or under a cell of a declared volume whose block is a fluid; one refusal per side and volume, at the volume, naming the cell; remedies: declare the side `sheer`, or move the volume or the place. |
+
 ### DW1064 — a door in an open side (`dsl::siteplan`; spec-0123)
 
 A box's `sides` declares each horizontal side `wall` or `open` (absent: `wall`).

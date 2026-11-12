@@ -26,12 +26,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
+use crate::diagnostic::Diagnostic;
 
 use super::*;
-
-/// `DW1108`: **a grade has no room to land** (spec-0138 §7).
-pub const DW_GRADE_NO_ROOM: DwCode = DwCode::new("DW1108", ExitTier::Build);
 
 /// How an unwalled side of a ground place meets the ground beyond it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -250,90 +247,6 @@ pub fn settle(t: i64, lo: i64, hi: i64, n: i64) -> i64 {
     }
 }
 
-const FAR: i64 = i64::MAX / 4;
-
-/// The exact squared Euclidean distance from every cell of a `w × d` grid to
-/// the nearest marked cell (`FAR` where none is marked), in integers: the
-/// lower envelope of parabolas, column pass then row pass.
-fn distance_squared(w: usize, d: usize, marked: &[bool]) -> Vec<i64> {
-    // Pass 1: along `z` within each `x`.
-    let mut f = vec![FAR; w * d];
-    for x in 0..w {
-        let mut last: Option<usize> = None;
-        for z in 0..d {
-            if marked[z * w + x] {
-                last = Some(z);
-            }
-            if let Some(l) = last {
-                let dz = (z - l) as i64;
-                f[z * w + x] = dz * dz;
-            }
-        }
-        let mut next: Option<usize> = None;
-        for z in (0..d).rev() {
-            if marked[z * w + x] {
-                next = Some(z);
-            }
-            if let Some(n) = next {
-                let dz = (n - z) as i64;
-                f[z * w + x] = f[z * w + x].min(dz * dz);
-            }
-        }
-    }
-    // Pass 2: along `x` within each `z`, over the finite parabolas.
-    let mut out = vec![FAR; w * d];
-    let mut v: Vec<i64> = Vec::with_capacity(w);
-    // Breakpoints as rationals `(num, den)`, `den > 0`; `None` is −∞ / +∞.
-    let mut b: Vec<(i128, i128)> = Vec::with_capacity(w + 1);
-    for z in 0..d {
-        let row = &f[z * w..(z + 1) * w];
-        v.clear();
-        b.clear();
-        let meet = |p: i64, u: i64| -> (i128, i128) {
-            let fp = i128::from(row[p as usize]);
-            let fu = i128::from(row[u as usize]);
-            let (p, u) = (i128::from(p), i128::from(u));
-            ((fu + u * u) - (fp + p * p), 2 * (u - p))
-        };
-        for u in 0..w as i64 {
-            if row[u as usize] >= FAR {
-                continue;
-            }
-            while let Some(&p) = v.last() {
-                let s = meet(p, u);
-                // The breakpoint where `p` took over; the first parabola
-                // took over at −∞.
-                if v.len() == 1 {
-                    b.push(s);
-                    break;
-                }
-                let at = b[v.len() - 2];
-                if s.0 * at.1 <= at.0 * s.1 {
-                    v.pop();
-                    b.pop();
-                } else {
-                    b.push(s);
-                    break;
-                }
-            }
-            v.push(u);
-        }
-        if v.is_empty() {
-            continue;
-        }
-        // `b[j]` is where `v[j + 1]` takes over from `v[j]`.
-        let mut j = 0;
-        for x in 0..w as i64 {
-            while j < b.len() && b[j].0 < i128::from(x) * b[j].1 {
-                j += 1;
-            }
-            let p = v[j];
-            out[z * w + x as usize] = (x - p) * (x - p) + row[p as usize];
-        }
-    }
-    out
-}
-
 /// A ground place's edge columns, each with the face it is counted on.
 fn edges_of(b: &PlacedBox, covered_by_other: impl Fn(i64, i64) -> bool) -> Vec<([i64; 2], Face)> {
     ring_columns(b.foot)
@@ -364,20 +277,20 @@ fn nearest(edges: &[([i64; 2], Face)], c: [i64; 2]) -> Option<(i64, Face)> {
     best
 }
 
-/// The least squared distance from `c` to the box `[x0, x1, z0, z1]`.
-fn box_distance_squared(r: [i64; 4], c: [i64; 2]) -> i64 {
-    let dx = (r[0] - c[0]).max(0).max(c[0] - r[1]);
-    let dz = (r[2] - c[1]).max(0).max(c[1] - r[3]);
-    dx * dx + dz * dz
-}
+/// One place's bank: each column it moves, with its allowance there, its
+/// step count and the side of its nearest edge.
+type Bank = BTreeMap<[i64; 2], (i64, i64, Face)>;
 
 fn shell(b: &PlacedBox) -> [i64; 4] {
     [b.foot[0] - 1, b.foot[1] + 1, b.foot[2] - 1, b.foot[3] + 1]
 }
 
-fn shells_overlap(a: &PlacedBox, b: &PlacedBox) -> bool {
+/// Whether two places **meet**: their shells overlap or touch, so no whole
+/// column stands between them. Where two places meet, the join is theirs to
+/// draw (spec-0138 §10): no shape of `DW1108` is raised between them.
+fn places_meet(a: &PlacedBox, b: &PlacedBox) -> bool {
     let (p, q) = (shell(a), shell(b));
-    p[0] <= q[1] && q[0] <= p[1] && p[2] <= q[3] && q[2] <= p[3]
+    p[0] - 1 <= q[1] && q[0] <= p[1] + 1 && p[2] - 1 <= q[3] && q[2] <= p[3] + 1
 }
 
 impl Grade {
@@ -433,242 +346,200 @@ impl Grade {
             .collect();
         let surface = |i: usize| boxes[i].floor_course_y();
 
-        // The bound, one distance transform per distinct surface: the places
-        // standing at one surface bound alike, by their nearest edge column.
-        let mut lo = vec![i64::MIN; w * d];
-        let mut hi = vec![i64::MAX; w * d];
-        // The rise of the bank that set each side of the bound (the gentlest
-        // where two agree): the noise's amplitude there.
-        let mut lo_rise = vec![0i64; w * d];
-        let mut hi_rise = vec![0i64; w * d];
-        let mut levels: BTreeMap<(i64, Slope), Vec<usize>> = BTreeMap::new();
-        for &i in edges.keys() {
-            levels
-                .entry((surface(i), boxes[i].slope))
-                .or_default()
-                .push(i);
-        }
-        for ((p, slope), places) in &levels {
-            let mut marked = vec![false; w * d];
-            for i in places {
-                for (e, _) in &edges[i] {
-                    if let Some(k) = idx(e[0], e[1]) {
-                        marked[k] = true;
+        // A place's allowance at a column, and the side of its nearest edge.
+        let reach_of = |i: usize, c: [i64; 2]| -> Option<(i64, i64, Face)> {
+            let b = &boxes[i];
+            nearest(&edges[&i], c).map(|(q, f)| {
+                let k = steps(q, b.slope.run());
+                (allowance(b.slope, k), k, f)
+            })
+        };
+        let whole = |c: [i64; 2]| idx(c[0], c[1]).is_some_and(|k| cover[k] == 0);
+        let nat = |c: [i64; 2]| natural[idx(c[0], c[1]).unwrap_or(0)];
+
+        // **Each place's bank** (§4): the whole columns joined to its edge,
+        // 4-adjacent, through columns its own bound moves. It ends at the
+        // first column the terrain already meets, and never reaches past it.
+        let mut banks: BTreeMap<usize, Bank> = BTreeMap::new();
+        for (&i, e) in &edges {
+            let p = surface(i);
+            let mut bank: Bank = BTreeMap::new();
+            let mut todo: std::collections::VecDeque<[i64; 2]> = std::collections::VecDeque::new();
+            let mut seen: BTreeSet<[i64; 2]> = BTreeSet::new();
+            for (c, _) in e {
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = [c[0] + dx, c[1] + dz];
+                    if whole(n) && seen.insert(n) {
+                        todo.push_back(n);
                     }
                 }
             }
-            let q = distance_squared(w, d, &marked);
-            for k in 0..w * d {
-                if q[k] >= FAR {
+            while let Some(c) = todo.pop_front() {
+                let Some((a, k, f)) = reach_of(i, c) else {
+                    continue;
+                };
+                let t = nat(c);
+                if t >= p - a && t <= p + a {
                     continue;
                 }
-                let a = allowance(*slope, steps(q[k], slope.run()));
-                let (l, h) = (p - a, p + a);
-                if l > lo[k] || (l == lo[k] && slope.rise() < lo_rise[k]) {
-                    lo_rise[k] = slope.rise();
+                bank.insert(c, (a, k, f));
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = [c[0] + dx, c[1] + dz];
+                    if whole(n) && seen.insert(n) {
+                        todo.push_back(n);
+                    }
                 }
-                if h < hi[k] || (h == hi[k] && slope.rise() < hi_rise[k]) {
-                    hi_rise[k] = slope.rise();
-                }
-                lo[k] = lo[k].max(l);
-                hi[k] = hi[k].min(h);
+            }
+            banks.insert(i, bank);
+        }
+        // The banks that reach each column, in plan order.
+        let mut reaching: BTreeMap<[i64; 2], Vec<usize>> = BTreeMap::new();
+        for (&i, bank) in &banks {
+            for c in bank.keys() {
+                reaching.entry(*c).or_default().push(i);
             }
         }
+        // The bound over a set of places at a column, with the gentlest rise
+        // on each side: `(lo, hi, lo_rise, hi_rise)`.
+        let bound = |c: [i64; 2], places: &mut dyn Iterator<Item = usize>| {
+            let (mut lo, mut hi, mut lr, mut hr) = (i64::MIN, i64::MAX, 0, 0);
+            for i in places {
+                let (a, _, _) = banks[&i][&c];
+                let (p, r) = (surface(i), boxes[i].slope.rise());
+                let (l, h) = (p - a, p + a);
+                if l > lo || (l == lo && r < lr) {
+                    lr = r;
+                }
+                if h < hi || (h == hi && r < hr) {
+                    hr = r;
+                }
+                lo = lo.max(l);
+                hi = hi.min(h);
+            }
+            (lo, hi, lr, hr)
+        };
 
         // The graded surface.
         let mut graded = natural.to_vec();
-        let mut whole_columns = 0usize;
-        let mut banks: Vec<[i64; 2]> = Vec::new();
+        let whole_columns = cover.iter().filter(|c| **c == 0).count();
         let mut regraded = Vec::new();
-        for x in min[0]..min[0] + width {
-            for z in min[1]..min[1] + depth {
-                let k = ((z - min[1]) * width + (x - min[0])) as usize;
-                if cover[k] > 0 {
-                    continue;
-                }
-                whole_columns += 1;
-                let t = natural[k];
-                if lo[k] > hi[k] {
-                    banks.push([x, z]);
-                }
-                let amp = if t < lo[k] { lo_rise[k] } else { hi_rise[k] };
-                let g = settle(t, lo[k], hi[k], Ground::bank_noise(seed, x, z, amp));
-                graded[k] = g;
-                if g != t {
-                    regraded.push((x, z, t, g, [lo[k], hi[k]]));
-                }
-            }
-        }
-
-        // The place whose bound set each moved column: the first in plan
-        // order whose own `P ∓ k` is the height.
-        // A place's step count at a column, and the side of its nearest edge.
-        let step_of = |i: usize, c: [i64; 2]| -> Option<(i64, Face)> {
-            nearest(&edges[&i], c).map(|(q, f)| (steps(q, boxes[i].slope.run()), f))
-        };
-        let reach_of = |i: usize, c: [i64; 2]| -> Option<(i64, Face)> {
-            step_of(i, c).map(|(k, f)| (allowance(boxes[i].slope, k), f))
-        };
-        let bounds_of = |i: usize, c: [i64; 2]| -> i64 {
-            // A lower bound on the allowance from the box of the ring.
-            allowance(
-                boxes[i].slope,
-                steps(
-                    box_distance_squared(shell(&boxes[i]), c),
-                    boxes[i].slope.run(),
-                ),
-            )
-        };
-        let regraded: Vec<Regraded> = regraded
-            .into_iter()
-            .filter_map(|(x, z, t, g, bound)| {
-                let raised = g > t;
-                let want = if raised { bound[0] } else { bound[1] };
-                edges.keys().find_map(|&i| {
-                    let p = surface(i);
-                    let alb = bounds_of(i, [x, z]);
-                    let can = if raised {
-                        p - alb >= want
-                    } else {
-                        p + alb <= want
-                    };
-                    if !can {
-                        return None;
-                    }
-                    let (a, f) = reach_of(i, [x, z])?;
-                    let hit = if raised { p - a == want } else { p + a == want };
-                    hit.then(|| Regraded {
-                        x,
-                        z,
-                        natural: t,
-                        graded: g,
-                        place: i,
-                        face: f,
-                        k: step_of(i, [x, z]).map_or(0, |s| s.0),
-                        bound,
-                    })
-                })
-            })
-            .collect();
-
-        // Where two settings meet.
         let mut clashes = Vec::new();
-        // (a) a whole column both banks cannot share.
-        for c in banks {
+        // The first place in `among` whose own bound is `want` on the side
+        // that moved the column.
+        let setter = |c: [i64; 2], among: &[usize], want: i64, up: bool| {
+            among.iter().copied().find(|&i| {
+                let (a, _, _) = banks[&i][&c];
+                if up {
+                    surface(i) - a == want
+                } else {
+                    surface(i) + a == want
+                }
+            })
+        };
+        for (&c, among) in &reaching {
             let k = idx(c[0], c[1]).unwrap_or(0);
-            let find = |want: i64, up: bool| {
-                edges.keys().find_map(|&i| {
-                    let (s, f) = reach_of(i, c)?;
-                    let v = if up { surface(i) - s } else { surface(i) + s };
-                    (v == want).then_some((i, f, v))
-                })
-            };
-            if let (Some((a, af, av)), Some((b, bf, bv))) = (find(lo[k], true), find(hi[k], false))
-            {
-                clashes.push(Clash {
-                    bank: a,
-                    bank_face: af,
-                    other: b,
-                    other_face: bf,
-                    meeting: Meeting::Banks,
-                    column: c,
-                    bank_height: av,
-                    other_height: bv,
-                });
-            }
-        }
-        // (b) an edge column of `j` outside `i`'s bound, for two places whose
-        // shells do not overlap (a step across a shared ring is the seam's).
-        for (&j, ej) in &edges {
-            for (e, ef) in ej {
-                for &i in edges.keys() {
-                    if i == j || shells_overlap(&boxes[i], &boxes[j]) {
-                        continue;
-                    }
-                    let diff = (surface(i) - surface(j)).abs();
-                    if bounds_of(i, *e) >= diff {
-                        continue;
-                    }
-                    let Some((s, f)) = reach_of(i, *e) else {
-                        continue;
-                    };
-                    if s < diff {
-                        let bank_height = if surface(j) > surface(i) {
-                            surface(i) + s
-                        } else {
-                            surface(i) - s
-                        };
-                        clashes.push(Clash {
-                            bank: i,
-                            bank_face: f,
-                            other: j,
-                            other_face: *ef,
-                            meeting: Meeting::Edge,
-                            column: *e,
-                            bank_height,
-                            other_height: surface(j),
-                        });
-                    }
+            let t = natural[k];
+            let (lo, hi, lr, hr) = bound(c, &mut among.iter().copied());
+            if lo > hi {
+                // (a) two banks that cannot share the column.
+                if let (Some(a), Some(b)) =
+                    (setter(c, among, lo, true), setter(c, among, hi, false))
+                    && !places_meet(&boxes[a], &boxes[b])
+                {
+                    clashes.push(Clash {
+                        bank: a,
+                        bank_face: banks[&a][&c].2,
+                        other: b,
+                        other_face: banks[&b][&c].2,
+                        meeting: Meeting::Banks,
+                        column: c,
+                        bank_height: lo,
+                        other_height: hi,
+                    });
                 }
             }
+            let amp = if t < lo { lr } else { hr };
+            let g = settle(t, lo, hi, Ground::bank_noise(seed, c[0], c[1], amp));
+            graded[k] = g;
+            if g == t {
+                continue;
+            }
+            let raised = g > t;
+            let place = setter(c, among, if raised { lo } else { hi }, raised).unwrap_or(among[0]);
+            let (_, kk, face) = banks[&place][&c];
+            regraded.push(Regraded {
+                x: c[0],
+                z: c[1],
+                natural: t,
+                graded: g,
+                place,
+                face,
+                k: kk,
+                bound: [lo, hi],
+            });
         }
-        // (c) the foot of a place's wall or sheer side: a whole column beside
-        // a ring column of `j` that is neither an edge column nor shared
-        // stands where `j`'s own edge columns alone would put it.
-        let moved: BTreeMap<[i64; 2], &Regraded> =
-            regraded.iter().map(|r| ([r.x, r.z], r)).collect();
+
+        // (b) the foot of a place: a whole column beside a ring column of `j`
+        // that no other ground place's shell covers is held, before the
+        // noise, where `j`'s own bank alone would hold it — by the banks of
+        // the places that do not meet `j`.
         for &j in &ground_places {
             let b = &boxes[j];
-            let own: BTreeSet<[i64; 2]> = edges
-                .get(&j)
-                .map(|e| e.iter().map(|(c, _)| *c).collect())
-                .unwrap_or_default();
             let mut foot: BTreeMap<[i64; 2], Face> = BTreeMap::new();
             for [x, z] in ring_columns(b.foot) {
                 let Some(k) = idx(x, z) else { continue };
-                if own.contains(&[x, z]) || cover[k] > 1 {
+                if cover[k] > 1 {
                     continue;
                 }
-                let face = ring_faces(b.foot, x, z)
-                    .into_iter()
-                    .find(|f| !b.sides.is_graded(*f))
-                    .unwrap_or(Face::East);
+                let face = ring_faces(b.foot, x, z)[0];
                 for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     let n = [x + dx, z + dz];
-                    if idx(n[0], n[1]).is_some_and(|k| cover[k] == 0) {
+                    if whole(n) {
                         foot.entry(n).or_insert(face);
                     }
                 }
             }
             for (c, face) in foot {
-                let Some(r) = moved.get(&c) else { continue };
-                if r.place == j {
+                let Some(among) = reaching.get(&c) else {
+                    continue;
+                };
+                let others: Vec<usize> = among
+                    .iter()
+                    .copied()
+                    .filter(|i| *i != j && !places_meet(&boxes[*i], b))
+                    .collect();
+                if others.is_empty() {
                     continue;
                 }
-                let t = r.natural;
-                // Judged on the bounds, before the noise: the noise only ever
-                // carries a column back toward the bank that bound it.
-                let slope = boxes[j].slope;
-                let alone = match edges.get(&j).and_then(|e| nearest(e, c)) {
-                    Some((q, _)) => {
-                        let a = allowance(slope, steps(q, slope.run()));
-                        settle(t, surface(j) - a, surface(j) + a, 0)
-                    }
-                    None => t,
+                let t = nat(c);
+                let own: Vec<usize> = among.iter().copied().filter(|i| *i == j).collect();
+                let alone = if own.is_empty() {
+                    t
+                } else {
+                    let (lo, hi, _, _) = bound(c, &mut own.iter().copied());
+                    settle(t, lo, hi, 0)
                 };
-                let held = settle(t, r.bound[0], r.bound[1], 0);
-                if held != alone {
-                    clashes.push(Clash {
-                        bank: r.place,
-                        bank_face: r.face,
-                        other: j,
-                        other_face: face,
-                        meeting: Meeting::Foot,
-                        column: c,
-                        bank_height: held,
-                        other_height: alone,
-                    });
+                let mut with: Vec<usize> = own.clone();
+                with.extend(others.iter().copied());
+                let (lo, hi, _, _) = bound(c, &mut with.iter().copied());
+                let held = settle(t, lo, hi, 0);
+                if held == alone {
+                    continue;
                 }
+                let up = held > alone;
+                let Some(i) = setter(c, &others, if up { lo } else { hi }, up) else {
+                    continue;
+                };
+                clashes.push(Clash {
+                    bank: i,
+                    bank_face: banks[&i][&c].2,
+                    other: j,
+                    other_face: face,
+                    meeting: Meeting::Foot,
+                    column: c,
+                    bank_height: held,
+                    other_height: alone,
+                });
             }
         }
         clashes.sort_by_key(|c| (c.column, c.meeting, c.bank, c.other));
