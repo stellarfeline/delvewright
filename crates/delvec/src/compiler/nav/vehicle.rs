@@ -993,16 +993,28 @@ mod tests {
         );
         // Boarded, and no leaving cell walks on to the goal.
         assert_eq!(
-            ride_of(&w, 0, &b, RideFrom::Foot(from), &|a, _| a == from, goal, None),
+            ride_of(
+                &w,
+                0,
+                &b,
+                RideFrom::Foot(from),
+                &|a, _| a == from,
+                goal,
+                None
+            ),
             Err(RideMiss::NoLeave)
         );
-        let ride = ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| true, goal, None).expect("a ride");
+        let ride =
+            ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| true, goal, None).expect("a ride");
         assert_eq!(ride.medium[0], b.seat);
         assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
         // Two boats at one dock seat four; one seats two.
         let two = [b.clone(), boat([1, 1, 2], b.bounds)];
         assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal, None), 4);
-        assert_eq!(boardable_seats(&w, &two[..1], from, &|_, _| true, goal, None), 2);
+        assert_eq!(
+            boardable_seats(&w, &two[..1], from, &|_, _| true, goal, None),
+            2
+        );
     }
 
     #[test]

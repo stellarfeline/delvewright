@@ -1477,19 +1477,35 @@ fn a_crate_out_on_the_water_is_opened_from_the_boat() {
     };
     let out = build("crate-from-the-seat", bay, &skiff());
     let r = rides(&out);
-    assert_eq!(r.len(), 2, "a ride out, the act from its seat, a ride on: {r:#?}");
+    assert_eq!(
+        r.len(),
+        2,
+        "a ride out, the act from its seat, a ride on: {r:#?}"
+    );
     let (out_ride, on) = (&r[0], &r[1]);
     assert_eq!(out_ride["boards"], true, "{out_ride}");
     assert_eq!(out_ride["stays"], true, "{out_ride}");
     let end = cell(out_ride["medium"].as_array().unwrap().last().unwrap());
-    assert_eq!(cell(&out_ride["leave"]), end, "a ride that stays ends at its last medium cell");
+    assert_eq!(
+        cell(&out_ride["leave"]),
+        end,
+        "a ride that stays ends at its last medium cell"
+    );
     // The bay sits 64 courses up: the pool's surface course is y = 67.
     assert_eq!(end[1], 67, "on the water: {end:?}");
     // The rider's eye at the end cell is within the block reach of the barrel.
-    let eye = [end[0] as f64 + 0.5, 67.0 + 0.523 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
+    let eye = [
+        end[0] as f64 + 0.5,
+        67.0 + 0.523 + 0.1875 - 0.6 + 1.62,
+        end[2] as f64 + 0.5,
+    ];
     let gap = |e: f64, lo: f64| (lo - e).max(e - (lo + 1.0)).max(0.0);
-    let d = (gap(eye[0], 11.0).powi(2) + gap(eye[1], 68.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
-    assert!(d <= 4.5, "the barrel is {d} from the rider's eye at {end:?}");
+    let d =
+        (gap(eye[0], 11.0).powi(2) + gap(eye[1], 68.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
+    assert!(
+        d <= 4.5,
+        "the barrel is {d} from the rider's eye at {end:?}"
+    );
     assert_eq!(on["boards"], false, "the ride on starts aboard: {on}");
     assert_eq!(on["stays"], false, "{on}");
     assert_eq!(cell(&on["medium"].as_array().unwrap()[0]), end, "{on}");
@@ -1541,9 +1557,18 @@ fn two_crates_are_opened_without_leaving_the_boat() {
     assert_eq!(r.len(), 3, "{r:#?}");
     let flags: Vec<(bool, bool)> = r
         .iter()
-        .map(|x| (x["boards"].as_bool().unwrap(), x["stays"].as_bool().unwrap()))
+        .map(|x| {
+            (
+                x["boards"].as_bool().unwrap(),
+                x["stays"].as_bool().unwrap(),
+            )
+        })
         .collect();
-    assert_eq!(flags, [(true, true), (false, true), (false, false)], "{r:#?}");
+    assert_eq!(
+        flags,
+        [(true, true), (false, true), (false, false)],
+        "{r:#?}"
+    );
     for w in r.windows(2) {
         assert_eq!(
             cell(w[1]["medium"].as_array().unwrap().first().unwrap()),

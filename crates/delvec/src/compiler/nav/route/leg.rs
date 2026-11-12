@@ -841,9 +841,10 @@ fn ride_leg(
     // only carries the party off its vehicle (`RideOn::Leave`) acts nowhere.
     let target = match on {
         RideOn::Leave(_) => None,
-        RideOn::Foot | RideOn::Aboard(_) => {
-            carries.steps.get(end.src_step).and_then(|s| seat_target(leg, s))
-        }
+        RideOn::Foot | RideOn::Aboard(_) => carries
+            .steps
+            .get(end.src_step)
+            .and_then(|s| seat_target(leg, s)),
     };
     let acts_on = |w: &crate::compiler::nav::vehicle::VehiclePlan, m: [i32; 3]| {
         target.is_some_and(|(body, reach)| {
@@ -861,7 +862,8 @@ fn ride_leg(
         RideOn::Leave(onward) if b == end.pos => onward(a),
         _ => walks(a, b),
     };
-    let ride = crate::compiler::nav::vehicle::ride_of(leg, vi, v, start, &onward, end.pos, seat_act)?;
+    let ride =
+        crate::compiler::nav::vehicle::ride_of(leg, vi, v, start, &onward, end.pos, seat_act)?;
     let seats = match on {
         // Aboard, the party is the one the boarding seated.
         RideOn::Aboard(seats) => seats,
@@ -1348,7 +1350,14 @@ pub(in crate::compiler::nav) fn route_with_links(
                         continue;
                     }
                     Err(miss) => {
-                        result = Err(unridden(&cur, next, &carries.vehicles[vi], miss, true, false));
+                        result = Err(unridden(
+                            &cur,
+                            next,
+                            &carries.vehicles[vi],
+                            miss,
+                            true,
+                            false,
+                        ));
                         break;
                     }
                 }
@@ -1420,7 +1429,14 @@ pub(in crate::compiler::nav) fn route_with_links(
                     takes.leaves.insert(next.src_step, ride);
                 }
                 Err(miss) => {
-                    result = Err(unridden(&cur, next, &carries.vehicles[vi], miss, true, false));
+                    result = Err(unridden(
+                        &cur,
+                        next,
+                        &carries.vehicles[vi],
+                        miss,
+                        true,
+                        false,
+                    ));
                     break;
                 }
             }

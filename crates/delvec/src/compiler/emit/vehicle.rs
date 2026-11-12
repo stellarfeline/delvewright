@@ -19,7 +19,6 @@ const AT_MARK: &str = "1.5";
 /// The advancement a boarding answers through, and its reward function.
 pub(super) const BOARD: &str = "vehicle_board";
 
-
 /// Where a vehicle's body is summoned: the mark's cell centre, a boat afloat
 /// in its water cell where the server keeps it ([`BOAT_AFLOAT`]).
 fn summon_point(v: &VehiclePlan) -> [f64; 3] {
