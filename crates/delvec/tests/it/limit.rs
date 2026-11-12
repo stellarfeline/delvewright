@@ -706,3 +706,72 @@ fn a_limited_objectives_templates_own_its_numeric_gate() {
     let done = template(&out, "limit_o_exit_done");
     assert!(done.contains(drive), "{done}");
 }
+
+/// §8: a limit's templates hold the objective's state still while the clock
+/// runs. Measured on the town's PackTest: a dummy an earlier template handed
+/// the collect's item stayed on the server and completed the objective inside
+/// the expiry template's window (`#lim_done` 1, by turns with the suite's
+/// order); and a census the gate reads was put back to the bodies in its box
+/// (none) by the engine's `census_tick`, so the objective stopped being
+/// pending and its clock settled nothing (`dw.x` 0 at the wake). keep-trial
+/// with a limit on its collect and on its shrine, the shrine gated on a
+/// census of the guards: the collect's templates take the item from every
+/// player before the clock; the shrine's stop the census tick before it and
+/// start it again at the end. Red before: neither line was written.
+#[test]
+fn a_limits_templates_hold_its_state_still_while_the_clock_runs() {
+    let dir = scratch("held-still");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |v| {
+        v["content"]["state"] = json!([{
+            "id": "state/guards-home", "scope": "party",
+            "counts": {"region": {"anchor": "anchor/keeper-stand", "extent": [3, 1, 3]},
+                       "of": {"wave": "wave/guards"}}
+        }]);
+        for q in v["content"]["quests"].as_array_mut().unwrap() {
+            for o in q["objectives"].as_array_mut().unwrap() {
+                if o["id"] == "obj/key" || o["id"] == "obj/shrine" {
+                    o["limit"] = json!({"ticks": 72000});
+                }
+                if o["id"] == "obj/shrine" {
+                    o["requires_state"] =
+                        json!([{"state": "state/guards-home", "op": "at-least", "value": 1}]);
+                }
+            }
+        }
+    });
+    let out = match build_result(&dir) {
+        Ok(out) => out,
+        Err(e) => panic!("the fixture builds: {e:?}"),
+    };
+    let tpl = |name: &str| {
+        let path = format!("packtest-datapack/data/keep-trial/test/{name}.mcfunction");
+        String::from_utf8(
+            out.get(&path)
+                .unwrap_or_else(|| panic!("no {path}"))
+                .clone(),
+        )
+        .unwrap()
+    };
+    for name in ["limit_o_key_expires", "limit_o_key_done"] {
+        let t = tpl(name);
+        let clear = line_of(&t, "clear @a minecraft:tripwire_hook");
+        assert!(clear < line_of(&t, "await delay"), "{name}:\n{t}");
+    }
+    for name in ["limit_o_shrine_expires", "limit_o_shrine_done"] {
+        let t = tpl(name);
+        let stop = line_of(&t, "schedule clear keep-trial:census_tick");
+        assert!(
+            stop > line_of(&t, "function keep-trial:setup"),
+            "{name}:\n{t}"
+        );
+        assert!(stop < line_of(&t, "await delay"), "{name}:\n{t}");
+        assert!(
+            line_of(&t, "schedule function keep-trial:census_tick 10t replace")
+                > line_of(&t, "await delay"),
+            "started again after the wait:\n{t}"
+        );
+    }
+    // A limit whose gate reads no census leaves the tick alone.
+    assert!(!tpl("limit_o_key_expires").contains("census_tick"));
+}
