@@ -832,6 +832,11 @@ def contract(p: Place) -> dict:
         # (grammar.md §2d; references/detail.md, the program's contract).
         "spaces": spaces,
     }
+    if p.scenery:
+        # An unwalled side of scenery is no way out: its ring cells are seen
+        # over and never walked.
+        for s in p.sides:
+            no_body[f"side-{s['face']}"] = {"reason": "an unwalled side of scenery: seen, never entered"}
     if p.lid is not None and p.lid.value + 1 < p.ey:
         no_body["roof"] = {"reason": "the roof zone over the lid, which no one is meant to walk"}
         out["no_body_majority_ack"] = "the roof zone the plan reserves over the lid is left for the roof the author builds; nobody walks it"
