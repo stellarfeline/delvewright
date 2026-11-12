@@ -447,7 +447,28 @@ pub(in crate::compiler::nav) fn positions_of(
         });
     }
     let mut transport_pending = false;
+    // The party sits in a vehicle after a ride that `stays` (spec-0135 §5).
+    let mut seated = false;
     for (i, step) in steps.iter().enumerate() {
+        // An act done from the seat: the party is where the ride left it, and
+        // the move into the act is the ride's — a carry like a landing.
+        if seated && !matches!(step, Step::Ride { .. }) && step.pos().is_some() {
+            if let Some(at) = out.last().map(|p: &VisitedPos| p.pos) {
+                out.push(VisitedPos {
+                    pos: at,
+                    transport_before: true,
+                    talk_to: false,
+                    src_step: i,
+                    by_link: false,
+                    by_loop: true,
+                });
+            }
+            seated = false;
+            // Whatever the party does next starts aboard: a ride on, which
+            // is a carry too.
+            transport_pending = true;
+            continue;
+        }
         // A carried step: a link's trigger step (spec-0083 §3.2) or a loop's
         // exercise step (spec-0086 §5.2). The leg into it ends where the party
         // stands to be carried, and the party goes on from where it is put down.
@@ -464,9 +485,13 @@ pub(in crate::compiler::nav) fn positions_of(
                 .map(|stand| (stand, transports.get(i).copied().flatten(), true, false)),
         };
         if let Some((stand, to, by_link, by_loop)) = carry {
+            // A ride that starts aboard boards nobody: the party is carried to
+            // its start, where the last ride stayed (spec-0135 §5).
+            let aboard = matches!(step, Step::Ride { boards: false, .. });
+            seated = matches!(step, Step::Ride { stays: true, .. });
             out.push(VisitedPos {
                 pos: stand,
-                transport_before: transport_pending,
+                transport_before: transport_pending || aboard,
                 talk_to: false,
                 src_step: i,
                 by_link: false,

@@ -124,6 +124,76 @@ impl VehiclePlan {
             VehicleKind::Mount => 4.0,
         }
     }
+
+    /// **Where a seated rider's eye is** with the vehicle at medium cell `m`
+    /// (spec-0135 §5, the record §15): the vehicle's rest over the cell, plus
+    /// its passenger attachment, less the player's vehicle attachment, plus
+    /// the player's standing eye — the server judges a rider's block use and
+    /// entity interaction from this eye at the ranges a standing player has.
+    /// `None` for a kind whose rest or attachment the record does not hold —
+    /// a minecart and every mount but the pig — whose rider acts after
+    /// leaving.
+    pub fn rider_eye(&self, world: &World, m: [i32; 3]) -> Option<[f64; 3]> {
+        let rest = match self.kind {
+            // The record §5: a boat settles 0.52 over its water cell's floor.
+            VehicleKind::Boat => f64::from(m[1]) + BOAT_REST_OVER_WATER_CELL,
+            VehicleKind::Mount if self.entity == "minecraft:pig" => world.feet_y(m),
+            VehicleKind::Mount | VehicleKind::Minecart => return None,
+        };
+        let attach = match self.kind {
+            VehicleKind::Boat => {
+                let (_, h) = crate::compiler::nav::entity_dims(&self.entity);
+                if self.entity.ends_with("_raft") {
+                    h * RAFT_PASSENGER_OVER_HEIGHT
+                } else {
+                    h * BOAT_PASSENGER_OVER_HEIGHT
+                }
+            }
+            _ => PIG_PASSENGER_ATTACHMENT,
+        };
+        Some([
+            f64::from(m[0]) + 0.5,
+            rest + attach - PLAYER_VEHICLE_ATTACHMENT + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
+            f64::from(m[2]) + 0.5,
+        ])
+    }
+}
+
+/// The height a boat settles at over the floor of the water cell it floats
+/// in: the record §5 (an oak boat summoned over water flush with the pad
+/// settled at y = 100.52 over the water cell at y = 100).
+pub const BOAT_REST_OVER_WATER_CELL: f64 = 0.52;
+
+/// A boat's passenger attachment over its feet, as a share of its height:
+/// `Boat.getPassengerAttachmentPoint`, `dimensions.height() / 3.0F` (the
+/// record §15).
+const BOAT_PASSENGER_OVER_HEIGHT: f64 = 1.0 / 3.0;
+
+/// A raft's: `Raft`, `dimensions.height() * 0.8888889F` (the record §15).
+const RAFT_PASSENGER_OVER_HEIGHT: f64 = 0.888_888_9;
+
+/// A pig's passenger attachment over its feet: `EntityType.PIG`'s
+/// `passengerAttachments(0.86875F)` (the record §15).
+const PIG_PASSENGER_ATTACHMENT: f64 = 0.868_75;
+
+/// The player's vehicle attachment: `Avatar.DEFAULT_VEHICLE_ATTACHMENT`,
+/// `(0, 0.6, 0)` — a rider's feet stand this far under the vehicle's
+/// passenger point (the record §15).
+const PLAYER_VEHICLE_ATTACHMENT: f64 = 0.6;
+
+/// **Whether an eye at `eye` acts on `body` at `reach`** (spec-0135 §5): the
+/// box's nearest point within `reach` of the eye, and some point of the box
+/// in sight past every solid cell but the eye's own and the box's. The rule a
+/// standing body is held to ([`crate::compiler::nav::route::stance_cells`]),
+/// asked of a rider's eye.
+pub fn eye_acts_on(
+    world: &World,
+    eye: [f64; 3],
+    body: &crate::compiler::nav::route::BodyBox,
+    reach: f64,
+) -> bool {
+    crate::compiler::nav::route::eye_point_within(eye, body, reach)
+        && crate::compiler::nav::route::eye_point_sees(world, eye, body)
 }
 
 /// Every vehicle the campaign declares that the plan can resolve, in
@@ -209,12 +279,31 @@ pub fn riders_gates<'c>(
 pub struct RideTake {
     /// Index into the plan's vehicles.
     pub vehicle: usize,
-    /// Where the party stands to board.
+    /// Where the party stands to board — or, for a ride that starts aboard,
+    /// the medium cell the last ride left it at.
     pub board: [i32; 3],
-    /// The medium cells ridden, the seat first.
+    /// The medium cells ridden, the start first.
     pub medium: Vec<[i32; 3]>,
-    /// Where the party stands after leaving.
+    /// Where the party stands after leaving — or, for a ride that stays, the
+    /// last medium cell, where the rider performs the act from the seat.
     pub leave: [i32; 3],
+    /// The party walks to `board` and mounts; `false` when it is already
+    /// aboard at the ride's start (spec-0135 §5).
+    pub boards: bool,
+    /// The party stays aboard at the ride's end and performs the leg's act
+    /// from the seat (spec-0135 §5).
+    pub stays: bool,
+}
+
+/// Where a ride starts (spec-0135 §4, §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RideFrom {
+    /// On foot at this cell: the party walks to a boarding cell and mounts
+    /// the vehicle at its mark.
+    Foot([i32; 3]),
+    /// Aboard, the vehicle at this medium cell: a ride before it ended there
+    /// and the party stayed in the seat.
+    Aboard([i32; 3]),
 }
 
 impl World {
@@ -302,9 +391,28 @@ impl World {
         v: &VehiclePlan,
         avoid: &dyn Fn([i32; 3]) -> bool,
     ) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
-        let mut parent: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
         if !self.seat_in_medium(v) || !v.within(v.seat) {
-            return parent;
+            return BTreeMap::new();
+        }
+        self.medium_tree_from(v, v.seat, avoid)
+    }
+
+    /// [`World::medium_tree_avoiding`] rooted at `root` — the seat, or the
+    /// medium cell a rider who stayed aboard is at.
+    fn medium_tree_from(
+        &self,
+        v: &VehiclePlan,
+        root: [i32; 3],
+        avoid: &dyn Fn([i32; 3]) -> bool,
+    ) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
+        let mut parent: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
+        if root != v.seat {
+            // Aboard elsewhere: a mount or a boat goes on through its medium;
+            // a cart is where its run ended.
+            if v.medium == VehicleMedium::Rails {
+                parent.insert(root, None);
+                return parent;
+            }
         }
         if v.medium == VehicleMedium::Rails {
             let within = |c: [i32; 3]| v.within(c);
@@ -321,8 +429,8 @@ impl World {
             return parent;
         }
         let fp = v.footprint();
-        let mut queue = VecDeque::from([v.seat]);
-        parent.insert(v.seat, None);
+        let mut queue = VecDeque::from([root]);
+        parent.insert(root, None);
         while let Some(c) = queue.pop_front() {
             for n in self.medium_next(v, &fp, c) {
                 if v.within(n) && !avoid(n) && !parent.contains_key(&n) {
@@ -645,21 +753,27 @@ impl RideMiss {
 /// How many leaving cells a ride tries, nearest the leg's end first.
 const RIDE_TRIES: usize = 256;
 
-/// **The ride vehicle `vi` carries from `from` to `goal`** (spec-0135 §4), over
-/// the leg's world: the party walks from `from` to a boarding cell, rides the
-/// medium from the seat, and leaves at a cell from which `goal` is walked. A
-/// ride takes the party **as near the leg's end as the medium reaches**: among
-/// the leaving cells that walk on to `goal`, the one nearest it wins, then the
-/// shorter ride, then cell order. A ride moves the vehicle — a medium cell
-/// other than the seat — and a cart is left only where its run ends, because
-/// the rails take it there. `walks(a, b)` is the leg proof's own walk.
+/// **The ride vehicle `vi` carries from `from` to `goal`** (spec-0135 §4, §5),
+/// over the leg's world. On foot, the party walks from `from` to a boarding
+/// cell and rides the medium from the seat; aboard, it rides on from the
+/// medium cell it is at. Where the leg's act can be done from the seat
+/// (`seat_act`, asked of a medium cell), the ride ends at the nearest medium
+/// cell — the shortest ride, then cell order — from which the rider performs
+/// it, and the party stays aboard. Otherwise the party leaves at a cell from
+/// which `goal` is walked, **as near the leg's end as the medium reaches**:
+/// among the leaving cells that walk on to `goal`, the one nearest it wins,
+/// then the shorter ride, then cell order. A ride from the seat moves the
+/// vehicle — a medium cell other than the seat — and a cart is left only
+/// where its run ends, because the rails take it there. `walks(a, b)` is the
+/// leg proof's own walk.
 pub fn ride_of(
     world: &World,
     vi: usize,
     v: &VehiclePlan,
-    from: [i32; 3],
+    from: RideFrom,
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
+    seat_act: Option<&dyn Fn([i32; 3]) -> bool>,
 ) -> Result<RideTake, RideMiss> {
     if !world.seat_in_medium(v) || !v.within(v.seat) {
         return Err(RideMiss::Unseated);
@@ -671,24 +785,35 @@ pub fn ride_of(
     // objective's volume and the party walks in.
     let body = Footprint::player();
     let kept = |c: [i32; 3]| world.meets_keep_out_fp(c, &body);
-    if kept(v.seat) {
-        return Err(RideMiss::KeptOut);
-    }
-    let Some(board) = world
-        .boarding_cells(v)
-        .into_iter()
-        .find(|c| !kept(*c) && walks(from, *c))
-    else {
-        return Err(RideMiss::NoBoard);
+    let (root, board, boards) = match from {
+        RideFrom::Foot(start) => {
+            if kept(v.seat) {
+                return Err(RideMiss::KeptOut);
+            }
+            let Some(board) = world
+                .boarding_cells(v)
+                .into_iter()
+                .find(|c| !kept(*c) && walks(start, *c))
+            else {
+                return Err(RideMiss::NoBoard);
+            };
+            (v.seat, board, true)
+        }
+        RideFrom::Aboard(at) => (at, at, false),
     };
-    let tree = world.medium_tree_avoiding(v, &kept);
-    // Leaving cell → the shortest ride that reaches it.
-    let mut best: BTreeMap<[i32; 3], (usize, [i32; 3])> = BTreeMap::new();
+    let tree = if boards {
+        world.medium_tree_avoiding(v, &kept)
+    } else {
+        world.medium_tree_from(v, root, &kept)
+    };
+    // A ride from the seat moves the vehicle; one that goes on from aboard
+    // may act, or leave, where it is.
+    let shortest = if boards { 2 } else { 1 };
     let mut longest = 0usize;
     let mut rides: Vec<(usize, [i32; 3])> = Vec::new();
     for m in tree.keys() {
         let len = World::medium_path(&tree, *m).map_or(0, |p| p.len());
-        if len >= 2 {
+        if len >= shortest {
             longest = longest.max(len);
             rides.push((len, *m));
         }
@@ -702,8 +827,29 @@ pub fn ride_of(
             RideMiss::NoMedium
         });
     }
-    for (len, m) in rides {
-        if v.kind == VehicleKind::Minecart && len != longest {
+    let take = |m: [i32; 3], leave: [i32; 3], stays: bool| -> Result<RideTake, RideMiss> {
+        Ok(RideTake {
+            vehicle: vi,
+            board,
+            medium: World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?,
+            leave,
+            boards,
+            stays,
+        })
+    };
+    let ends_here = |len: usize| v.kind != VehicleKind::Minecart || len == longest;
+    if let Some(acts) = seat_act
+        && let Some(&(_, m)) = rides
+            .iter()
+            .filter(|(len, m)| ends_here(*len) && acts(*m))
+            .min()
+    {
+        return take(m, m, true);
+    }
+    // Leaving cell → the shortest ride that reaches it.
+    let mut best: BTreeMap<[i32; 3], (usize, [i32; 3])> = BTreeMap::new();
+    for &(len, m) in &rides {
+        if !ends_here(len) {
             continue;
         }
         for l in world.leaving_cells_of(v, m) {
@@ -730,13 +876,7 @@ pub fn ride_of(
     cands.sort();
     for (_, _, leave, m) in cands.into_iter().take(RIDE_TRIES) {
         if walks(leave, goal) {
-            let medium = World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?;
-            return Ok(RideTake {
-                vehicle: vi,
-                board,
-                medium,
-                leave,
-            });
+            return take(m, leave, false);
         }
     }
     Err(RideMiss::NoLeave)
@@ -744,16 +884,31 @@ pub fn ride_of(
 
 /// The seats every vehicle a ride leg's party can board carries
 /// (`DW1099`'s last arm): the seats of every vehicle with a boarding cell the
-/// party walks to from `from` and whose ride reaches `goal`.
+/// party walks to from `from` and whose ride reaches `goal` — by leaving, or
+/// by the act `seat_act` asks after done from its seat.
 pub fn boardable_seats(
     world: &World,
     vehicles: &[VehiclePlan],
     from: [i32; 3],
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
+    seat_act: Option<&dyn Fn(&VehiclePlan, [i32; 3]) -> bool>,
 ) -> u32 {
     (0..vehicles.len())
-        .filter(|&i| ride_of(world, i, &vehicles[i], from, walks, goal).is_ok())
+        .filter(|&i| {
+            let v = &vehicles[i];
+            let acts = seat_act.map(|f| move |m: [i32; 3]| f(v, m));
+            ride_of(
+                world,
+                i,
+                v,
+                RideFrom::Foot(from),
+                walks,
+                goal,
+                acts.as_ref().map(|f| f as &dyn Fn([i32; 3]) -> bool),
+            )
+            .is_ok()
+        })
         .map(|i| vehicles[i].seats)
         .sum()
 }
@@ -827,21 +982,21 @@ mod tests {
         let b = boat([1, 1, 0], ([-10, -5, -5], [20, 5, 5]));
         let (from, goal) = ([-3, 1, 0], [10, 1, 0]);
         assert_eq!(
-            ride_of(&w, 0, &b, from, &|_, _| false, goal),
+            ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| false, goal, None),
             Err(RideMiss::NoBoard)
         );
         // Boarded, and no leaving cell walks on to the goal.
         assert_eq!(
-            ride_of(&w, 0, &b, from, &|a, _| a == from, goal),
+            ride_of(&w, 0, &b, RideFrom::Foot(from), &|a, _| a == from, goal, None),
             Err(RideMiss::NoLeave)
         );
-        let ride = ride_of(&w, 0, &b, from, &|_, _| true, goal).expect("a ride");
+        let ride = ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| true, goal, None).expect("a ride");
         assert_eq!(ride.medium[0], b.seat);
         assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
         // Two boats at one dock seat four; one seats two.
         let two = [b.clone(), boat([1, 1, 2], b.bounds)];
-        assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal), 4);
-        assert_eq!(boardable_seats(&w, &two[..1], from, &|_, _| true, goal), 2);
+        assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal, None), 4);
+        assert_eq!(boardable_seats(&w, &two[..1], from, &|_, _| true, goal, None), 2);
     }
 
     #[test]

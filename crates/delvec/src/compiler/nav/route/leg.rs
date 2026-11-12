@@ -477,12 +477,24 @@ pub fn interaction_stances(
 /// `body` — [`crate::compiler::strand::eye_reaches_box`]'s measure with the
 /// reach a parameter.
 fn eye_within(w: &World, p: [i32; 3], body: &BodyBox, reach: f64) -> bool {
+    eye_point_within(standing_eye(w, p), body, reach)
+}
+
+/// The eye of a body standing in `p`.
+fn standing_eye(w: &World, p: [i32; 3]) -> [f64; 3] {
     use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
-    let eye = [
+    [
         f64::from(p[0]) + 0.5,
         w.feet_y(p) + PLAYER_EYE_HEIGHT,
         f64::from(p[2]) + 0.5,
-    ];
+    ]
+}
+
+/// Whether the eye at `eye` is within `reach` of the nearest point of `body`
+/// — the measure the server reads a block use and an entity interaction by
+/// (`Player.isWithinBlockInteractionRange`, `isWithinEntityInteractionRange`:
+/// the eye position to the target's box).
+pub fn eye_point_within(eye: [f64; 3], body: &BodyBox, reach: f64) -> bool {
     let gap = |e: f64, lo: f64, hi: f64| (lo - e).max(e - hi).max(0.0);
     let d = [
         gap(eye[0], body.lo[0], body.hi[0]),
@@ -499,12 +511,19 @@ fn eye_within(w: &World, p: [i32; 3], body: &BodyBox, reach: f64) -> bool {
 /// press: the client's pick stops at the first block it meets. The eye's own
 /// cell and the cells the box stands in never block.
 fn sees_body(w: &World, p: [i32; 3], body: &BodyBox) -> bool {
-    use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
-    let eye = [
-        f64::from(p[0]) + 0.5,
-        w.feet_y(p) + PLAYER_EYE_HEIGHT,
-        f64::from(p[2]) + 0.5,
-    ];
+    sees_from(w, standing_eye(w, p), Some(p), body)
+}
+
+/// [`sees_body`] from an eye at `eye` that stands in no cell of its own — a
+/// rider's (spec-0135 §5): the cell the eye is in never blocks.
+pub fn eye_point_sees(w: &World, eye: [f64; 3], body: &BodyBox) -> bool {
+    sees_from(w, eye, None, body)
+}
+
+/// The sight rule, from `eye`; `feet` is the cell a standing body's ray may
+/// pass through as its own.
+fn sees_from(w: &World, eye: [f64; 3], feet: Option<[i32; 3]>, body: &BodyBox) -> bool {
+    let p = feet.unwrap_or_else(|| eye.map(|v| v.floor() as i32));
     let own = body.cells();
     let mid = |i: usize| (body.lo[i] + body.hi[i]) / 2.0;
     let inset = |i: usize| (0.1f64).min((body.hi[i] - body.lo[i]) / 4.0);
@@ -714,6 +733,14 @@ fn decompose(
 }
 
 impl Carries<'_> {
+    /// **Whether the party arrives at step `k`'s position carried by a vehicle**
+    /// (spec-0135 §4, §5): `k` is a `ride` step, or an act done from the
+    /// seat of the `stays` ride directly in front of it.
+    fn ridden_into(&self, k: usize) -> bool {
+        matches!(self.steps.get(k), Some(Step::Ride { .. }))
+            || (k > 0 && matches!(self.steps.get(k - 1), Some(Step::Ride { stays: true, .. })))
+    }
+
     /// **The vehicle the leg ending at step `k` is declared ridden on**
     /// (spec-0135 §4): the `ride` of the objective the step performs. `None`
     /// for a step that performs no objective, one that lets its objective
@@ -744,6 +771,7 @@ fn ride_leg(
     ancestor: &dyn Fn(usize, usize) -> bool,
     carries: &Carries<'_>,
     vi: usize,
+    on: RideOn<'_>,
 ) -> Result<(crate::compiler::nav::vehicle::RideTake, u32), crate::compiler::nav::vehicle::RideMiss>
 {
     let mut st =
@@ -805,22 +833,136 @@ fn ride_leg(
         };
         judge_leg(over, &[pa, pb], region_events, ancestor).is_ok()
     };
-    let ride = crate::compiler::nav::vehicle::ride_of(
-        leg,
-        vi,
-        &carries.vehicles[vi],
-        from.pos,
-        &walks,
-        end.pos,
-    )?;
-    let seats = crate::compiler::nav::vehicle::boardable_seats(
-        leg,
-        carries.vehicles,
-        from.pos,
-        &walks,
-        end.pos,
-    );
+    use crate::compiler::nav::vehicle::{RideFrom, eye_acts_on};
+    let v = &carries.vehicles[vi];
+    // The act the leg ends in, where a rider can do it from the seat: asked
+    // of a medium cell by the rider's eye there (spec-0135 §5). A ride that
+    // only carries the party off its vehicle (`RideOn::Leave`) acts nowhere.
+    let target = match on {
+        RideOn::Leave(_) => None,
+        RideOn::Foot | RideOn::Aboard(_) => {
+            carries.steps.get(end.src_step).and_then(|s| seat_target(leg, s))
+        }
+    };
+    let acts_on = |w: &crate::compiler::nav::vehicle::VehiclePlan, m: [i32; 3]| {
+        target.is_some_and(|(body, reach)| {
+            w.rider_eye(leg, m)
+                .is_some_and(|eye| eye_acts_on(leg, eye, &body, reach))
+        })
+    };
+    let acts = |m: [i32; 3]| acts_on(v, m);
+    let seat_act: Option<&dyn Fn([i32; 3]) -> bool> = target.is_some().then_some(&acts as _);
+    let start = match on {
+        RideOn::Foot => RideFrom::Foot(from.pos),
+        RideOn::Aboard(_) | RideOn::Leave(_) => RideFrom::Aboard(from.pos),
+    };
+    let onward = |a: [i32; 3], b: [i32; 3]| match on {
+        RideOn::Leave(onward) if b == end.pos => onward(a),
+        _ => walks(a, b),
+    };
+    let ride = crate::compiler::nav::vehicle::ride_of(leg, vi, v, start, &onward, end.pos, seat_act)?;
+    let seats = match on {
+        // Aboard, the party is the one the boarding seated.
+        RideOn::Aboard(seats) => seats,
+        RideOn::Leave(_) => crate::compiler::nav::vehicle::PARTY_SEATS,
+        RideOn::Foot => crate::compiler::nav::vehicle::boardable_seats(
+            leg,
+            carries.vehicles,
+            from.pos,
+            &walks,
+            end.pos,
+            target.is_some().then_some(&acts_on as _),
+        ),
+    };
     Ok((ride, seats))
+}
+
+/// How a ride leg starts and what it ends in (spec-0135 §4, §5).
+#[derive(Clone, Copy)]
+enum RideOn<'a> {
+    /// On foot: board the vehicle at its mark.
+    Foot,
+    /// Aboard at the leg's start, the party the boarding seated (its seats).
+    Aboard(u32),
+    /// Aboard at the leg's start, and the leg is not the vehicle's: ride on
+    /// to a leaving cell from which the rest of the leg goes on (`onward`).
+    Leave(&'a dyn Fn([i32; 3]) -> bool),
+}
+
+/// **What a leg's act is done on, where a rider can do it from the seat**
+/// (spec-0135 §5): the box the act is aimed at and the reach it is judged at.
+/// A container a `collect` opens, and a lever or a button an `interact`
+/// presses, are a block used at the block reach; an `interact`'s hitbox and
+/// a `talk-to`'s NPC are a body clicked at the entity reach. Every other act
+/// is done on foot: a fight takes the body where the fight goes, a drop is
+/// picked up off the floor, a frame or a stand is taken from the stance its
+/// own pass proved (`DW1037`), and a `reach-anchor` is entered, not reached
+/// for.
+fn seat_target(world: &World, step: &Step) -> Option<(BodyBox, f64)> {
+    use crate::compiler::crosshair::{BLOCK_INTERACTION_REACH, INTERACTION_REACH};
+    match step {
+        Step::Collect {
+            pos, dropped: None, ..
+        } if !world.holder_stances.contains_key(pos) => {
+            Some((BodyBox::block(*pos), BLOCK_INTERACTION_REACH))
+        }
+        Step::Interact {
+            pos,
+            block: Some(_),
+            ..
+        } => Some((BodyBox::block(*pos), BLOCK_INTERACTION_REACH)),
+        Step::Interact {
+            pos, block: None, ..
+        }
+        | Step::TalkTo { pos, .. } => Some((BodyBox::interaction(*pos), INTERACTION_REACH)),
+        _ => None,
+    }
+}
+
+/// `DW0311` for a leg declared ridden that its vehicle does not carry
+/// (spec-0135 §4) — `aboard` when the party sat in it at the leg's start.
+fn unridden(
+    cur: &VisitedPos,
+    next: &VisitedPos,
+    v: &crate::compiler::nav::vehicle::VehiclePlan,
+    miss: crate::compiler::nav::vehicle::RideMiss,
+    aboard: bool,
+    walks: bool,
+) -> Failure {
+    Failure {
+        code: DW_CRITICAL_UNROUTABLE,
+        message: if aboard {
+            format!(
+                "critical path: the party sits in `{}` (a {}) at {:?} after an act done from \
+                 its seat, and that vehicle carries it no further toward {:?}: {}. Move the \
+                 vehicle's `bounds` or build its medium through, so the ride goes on to a \
+                 cell the next act is done from or a shore the party walks on from.",
+                v.id,
+                v.kind.token(),
+                cur.pos,
+                next.pos,
+                miss.words(),
+            )
+        } else {
+            format!(
+                "critical path: the leg from {:?} to {:?} is declared ridden on `{}` \
+                 (a {}, seated at {:?}), and that ride does not carry it: {}. {} Move \
+                 the vehicle's mark or its `bounds`, build its medium through to the \
+                 leg's end, or drop the objective's `ride` so the leg is walked.",
+                cur.pos,
+                next.pos,
+                v.id,
+                v.kind.token(),
+                v.seat,
+                miss.words(),
+                if walks {
+                    "The party can walk this leg; it is the ride that has no route."
+                } else {
+                    "The party cannot walk this leg either."
+                },
+            )
+        },
+    }
 }
 
 /// `DW1099`'s last arm: a ride the party has no walk around seats too few.
@@ -1147,17 +1289,21 @@ pub(in crate::compiler::nav) fn route_with_links(
     };
     let mut cur = *first;
     let mut result = Ok(());
+    // The vehicle the party sits in at `cur`, and the seats its boarding
+    // counted, after a ride that stayed aboard for its act (spec-0135 §5).
+    let mut aboard: Option<(usize, u32)> = None;
     for next in &positions[1..] {
         live.extend(carries.live_at(next.src_step).iter().copied());
         if next.transport_before {
+            // A teleport unseats a rider (the record §5); a ride already in
+            // the path says where it leaves the party.
+            aboard = None;
             if next.by_link {
                 b.carried += 1;
                 if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
                     taken.insert(format!("{trigger_id}{:?}", next.pos));
                 }
-            } else if next.by_loop
-                && matches!(carries.steps.get(next.src_step), Some(Step::Ride { .. }))
-            {
+            } else if next.by_loop && carries.ridden_into(next.src_step) {
                 b.ridden += 1;
             } else if next.by_loop {
                 b.looped += 1;
@@ -1166,6 +1312,117 @@ pub(in crate::compiler::nav) fn route_with_links(
             }
             cur = *next;
             continue;
+        }
+        // Aboard after an act done from the seat (spec-0135 §5): a leg ridden
+        // on the same vehicle goes on from where the party sits; any other
+        // leg starts with a ride on to a leaving cell, from which the rest of
+        // it is judged as every leg is.
+        if let Some((vi, seated)) = aboard.take() {
+            if carries.declared_ride(next.src_step) == Some(vi) {
+                match ride_leg(
+                    world,
+                    &cur,
+                    next,
+                    region_events,
+                    ancestor,
+                    carries,
+                    vi,
+                    RideOn::Aboard(seated),
+                ) {
+                    Ok((ride, seats)) => {
+                        b.legs += 1;
+                        b.ridden += 1;
+                        if ride.stays {
+                            aboard = Some((vi, seats));
+                            cur = VisitedPos {
+                                pos: ride.leave,
+                                ..*next
+                            };
+                        } else {
+                            b.legs += 1;
+                            b.walked += 1;
+                            cur = *next;
+                        }
+                        takes.rides.insert(next.src_step, ride);
+                        continue;
+                    }
+                    Err(miss) => {
+                        result = Err(unridden(&cur, next, &carries.vehicles[vi], miss, true, false));
+                        break;
+                    }
+                }
+            }
+            // Off the vehicle, toward whatever the leg needs next: the walk
+            // to its end, or the boarding of the vehicle it is declared
+            // ridden on.
+            let onward = |l: [i32; 3]| {
+                let at = VisitedPos {
+                    pos: l,
+                    transport_before: false,
+                    talk_to: false,
+                    by_link: false,
+                    by_loop: false,
+                    ..*next
+                };
+                match carries.declared_ride(next.src_step) {
+                    Some(w) => ride_leg(
+                        world,
+                        &at,
+                        next,
+                        region_events,
+                        ancestor,
+                        carries,
+                        w,
+                        RideOn::Foot,
+                    )
+                    .is_ok(),
+                    None => judge_leg(world, &[at, *next], region_events, ancestor).is_ok(),
+                }
+            };
+            let off = ride_leg(
+                world,
+                &cur,
+                next,
+                region_events,
+                ancestor,
+                carries,
+                vi,
+                RideOn::Leave(&onward),
+            )
+            // No leaving cell goes on by a walk alone: leave nearest the
+            // leg's end, and let the leg's own proof judge the rest — links
+            // and all — and name what it lacks.
+            .or_else(|_| {
+                ride_leg(
+                    world,
+                    &cur,
+                    next,
+                    region_events,
+                    ancestor,
+                    carries,
+                    vi,
+                    RideOn::Leave(&|_| true),
+                )
+            });
+            match off {
+                Ok((ride, _)) => {
+                    b.legs += 1;
+                    b.ridden += 1;
+                    cur = VisitedPos {
+                        pos: ride.leave,
+                        transport_before: false,
+                        talk_to: false,
+                        by_link: false,
+                        by_loop: false,
+                        ..*next
+                    };
+                    takes.leaves.insert(next.src_step, ride);
+                }
+                Err(miss) => {
+                    result = Err(unridden(&cur, next, &carries.vehicles[vi], miss, true, false));
+                    break;
+                }
+            }
         }
         // A trigger the path performs that is a link the party can stand in:
         // the leg into it ends at the stand cell, and the party goes on from
@@ -1232,19 +1489,39 @@ pub(in crate::compiler::nav) fn route_with_links(
         // refuses it when the vehicle does not carry it.
         if let Some(vi) = carries.declared_ride(next.src_step) {
             let v = &carries.vehicles[vi];
-            match ride_leg(world, &cur, next, region_events, ancestor, carries, vi) {
+            match ride_leg(
+                world,
+                &cur,
+                next,
+                region_events,
+                ancestor,
+                carries,
+                vi,
+                RideOn::Foot,
+            ) {
                 Ok((_, seats))
                     if walked.is_err() && seats < crate::compiler::nav::vehicle::PARTY_SEATS =>
                 {
                     result = Err(too_few_seats(&cur, next, v, seats));
                     break;
                 }
-                Ok((ride, _)) => {
-                    b.legs += 2;
-                    b.walked += 2;
+                Ok((ride, seats)) => {
                     b.ridden += 1;
+                    if ride.stays {
+                        // Board, ride, and the act from the seat.
+                        b.legs += 1;
+                        b.walked += 1;
+                        aboard = Some((vi, seats));
+                        cur = VisitedPos {
+                            pos: ride.leave,
+                            ..*next
+                        };
+                    } else {
+                        b.legs += 2;
+                        b.walked += 2;
+                        cur = *next;
+                    }
                     takes.rides.insert(next.src_step, ride);
-                    cur = *next;
                     continue;
                 }
                 // A vehicle out of its medium or its bounds is refused as that
@@ -1252,26 +1529,7 @@ pub(in crate::compiler::nav) fn route_with_links(
                 // on every build; the leg is judged here as the walk it is.
                 Err(crate::compiler::nav::vehicle::RideMiss::Unseated) => {}
                 Err(miss) => {
-                    result = Err(Failure {
-                        code: DW_CRITICAL_UNROUTABLE,
-                        message: format!(
-                            "critical path: the leg from {:?} to {:?} is declared ridden on `{}` \
-                             (a {}, seated at {:?}), and that ride does not carry it: {}. {} Move \
-                             the vehicle's mark or its `bounds`, build its medium through to the \
-                             leg's end, or drop the objective's `ride` so the leg is walked.",
-                            cur.pos,
-                            next.pos,
-                            v.id,
-                            v.kind.token(),
-                            v.seat,
-                            miss.words(),
-                            if walked.is_ok() {
-                                "The party can walk this leg; it is the ride that has no route."
-                            } else {
-                                "The party cannot walk this leg either."
-                            },
-                        ),
-                    });
+                    result = Err(unridden(&cur, next, v, miss, false, walked.is_ok()));
                     break;
                 }
             }
