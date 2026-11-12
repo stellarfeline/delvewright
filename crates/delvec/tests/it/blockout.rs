@@ -2009,6 +2009,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
     let pair = vec![
         delvewright_dsl::siteplan::PlacedBox {
             node: delvewright_dsl::NodeId("node/a".into()),
+            slope: Default::default(),
             foot: [0, 7, 0, 7],
             floor: 64,
             clearance: 4,
@@ -2019,6 +2020,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
         },
         delvewright_dsl::siteplan::PlacedBox {
             node: delvewright_dsl::NodeId("node/b".into()),
+            slope: Default::default(),
             foot: [9, 16, 0, 7],
             floor: 64,
             clearance: 4,

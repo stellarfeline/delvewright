@@ -3117,6 +3117,7 @@ mod tests {
         let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
         let hall = PlacedBox {
             node: node("node/hall"),
+            slope: Default::default(),
             foot: [0, 9, 0, 9],
             floor: 64,
             clearance: 8,
@@ -3127,6 +3128,7 @@ mod tests {
         };
         let loft = PlacedBox {
             node: node("node/loft"),
+            slope: Default::default(),
             foot: [11, 18, 0, 9],
             floor: 69,
             clearance: 3,
@@ -3279,6 +3281,7 @@ mod tests {
         let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
         let yard = PlacedBox {
             node: node("node/yard"),
+            slope: Default::default(),
             foot: [0, 17, 0, 9],
             floor: 64,
             clearance: 9,
@@ -3289,6 +3292,7 @@ mod tests {
         };
         let ledge = PlacedBox {
             node: node("node/ledge"),
+            slope: Default::default(),
             foot: [0, 9, 11, 16],
             floor: 69,
             clearance: 3,

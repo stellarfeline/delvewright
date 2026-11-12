@@ -342,6 +342,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     roofs(&placed, d);
     fillcheck::fill(c, plan, d);
     fillcheck::claims(c, plan, d);
+    grade::check(c, plan, d);
     seams(plan, graph, &placed, &packed, &table, reads, d);
     ways(plan, d);
     volumes_outside_boxes(plan, &placed, d);

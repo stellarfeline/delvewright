@@ -2810,3 +2810,47 @@ fn a_crown_stands_three_or_more_over_every_column_it_covers_on_a_slope() {
         trunks.len()
     );
 }
+
+/// spec-0138's harness: the green plan on an `open` fill, flat at the grade
+/// (its surface at 63), with `boxes` and `volumes` added and a graph node for
+/// each added box — the codes it raises.
+pub(crate) fn grade_plan_codes(boxes_added: Vec<Value>, volumes_added: Vec<Value>) -> Vec<String> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    v["content"]["fill"] = json!({
+        "kind": "open",
+        "surface": "minecraft:grass_block",
+        "below": "minecraft:dirt",
+        "terrain": {"kind": "flat", "datum": "datum/grade"}
+    });
+    let mut graph: Value = serde_json::from_str(GRAPH.as_str()).expect("the graph parses");
+    for b in &boxes_added {
+        graph["content"]["nodes"]
+            .as_array_mut()
+            .expect("nodes")
+            .push(json!({"id": b["node"], "intent": "vista"}));
+    }
+    boxes(&mut v).extend(boxes_added);
+    v["content"]["volumes"]
+        .as_array_mut()
+        .expect("volumes")
+        .extend(volumes_added);
+    check_campaign(&campaign(
+        Some(v.to_string()),
+        Some(graph.to_string()),
+        Some(BRIEF.to_string()),
+    ))
+    .into_iter()
+    .map(|d| {
+        if d.code == "DW1108" {
+            format!("DW1108: {}", d.message)
+        } else {
+            d.code
+        }
+    })
+    .collect()
+}
+
+/// Whether `codes` carries `DW1108`.
+pub(crate) fn has_grade(codes: &[String]) -> bool {
+    codes.iter().any(|c| c.starts_with("DW1108"))
+}

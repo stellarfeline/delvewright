@@ -2527,6 +2527,7 @@ mod tests {
     fn a_box(node: &str, floor: i64) -> PlacedBox {
         PlacedBox {
             node: NodeId(node.into()),
+            slope: Default::default(),
             foot: [0, 7, 0, 7],
             floor,
             clearance: 3,
@@ -2676,6 +2677,7 @@ mod tests {
         use delvewright_dsl::siteplan::{Crossing, Ground, Site};
         let place = |node: &str, foot: [i64; 4]| PlacedBox {
             node: NodeId(node.into()),
+            slope: Default::default(),
             foot,
             floor: 64,
             clearance: 3,

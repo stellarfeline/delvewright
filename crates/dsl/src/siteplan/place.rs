@@ -96,6 +96,9 @@ pub struct PlacedBox {
     /// Which of its four sides stand a wall (spec-0123 §5.1); every side
     /// open when the plan declares none.
     pub sides: super::Sides,
+    /// The slope of its bank beyond every graded side (spec-0138 §3); one
+    /// block per two columns when the plan declares none.
+    pub slope: super::Slope,
 }
 
 impl PlacedBox {
@@ -317,6 +320,7 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
             base: p.plan.base,
             roof: p.plan.roof,
             sides: p.plan.sides.unwrap_or_default(),
+            slope: p.plan.grade.unwrap_or_default(),
         })
         .collect()
 }
