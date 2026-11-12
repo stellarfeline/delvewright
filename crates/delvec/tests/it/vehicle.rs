@@ -62,6 +62,18 @@ struct Bay {
     /// A rail cell at `[16, 4, 7]` in a nook walled off from the room: no
     /// walk reaches it.
     nook: bool,
+    /// The pool runs `x = 4..=16`, too wide for a hand on either shore to
+    /// reach its middle, with crates — barrels standing one block over the
+    /// water, touching its surface — at `[10, 4, 4]` and `[10, 4, 6]`.
+    wide: bool,
+    /// The objectives after `obj/talk`, written whole (each from a leading
+    /// comma), in place of the reach-anchor `obj/exit`.
+    objectives: Option<&'static str>,
+}
+
+/// The pool's courses across the room.
+fn pool(bay: Bay) -> std::ops::RangeInclusive<i32> {
+    if bay.wide { 4..=16 } else { POOL }
 }
 
 fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
@@ -71,7 +83,7 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
         for z in 0..sz {
             for y in 0..sy {
                 let shell = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
-                let pool = POOL.contains(&x) && !shell && (1..=3).contains(&y);
+                let pool = pool(bay).contains(&x) && !shell && (1..=3).contains(&y);
                 if pool {
                     by.insert([x, y, z], "minecraft:water[level=0]");
                 } else if y < 4 || y == sy - 1 || shell {
@@ -79,6 +91,10 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
                 }
             }
         }
+    }
+    if bay.wide {
+        by.insert([10, 4, 4], "minecraft:barrel[facing=up,open=false]");
+        by.insert([10, 4, 6], "minecraft:barrel[facing=up,open=false]");
     }
     if bay.bridge {
         for x in POOL {
@@ -158,7 +174,12 @@ fn anchors() -> serde_json::Value {
         "anchor/ledge-end": { "pos": [18, 6, 5] },
         "anchor/rail-mid": { "pos": [10, 4, 6] },
         "anchor/room": { "pos": [10, 4, 4] },
-        "anchor/nook": { "pos": [16, 4, 7] }
+        "anchor/nook": { "pos": [16, 4, 7] },
+        "anchor/near-dock": { "pos": [4, 3, 3] },
+        "anchor/crate": { "pos": [10, 4, 4] },
+        "anchor/crate-alongside": { "pos": [9, 3, 4] },
+        "anchor/crate-two": { "pos": [10, 4, 6] },
+        "anchor/crate-two-alongside": { "pos": [11, 3, 6] }
     })
 }
 
@@ -219,6 +240,13 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
     } else {
         format!(r#", "vehicles": [ {vehicles} ]{more}"#)
     };
+    let objectives = bay.objectives.map(str::to_string).unwrap_or_else(|| {
+        format!(
+            r#",
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "{goal}",
+             "radius": 1, "after": ["obj/talk"]{ride}{gate} }}"#
+        )
+    });
     let quests = format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -230,9 +258,7 @@ fn write(tag: &str, bay: Bay, vehicles: &str, talk: &str) -> (PathBuf, PathBuf) 
         "id": "quest/open-the-door",
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
-          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "{goal}",
-             "radius": 1, "after": ["obj/talk"]{ride}{gate} }}
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }}{objectives}
         ],
         "on_objective_complete": {{
           "obj/talk": [ {talk} ]
@@ -1386,5 +1412,106 @@ fn a_second_ride_on_a_vehicle_left_where_its_rider_left_it_is_dw1107() {
     assert!(err.contains("DW1107") && err.contains("obj/again"), "{err}");
     if let Err(e) = twice("returns-twice", cart()) {
         assert!(!e.contains("DW1107"), "{e}");
+    }
+}
+
+/// A boat moored by the west shore of the wide pool.
+fn skiff() -> String {
+    r#"{ "id": "vehicle/gull", "entity": "minecraft:oak_boat",
+        "at": { "anchor": "anchor/near-dock" },
+        "bounds": { "anchor": "anchor/bay", "extent": [8, 3, 4] } }"#
+        .to_string()
+}
+
+/// The crate in the middle of the wide pool, taken from the boat.
+const ONE_CRATE: &str = r#",
+          { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
+            "anchor": "anchor/crate-alongside", "holder": "anchor/crate",
+            "after": ["obj/talk"], "ride": "vehicle/gull" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 1, "after": ["obj/crate"] }"#;
+
+/// A crate standing over open water that no hand on a shore reaches, its
+/// collect declared ridden: the act is done from the seat — the ride ends at
+/// a medium cell from which the barrel is in the rider's reach and in sight,
+/// the party stays aboard for the act, and the walk on starts where a ride on
+/// from there leaves it.
+#[test]
+fn a_crate_out_on_the_water_is_opened_from_the_boat() {
+    let bay = Bay {
+        wide: true,
+        objectives: Some(ONE_CRATE),
+        ..Bay::default()
+    };
+    let out = build("crate-from-the-seat", bay, &skiff());
+    let r = rides(&out);
+    assert_eq!(r.len(), 2, "a ride out, the act from its seat, a ride on: {r:#?}");
+    let (out_ride, on) = (&r[0], &r[1]);
+    assert_eq!(out_ride["boards"], true, "{out_ride}");
+    assert_eq!(out_ride["stays"], true, "{out_ride}");
+    let end = cell(out_ride["medium"].as_array().unwrap().last().unwrap());
+    assert_eq!(cell(&out_ride["leave"]), end, "a ride that stays ends at its last medium cell");
+    assert_eq!(end[1], 3, "on the water: {end:?}");
+    // The rider's eye at the end cell is within the block reach of the barrel.
+    let eye = [end[0] as f64 + 0.5, 3.0 + 0.52 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
+    let gap = |e: f64, lo: f64| (lo - e).max(e - (lo + 1.0)).max(0.0);
+    let d = (gap(eye[0], 10.0).powi(2) + gap(eye[1], 4.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
+    assert!(d <= 4.5, "the barrel is {d} from the rider's eye at {end:?}");
+    assert_eq!(on["boards"], false, "the ride on starts aboard: {on}");
+    assert_eq!(on["stays"], false, "{on}");
+    assert_eq!(cell(&on["medium"].as_array().unwrap()[0]), end, "{on}");
+    assert!(xs(&on["leave"]) > 16, "left on the east shore: {on}");
+}
+
+/// The same crate with the boat's bounds short of every cell from which a
+/// rider reaches it: the ride reaches nothing, and the leg is `DW0311`.
+#[test]
+fn a_crate_no_ride_reaches_is_refused() {
+    let bay = Bay {
+        wide: true,
+        objectives: Some(ONE_CRATE),
+        ..Bay::default()
+    };
+    let short = r#"{ "id": "vehicle/gull", "entity": "minecraft:oak_boat",
+        "at": { "anchor": "anchor/near-dock" },
+        "bounds": { "anchor": "anchor/near-dock", "extent": [1, 3, 2] } }"#;
+    let (code, msg) = refused("crate-out-of-reach", bay, short);
+    assert_eq!(code, "DW0311", "{msg}");
+    assert!(msg.contains("declared ridden on `vehicle/gull`"), "{msg}");
+}
+
+/// Two crates in a row: the second ride goes on from where the first left
+/// the party, aboard, with no boarding between them.
+#[test]
+fn two_crates_are_opened_without_leaving_the_boat() {
+    let bay = Bay {
+        wide: true,
+        objectives: Some(
+            r#",
+          { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
+            "anchor": "anchor/crate-alongside", "holder": "anchor/crate",
+            "after": ["obj/talk"], "ride": "vehicle/gull" },
+          { "type": "collect", "id": "obj/crate-two", "item": "minecraft:salmon", "count": 1,
+            "anchor": "anchor/crate-two-alongside", "holder": "anchor/crate-two",
+            "after": ["obj/crate"], "ride": "vehicle/gull" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 1, "after": ["obj/crate-two"] }"#,
+        ),
+        ..Bay::default()
+    };
+    let out = build("two-crates", bay, &skiff());
+    let r = rides(&out);
+    assert_eq!(r.len(), 3, "{r:#?}");
+    let flags: Vec<(bool, bool)> = r
+        .iter()
+        .map(|x| (x["boards"].as_bool().unwrap(), x["stays"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(flags, [(true, true), (false, true), (false, false)], "{r:#?}");
+    for w in r.windows(2) {
+        assert_eq!(
+            cell(w[1]["medium"].as_array().unwrap().first().unwrap()),
+            cell(w[0]["medium"].as_array().unwrap().last().unwrap()),
+            "each ride goes on from where the last one ended: {r:#?}"
+        );
     }
 }
