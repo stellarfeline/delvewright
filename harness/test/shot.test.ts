@@ -15,13 +15,15 @@ import {
 
 const EYE_HEIGHT = 1.62;
 
+type V3 = [number, number, number];
+
 /** How far over the target's centre the arrow loosed toward `aim` from `eye` crosses the centre's column. */
 function missAt(
   eye: readonly [number, number, number],
   target: readonly [number, number, number],
   aim: readonly [number, number, number],
 ): number {
-  const c = [target[0] + 0.5, target[1] + 0.5, target[2] + 0.5];
+  const c: V3 = [target[0] + 0.5, target[1] + 0.5, target[2] + 0.5];
   const d = Math.hypot(c[0] - eye[0], c[2] - eye[2]);
   const pitch = Math.atan2(aim[1] - eye[1], Math.hypot(aim[0] - eye[0], aim[2] - eye[2]));
   const h = arrowHeightAt(pitch, d);
@@ -46,7 +48,8 @@ test("the model reproduces the record's level shot at 27 blocks (vehicles-animal
 test("the aim's arc passes through the target's centre across rises and falls", () => {
   const eye: [number, number, number] = [132.5, 91 + EYE_HEIGHT, 223.5];
   let cases = 0;
-  for (const [dx, dz] of [[4, 0], [17, 15], [27, 0], [0, 30], [28, 28]]) {
+  const runs: [number, number][] = [[4, 0], [17, 15], [27, 0], [0, 30], [28, 28]];
+  for (const [dx, dz] of runs) {
     for (const rise of [-30, -17, -5, 0, 5, 17, 25]) {
       const target: [number, number, number] = [132 + dx, 91 + rise, 223 + dz];
       const aim = shotAim(eye, target);
@@ -71,16 +74,16 @@ function firstStruck(
   const h = Math.hypot(aim[0] - eye[0], aim[2] - eye[2]);
   const pitch = Math.atan2(aim[1] - eye[1], h);
   const [ux, uz] = [(aim[0] - eye[0]) / h, (aim[2] - eye[2]) / h];
-  let v = [ARROW_LAUNCH_SPEED * Math.cos(pitch) * ux, ARROW_LAUNCH_SPEED * Math.sin(pitch), ARROW_LAUNCH_SPEED * Math.cos(pitch) * uz];
-  let p = [eye[0], eye[1] - ARROW_LAUNCH_DROP, eye[2]];
+  let v: V3 = [ARROW_LAUNCH_SPEED * Math.cos(pitch) * ux, ARROW_LAUNCH_SPEED * Math.sin(pitch), ARROW_LAUNCH_SPEED * Math.cos(pitch) * uz];
+  let p: V3 = [eye[0], eye[1] - ARROW_LAUNCH_DROP, eye[2]];
   for (let n = 0; n < 60; n++) {
     for (let s = 0; s < 20; s++) {
-      const q = [0, 1, 2].map((i) => p[i] + (v[i] * s) / 20);
+      const q: V3 = [p[0] + (v[0] * s) / 20, p[1] + (v[1] * s) / 20, p[2] + (v[2] * s) / 20];
       for (const [name, [lo, hi]] of Object.entries(boxes)) {
-        if ([0, 1, 2].every((i) => q[i] >= lo[i] && q[i] < hi[i])) return name;
+        if (q[0] >= lo[0] && q[0] < hi[0] && q[1] >= lo[1] && q[1] < hi[1] && q[2] >= lo[2] && q[2] < hi[2]) return name;
       }
     }
-    p = [0, 1, 2].map((i) => p[i] + v[i]);
+    p = [p[0] + v[0], p[1] + v[1], p[2] + v[2]];
     v = [v[0] * ARROW_DRAG, v[1] * ARROW_DRAG - ARROW_GRAVITY, v[2] * ARROW_DRAG];
   }
   return undefined;
@@ -98,7 +101,7 @@ test("the town's belfry shot: the arc strikes the target where a table scaled fr
   const aim = shotAim(eye, target)!;
   assert.ok(Math.abs(missAt(eye, target, aim)) < 0.01);
   assert.equal(firstStruck(eye, aim, boxes), "target");
-  const c = [149.5, 108.5, 238.5];
+  const c: V3 = [149.5, 108.5, 238.5];
   const d = Math.hypot(c[0] - eye[0], c[2] - eye[2]);
   for (const e of [2.0, 1.5, 2.5]) {
     const table: [number, number, number] = [c[0], c[1] + (e * d) / 27, c[2]];

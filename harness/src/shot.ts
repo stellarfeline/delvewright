@@ -106,7 +106,7 @@ export function shotAim(
   eye: readonly [number, number, number],
   target: readonly [number, number, number],
 ): [number, number, number] | undefined {
-  const c = [target[0] + 0.5, target[1] + 0.5, target[2] + 0.5];
+  const c: [number, number, number] = [target[0] + 0.5, target[1] + 0.5, target[2] + 0.5];
   const dx = c[0] - eye[0];
   const dz = c[2] - eye[2];
   const d = Math.hypot(dx, dz);
