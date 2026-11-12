@@ -1800,8 +1800,8 @@ fn an_anchor_on_a_chest_in_a_wall_resolves_to_its_holder_and_on_stone_is_refused
         &ExpandOptions::seeded(1),
         "piece",
     )
-    .err()
-    .expect("an anchor in nothing is refused");
+    .map(|_| ())
+    .expect_err("an anchor in nothing is refused");
     let said = refused.to_string();
     assert!(
         said.contains("contract-anchors") && said.contains("\"anchor/stores\" at [1,1,7]"),
