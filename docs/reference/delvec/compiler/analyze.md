@@ -105,8 +105,12 @@ real classifier, and prints its binding count.
 
 **The branch-coherent flow model (`compiler::flow`).** Reachability is not one
 union fixpoint over "every `set-flag` anywhere". A **choice group** is a dialogue
-node with ≥2 options that each set a flag — taking one means not taking its
-siblings, so the options are XOR alternatives. A **world** picks one alternative
+node's flag-setting options — taking one means not taking its siblings, so the
+options are XOR alternatives — and, where no option of the node completes an
+objective, a **decline** alternative that takes none of them (a player may leave
+a conversation; a choice that completes nothing is one nobody is made to take);
+a node with fewer than two alternatives is no group. The groups that vary are
+the ones whose flags a gate or a declared branch point's `forks_on` reads. A **world** picks one alternative
 per group (the product over the *flag-reading* groups only, capped at 512;
 groups past the cap stay unconstrained).
 The fixpoint runs **per world**, and a quest/objective is reported unreachable

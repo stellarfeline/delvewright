@@ -24,9 +24,10 @@
 //!
 //! ## The model
 //!
-//! A **choice group** is a dialogue node with two or more options that each set
-//! at least one flag: taking one option means not taking its siblings, so the
-//! options are XOR alternatives. A **world** picks one alternative per group; a
+//! A **choice group** is a dialogue node's flag-setting options: taking one
+//! option means not taking its siblings, so the options are XOR alternatives;
+//! where no option of the node completes an objective, declining them all is an
+//! alternative too (a player may walk away). A **world** picks one alternative per group; a
 //! campaign has one world per point of the product (capped, see
 //! [`MAX_WORLDS`]).
 //!
@@ -1101,7 +1102,13 @@ impl<'a> Flow<'a> {
             }
         }
 
-        let worlds = enumerate_worlds(&groups, &gate_flags(c));
+        // A declared fork's flags are read by the branch proofs, whatever else
+        // reads them: a group that sets one is a choice every proof must see.
+        let mut read = gate_flags(c);
+        for bp in &c.quest_plan.content.branch_points {
+            read.extend(bp.forks_on.iter().map(|f| f.as_str().to_string()));
+        }
+        let worlds = enumerate_worlds(&groups, &read);
         let initial: BTreeMap<String, i64> = c
             .quests
             .content
@@ -2820,13 +2827,21 @@ fn reachable_from(
     seen
 }
 
-/// The XOR choice groups: dialogue nodes with ≥2 flag-setting options.
+/// The flat option index of a group's **decline** alternative: no option of the
+/// node is taken. Flat indices are 1-based, so no option is ever this one.
+const DECLINE: usize = 0;
+
+/// The XOR choice groups: a dialogue node's flag-setting options, one
+/// alternative each, and — where no option of the node completes an objective —
+/// a **decline** alternative that takes none of them: a player may leave a
+/// conversation, or never open it, and a choice that completes nothing is one
+/// nobody is made to take. A node with fewer than two alternatives is no group.
 fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, usize), usize>) {
     let mut groups = Vec::new();
     let mut map = BTreeMap::new();
     for t in trees {
-        for (ni, node_id) in t.node_ids.iter().enumerate() {
-            let alts: Vec<Alt> = t
+        for ni in 0..t.node_ids.len() {
+            let mut alts: Vec<Alt> = t
                 .options
                 .iter()
                 .filter(|o| o.node == ni && !o.sets.is_empty())
@@ -2835,12 +2850,24 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
                     flags: o.sets.clone(),
                 })
                 .collect();
+            if alts.is_empty() {
+                continue;
+            }
+            let free = !t
+                .options
+                .iter()
+                .any(|o| o.node == ni && !o.completes.is_empty());
+            if free {
+                alts.push(Alt {
+                    n: DECLINE,
+                    flags: Vec::new(),
+                });
+            }
             if alts.len() < 2 {
                 continue;
             }
-            let _ = node_id;
             let g = groups.len();
-            for a in &alts {
+            for a in alts.iter().filter(|a| a.n != DECLINE) {
                 map.insert((t.npc.clone(), a.n), g);
             }
             groups.push(ChoiceGroup { alts });
