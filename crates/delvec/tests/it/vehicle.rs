@@ -623,6 +623,27 @@ fn each_kind_is_seated_in_its_medium() {
             "{reseat}"
         );
     }
+    // A boat is summoned afloat in its water cell, where the pinned server's
+    // save holds it at rest (the record §5: 0.52326431274413 over the cell's
+    // floor), and its re-seat measures the mark from there: the body the
+    // summon places is the body the save holds (`DW1040`). Summoned on the
+    // water's top face, it settled a block lower than the ledger wrote it.
+    let gull = function(&out, "vehicle_seat_gull");
+    let summon = gull
+        .lines()
+        .find(|l| l.starts_with("summon minecraft:oak_boat "))
+        .unwrap_or_else(|| panic!("{gull}"));
+    let y: f64 = summon
+        .split(' ')
+        .nth(3)
+        .and_then(|t| t.parse().ok())
+        .expect(summon);
+    assert!(
+        (y - y.floor() - 0.523_264_312_744_13).abs() < 1e-9,
+        "the boat is summoned at y {y}, not afloat in its water cell: {summon}"
+    );
+    let reseat = function(&out, "vehicle_reseat_gull");
+    assert!(reseat.contains(&format!(",y={y:?},")), "{reseat}");
     // A riderless mount waits without its AI — it neither walks nor turns
     // from the yaw it was seated at (the record §13: with its AI, a mount at
     // speed nothing turned within a second, and the save held the turn) — and
