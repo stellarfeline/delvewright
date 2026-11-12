@@ -182,6 +182,7 @@ fn anchors() -> serde_json::Value {
         "anchor/nook": { "pos": [16, 4, 7] },
         "anchor/near-dock": { "pos": [5, 3, 3] },
         "anchor/near-dock-two": { "pos": [5, 3, 6] },
+        "anchor/far-shore": { "pos": [19, 4, 4] },
         "anchor/crate": { "pos": [11, 4, 4] },
         "anchor/crate-alongside": { "pos": [10, 3, 4] },
         "anchor/crate-two": { "pos": [11, 4, 6] },
@@ -1438,7 +1439,7 @@ const ONE_CRATE: &str = r#",
           { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
             "anchor": "anchor/crate-alongside", "holder": "anchor/crate",
             "after": ["obj/talk"], "ride": "vehicle/gull" },
-          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/far-shore",
             "radius": 1, "after": ["obj/crate"] }"#;
 
 /// A crate standing over open water that no hand on a shore reaches, its
@@ -1509,7 +1510,7 @@ fn two_crates_are_opened_without_leaving_the_boat() {
           { "type": "collect", "id": "obj/crate-two", "item": "minecraft:salmon", "count": 1,
             "anchor": "anchor/crate-two-alongside", "holder": "anchor/crate-two",
             "after": ["obj/crate"], "ride": "vehicle/gull" },
-          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/far-shore",
             "radius": 1, "after": ["obj/crate-two"] }"#,
         ),
         ..Bay::default()
