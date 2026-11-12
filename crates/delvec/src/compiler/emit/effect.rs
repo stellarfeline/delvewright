@@ -538,7 +538,7 @@ pub fn effect_commands(plan: &Plan, eff: &QuestEffect, solo: bool) -> Vec<String
 /// the one numbering ([`delvewright_dsl::record::outcome_sites`]): the site
 /// that is this effect, else — for a bundle the plan carries as a copy (a
 /// dialogue option's `on_respawn`) — the first site of the same objective with
-/// the same line, whose page is the same page.
+/// the same English line, whose page reads the same.
 pub(super) fn outcome_ordinal(
     plan: &Plan,
     objective: &str,
@@ -546,13 +546,16 @@ pub(super) fn outcome_ordinal(
     is: impl Fn(&delvewright_dsl::record::OutcomeSite<'_>) -> bool,
 ) -> usize {
     let sites = delvewright_dsl::record::outcome_sites(plan.campaign);
+    let english = |l: &str| -> String {
+        delvewright_dsl::l10n::untag(l).map_or(l, |(_, e)| e).to_string()
+    };
     sites
         .iter()
         .find(|s| is(s))
         .or_else(|| {
-            sites
-                .iter()
-                .find(|s| s.objective.as_str() == objective && s.line == line)
+            sites.iter().find(|s| {
+                s.objective.as_str() == objective && english(s.line) == english(line)
+            })
         })
         .map(|s| s.ordinal)
         .expect("every emitted record-outcome is one of the campaign's outcome sites")
