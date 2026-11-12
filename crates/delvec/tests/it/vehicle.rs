@@ -181,6 +181,7 @@ fn anchors() -> serde_json::Value {
         "anchor/room": { "pos": [10, 4, 4] },
         "anchor/nook": { "pos": [16, 4, 7] },
         "anchor/near-dock": { "pos": [5, 3, 3] },
+        "anchor/near-dock-two": { "pos": [5, 3, 6] },
         "anchor/crate": { "pos": [11, 4, 4] },
         "anchor/crate-alongside": { "pos": [10, 3, 4] },
         "anchor/crate-two": { "pos": [11, 4, 6] },
@@ -1420,10 +1421,14 @@ fn a_second_ride_on_a_vehicle_left_where_its_rider_left_it_is_dw1107() {
     }
 }
 
-/// A boat moored by the west shore of the wide pool.
+/// Two boats moored by the west shore of the wide pool: no walk reaches a
+/// crate, so the ride carries the party of four (`DW1099`).
 fn skiff() -> String {
     r#"{ "id": "vehicle/gull", "entity": "minecraft:oak_boat",
         "at": { "anchor": "anchor/near-dock" },
+        "bounds": { "anchor": "anchor/bay", "extent": [8, 3, 4] } },
+       { "id": "vehicle/tern", "entity": "minecraft:oak_boat",
+        "at": { "anchor": "anchor/near-dock-two" },
         "bounds": { "anchor": "anchor/bay", "extent": [8, 3, 4] } }"#
         .to_string()
 }
@@ -1479,7 +1484,10 @@ fn a_crate_no_ride_reaches_is_refused() {
     };
     let short = r#"{ "id": "vehicle/gull", "entity": "minecraft:oak_boat",
         "at": { "anchor": "anchor/near-dock" },
-        "bounds": { "anchor": "anchor/near-dock", "extent": [0, 3, 2] } }"#;
+        "bounds": { "anchor": "anchor/near-dock", "extent": [0, 3, 2] } },
+       { "id": "vehicle/tern", "entity": "minecraft:oak_boat",
+        "at": { "anchor": "anchor/near-dock-two" },
+        "bounds": { "anchor": "anchor/near-dock-two", "extent": [0, 3, 1] } }"#;
     let (code, msg) = refused("crate-out-of-reach", bay, short);
     assert_eq!(code, "DW0311", "{msg}");
     assert!(msg.contains("declared ridden on `vehicle/gull`"), "{msg}");
