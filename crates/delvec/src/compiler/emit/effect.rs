@@ -419,32 +419,53 @@ pub(super) fn effect_audience(eff: &QuestEffect, aud: Audience) -> Audience {
         Some(EffectAudience::Party) if aud.has_actor() => Audience::Party,
         Some(EffectAudience::Party) => Audience::Scheduled,
         // A body audience is resolved by `emit_body_effect`, never here.
-        Some(EffectAudience::Wave(_) | EffectAudience::Body(_)) => aud,
+        Some(
+            EffectAudience::Wave(_)
+            | EffectAudience::Body(_)
+            | EffectAudience::Npc(_)
+            | EffectAudience::Bodies(_),
+        ) => aud,
     }
 }
 
 /// **An effect aimed at bodies** (spec-0134 §9): the selector of a wave's or
 /// an actor's bodies, through the tag the engine puts on them, narrowed by the
-/// envelope's `in` box — or `None` when the audience names players.
-pub(super) fn body_selector(plan: &Plan, eff: &QuestEffect) -> Option<Option<String>> {
-    use delvewright_dsl::EffectAudience;
-    let tag = match eff.audience.as_ref()? {
-        EffectAudience::Wave(w) => plan::wave_tag(w.as_str()),
-        EffectAudience::Body(a) => format!("dw_actor_{}", plan::safe_local(a.as_str())),
+/// envelope's `in` box — or `None` when the audience names players. A cast
+/// (spec-0136) is one selector per actor it lists, in order; an NPC in it is
+/// refused at validation (`DW0942`) and yields none.
+pub(super) fn body_selector(plan: &Plan, eff: &QuestEffect) -> Option<Vec<String>> {
+    use delvewright_dsl::{BodyKey, EffectAudience};
+    let tags: Vec<String> = match eff.audience.as_ref()? {
+        EffectAudience::Wave(w) => vec![plan::wave_tag(w.as_str())],
+        EffectAudience::Body(a) => vec![format!("dw_actor_{}", plan::safe_local(a.as_str()))],
+        EffectAudience::Npc(_) => Vec::new(),
+        EffectAudience::Bodies(keys) => keys
+            .iter()
+            .filter_map(|k| match k {
+                BodyKey::Actor(a) => {
+                    Some(format!("dw_actor_{}", plan::safe_local(a.actor.as_str())))
+                }
+                BodyKey::Npc(_) => None,
+            })
+            .collect(),
         EffectAudience::Party | EffectAudience::Actor => return None,
     };
-    Some(match eff.within.as_ref() {
-        None => Some(format!("@e[tag={tag}]")),
-        Some(zone) => plan.zone_box(zone).map(|(lo, hi)| {
-            // A box carries the one class exclusion every box-narrowed
-            // entity selector here does (`DW0545`).
-            format!(
-                "@e[tag={tag},{},tag=!{}]",
-                box_selector_args(lo, hi),
-                crate::compiler::affordance::FIXTURE_TAG
-            )
-        }),
-    })
+    Some(
+        tags.into_iter()
+            .filter_map(|tag| match eff.within.as_ref() {
+                None => Some(format!("@e[tag={tag}]")),
+                Some(zone) => plan.zone_box(zone).map(|(lo, hi)| {
+                    // A box carries the one class exclusion every box-narrowed
+                    // entity selector here does (`DW0545`).
+                    format!(
+                        "@e[tag={tag},{},tag=!{}]",
+                        box_selector_args(lo, hi),
+                        crate::compiler::affordance::FIXTURE_TAG
+                    )
+                }),
+            })
+            .collect(),
+    )
 }
 
 /// The commands of a `give-effect`, `clear-effect` or `damage` aimed at the
@@ -526,9 +547,20 @@ pub(super) fn emit_quest_effect(
     body: &mut Vec<String>,
 ) {
     let ns = &plan.namespace;
-    if let Some(sel) = body_selector(plan, eff) {
+    // spec-0136 §4: an effect that keeps a cadence is a call into its own
+    // functions, which fire it from the scheduler.
+    if eff.has_cadence() && eff.verb.keeps_cadence() {
+        body.push(format!("function {ns}:{}", cadence_fn(plan, eff)));
+        return;
+    }
+    // spec-0136 §3: a move is made by the staged bodies its audience names.
+    if eff.verb.moves_a_body() {
+        emit_move(plan, eff, body);
+        return;
+    }
+    if let Some(sels) = body_selector(plan, eff) {
         // An unresolved `in` box is `DW0142` at validation.
-        if let Some(sel) = sel {
+        for sel in sels {
             emit_body_effect(eff, &sel, body);
         }
         return;
@@ -1015,6 +1047,13 @@ pub(super) fn emit_quest_effect(
         Verb::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
         }
+        // spec-0136: lowered above, before the audience is resolved.
+        Verb::Hop { .. }
+        | Verb::Pose { .. }
+        | Verb::Turn { .. }
+        | Verb::Face { .. }
+        | Verb::Hold { .. }
+        | Verb::Resize { .. } => {}
         // --- spec-0082 assembly verbs: a call into the assembly's own
         // functions (`compiler::assembly`). ---
         Verb::SpawnAssembly { .. }
@@ -1130,8 +1169,8 @@ pub(super) fn effect_give_command(
 /// listener-relative and is always emitted through `execute as <who> at @s run
 /// playsound … @s`, so it sounds at each listener rather than at the command's
 /// own position (the world spawn, for a tick- or setup-run function).
-/// `at: actor` never reaches emission — no position resolves for a live actor,
-/// so it is rejected at validate-time (`DW0335`).
+/// `at: bodies` (spec-0136 §3.6) plays it once at each named staged body,
+/// `execute at <body> run playsound … <who> ~ ~ ~`, for the effect's audience.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_play_sound(
     plan: &Plan,
@@ -1179,8 +1218,26 @@ pub(super) fn emit_play_sound(
             }
             None => return, // unresolved anchor (referential validation reports it)
         },
-        Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
-        _ => None,                             // `players` (default): player-relative
+        Some(SoundAt::Bodies { bodies }) => {
+            let mut tail = String::new();
+            if volume.is_some() || pitch.is_some() {
+                tail.push_str(&format!(" {}", volume.unwrap_or(1.0)));
+                if let Some(pt) = pitch {
+                    tail.push_str(&format!(" {pt}"));
+                }
+            }
+            for key in bodies {
+                if key.resolve(plan.campaign).is_none() {
+                    continue; // `DW0112` owns it
+                }
+                body.push(format!(
+                    "execute at {} run playsound {sound} {cat} {who} ~ ~ ~{tail}",
+                    body_sel(key, false)
+                ));
+            }
+            return;
+        }
+        _ => None, // `players` (default): player-relative
     };
     let listener_relative = pos.is_none();
     let mut cmd = format!(
@@ -1283,6 +1340,7 @@ pub(super) fn emit_particle(
             let z = f64::from(c[2]) + 0.5;
             body.push(format!("particle {id} {x} {} {z} {tail} {who}", c[1]));
         }
+        ParticleAt::Bodies(at) => particle_at_bodies(plan, at, &id, &tail, who, body),
     }
 }
 

@@ -286,6 +286,38 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"despawn-vehicle","vehicle":"vehicle/gull"}),
             None,
         ),
+        // spec-0136: a move is not a story subject (no `happening` is
+        // demanded of one), so none resolves one.
+        (
+            "hop",
+            serde_json::json!({"type":"hop","audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
+        (
+            "pose",
+            serde_json::json!({"type":"pose","pose":"crouching","audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
+        (
+            "turn",
+            serde_json::json!({"type":"turn","by":20,"audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
+        (
+            "face",
+            serde_json::json!({"type":"face","to":90,"audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
+        (
+            "hold",
+            serde_json::json!({"type":"hold","slot":"main_hand","audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
+        (
+            "resize",
+            serde_json::json!({"type":"resize","scale":1.25,"audience":{"npc":"npc/keeper"}}),
+            None,
+        ),
     ];
     // The binding: the table answers for every verb the schema declares, and
     // for no name the schema does not.

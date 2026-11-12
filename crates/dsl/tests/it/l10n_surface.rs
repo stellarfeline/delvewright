@@ -282,7 +282,6 @@ const SURFACE: &[(&str, &str, Kind)] = &[
                           for stage 6 (spec-0001)",
         ),
     ),
-    ("SoundAt", "actor", Reference),
     ("SoundAt", "at", Machine),
     ("StateDecl", "name", Inventoried),
     (

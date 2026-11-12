@@ -1,5 +1,5 @@
 //! DSL v0.6 (spec-0014) compiler-side surface: sound-event validation (`DW0326`),
-//! the unsupported `play-sound at: actor` gate (`DW0335`), art-title glyph coverage
+//! art-title glyph coverage
 //! over source + l10n translations (`DW0328`), and the `delve:art` resource-pack
 //! font — baked deterministically into the pack, byte-identical across builds.
 
@@ -121,26 +121,6 @@ fn unknown_narrate_sound_is_dw0326() {
     assert!(
         d.iter().any(|x| x.code == "DW0326"),
         "unknown narrate.sound must be DW0326: {d:#?}"
-    );
-}
-
-// --- DW0335: unsupported play-sound at: actor ----------------------------
-
-#[test]
-fn play_sound_at_actor_is_dw0335() {
-    let c = parse_hw(
-        &quests_doc(
-            r#"{ "type": "play-sound", "sound": "minecraft:ui.toast.challenge_complete",
-                 "at": { "at": "actor", "actor": "actor/giant" } },
-               { "type": "campaign-complete" }"#,
-        ),
-        None,
-    );
-    let d = atmos::check_sounds(&c);
-    assert!(
-        d.iter()
-            .any(|x| x.code == atmos::DW_PLAYSOUND_ACTOR_UNSUPPORTED),
-        "play-sound at: actor must be DW0335: {d:#?}"
     );
 }
 

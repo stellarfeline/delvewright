@@ -641,6 +641,8 @@ pub(super) fn movenpc_fns(
         if watches {
             start.push(crate::compiler::watching::yield_line(&body_sel));
         }
+        // spec-0136: the walk takes the body, so a hop in flight ends.
+        start.extend(moves::walk_ends_hop(plan.campaign, Walker::Npc, &m.npc));
         start.push(format!("scoreboard players set #mrun_{bare} dw.sys 1"));
         start.push(format!("scoreboard players set #mt_{bare} dw.sys 0"));
         start.push(format!("schedule function {ns}:mv_tick_{bare} 1t"));

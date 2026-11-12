@@ -5,12 +5,13 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::moves::{BodyKey, BodyPose, FaceTo};
 use crate::serde_fields::{is_zero3, present};
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, CameraSubject, Carrier, CutsceneParty,
-    DamageKind, DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId,
-    QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone, WaveId, WorldTime,
-    WorldWeather,
+    DamageKind, DespawnStyle, EndingId, EquipSlot, FireworkExplosion, FlagId, Mark, NpcId,
+    PlaceRef, PrefabId, QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone,
+    WaveId, WorldTime, WorldWeather,
 };
 
 #[cfg(doc)]
@@ -953,6 +954,64 @@ pub enum Verb {
         /// The mark the bolt strikes — the cell's centre, at the mark's plane.
         at: Mark,
     },
+    // --- spec-0136: a body the story moves ---
+    /// **A staged body hops** (spec-0136 §3.1): it rises and falls along the
+    /// game's own jump arc and lands where it stood.
+    ///
+    /// The bodies are the effect's `audience` (`{"npc": …}`, `{"actor": …}`
+    /// or `{"bodies": […]}`). The arc is walked by one relative teleport per
+    /// tick ([`crate::moves::hop_arc`]) while the body stays `immovable`: it
+    /// is never released, so nothing can push it and it ends on the exact
+    /// height it left. A body asked to hop while it is in the air, or while a
+    /// `move-npc` / `move-actor` walks it, does not hop; a walk that starts
+    /// under a hop ends the hop.
+    Hop {
+        /// The hop's peak above where the body stands, in blocks
+        /// (0.25–4). Absent = the game's own jump: 1.25 blocks, 12 ticks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(min = 0.25, max = 4.0))]
+        height: Option<f64>,
+    },
+    /// **A staged body takes a pose** (spec-0136 §3.2) and keeps it until the
+    /// next `pose`. Only a skinned body — a mannequin — has poses (`DW1101`).
+    Pose {
+        /// The pose.
+        pose: BodyPose,
+    },
+    /// **A staged body turns** by a number of degrees from the way it faces
+    /// (spec-0136 §3.3), head and body together. A spin is a `turn` that
+    /// repeats. A body that watches gives up its watch to the turn; `face`
+    /// `to: "watch"` hands it back.
+    Turn {
+        /// Degrees, clockwise seen from above when positive; not 0, within
+        /// ±180.
+        #[schemars(range(min = -180.0, max = 180.0))]
+        by: f64,
+    },
+    /// **A staged body faces** a yaw, a mark, or its own watch again
+    /// (spec-0136 §3.3). Facing a mark tilts the head to it; a yaw levels it.
+    Face {
+        /// A yaw in degrees, a mark, or `"watch"`.
+        to: FaceTo,
+    },
+    /// **A staged body holds or wears an item** (spec-0136 §3.4), or empties
+    /// the slot. The item must be one the pinned game draws on that body in
+    /// that slot (`DW0898`).
+    Hold {
+        /// The slot.
+        slot: EquipSlot,
+        /// The item id (`minecraft:` prefix optional). Absent = the slot is
+        /// emptied.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item: Option<String>,
+    },
+    /// **A staged body changes size** (spec-0136 §3.5): the game's `scale`
+    /// attribute, kept until the next `resize`. 1 is the body's own size.
+    Resize {
+        /// The scale, 0.0625–16.
+        #[schemars(range(min = 0.0625, max = 16.0))]
+        scale: f64,
+    },
 }
 
 /// Where a [`Verb::Particle`] spawns (spec-0085 §4.3): a mark, or the literal
@@ -964,6 +1023,26 @@ pub enum ParticleAt {
     Players(PlayersKeyword),
     /// A mark — the cell's centre at the mark's plane.
     Mark(Mark),
+    /// Staged bodies (spec-0136 §3.6) — at each named body, wherever it
+    /// stands when the effect fires.
+    Bodies(ParticleAtBodies),
+}
+
+/// `{"bodies": […], "up": n}` — a [`Verb::Particle`] at staged bodies.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ParticleAtBodies {
+    /// The bodies, in stagger order.
+    #[schemars(length(min = 1))]
+    pub bodies: Vec<BodyKey>,
+    /// Blocks above each body's feet (default 0): 2 is over a standing
+    /// figure's head.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub up: f64,
+}
+
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// The literal `players`, the one keyword [`ParticleAt`] admits.
@@ -995,9 +1074,8 @@ pub const MAX_VOLLEY_INTERVAL: u32 = 200;
 pub const DEFAULT_COLLAPSE_FALLING_BLOCK: &str = "minecraft:gravel";
 
 /// Where a [`Verb::PlaySound`] originates (DSL v0.6, spec-0014). A sound
-/// plays at fixed coordinates or at each listener's own position; the compiler
-/// resolves no position for a live actor, so the `actor` variant is accepted by
-/// the schema and rejected with `DW0335`.
+/// plays at fixed coordinates, at each listener's own position, or at staged
+/// bodies (spec-0136 §3.6), wherever each stands when the effect fires.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "at", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SoundAt {
@@ -1021,11 +1099,12 @@ pub enum SoundAt {
         #[serde(default, skip_serializing_if = "is_zero3")]
         offset: [i32; 3],
     },
-    /// Play the sound at a scripted actor's position (rejected — `DW0335`; no
-    /// actor position resolves at emission).
-    Actor {
-        /// The actor id (stage-5 `actors[]`).
-        actor: String,
+    /// Play the sound at each named staged body, audible to the effect's
+    /// audience (spec-0136 §3.6).
+    Bodies {
+        /// The bodies, in stagger order.
+        #[schemars(length(min = 1))]
+        bodies: Vec<BodyKey>,
     },
 }
 
@@ -1166,6 +1245,12 @@ impl Verb {
             Verb::ArmStrikes { .. } => "arm-strikes",
             Verb::Particle { .. } => "particle",
             Verb::Lightning { .. } => "lightning",
+            Verb::Hop { .. } => "hop",
+            Verb::Pose { .. } => "pose",
+            Verb::Turn { .. } => "turn",
+            Verb::Face { .. } => "face",
+            Verb::Hold { .. } => "hold",
+            Verb::Resize { .. } => "resize",
         }
     }
 
@@ -1246,6 +1331,13 @@ impl Verb {
             | Verb::Firework { .. }
             // spec-0092: the thunder is the game's to send; the bolt is a world fact.
             | Verb::Lightning { .. }
+            // spec-0136: a move is made by a body; no player is addressed.
+            | Verb::Hop { .. }
+            | Verb::Pose { .. }
+            | Verb::Turn { .. }
+            | Verb::Face { .. }
+            | Verb::Hold { .. }
+            | Verb::Resize { .. }
             // spec-0080: a biome repaint is a world fact (`fillbiome`).
             | Verb::SetAtmosphere { .. }
             // spec-0082: an assembly is a world object.
@@ -1309,8 +1401,17 @@ impl Verb {
             | Verb::BeginStealth { .. }
             | Verb::EndStealth
             | Verb::ArmStrikes { .. }
-            | Verb::PlayClip { .. } => true,
-            Verb::Narrate { .. }
+            | Verb::PlayClip { .. }
+            // spec-0136: what a body is left holding, wearing, posed as, sized
+            // to or facing stays after the scene.
+            | Verb::Pose { .. }
+            | Verb::Turn { .. }
+            | Verb::Face { .. }
+            | Verb::Hold { .. }
+            | Verb::Resize { .. } => true,
+            // spec-0136: a hop ends where it began.
+            Verb::Hop { .. }
+            | Verb::Narrate { .. }
             | Verb::PlaySound { .. }
             | Verb::StopSound { .. }
             | Verb::Firework { .. }

@@ -537,6 +537,28 @@ fn samples() -> Vec<(&'static str, Value)> {
             "lightning",
             json!({"type":"lightning","at":{"anchor":"anchor/exit","offset":[0,5,0]}}),
         ),
+        // spec-0136: a move is made by a body; it addresses no player.
+        ("hop", json!({"type":"hop","audience":{"npc":"npc/keeper"}})),
+        (
+            "pose",
+            json!({"type":"pose","pose":"crouching","audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "turn",
+            json!({"type":"turn","by":20,"audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "face",
+            json!({"type":"face","to":90,"audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "hold",
+            json!({"type":"hold","slot":"main_hand","item":"minecraft:poppy","audience":{"npc":"npc/keeper"}}),
+        ),
+        (
+            "resize",
+            json!({"type":"resize","scale":1.25,"audience":{"npc":"npc/keeper"}}),
+        ),
     ]
 }
 
@@ -575,8 +597,11 @@ fn every_verb_is_classified_by_what_the_emitter_does() {
         .unwrap()
         .1
         .clone();
+    // And the sample hop: its start names the arc the campaign declares.
+    let hop = table.iter().find(|(t, _)| *t == "hop").unwrap().1.clone();
     let c = campaign(&quests(|d| {
         common::objective_effects(d, 0, "obj/talk").push(seq.clone());
+        common::objective_effects(d, 0, "obj/talk").push(hop.clone());
         d["content"]["on_death"] = json!([seq.clone()]);
     }));
     let prefabs = prefabs();
