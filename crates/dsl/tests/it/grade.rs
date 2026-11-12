@@ -6,7 +6,7 @@
 //! engine's arithmetic is not asked to agree with itself.
 
 use delvewright_dsl::ids::NodeId;
-use delvewright_dsl::siteplan::grade::{Grade, Meets, settle};
+use delvewright_dsl::siteplan::grade::{Grade, Meets};
 use delvewright_dsl::siteplan::{
     Base, Face, Ground, PlacedBox, SideKind, Sides, Site, Slope, Stratum,
 };
@@ -104,6 +104,18 @@ fn k_by_counting(q: i64, run: i64) -> i64 {
         k += 1;
     }
     k
+}
+
+/// Where a column settles, by the definition of §4 written out again: held
+/// in `[lo, hi]` and carried `n` back toward the place, never past the bound.
+fn settle(t: i64, lo: i64, hi: i64, n: i64) -> i64 {
+    if t < lo {
+        std::cmp::min(lo + n, hi)
+    } else if t > hi {
+        std::cmp::max(hi - n, lo)
+    } else {
+        t
+    }
 }
 
 /// A place's allowance at `c` by the second route: rise × runs counted.
@@ -394,6 +406,50 @@ fn ground_that_already_meets_the_side_is_left() {
         "{raised} {lowered} {kept}"
     );
     assert_eq!(raised + lowered + kept, 39 * 38);
+}
+
+/// A bank ends at the first column the ground already meets: a valley past
+/// a stretch of ground at the place's own height is not reached, though the
+/// bound measured from the edge would raise it.
+#[test]
+fn a_bank_ends_where_the_ground_meets_it() {
+    let n = 60;
+    let p = 63;
+    let b = place(
+        "terrace",
+        [10, 19, 10, 49],
+        p + 1,
+        [
+            None,
+            Some(SideKind::Wall),
+            Some(SideKind::Wall),
+            Some(SideKind::Wall),
+        ],
+    );
+    // East of the ring (x 20): two columns two under, six at the place's
+    // height, then a valley ten under.
+    let t = |x: i64, _: i64| match x {
+        21..=22 => p - 2,
+        23..=28 => p,
+        x if x >= 29 => p - 10,
+        _ => p,
+    };
+    let g = grade(std::slice::from_ref(&b), n, &natural(n, t));
+    let mut valley = 0;
+    for x in 29..n {
+        for z in 12..48 {
+            assert_eq!(
+                g.top(x, z),
+                Some(p - 10),
+                "the valley at [{x}, {z}] is not reached"
+            );
+            valley += 1;
+        }
+    }
+    for z in 12..48 {
+        assert_eq!(g.top(21, z), Some(p), "the shoulder at [21, {z}]");
+    }
+    assert_eq!(valley, 31 * 36);
 }
 
 // ---------------------------------------------------------------- criterion 4

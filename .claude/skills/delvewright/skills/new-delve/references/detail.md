@@ -90,6 +90,8 @@ What the agent's program has to meet — the handout carries it, and you read it
 
 No door, gate or counter is named per trade: the construction names it.
 
+**The edge of an open side**: the handout's `sides` rows say how the land meets each unwalled side — `meets: graded` (stepped to the floor course, the first column beyond the ring at the floor course's height) or `meets: sheer` (left as the land has it) — and `drop`, the least and greatest height of the land one column beyond the ring minus the floor course. Draw the edge for it: a graded side's paving runs to the ring and the land carries on; a sheer side over a drop of more than one block is a face the piece finishes — a rail, a wall cap, a kerb.
+
 **Outside the door**: a street's verge — the columns of a way place outside its declared clear width — is the street's to dress, and so is a yard cut as its own open-sided place: shrubs, potted flowers, a hedge on a log, a bench, a trough; dress for what stands opposite, which the neighbour summary names. Nothing stands in a way's clear width.
 
 **A wide way keeps a wide approach**: the approach to a stair or a door is as wide as the way, at least three; its landing is as deep as the way is wide; a hearth, a newel or a pillar stands three to five cells from a stair, a newel in the next column over. **A seam at grade is walked at the sill**: both places draw their ground to the sill at the crossing, the side the plan hands the ring row to paves it, and no cell of a street's or a flight's corridor lies below the walk plane with higher cells before and after it — a trench a body walking the road falls into.
