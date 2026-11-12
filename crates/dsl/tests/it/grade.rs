@@ -46,7 +46,7 @@ fn natural(n: i64, t: impl Fn(i64, i64) -> i64) -> Vec<i64> {
 }
 
 fn grade(boxes: &[PlacedBox], n: i64, nat: &[i64]) -> Grade {
-    Grade::of(boxes, [0, 0], n, n, Some(nat), SEED)
+    Grade::of(boxes, [0, 0], n, n, Some(nat), None, SEED)
 }
 
 /// The definition of §4 by a second route: the ring columns of `b` whose
@@ -466,6 +466,75 @@ const VALUES: [Option<SideKind>; 4] = [
 /// column settles by [`settle`] with the noise; no two 4-adjacent columns'
 /// bounds differ by more than the rise; a corner between a graded and an
 /// ungraded side is not an edge column.
+/// **The sea meets a side as ground does.** On a horizon with a sea, a
+/// column whose terrain stands under the sea's surface is met at that surface:
+/// a cove whose floor course is the sea's top course, beside a sea floor
+/// twelve under it, regrades nothing, and a quay four above the sea is banked
+/// down only until the bank meets the sea — every raised column stands above
+/// the sea, and every column the bound leaves at or under it keeps its own sea
+/// floor. The perturbation: the same plans with no sea raise the sea floor
+/// into a bank round the cove.
+#[test]
+fn a_bank_ends_at_the_sea_as_a_shore_does() {
+    let (n, sea, floor_t) = (60, 62, 50);
+    let nat = natural(n, |_, _| floor_t);
+    let of = |b: &PlacedBox, sea: Option<i64>| {
+        Grade::of(std::slice::from_ref(b), [0, 0], n, n, Some(&nat), sea, SEED)
+    };
+    // The cove: floor course at the sea's top course, every side open.
+    let cove = place("cove", [20, 39, 20, 39], sea + 1, [None, None, None, None]);
+    assert_eq!(
+        of(&cove, Some(sea)).regraded.len(),
+        0,
+        "the sea meets the cove"
+    );
+    let dry = of(&cove, None);
+    assert!(
+        dry.regraded.len() > 100,
+        "with no sea the sea floor is raised: {}",
+        dry.regraded.len()
+    );
+    // The quay: four above the sea, banked down at the default slope until
+    // the bank meets the sea.
+    let p = sea + 4;
+    let quay = place("quay", [20, 39, 20, 39], p + 1, [None, None, None, None]);
+    let g = of(&quay, Some(sea));
+    let edges = vec![(&quay, edge_columns(&quay, &[]))];
+    let met = |_: i64, _: i64| sea;
+    let bk = banks(&edges, &[&quay], n, &met);
+    let (mut raised, mut kept) = (0usize, 0usize);
+    for x in 0..n {
+        for z in 0..n {
+            if in_shell(&quay, x, z) {
+                continue;
+            }
+            let top = g.top(x, z).expect("inside");
+            match bound(&edges, &bk, [x, z]) {
+                Some((lo, _)) if lo > sea => {
+                    assert!(top >= lo && top > sea, "raised above the sea at [{x}, {z}]");
+                    raised += 1;
+                }
+                _ => {
+                    assert_eq!(top, floor_t, "the sea floor is kept at [{x}, {z}]");
+                    kept += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(raised, g.regraded.len());
+    assert!(raised > 0 && kept > 0, "raised {raised}, kept {kept}");
+    let side = g
+        .sides
+        .iter()
+        .find(|s| s.face == Face::South)
+        .expect("south");
+    assert_eq!(
+        side.drop,
+        Some([sea - p, sea - p]),
+        "the drop met is the sea's"
+    );
+}
+
 #[test]
 fn a_corner_is_rounded_and_a_wall_end_is_turned() {
     let n = 36;

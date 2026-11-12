@@ -226,6 +226,9 @@ pub struct Way {
     pub piece: Option<PieceFrame>,
     /// Where a stair seam's run came from.
     pub run: Run,
+    /// An open side's outward step across its face, `[dx, dz]`: the place is
+    /// one step inward of its ring, the land or the sea one step outward.
+    pub outward: Option<[i32; 2]>,
 }
 
 /// One runtime write as a state: the region, what it leaves there (`None` =
@@ -264,6 +267,13 @@ pub struct Ground<'a> {
     /// What the engine seated in a cell of the shipped world, in words — a
     /// relight fixture, a trigger's prop — so a refusal names the object.
     pub seated: &'a BTreeMap<[i32; 3], String>,
+    /// What the world generator puts in a cell no placed piece wrote — the
+    /// `ocean` horizon's sea — and where the pieces stand
+    /// ([`super::World::with_ambient`]): a fact of the blocks the shipped
+    /// world holds, as the route proof reads them.
+    pub ambient: &'a super::Ambient,
+    /// Every placed piece's box ([`super::built_volume`]).
+    pub built: &'a [super::BuiltPiece],
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +711,7 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
                 crate::compiler::assembled::occupancy_over(m, &open_gates),
                 Premises::geometry_only(),
             )
+            .with_ambient(ground.ambient.clone(), ground.built.to_vec())
         })
         .collect();
 
@@ -735,10 +746,19 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
         let mut v = StationVerdict::default();
         let mut taken_in: BTreeMap<usize, Vec<Taking>> = BTreeMap::new();
         for (k, w) in worlds.iter().enumerate() {
+            let mut met: Option<BTreeSet<[i32; 3]>> = None;
             let clear: Vec<bool> = s
                 .columns
                 .iter()
-                .map(|c| column_clear(w, c, y0(c)))
+                .map(|c| {
+                    column_clear(w, c, y0(c))
+                        || way.outward.is_some_and(|out| {
+                            let met = met.get_or_insert_with(|| across_the_side(w, &way, out));
+                            (y0(c) - 1..=y0(c) + 1)
+                                .map(|y| [c.x, y, c.z])
+                                .any(|cell| met.contains(&cell) && meets_the_plane(w, cell, y0(c)))
+                        })
+                })
                 .collect();
             let n = clear.iter().filter(|x| **x).count();
             v.clear.push(n);
@@ -793,6 +813,78 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
         refusal,
         ..empty
     }
+}
+
+/// **Where a body in the place meets an open side** (spec-0123 §5.4, read with
+/// spec-0138): the rest states the reach graph — the route proof's own moves,
+/// over this state's world with its sea — joins to the place's row inside the
+/// ring, either way, moving through the ring and its approach and resting
+/// within one course of the walk plane: a body crosses a side outward or
+/// inward, and whether it is stranded where it lands is the route proof's
+/// and the boundary's question, not the side's. An open side's ground beyond is the
+/// land's or the sea's, not the place's: the sea a body swims one course under
+/// the walk plane, a bank or a shore a step above it, are met as the floor at
+/// the walk plane is ([`meets_the_plane`]). Nothing else is: a post, a hedge,
+/// a wall still takes its column, and a drop deeper than a course is not a
+/// side a body crosses.
+fn across_the_side(w: &World, way: &Way, out: [i32; 2]) -> BTreeSet<[i32; 3]> {
+    let mut rows: BTreeSet<(i32, i32)> = BTreeSet::new();
+    let mut plane = i32::MAX;
+    for c in way.stations.iter().flat_map(|s| s.columns.iter()) {
+        let y = c.y0.unwrap_or(c.ylo);
+        plane = plane.min(y);
+        for k in -2..=1 {
+            rows.insert((c.x + k * out[0], c.z + k * out[1]));
+        }
+    }
+    if plane == i32::MAX {
+        return BTreeSet::new();
+    }
+    // The place's row: one step inward of the ring, two of the approach.
+    let ring: BTreeSet<(i32, i32)> = way
+        .stations
+        .iter()
+        .filter(|s| s.key == StationKey::OpenSide(0))
+        .flat_map(|s| s.columns.iter())
+        .map(|c| (c.x - out[0], c.z - out[1]))
+        .chain(
+            way.stations
+                .iter()
+                .filter(|s| s.key == StationKey::OpenSide(1))
+                .flat_map(|s| s.columns.iter())
+                .map(|c| (c.x - 2 * out[0], c.z - 2 * out[1])),
+        )
+        .collect();
+    let band = (plane - 1)..=(plane + 1);
+    let seeds: Vec<[i32; 3]> = ring
+        .iter()
+        .flat_map(|&(x, z)| band.clone().map(move |y| [x, y, z]))
+        .filter(|c| super::shutmodel::can_be(w, *c))
+        .collect();
+    let keep = |c: [i32; 3]| band.contains(&c[1]) && rows.contains(&(c[0], c[2]));
+    let mut met = w.body_flood(&seeds, &super::Confinement::cells(&keep));
+    // And the cells a body crosses back from: the shore a body steps down
+    // off into the sea is met though the sea gives no way up onto it.
+    let band_cells: BTreeSet<[i32; 3]> = rows
+        .iter()
+        .flat_map(|&(x, z)| band.clone().map(move |y| [x, y, z]))
+        .filter(|c| super::shutmodel::can_be(w, *c))
+        .collect();
+    let goal: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+    met.extend(w.cells_reaching(&band_cells, &goal));
+    met
+}
+
+/// **Whether a body in `cell` meets an open side's walk plane `y0`**: in it,
+/// afloat on the sea's top course under it, or standing a course over it. A
+/// body under water, or one held by a climbable off the plane, is passing
+/// under or over the side, not crossing it.
+fn meets_the_plane(w: &World, cell: [i32; 3], y0: i32) -> bool {
+    use super::RestKind;
+    matches!(
+        (cell[1] - y0, w.rest_kind(cell)),
+        (0, Some(_)) | (-1, Some(RestKind::Afloat)) | (1, Some(RestKind::Standing))
+    )
 }
 
 /// The `DW1065` refusal for an open side built shut at one station: every
@@ -1390,6 +1482,7 @@ pub fn seam_way(
         own,
         piece: None,
         run,
+        outward: None,
     })
 }
 
@@ -1737,6 +1830,7 @@ fn place_ways(plan: &Plan, census: &mut Census, cover: &BTreeSet<[i32; 3]>, out:
             own: BTreeMap::new(),
             piece: None,
             run: Run::None,
+            outward: None,
         });
     }
 }
@@ -1798,6 +1892,11 @@ fn open_side_ways(
                 own: BTreeMap::new(),
                 piece: None,
                 run: Run::None,
+                outward: Some({
+                    let mut o = [0i32; 2];
+                    o[n / 2] = n32(side.outward());
+                    o
+                }),
             });
         }
     }
@@ -1914,6 +2013,7 @@ pub fn piece_ways_over(
                         rotation: p.rotation,
                     }),
                     run: Run::None,
+                    outward: None,
                 });
             }
         }
@@ -2333,12 +2433,16 @@ pub fn check(
             seated.insert(cell, format!("the block of {}", p.owner.word()));
         }
     }
+    let ambient = super::Ambient::of_plan(plan);
+    let built = super::built_volume(plan);
     let ground = Ground {
         shipped: &shipped,
         open_gates: &assembled.open_gates,
         writes: &writes,
         sealed: &sealed,
         seated: &seated,
+        ambient: &ambient,
+        built: &built,
     };
     let records: Vec<WayRecord> = judge_all(ways, &ground);
     let used: BTreeSet<&StateWrite> = writes
@@ -2423,6 +2527,7 @@ mod tests {
             own: BTreeMap::new(),
             piece: None,
             run: Run::Laid,
+            outward: None,
         }
     }
 
@@ -2445,6 +2550,8 @@ mod tests {
                 writes,
                 sealed,
                 seated: &seated,
+                ambient: &super::super::Ambient::Void,
+                built: &[],
             },
         )
     }
@@ -2713,6 +2820,8 @@ mod tests {
             writes: &[],
             sealed: &[],
             seated: &seated,
+            ambient: &super::super::Ambient::Void,
+            built: &[],
         };
         let rec = judge(way(vec![foot()]), &ground);
         let f = rec.refusal.as_ref().expect("refused");
@@ -3530,6 +3639,7 @@ mod tests {
             own: BTreeMap::new(),
             piece: None,
             run: Run::None,
+            outward: None,
         }
     }
 
@@ -3581,6 +3691,121 @@ mod tests {
         assert!(f.message.contains("oak_leaves"), "{}", f.message);
         let portal = judge_over(way(vec![foot()]), &m, &[], &[]);
         assert!(portal.refusal.is_none(), "{:?}", portal.refusal);
+    }
+
+    /// The east side of a cove at the sea (spec-0123 §5.4 read with
+    /// spec-0138): the walk plane at y 63, one course over the sea's top
+    /// course; the place holds water two deep at y 61 and 62 over a sand bed
+    /// to its row at x 9, its ring at x 10 is its sand, and the approach at
+    /// x 11 is beyond every placed box.
+    fn cove_side() -> Way {
+        let station = |k: u32, x: i32, words: &str| Station {
+            key: StationKey::OpenSide(k),
+            label: format!("the {words} of the east side"),
+            deferred: false,
+            columns: (12..=14)
+                .enumerate()
+                .map(|(i, z)| Column {
+                    index: i,
+                    x,
+                    z,
+                    ylo: 63,
+                    yhi: 63,
+                    y0: Some(63),
+                    vertical: false,
+                })
+                .collect(),
+        };
+        Way {
+            stations: vec![station(0, 10, "ring"), station(1, 11, "approach")],
+            outward: Some([1, 0]),
+            ..open_side()
+        }
+    }
+
+    fn cove() -> BlockMap {
+        let mut m = BlockMap::new();
+        for x in 0..=10 {
+            for z in 6..=20 {
+                m.insert([x, 60, z], BlockState::new("minecraft:sand"));
+                let top = if x == 10 {
+                    "minecraft:sand"
+                } else {
+                    "minecraft:water"
+                };
+                m.insert([x, 61, z], BlockState::new(top));
+                m.insert([x, 62, z], BlockState::new(top));
+            }
+        }
+        m
+    }
+
+    fn judge_at(w: Way, m: &BlockMap, ambient: &super::super::Ambient) -> WayRecord {
+        let (open, seated) = (BTreeSet::new(), BTreeMap::new());
+        let built = vec![("cove".to_string(), ([0, 50, 6], [10, 70, 20]))];
+        let shipped = |lo: [i32; 3], hi: [i32; 3]| m.in_box(lo, hi).map(|(c, b)| (c, *b)).collect();
+        judge(
+            w,
+            &Ground {
+                shipped: &shipped,
+                open_gates: &open,
+                writes: &[],
+                sealed: &[],
+                seated: &seated,
+                ambient,
+                built: &built,
+            },
+        )
+    }
+
+    /// **An open side over the sea a body swims stands open; one beside a
+    /// shore a step up stands open; a post still narrows it** — the side is
+    /// judged by the reach graph's moves over the world with its sea, from
+    /// the place's row, as the route proof crosses it. The defect's two
+    /// shapes are the perturbations: the world read without its sea (the
+    /// approach is air over air) and the side read at its walk plane alone
+    /// (a body afloat a course under it, or standing a course over it, is in
+    /// no column) are each `DW1065`.
+    #[test]
+    fn an_open_side_meets_the_sea_and_the_shore_as_the_route_proof_does() {
+        let ocean = super::super::Ambient::of_base(delvewright_dsl::HorizonBase::Ocean);
+        let void = super::super::Ambient::Void;
+        let rec = judge_at(cove_side(), &cove(), &ocean);
+        assert!(rec.refusal.is_none(), "{:?}", rec.refusal);
+        assert_eq!(rec.stations[1].clear, vec![3], "the sea beyond is swum");
+        let dry = judge_at(cove_side(), &cove(), &void);
+        assert_eq!(dry.refusal.as_ref().map(|f| f.code.id()), Some("DW1065"));
+        let flat = Way {
+            outward: None,
+            ..cove_side()
+        };
+        let plane = judge_at(flat, &cove(), &ocean);
+        assert_eq!(plane.refusal.as_ref().map(|f| f.code.id()), Some("DW1065"));
+
+        // The shore: the ring and the land beyond are sand a course over the
+        // water, met by stepping down off it into the water.
+        let mut shore = cove();
+        put(&mut shore, (12..=14).map(|z| [10, 63, z]), "minecraft:sand");
+        put(&mut shore, (6..=20).map(|z| [11, 62, z]), "minecraft:sand");
+        put(&mut shore, (6..=20).map(|z| [11, 63, z]), "minecraft:sand");
+        let rec = judge_at(cove_side(), &shore, &ocean);
+        assert!(rec.refusal.is_none(), "{:?}", rec.refusal);
+        let plane = judge_at(
+            Way {
+                outward: None,
+                ..cove_side()
+            },
+            &shore,
+            &ocean,
+        );
+        assert_eq!(plane.refusal.as_ref().map(|f| f.code.id()), Some("DW1065"));
+
+        // A masonry post on the shore's ring, two blocks over the sand, takes
+        // its column.
+        let mut posted = shore.clone();
+        put(&mut posted, [[10, 64, 13], [10, 65, 13]], MASONRY);
+        let rec = judge_at(cove_side(), &posted, &ocean);
+        assert_eq!(rec.refusal.as_ref().map(|f| f.code.id()), Some("DW1057"));
     }
 
     #[test]
@@ -3636,6 +3861,8 @@ mod tests {
             writes: &[],
             sealed: &[],
             seated: &seated,
+            ambient: &super::super::Ambient::Void,
+            built: &[],
         };
         let all = judge_all(ways.clone(), &ground);
         let order = asked.borrow().clone();
