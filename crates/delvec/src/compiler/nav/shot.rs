@@ -30,9 +30,9 @@ use super::DW_SHOT_UNSEEN;
 /// bow's arrow leaves the player's own hitbox at the target.
 pub const SHOT_REACH_MIN: i32 = 4;
 
-/// The farthest a stance may stand from the target, in blocks: past it the
-/// record's elevation table holds no aim (`vehicles-animals-and-targets.md`
-/// §1 measured a hit at 27).
+/// The farthest a stance may stand from the target, in blocks: well inside a
+/// full-drawn arrow's reach in every direction
+/// (`vehicles-animals-and-targets.md` §14).
 pub const SHOT_REACH_MAX: i32 = 40;
 
 /// A stance: the feet cell, and its eye's distance to the target's centre.

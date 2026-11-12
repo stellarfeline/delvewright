@@ -608,6 +608,18 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
+/// **Who holds datum `id` in a template whose acting player is the pinned
+/// dummy `dummy`**: the dummy for a `player`-scoped datum, the party fake
+/// player for a `party` one — the holder the emitted functions read it at
+/// ([`super::state::state_holder`]), with `@s` named as the dummy, because a
+/// template's own lines run where there is no acting player to be `@s`.
+fn dummy_state_holder(plan: &Plan, dummy: &str, id: &StateId) -> String {
+    match super::state::state_holder(plan, id).as_str() {
+        "@s" => dummy.to_string(),
+        h => h.to_string(),
+    }
+}
+
 /// **The one way a generated PackTest wounds a body.** Sets the first body
 /// `selector` names to half of ITS OWN maximum health, read from the server's
 /// `max_health` attribute at the moment of the wound. A literal health would be

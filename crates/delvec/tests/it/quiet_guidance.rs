@@ -37,20 +37,25 @@ fn variant_with(name: &str, mut quests: Value, mut dialogue: Value, extra: Value
         serde_json::from_str(&std::fs::read_to_string(base.join("npcs.json")).unwrap()).unwrap();
     // The story helper also writes a `title` and a `hint` onto every `kill` —
     // the lines the old rule demanded of every fight. These tests are about a
-    // fight that is quiet on purpose, so a kill that declared no line keeps none.
-    let bare_kills: Vec<String> = quests["content"]["quests"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(|q| q["objectives"].as_array().cloned().unwrap_or_default())
-        .filter(|o| o["type"] == "kill" && o.get("title").is_none() && o.get("hint").is_none())
-        .map(|o| o["id"].as_str().unwrap().to_string())
-        .collect();
+    // fight that is quiet on purpose, so a kill keeps only the lines it declared.
+    let kills_without = |field: &str| -> Vec<String> {
+        quests["content"]["quests"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|q| q["objectives"].as_array().cloned().unwrap_or_default())
+            .filter(|o| o["type"] == "kill" && o.get(field).is_none())
+            .map(|o| o["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (untitled, unhinted) = (kills_without("title"), kills_without("hint"));
     common::declare_story(&mut quests, &npcs, &dialogue);
     for q in quests["content"]["quests"].as_array_mut().unwrap() {
         for o in q["objectives"].as_array_mut().unwrap() {
-            if bare_kills.iter().any(|id| o["id"] == *id) {
+            if untitled.iter().any(|id| o["id"] == *id) {
                 o.as_object_mut().unwrap().remove("title");
+            }
+            if unhinted.iter().any(|id| o["id"] == *id) {
                 o.as_object_mut().unwrap().remove("hint");
             }
         }
@@ -736,8 +741,14 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
 // ---------------------------------------------------------------------------
 
 /// The plan of a beach variant, judged by `DW0863` over an empty world — every
-/// line clear, so what these tests move is the reach and the lines.
-fn signposts(name: &str, quests: Value) -> (promise::ActBinding, Result<(), String>) {
+/// line clear, so what these tests move is the reach and the lines. The kill is
+/// announced — titled, here with no hint unless a test gives it one — because
+/// an unannounced objective, a hidden task, is owed nothing (spec-0137 §3).
+fn signposts(name: &str, mut quests: Value) -> (promise::ActBinding, Result<(), String>) {
+    let kill = &mut quests["content"]["quests"][0]["objectives"][1];
+    if kill.get("title").is_none() {
+        kill["title"] = json!("Clear the surf");
+    }
     let dir = variant(name, quests, beach_dialogue());
     let (_, campaign) = load(&dir);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -751,7 +762,7 @@ fn signposts(name: &str, quests: Value) -> (promise::ActBinding, Result<(), Stri
     (b, v)
 }
 
-/// An untitled kill whose wave arrives where the act is — the keeper's post is
+/// An announced kill with no hint whose wave arrives where the act is — the keeper's post is
 /// four blocks from the exit, inside the default reach — is found by the party
 /// and raises nothing; the same wave with a two-block reach is not, and the
 /// refusal names the site, the distance and the reach it was held to.
@@ -772,9 +783,10 @@ fn a_fight_is_found_by_the_party_when_it_arrives_within_reach_of_the_act() {
 
 /// The announced arm: a title and a hint make the same out-of-reach fight
 /// findable; hide the announcement — on the objective or by the campaign — and
-/// the lines say nothing again.
+/// it is a hidden task, owed nothing (spec-0137 §3): its hint is on its page
+/// once it has started, and nothing is refused.
 #[test]
-fn an_announced_fight_is_found_by_its_lines_unless_its_announcement_is_hidden() {
+fn an_announced_fight_is_found_by_its_lines_and_a_hidden_one_is_owed_nothing() {
     let announced = |extra: Value, guidance: Option<Value>| {
         let mut q = beach_quests(surf(Some(2.0)), json!({}));
         let kill = &mut q["content"]["quests"][0]["objectives"][1];
@@ -792,18 +804,29 @@ fn an_announced_fight_is_found_by_its_lines_unless_its_announcement_is_hidden() 
     assert!(v.is_ok(), "{v:?}");
     assert_eq!((b.announced, b.kills_in_reach), (1, 0));
 
-    let (_, v) = signposts(
+    let (b, v) = signposts(
         "announced-hidden",
         announced(json!({ "announcement": "hidden" }), None),
     );
-    let msg = v.expect_err("a hidden announcement says nothing");
-    assert!(msg.contains("its announcement is hidden"), "{msg}");
+    assert!(v.is_ok(), "a hidden task is owed nothing: {v:?}");
+    assert_eq!(
+        (b.announced, b.hidden_hinted, b.refused),
+        (0, 1, 0),
+        "{}",
+        b.line()
+    );
 
-    let (_, v) = signposts(
+    let (b, v) = signposts(
         "announced-campaign-hidden",
         announced(json!({}), Some(json!({ "announcements": "hidden" }))),
     );
-    assert!(v.is_err(), "the campaign default hides it too");
+    assert!(v.is_ok(), "the campaign default hides it too: {v:?}");
+    assert_eq!(
+        (b.announced, b.hidden_hinted, b.refused),
+        (0, 1, 0),
+        "{}",
+        b.line()
+    );
 }
 
 /// A root that places the party nowhere — the campaign's `on_death` — cannot

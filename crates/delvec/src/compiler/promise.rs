@@ -113,7 +113,10 @@ delvewright_dsl::dw_code! {
     /// `DW0863`: an act on a walked path the party cannot find — neither
     /// **announced with a hint** nor **in sight** from the cell the party stands
     /// on before it (and, for a `kill`, its wave within reach of that cell)
-    /// (spec-0104 §4, widening spec-0093 §5).
+    /// (spec-0104 §4, widening spec-0093 §5). An **unannounced** objective — a
+    /// hidden task — is owed nothing: nothing before it starts, and after it
+    /// starts its hint, where one is authored, is on its journal page
+    /// (spec-0137 §3); a walk toward one is owed nothing either.
     ///
     /// Bell round 6: a defence wave gave the party no guidance to where the
     /// attackers were. The Stranding round 1: steps with no hint went unseen, and
@@ -382,6 +385,11 @@ pub struct ActBinding {
     pub kills_in_reach: usize,
     /// Of the acts, triggers — judged by sight alone, having no lines.
     pub triggers: usize,
+    /// Of the acts and the `kill`s on no walk, unannounced objectives — hidden
+    /// tasks, owed nothing (spec-0137 §3).
+    pub hidden: usize,
+    /// Of those, with a hint on their journal page once they have started.
+    pub hidden_hinted: usize,
     /// `kill` objectives on no walk, judged from the acts that fire their wave.
     pub kills_off_walk: usize,
     /// Of the acts, announced with a hint but not yet armed when the party
@@ -395,6 +403,9 @@ pub struct ActBinding {
     pub passes_announced: usize,
     /// Of those, walked to with the next act in sight.
     pub passes_in_sight: usize,
+    /// Of those, walked to with an unannounced objective as the next act, and
+    /// so owed nothing.
+    pub passes_hidden: usize,
     /// Acts refused.
     pub refused: usize,
 }
@@ -405,9 +416,11 @@ impl ActBinding {
         format!(
             "DW0863 binding: {} act(s) over {} walk(s) — {} announced with a hint, {} in sight \
              ({} kill(s) also in reach), {} trigger(s) judged by sight alone, {} announced but \
-             not yet armed on the way and judged by sight; {} place(s) walked through — {} with \
-             an announced objective armed, {} with the next act in sight; {} refused; {} \
-             kill(s) on no walk judged from the acts that fire their wave",
+             not yet armed on the way and judged by sight, {} unannounced and owed nothing ({} \
+             with a hint on their page once started); {} place(s) walked through — {} with an \
+             announced objective armed, {} with the next act in sight, {} toward an \
+             unannounced act; {} refused; {} kill(s) on no walk judged from the acts that fire \
+             their wave",
             self.acts,
             self.walks,
             self.announced,
@@ -415,9 +428,12 @@ impl ActBinding {
             self.kills_in_reach,
             self.triggers,
             self.announced_unarmed,
+            self.hidden,
+            self.hidden_hinted,
             self.passes,
             self.passes_announced,
             self.passes_in_sight,
+            self.passes_hidden,
             self.refused,
             self.kills_off_walk
         )
@@ -502,7 +518,8 @@ fn unseen(
 }
 
 /// **An act the party can find** (`DW0863`, spec-0104 §4). On every walked
-/// path, every act ([`crate::compiler::acts`]) is announced with a `hint` (an
+/// path, every act ([`crate::compiler::acts`]) but an unannounced objective's
+/// (a hidden task, owed nothing: spec-0137 §3) is announced with a `hint` (an
 /// objective only), or in sight from the cell the party stands on before it —
 /// a clear line by the one sight rule ([`crate::compiler::framing`]'s
 /// `in_sight`, stopped only by a cell that hides what is behind it), within
@@ -576,6 +593,17 @@ pub fn judge_acts(
             };
             if obj.is_none() {
                 b.triggers += 1;
+            }
+            // A hidden task is owed nothing: nothing before it starts, and its
+            // hint, where one is authored, on its page once it has.
+            if let Some(o) = obj
+                && !o.announced(guidance)
+            {
+                b.hidden += 1;
+                if o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
+                    b.hidden_hinted += 1;
+                }
+                continue;
             }
             // An announcement guides the walk to its act only from the moment
             // the objective arms: one whose gate opens at its own place is
@@ -669,18 +697,11 @@ pub fn judge_acts(
                      target into sight of where the party stands.",
                     a.id
                 ),
-                Some(o) => {
-                    let how = if o.title().is_none() {
-                        "it has no `title`"
-                    } else if !o.announced(guidance) {
-                        "its announcement is hidden"
-                    } else {
-                        "it has no `hint`"
-                    };
+                Some(_) => {
                     format!(
-                        "It is not announced with a hint ({how}). Give `{}` a `title` and a \
-                         `hint` that says where it is, or move the act or its target into \
-                         sight of where the party stands{}.",
+                        "It is announced with no `hint`. Give `{}` a `hint` that says where it \
+                         is, or move the act or its target into sight of where the party \
+                         stands{}.",
                         a.id,
                         if kill.is_some() {
                             " and the wave within its reach. Do NOT widen `follow_range` to buy \
@@ -726,6 +747,16 @@ pub fn judge_acts(
                 continue;
             }
             b.passes += 1;
+            // A walk toward a hidden task is owed nothing, as the task is.
+            if let ActWhat::Objective {
+                quest,
+                objective: oi,
+            } = next.what
+                && !objective(quest, oi).announced(guidance)
+            {
+                b.passes_hidden += 1;
+                continue;
+            }
             let world: &crate::compiler::nav::World =
                 worlds[at[w.acts.len() + pi]].as_ref().unwrap_or(world);
             let ahead: Vec<&Act> = w
@@ -798,7 +829,14 @@ pub fn judge_acts(
                 continue;
             }
             b.kills_off_walk += 1;
-            if o.announced(guidance) && o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
+            if !o.announced(guidance) {
+                b.hidden += 1;
+                if o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
+                    b.hidden_hinted += 1;
+                }
+                continue;
+            }
+            if o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
                 continue;
             }
             let Some(wv) = c
@@ -863,8 +901,8 @@ pub fn judge_acts(
                 code: DW_FIGHT_UNSIGNED,
                 message: format!(
                     "`kill` objective `{id}` (quest {qi}, objective {oi}) stands on no walk and \
-                     the party has no way to find wave `{wave}`: it is not announced with a \
-                     `hint`, and {}. Give it a `title` and a `hint` saying where the wave \
+                     the party has no way to find wave `{wave}`: it is announced with no \
+                     `hint`, and {}. Give it a `hint` saying where the wave \
                      arrives, or have every act that fires the wave stand in sight of its \
                      anchor and within its reach. Do NOT widen `follow_range` to buy the \
                      distance: that retunes the fight to pass a proof.",

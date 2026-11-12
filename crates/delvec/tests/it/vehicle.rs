@@ -1259,10 +1259,35 @@ fn a_vehicle_seated_by_story_stands_nowhere_until_its_seat() {
     let setup = function(&out, "setup_finish");
     assert!(!setup.contains("vehicle_seat_cart"), "{setup}");
     assert!(!setup.contains("vehicle_reseat_cart"), "{setup}");
+    // The written world's ledger agrees: the cart's body is placed at the
+    // talk's step, never at load.
+    let fired = seat_firings(&out, "vehicle_seat_cart");
+    assert!(
+        !fired.is_empty() && fired.iter().all(|f| f.get("step").is_some()),
+        "a by-story vehicle's body is placed at the seat's step, never at load: {fired:?}"
+    );
     // The same vehicle seated at load is seated in `setup_finish`.
     let (dir, lib) = write("at-load-seated", bay, cart(), "");
     let out = try_build(&dir, &lib).expect("seated at load");
     assert!(function(&out, "setup_finish").contains("vehicle_seat_cart"));
+    let fired = seat_firings(&out, "vehicle_seat_cart");
+    assert!(
+        !fired.is_empty() && fired.iter().all(|f| f == "setup"),
+        "an at-load vehicle's body is placed at load: {fired:?}"
+    );
+}
+
+/// When each body row of `function` in `validation/placed.json` fires.
+fn seat_firings(out: &BuildOutput, function: &str) -> Vec<serde_json::Value> {
+    let placed: serde_json::Value =
+        serde_json::from_str(&text(out, "validation/placed.json")).unwrap();
+    placed["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["function"] == function && r["object"].get("entity").is_some())
+        .map(|r| r["fired"].clone())
+        .collect()
 }
 
 /// spec-0135 §3: a vehicle left where its rider leaves it is never re-seated

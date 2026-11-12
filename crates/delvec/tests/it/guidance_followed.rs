@@ -200,12 +200,11 @@ fn act(id: &str, what: ActWhat, kind: &'static str, from: [i32; 3], target: [i32
     }
 }
 
-/// The plan of the campaign above with `obj/pull` stripped of its lines, so
-/// arm 1 does not hold for it.
-fn plan_with_untitled_pull(name: &str) -> (Campaign, PrefabRegistry, PathBuf) {
+/// The plan of the campaign above with `obj/pull` announced and stripped of
+/// its hint, so arm 1 does not hold for it.
+fn plan_with_hintless_pull(name: &str) -> (Campaign, PrefabRegistry, PathBuf) {
     let mut q = quests(nulls());
     let pull = &mut q["content"]["quests"][0]["objectives"][1];
-    pull.as_object_mut().unwrap().remove("title");
     pull.as_object_mut().unwrap().remove("hint");
     let dir = variant(name, q, dialogue(GREETING));
     let (_, c) = load(&dir);
@@ -217,13 +216,13 @@ const PULL: ActWhat = ActWhat::Objective {
     objective: 1,
 };
 
-/// spec-0104 criterion 2 (a)–(d): an untitled `interact` down a clear corridor
-/// is in sight and counted so; a wall between is refused naming the first
-/// blocking cell; 65 blocks of clear line is refused naming the distance; the
-/// same act announced with a hint passes by its lines.
+/// spec-0104 criterion 2 (a)–(d): an announced `interact` with no hint down a
+/// clear corridor is in sight and counted so; a wall between is refused naming
+/// the first blocking cell; 65 blocks of clear line is refused naming the
+/// distance; the same act announced with a hint passes by its lines.
 #[test]
-fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far() {
-    let (c, prefabs, _) = plan_with_untitled_pull("sight");
+fn a_hintless_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far() {
+    let (c, prefabs, _) = plan_with_hintless_pull("sight");
     let plan = Plan::build(&c, &prefabs).expect("plan");
     let a = |target| one_walk(vec![act("obj/pull", PULL, "interact", [0, 64, 0], target)]);
 
@@ -241,7 +240,7 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
     assert_eq!(r[0].code, promise::DW_FIGHT_UNSIGNED);
     assert!(msg.contains("stopped first at [5, 65, 0]"), "{msg}");
     assert!(
-        msg.contains("Give `obj/pull` a `title` and a `hint`"),
+        msg.contains("It is announced with no `hint`. Give `obj/pull` a `hint`"),
         "{msg}"
     );
 
@@ -270,6 +269,94 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
     let (b, r) = promise::judge_acts(&plan2, &walls(&wall_at_x5()), &announced);
     assert!(r.is_empty(), "{r:?}");
     assert_eq!((b.announced, b.in_sight), (1, 0));
+}
+
+/// spec-0137 §3, as `DW0863` reads it: a hidden task — an unannounced
+/// objective — is owed nothing. Out of sight behind the wall it is not
+/// refused, whether it carries a hint for its page (hidden by its
+/// `announcement`) or nothing (no `title`, no `hint`); and a walk through a
+/// place toward it, the act behind the wall, is owed nothing either. The same
+/// act announced with no hint behind the same wall is refused.
+#[test]
+fn a_hidden_task_is_owed_nothing_by_the_act_rule() {
+    let pull_with = |name: &str, edit: &dyn Fn(&mut serde_json::Map<String, Value>)| {
+        let mut q = quests(nulls());
+        edit(
+            q["content"]["quests"][0]["objectives"][1]
+                .as_object_mut()
+                .unwrap(),
+        );
+        let dir = variant(name, q, dialogue(GREETING));
+        load(&dir).1
+    };
+    let hidden_hinted = pull_with("hidden-hinted", &|o| {
+        o.insert("announcement".into(), json!("hidden"));
+    });
+    let hidden_bare = pull_with("hidden-bare", &|o| {
+        o.remove("title");
+        o.remove("hint");
+    });
+    let announced_bare = pull_with("announced-bare", &|o| {
+        o.remove("hint");
+    });
+    let behind = one_walk(vec![act(
+        "obj/pull",
+        PULL,
+        "interact",
+        [0, 64, 0],
+        [10, 64, 0],
+    )]);
+    let toward = ActWalks {
+        walks: vec![ActWalk {
+            label: "the test walk".into(),
+            acts: vec![Act {
+                step: 2,
+                ..act("obj/pull", PULL, "interact", [3, 64, 0], [10, 64, 0])
+            }],
+            passes: vec![delvec::compiler::acts::Pass {
+                step: 1,
+                name: "`trigger/on-the-way`".into(),
+                from: Some([0, 64, 0]),
+                from_what: "the previous act's cell".into(),
+                target: [3, 64, 0],
+            }],
+            gates: None,
+        }],
+    };
+    let wall = walls(&wall_at_x5());
+    let prefabs = prefabs();
+    let judge = |c: &Campaign, w: &ActWalks| {
+        let plan = Plan::build(c, &prefabs).expect("plan");
+        promise::judge_acts(&plan, &wall, w)
+    };
+    let (b, r) = judge(&hidden_hinted, &behind);
+    assert!(r.is_empty(), "{r:?}");
+    assert_eq!(
+        (b.acts, b.hidden, b.hidden_hinted, b.refused),
+        (1, 1, 1, 0),
+        "{}",
+        b.line()
+    );
+    let (b, r) = judge(&hidden_bare, &behind);
+    assert!(r.is_empty(), "{r:?}");
+    assert_eq!(
+        (b.acts, b.hidden, b.hidden_hinted, b.refused),
+        (1, 1, 0, 0),
+        "{}",
+        b.line()
+    );
+    let (b, r) = judge(&hidden_bare, &toward);
+    assert!(r.is_empty(), "{r:?}");
+    assert_eq!(
+        (b.passes, b.passes_hidden, b.refused),
+        (1, 1, 0),
+        "{}",
+        b.line()
+    );
+    // The same act, announced with no hint, is still judged by sight.
+    let (b, r) = judge(&announced_bare, &behind);
+    assert_eq!((b.hidden, b.refused), (0, 1), "{}", b.line());
+    assert_eq!(r[0].code, promise::DW_FIGHT_UNSIGNED);
 }
 
 /// The walk back to an announced objective whose gate opens only at its own
@@ -363,7 +450,7 @@ fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
 /// is refused, and its remedy is the trigger's — it has no lines.
 #[test]
 fn a_trigger_behind_a_wall_is_refused_with_the_triggers_remedy() {
-    let (c, prefabs, _) = plan_with_untitled_pull("trigger-sight");
+    let (c, prefabs, _) = plan_with_hintless_pull("trigger-sight");
     let plan = Plan::build(&c, &prefabs).expect("plan");
     let w = one_walk(vec![act(
         "trigger/the-bell",
@@ -416,7 +503,6 @@ fn a_kill_is_found_only_in_sight_and_in_reach() {
 fn the_first_act_is_judged_from_the_entry_cell() {
     let mut q = quests(nulls());
     let talk = &mut q["content"]["quests"][0]["objectives"][0];
-    talk.as_object_mut().unwrap().remove("title");
     talk.as_object_mut().unwrap().remove("hint");
     let dir = variant("entry", q, dialogue(GREETING));
     let (_, c) = load(&dir);
@@ -701,9 +787,10 @@ fn every_binding_line_states_its_zeroes() {
         promise::ActBinding::default().line(),
         "DW0863 binding: 0 act(s) over 0 walk(s) — 0 announced with a hint, 0 in sight (0 kill(s) \
          also in reach), 0 trigger(s) judged by sight alone, 0 announced but not yet armed on the \
-         way and judged by sight; 0 place(s) walked through — 0 with an announced objective armed, \
-         0 with the next act in sight; 0 refused; 0 kill(s) on no walk judged from the acts that \
-         fire their wave"
+         way and judged by sight, 0 unannounced and owed nothing (0 with a hint on their page \
+         once started); 0 place(s) walked through — 0 with an announced objective armed, 0 with \
+         the next act in sight, 0 toward an unannounced act; 0 refused; 0 kill(s) on no walk \
+         judged from the acts that fire their wave"
     );
     assert_eq!(
         telling::HintActBinding::default().line(),
