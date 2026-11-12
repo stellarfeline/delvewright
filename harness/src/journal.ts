@@ -10,7 +10,7 @@
 // owed a page the moment it starts (`validation/journal-starts.json`); the
 // harness derives nothing. At every step boundary the bot reads the activation
 // score of each quest it has not judged yet; once a quest is active it reads
-// the journal it holds — the book's own pages, told to it as their SNBT by a
+// the journal it holds — the book's own pages, told to it one page at a time as their SNBT by a
 // `tellraw` `nbt` component on its own inventory — and every owed objective's
 // hint must be on a page, by the hint's
 // translation key, within a settle window. An owed objective already complete
@@ -149,9 +149,51 @@ export const JOURNAL_PAGES_PATH =
   'Inventory[{components:{"minecraft:custom_data":{dw_journal:1b}}}]' +
   '.components."minecraft:written_book_content".pages';
 
-/** The command that tells the bot the pages of the journal it holds, as their SNBT. */
-export const JOURNAL_PAGES_COMMAND =
-  "/tellraw @s " + JSON.stringify({ nbt: JOURNAL_PAGES_PATH, entity: "@s" });
+/**
+ * The command that tells the bot page `index` of the journal it holds, as its
+ * SNBT. One page per command: a chat line the client reads is cut at 4096
+ * characters (prismarine-chat's `MAX_CHAT_LENGTH`), and the whole book in one
+ * `tellraw` outgrows that while the book has no page bound.
+ */
+export function journalPageCommand(index: number): string {
+  return "/tellraw @s " + JSON.stringify({ nbt: `${JOURNAL_PAGES_PATH}[${index}]`, entity: "@s" });
+}
+
+/** How many pages are asked in one bracketed turn. */
+export const JOURNAL_PAGE_BATCH = 8;
+
+/** The pages a read found: each page's reply lines, in order. */
+export interface JournalRead {
+  /** Every line of every page, in page order. */
+  readonly lines: readonly string[];
+  /** The pages found. */
+  readonly pageCount: number;
+  /** False when a reply was never observed: the book was not read to its end. */
+  readonly answered: boolean;
+}
+
+/**
+ * Read the book page by page, `JOURNAL_PAGE_BATCH` at a time, until a page
+ * reads empty (past the last page the path names nothing). `send` asks each
+ * command bracketed and returns each reply in order.
+ */
+export async function readJournalPages(
+  send: (commands: readonly string[]) => Promise<readonly { lines: readonly string[]; answered: boolean }[]>,
+): Promise<JournalRead> {
+  const lines: string[] = [];
+  let pageCount = 0;
+  for (let first = 0; ; first += JOURNAL_PAGE_BATCH) {
+    const commands = Array.from({ length: JOURNAL_PAGE_BATCH }, (_, i) => journalPageCommand(first + i));
+    const replies = await send(commands);
+    for (const r of replies) {
+      if (!r.answered) return { lines, pageCount, answered: false };
+      const text = r.lines.filter((l) => l.trim() !== "");
+      if (text.length === 0) return { lines, pageCount, answered: true };
+      lines.push(...text);
+      pageCount += 1;
+    }
+  }
+}
 
 /** Whether the pages reply carries a page with the hint's translation key. */
 export function pagesShow(lines: readonly string[], hintKey: string): boolean {

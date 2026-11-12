@@ -1,11 +1,11 @@
 // MineflayerExecutor: the journal at every quest start — read off the book the bot holds.
 
 import {
-  JOURNAL_PAGES_COMMAND,
   JOURNAL_POLL_MS,
   JOURNAL_SETTLE_MS,
   judgeRecordRow,
   pagesShow,
+  readJournalPages,
   scoreIsOne,
   scoreIsOneCommand,
   type JournalLedger,
@@ -44,15 +44,13 @@ export const methods = {
       for (;;) {
         const replies = await this.bracketedReplies([
           ...q.told.map((t) => scoreIsOneCommand(ledger.party, t.done)),
-          JOURNAL_PAGES_COMMAND,
-        ]);
+                ]);
         done = new Set(
           q.told
             .filter((t, i) => scoreIsOne(replies[i]!.lines, t.done))
             .map((t) => t.objective),
         );
-        const last = replies[replies.length - 1]!;
-        pages = last.answered ? last.lines : [];
+        pages = (await readJournalPages((c) => this.bracketedReplies(c))).lines;
         shown = new Set(
           q.told.filter((t) => t.hintKey !== null && pagesShow(pages, t.hintKey)).map((t) => t.objective),
         );
@@ -96,8 +94,7 @@ export const methods = {
     const deadline = Date.now() + JOURNAL_SETTLE_MS;
     let verdicts: RecordVerdict[] = [];
     for (;;) {
-      const [reply] = await this.bracketedReplies([JOURNAL_PAGES_COMMAND]);
-      const pages = reply !== undefined && reply.answered ? reply.lines : [];
+      const pages = (await readJournalPages((c) => this.bracketedReplies(c))).lines;
       verdicts = rows.flatMap((row) => {
         const obj = ledger.objectives.find((o) => o.objective === row.objective);
         return obj === undefined ? [] : [judgeRecordRow(world, pages, obj, row)];
