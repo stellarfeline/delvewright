@@ -1174,9 +1174,10 @@ pub struct DetailBinding {
     pub open_side_faces: usize,
     /// Owed anchor names checked over every bound place — `DW0845`.
     pub owed: usize,
-    /// Of those, names bound into a piece's `no_body` region and admitted
-    /// because every use the campaign makes of the name puts no body there —
-    /// a killing volume's centre, a shot's target ([`BodilessSeats`]) —
+    /// Of those, names bound into a piece's `no_body` region or onto the item
+    /// holder at their cell, and admitted because every use the campaign
+    /// makes of the name puts no body there — a killing volume's centre, a
+    /// shot's target, the holder a fill names ([`BodilessSeats`]) —
     /// `DW0845`'s one admission, counted.
     pub bodiless_seats: usize,
 }
@@ -1192,8 +1193,8 @@ impl DetailBinding {
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
              declared face(s) examined ({os} answering an open side), {br} contract bar(s) \
              judged against the hand (DW1063), {o} owed anchor name(s) checked, {k} of them a \
-             station no body is put at (a killing volume's centre, a shot's target) in \
-             out-of-walk floor.",
+             station no body is put at (a killing volume's centre, a shot's target, the holder a \
+             fill names) in out-of-walk floor or in its holder.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -1209,11 +1210,14 @@ impl DetailBinding {
 }
 
 /// **The stations at which the campaign puts no body** — the one case
-/// `DW0845` admits into a piece's `no_body` region.
+/// `DW0845` admits into a piece's `no_body` region, or onto the item holder
+/// an anchor's cell holds (`holder:<family>`,
+/// [`crate::grammar::contract::resolves_to`]).
 ///
-/// `DW0845` refuses an owed name bound into out-of-walk floor because the
-/// campaign puts a body at the name: an NPC, a quest, a wave, a spawn. Two
-/// uses of a name put no body at it, and each belongs in floor no body walks:
+/// `DW0845` refuses an owed name bound into out-of-walk floor, or onto a
+/// solid holder, because the campaign puts a body at the name: an NPC, a
+/// quest, a wave, a spawn. Three uses of a name put no body at it, and each
+/// belongs where no body walks:
 ///
 /// * a `lethal_volumes[]` region anchor centres a box that kills whatever
 ///   enters. `DW0891` refuses a volume whose keep-out reaches the walked floor
@@ -1222,7 +1226,11 @@ impl DetailBinding {
 /// * a `shot` trigger's `at` is the cell of the target block it places
 ///   (spec-0134 §2). The shooter stands at a stance between 4 and 40 blocks
 ///   off (`DW1091` finds it), so the target hangs where it is seen and never
-///   stood at — a belfry's opening, a gable, a cliff face.
+///   stood at — a belfry's opening, a gable, a cliff face;
+/// * a `loot[]` entry's `anchor`, and a `collect`'s `holder`, name the cell
+///   of the item holder the piece placed (spec-0021, spec-0111): a chest, a
+///   barrel, a frame, a stand. The holder is opened or taken from where a
+///   body stands beside it, and `DW0431`/`DW0438` prove it is there.
 ///
 /// The admission is computed from the documents, never declared: a name
 /// qualifies when it is a declared station (never a synthesized
@@ -1413,6 +1421,20 @@ fn bodiless_pointer(c: &Campaign, p: &str) -> Option<String> {
             matches!(t.on, delvewright_dsl::TriggerOn::Shot)
                 .then(|| format!("the target `shot` trigger `{}` lands on", t.id.as_str()))
         }
+        ["", "loot", i, "anchor"] => {
+            let l = c.quests.content.loot.get(i.parse::<usize>().ok()?)?;
+            Some(format!("the holder `{}` fills", l.id.as_str()))
+        }
+        ["", "quests", i, "objectives", j, "holder"] => {
+            let q = c.quests.content.quests.get(i.parse::<usize>().ok()?)?;
+            let o = q.objectives.get(j.parse::<usize>().ok()?)?;
+            matches!(o, delvewright_dsl::Objective::Collect { .. }).then(|| {
+                format!(
+                    "the holder `collect` objective `{}` adopts",
+                    o.id().as_str()
+                )
+            })
+        }
         _ => None,
     }
 }
@@ -1601,7 +1623,8 @@ fn check_owed(
             // The one admission: out-of-walk floor at which the campaign puts
             // no body — a killing volume's centre, where `DW0891` sends one;
             // a shot's target, seen from its stance.
-            if resolves.starts_with("no_body:") && seats.only_bodiless(name).is_some() {
+            let out_of_walk = resolves.starts_with("no_body:") || resolves.starts_with("holder:");
+            if out_of_walk && seats.only_bodiless(name).is_some() {
                 binding.bodiless_seats += 1;
                 continue;
             }
@@ -1616,10 +1639,10 @@ fn check_owed(
             {
                 continue;
             }
-            let why = if resolves.starts_with("no_body:") && !seats.bodiless(name).is_empty() {
+            let why = if out_of_walk && !seats.bodiless(name).is_empty() {
                 let others = seats.others(name);
                 format!(
-                    " It is {}, which puts no body there and belongs in out-of-walk floor, \
+                    " It is {}, which puts no body there and belongs out of walk, \
                      but {} other use(s) put something at it: {}. Seat those on a station \
                      nothing else names, and keep this name in play space.",
                     seats.bodiless(name).join(", "),
@@ -1637,13 +1660,15 @@ fn check_owed(
                     "`{name}` is bound to `{piece}`'s anchor `{bound_to}`, which the piece's \
                      own contract resolves into `{resolves}` — not play space. The campaign \
                      puts bodies, quests and waves at this name; a body cannot be in a \
-                     `no_body` region, inside a bar, or in a transit volume. Bind it to an \
-                     anchor standing in one of the piece's declared spaces.{why} A station \
-                     at which the campaign puts no body may stand in a `no_body` region: \
-                     one whose only uses are `lethal_volumes[]` region anchors (a pit's \
-                     bottom, where `DW0891` sends a volume) or the `at` of a `shot` \
-                     trigger (the target, shot from a stance); one whose only use is the \
-                     `at` of a gate's own answer may stand in that gate's bar.",
+                     `no_body` region, inside a bar, in a transit volume, or inside an item \
+                     holder. Bind it to an anchor standing in one of the piece's declared \
+                     spaces.{why} A station at which the campaign puts no body may stand in \
+                     a `no_body` region or on the item holder at its cell: one whose only \
+                     uses are `lethal_volumes[]` region anchors (a pit's bottom, where \
+                     `DW0891` sends a volume), the `at` of a `shot` trigger (the target, \
+                     shot from a stance), a `loot[]` entry's `anchor` or a `collect`'s \
+                     `holder` (the holder it fills); one whose only use is the `at` of a \
+                     gate's own answer may stand in that gate's bar.",
                     piece = row.piece,
                 ),
             ));

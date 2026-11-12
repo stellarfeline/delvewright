@@ -306,7 +306,12 @@ fn the_second_door_is_opened_on_every_shipped_prefab() {
         let s = Structure::read(&std::fs::read(path).expect("the library file is readable"))
             .unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let door = Door::open(&spatial::grid(&s), 1, &path.with_extension("json"));
+        let door = Door::open(
+            &spatial::grid(&s),
+            &spatial::template_holders(&[([0, 0, 0], &s)]),
+            1,
+            &path.with_extension("json"),
+        );
         objects += door.binding().objects;
         match &door {
             Door::Judged { report, .. } => {
