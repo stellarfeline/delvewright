@@ -344,6 +344,11 @@ impl Tree<'_> {
 /// reading `#party <completion objective>`. Without the closure that template
 /// asserts nothing the campaign writes and is silently unjudged, which is the
 /// same blind spot, one indirection along.
+///
+/// A term the template itself writes after the drive and before the line that
+/// reads it is the template's at that read, not the campaign's: an expiry
+/// template that holds a guard's quest and ancestors open again in the tick
+/// it asks the guard does not assert them, and the closure does not take them.
 fn asserted_scores(after: &[String], flat: &[String]) -> BTreeSet<(String, String)> {
     let mut asserted: BTreeSet<(String, String)> = after
         .iter()
@@ -353,9 +358,18 @@ fn asserted_scores(after: &[String], flat: &[String]) -> BTreeSet<(String, Strin
         })
         .flat_map(|l| score_pairs(l))
         .collect();
+    // Per line of `after` (the tail of `flat`), what the template wrote in
+    // `after` before it.
+    let offset = flat.len() - after.len();
+    let mut rewritten: Vec<BTreeSet<(String, String)>> = Vec::with_capacity(after.len());
+    let mut so_far: BTreeSet<(String, String)> = BTreeSet::new();
+    for line in after {
+        rewritten.push(so_far.clone());
+        so_far.extend(writes_of(line));
+    }
     loop {
         let mut grew = false;
-        for line in flat {
+        for (k, line) in flat.iter().enumerate() {
             let cond = condition_of(line);
             if cond.is_empty() {
                 continue;
@@ -364,7 +378,11 @@ fn asserted_scores(after: &[String], flat: &[String]) -> BTreeSet<(String, Strin
             if writes_of(payload).is_disjoint(&asserted) {
                 continue;
             }
+            let owned = k.checked_sub(offset).and_then(|j| rewritten.get(j));
             for p in score_pairs(cond) {
+                if owned.is_some_and(|o| o.contains(&p)) {
+                    continue;
+                }
                 grew |= asserted.insert(p);
             }
         }
@@ -644,6 +662,55 @@ mod tests {
         ]);
         let b = check_tree("g", &t).expect("an unrelated gate is not this template's business");
         assert_eq!((b.driving, b.judged), (1, 1));
+    }
+
+    /// An expiry-shaped tree: the template drives the clock's `expire`, whose
+    /// `check_q` completes the quest under a gate on another objective, and
+    /// after the wait asks the guard with the quest held open again by its own
+    /// write. The quest term is the template's at that read, not an outcome:
+    /// the check does not charge it with the `check_q` gate. Without the
+    /// re-write it is an outcome again, and the check still refuses (DW0807).
+    /// Red before: the closure took the re-written term from the guard.
+    #[test]
+    fn a_term_the_template_rewrites_before_it_reads_is_not_an_outcome() {
+        let tpl = |rewrite: bool| {
+            format!(
+                "#> t\n# @dummy\nscoreboard players set #party dw.x_a 0\n\
+                 function g:expire\nassert score #party dw.x_a matches 1\n{}\
+                 scoreboard players set #lim_open_a dw.sys 0\n\
+                 execute if score #party dw.qa_q matches 1 unless score #party dw.x_a matches 1 \
+                 run scoreboard players set #lim_open_a dw.sys 1\n\
+                 assert score #lim_open_a dw.sys matches 0\n",
+                if rewrite {
+                    "scoreboard players set #party dw.qa_q 1\n"
+                } else {
+                    ""
+                }
+            )
+        };
+        let t = |rewrite: bool| {
+            tree(&[
+                (
+                    "datapack/data/g/function/expire.mcfunction",
+                    "scoreboard players set #party dw.x_a 1\nfunction g:check_q\n",
+                ),
+                (
+                    "datapack/data/g/function/check_q.mcfunction",
+                    "execute if score #party dw.o_other matches 1 run function g:complete_q\n",
+                ),
+                (
+                    "datapack/data/g/function/complete_q.mcfunction",
+                    "scoreboard players set #party dw.qa_q 0\n",
+                ),
+                (
+                    "packtest-datapack/data/g/test/t.mcfunction",
+                    tpl(rewrite).as_str(),
+                ),
+            ])
+        };
+        check_tree("g", &t(true)).expect("a term the template re-wrote is its own");
+        let e = check_tree("g", &t(false)).expect_err("a term only read is an outcome");
+        assert!(e.message.contains("dw.o_other"), "{}", e.message);
     }
 
     /// A campaign-playthrough-shaped tree: the template calls

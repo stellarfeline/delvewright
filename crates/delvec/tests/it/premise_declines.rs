@@ -221,6 +221,22 @@ fn the_graph_declines_are_enumerated() {
             2,
             Question::BotRoute,
         ),
+        // The bot's own route. A shot's stance (spec-0134 §2): the cell the
+        // route proof's leg to the shot ends at and the bot looses from, so it
+        // is a cell a leg's walk reaches from where the party begins — from
+        // the anchors only for a campaign with no start.
+        (
+            "compiler/nav/shot.rs",
+            ".walk_region(",
+            1,
+            Question::BotRoute,
+        ),
+        (
+            "compiler/nav/shot.rs",
+            ".walk_region_rooted(",
+            1,
+            Question::BotRoute,
+        ),
         // The bot's own route. `DW0327`: the party is walked to cover on the
         // stealth beat's sneak leg, and `DW0355` times that same walk (§4.5),
         // so the pair reads one relation.

@@ -22,7 +22,11 @@ fn num(v: f64) -> String {
 pub(crate) const HOP_OBJECTIVE: &str = "dw.hop";
 /// The objective a hopping body carries its arc's index in.
 pub(crate) const HOP_ARC_OBJECTIVE: &str = "dw.hop_arc";
-/// The function the root `tick` runs as every body in the air.
+/// The function the root `tick` calls: it runs [`HOP_STEP_FN`] as every body
+/// in the air. One function of its own, so the hop's generated PackTest can
+/// drive the hop by the driver the pack ships and nothing else of `tick`.
+pub(crate) const HOP_TICK_FN: &str = "hop_tick";
+/// The function [`HOP_TICK_FN`] runs as every body in the air.
 pub(crate) const HOP_STEP_FN: &str = "hop_step";
 
 /// The selector terms that address one staged body and nothing else.
@@ -97,7 +101,7 @@ pub(super) fn walk_ends_hop(
 
 /// The latch of every walk the campaign plans for this body: `#mrun_<bare>` /
 /// `#arun_<bare>`, set while that leg's driver runs.
-fn walk_latches(c: &delvewright_dsl::Campaign, key: &BodyKey) -> Vec<String> {
+pub(super) fn walk_latches(c: &delvewright_dsl::Campaign, key: &BodyKey) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for e in all_campaign_effects(c) {
         let latch = match (&e.verb, key) {
@@ -138,10 +142,7 @@ pub(super) fn tick_lines(plan: &Plan) -> Vec<String> {
     if hop_arcs(plan.campaign).is_empty() {
         return Vec::new();
     }
-    vec![format!(
-        "execute as @e[scores={{{HOP_OBJECTIVE}=1..}}] at @s run function {}:{HOP_STEP_FN}",
-        plan.namespace
-    )]
+    vec![format!("function {}:{HOP_TICK_FN}", plan.namespace)]
 }
 
 /// The steps of one arc, one line per tick: on the tick the body has
@@ -167,8 +168,8 @@ pub(super) fn hop_arc_lines(arc: &[i32]) -> Vec<String> {
     out
 }
 
-/// The hop driver (spec-0136 §3.1): `hop_step`, run by the root `tick` as
-/// each body in the air; one `hop_arc_<i>` per distinct arc; and one
+/// The hop driver (spec-0136 §3.1): `hop_tick`, called by the root `tick`,
+/// which runs `hop_step` as each body in the air; one `hop_arc_<i>` per distinct arc; and one
 /// `hop_start_<i>` a `hop` effect calls as the body. Empty for a campaign
 /// with no `hop`.
 pub(super) fn hop_fns(plan: &Plan) -> Vec<(String, String)> {
@@ -195,6 +196,15 @@ pub(super) fn hop_fns(plan: &Plan) -> Vec<(String, String)> {
     }
     step.push(format!("scoreboard players remove @s {HOP_OBJECTIVE} 1"));
     out.insert(0, (HOP_STEP_FN.to_string(), lines(&step)));
+    out.insert(
+        0,
+        (
+            HOP_TICK_FN.to_string(),
+            lines(&[format!(
+                "execute as @e[scores={{{HOP_OBJECTIVE}=1..}}] at @s run function {ns}:{HOP_STEP_FN}"
+            )]),
+        ),
+    );
     out
 }
 

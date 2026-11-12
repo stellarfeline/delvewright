@@ -95,7 +95,21 @@ fn isolate(plan: &Plan, open: &[&Watched], d: &mut Drive) {
                 .iter()
                 .any(|a| open_ids.contains(a.as_str()));
             let keep_open = open_ids.contains(o.id().as_str()) || follows;
-            d.put(&obj_score(o.id().as_str()), if keep_open { 0 } else { 1 });
+            let v = if keep_open { 0 } else { 1 };
+            let oid = o.id().as_str();
+            d.put(&obj_score(oid), v);
+            // A limited objective, or a quorum member, settles on a score of
+            // its own that the `after` terms on it read, and a limited one's
+            // every guard reads its expired score (spec-0133 §3, spec-0134
+            // §7): the template owns both, or a sibling that left an
+            // objective expired decides which objectives are open.
+            let settled = super::super::limit::after_score(c, oid);
+            if settled != obj_score(oid) {
+                d.put(&settled, v);
+            }
+            if o.limit().is_some() {
+                d.put(&expired_score(oid), 0);
+            }
         }
     }
     for w in open {
