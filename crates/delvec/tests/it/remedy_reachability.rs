@@ -1931,14 +1931,14 @@ fn dw0845_admits_a_shot_target_in_out_of_walk_floor() {
 /// piece placed, and a chest is a solid block, so the piece's contract lands
 /// the anchor in its holder (`holder:container`, `contract-anchors`) and
 /// `DW0845` admits the station there. The pit house's ring wall carries a
-/// chest; the pit's station, bound to the chest's anchor and named by nothing
-/// but a `loot` entry, validates with the admission counted and builds — the
-/// fill finds its chest (`DW0431`). The same station also named by a quest's
-/// `reach-anchor` (a body put inside the chest) is still refused, naming the
-/// fill and the use that disqualifies it.
+/// chest; a station `anchor/stores`, bound to the chest's anchor and named by
+/// nothing but a `loot` entry, validates with the admission counted (beside
+/// the pit's own) and builds — the fill finds its chest (`DW0431`). The same
+/// station also named by a quest's `reach-anchor` (a body put inside the
+/// chest) is still refused, naming the fill and the use that disqualifies it.
 #[test]
 fn dw0845_admits_a_loot_holder_on_its_own_cell() {
-    let (camp, prefabs) = pit_campaign("loot-holder", "stores", [0, 0, 0]);
+    let (camp, prefabs) = pit_campaign("loot-holder", "bottom", [0, 0, 0]);
     let stores = [0, PIT_FLOOR, 9];
     let mut cells: Vec<([i32; 3], &str)> = Vec::new();
     for x in 0..PIT_SIZE[0] {
@@ -1963,13 +1963,18 @@ fn dw0845_admits_a_loot_holder_on_its_own_cell() {
             {"pos": stores, "facing": "east", "resolves_to": "holder:container"}
         );
     });
-    edit_doc(&camp, "quests.json", |v| {
-        v["content"]
-            .as_object_mut()
+    edit_doc(&camp, "layout-graph.json", |v| {
+        v["content"]["nodes"][0]["stations"]
+            .as_array_mut()
             .unwrap()
-            .remove("lethal_volumes");
+            .push(serde_json::json!({"anchor": "anchor/stores", "kind": "point"}));
+    });
+    edit_doc(&camp, "detail-plan.json", |v| {
+        v["content"]["details"][0]["anchors"]["anchor/stores"] = serde_json::json!("stores");
+    });
+    edit_doc(&camp, "quests.json", |v| {
         v["content"]["loot"] = serde_json::json!([{
-            "id": "loot/stores", "anchor": "anchor/pit",
+            "id": "loot/stores", "anchor": "anchor/stores",
             "items": [{"item": "minecraft:bread", "count": 4}]
         }]);
     });
@@ -1984,14 +1989,14 @@ fn dw0845_admits_a_loot_holder_on_its_own_cell() {
     let t = validate(&camp);
     assert!(!t.contains("DW0845"), "a loot holder is admitted:\n{t}");
     assert!(
-        t.contains("checked, 1 of them a station no body is put at"),
+        t.contains("6 owed anchor name(s) checked, 2 of them a station no body is put at"),
         "the admission is counted:\n{t}"
     );
     let (code, built) = build("pit-loot-holder", &camp, &prefabs);
     assert_eq!(code, 0, "the fill builds:\n{built}");
     assert!(!built.contains("[error]"), "no refusal anywhere:\n{built}");
     edit_doc(&camp, "quests.json", |v| {
-        v["content"]["quests"][0]["objectives"][2]["anchor"] = serde_json::json!("anchor/pit");
+        v["content"]["quests"][0]["objectives"][2]["anchor"] = serde_json::json!("anchor/stores");
     });
     let t = validate(&camp);
     assert!(t.contains("DW0845"), "{t}");
