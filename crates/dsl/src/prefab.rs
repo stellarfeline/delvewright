@@ -614,7 +614,9 @@ pub struct Anchor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,
     /// **Which element of the piece's spatial contract this anchor lands in** —
-    /// `space:<name>`, `no_body:<name>`, `via:<name>` or `bar:<name>`.
+    /// `space:<name>`, `no_body:<name>`, `via:<name>`, `bar:<name>` or
+    /// `way:<name>` — or `holder:<family>` (`container`, `frame`, `stand`) for
+    /// an anchor on the item holder at a cell no declared element holds.
     ///
     /// A campaign binds content to an anchor by name; what says whether that
     /// place is play space, a door or exterior dressing is the contract, and a

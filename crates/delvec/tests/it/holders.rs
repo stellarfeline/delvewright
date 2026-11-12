@@ -1128,3 +1128,41 @@ fn a_frame_freeze_is_judged_after_its_own_emptying() {
         );
     }
 }
+
+/// **The admission door reads a piece's holder entities where the writer
+/// reads its marks' holders** — so an anchor on a frame or a stand lands in
+/// its holder at both doors (`contract-anchors`, `holder:<family>`). The
+/// frame and the stand hello-room carries are found at their cells, each in
+/// its family; the same template carried as a tile is found where the tile
+/// sits; a template that carries none yields none.
+#[test]
+fn the_admission_door_finds_the_holder_entities_a_template_carries() {
+    use delvec::admit::spatial::template_holders;
+    use delvewright_dsl::holders::HolderFamily;
+    let dir = scratch("door-holders");
+    let prefabs = common::holder_prefabs(
+        &dir.join("prefabs"),
+        vec![common::frame_entity(), common::stand_entity()],
+    );
+    let s = delvec::admit::structure::Structure::read(
+        &std::fs::read(prefabs.join("hello-room.nbt")).unwrap(),
+    )
+    .unwrap();
+    let found = template_holders(&[([0, 0, 0], &s)]);
+    assert_eq!(
+        found.into_iter().collect::<Vec<_>>(),
+        vec![
+            (common::FRAME, HolderFamily::Frame),
+            (common::STAND, HolderFamily::Stand)
+        ]
+    );
+    let tiled = template_holders(&[([16, 0, 0], &s)]);
+    let f = common::FRAME;
+    assert_eq!(
+        tiled.get(&[f[0] + 16, f[1], f[2]]),
+        Some(&HolderFamily::Frame)
+    );
+    let mut bare = s.clone();
+    bare.entities.clear();
+    assert!(template_holders(&[([0, 0, 0], &bare)]).is_empty());
+}

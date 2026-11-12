@@ -1729,3 +1729,82 @@ fn a_part_on_an_edge_is_refused() {
         .to_string();
     assert!(err.contains("part"), "{err}");
 }
+
+/// The corpus piece with `block` laid in the partition wall at `(1, 1, 7)`,
+/// and the anchor `anchor/stores` marked on that cell — a `loot` anchor's
+/// shape: the holder's own cell, not floor a body stands on.
+fn spatial_contract_with_stores(block: &str) -> Program {
+    use serde_json::json;
+    let int = |v: i64| json!({"expr": "int", "value": v});
+    let abs = |v: i64| json!({"size": "absolute", "blocks": int(v)});
+    let rel = json!({"size": "relative", "weight": int(1)});
+    let fill = |role: &str| json!({"op": "fill", "material": {"role": role}});
+    let wall: Node = serde_json::from_value(json!({
+        "op": "mark",
+        "mark": {"anchor": "stores", "at": "offset", "facing": "south",
+                 "x": int(1), "y": int(1), "z": int(0)},
+        "body": {"op": "split", "axis": "x", "sizes": [abs(1), abs(1), rel.clone()], "children": [
+            fill("shell"),
+            {"op": "split", "axis": "y", "sizes": [abs(1), abs(1), rel.clone()],
+             "children": [fill("shell"), fill("stores"), fill("shell")]},
+            fill("shell"),
+        ]},
+    }))
+    .expect("the wall is a node");
+    let mut program = spatial_contract().role(
+        "stores",
+        block.parse().expect("the stores block is a block state"),
+    );
+    for alt in program
+        .rules
+        .get_mut("partition")
+        .expect("the corpus builds its partition in a rule of that name")
+    {
+        let Node::Split(split) = &mut alt.body else {
+            panic!("the partition is a split")
+        };
+        split.children[0] = wall.clone();
+    }
+    program
+}
+
+/// **A holder's own cell lands in the holder, in the metadata a campaign binds
+/// against** — the exporter's half of the anchor obligation.
+///
+/// A chest drawn in a wall and marked on its own cell is what a `loot` entry
+/// names. It lies in no declared element (the partition is neither room), so
+/// it lands in its holder, and the anchor's `resolves_to` says
+/// `holder:container`. The same cell laid in stone is an anchor in nothing:
+/// the writer refuses the piece on `contract-anchors`.
+#[test]
+fn an_anchor_on_a_chest_in_a_wall_resolves_to_its_holder_and_on_stone_is_refused() {
+    let chest = "minecraft:chest[facing=south,type=single,waterlogged=false]";
+    let export = export_prefab(
+        &spatial_contract_with_stores(chest),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .unwrap_or_else(|e| panic!("the piece with its stores exports: {e}"));
+    let anchor = export
+        .metadata
+        .anchors
+        .get("anchor/stores")
+        .expect("the mark reached the metadata");
+    assert_eq!(anchor.pos, Some([1, 1, 7]));
+    assert_eq!(anchor.resolves_to.as_deref(), Some("holder:container"));
+
+    let refused = export_prefab(
+        &spatial_contract_with_stores("minecraft:stone_bricks"),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .map(|_| ())
+    .expect_err("an anchor in nothing is refused");
+    let said = refused.to_string();
+    assert!(
+        said.contains("contract-anchors") && said.contains("\"anchor/stores\" at [1,1,7]"),
+        "{said}"
+    );
+}
