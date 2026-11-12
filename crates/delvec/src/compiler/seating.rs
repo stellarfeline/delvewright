@@ -1797,6 +1797,7 @@ mod tests {
     fn plan_box(node: &str, floor: i32) -> PlacedBox {
         PlacedBox {
             node: delvewright_dsl::NodeId(node.to_string()),
+            slope: Default::default(),
             foot: [0, 7, 0, 7],
             floor: i64::from(floor),
             clearance: 4,

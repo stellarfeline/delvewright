@@ -221,7 +221,21 @@ fn changing_the_seed_moves_no_bar() {
     let claims: Vec<([i64; 3], [i64; 3])> =
         (0..boxes.len()).map(|i| site.claim_bounds(i)).collect();
     assert!(!claims.is_empty(), "the point places boxes");
+    // The ring's fixed ground is the whole's terrain continued to the plot's
+    // edge (rule 0): its surface rules read the graded surface beside it,
+    // which the bank's noise — a seeded draw like the patch and the trees —
+    // moves. It is the fill's, never a place's.
+    let mut fixed = 0usize;
     for cell in &moved {
+        // A cell no place owns — the rings' fixed ground, or the fill under a
+        // column's claim bottom inside a claim's box — is the whole's.
+        if !matches!(
+            site.owner(*cell),
+            delvewright_dsl::siteplan::Owner::Place(_)
+        ) {
+            fixed += 1;
+            continue;
+        }
         for (lo, hi) in &claims {
             assert!(
                 !(0..3).all(|i| cell[i] >= lo[i] && cell[i] <= hi[i]),
@@ -230,7 +244,8 @@ fn changing_the_seed_moves_no_bar() {
         }
     }
     eprintln!(
-        "seed binding: {} cell(s) of the fill moved with the seed, 0 inside any of {} claim(s)",
+        "seed binding: {} cell(s) of the fill moved with the seed, {fixed} of them the whole's \
+         (fixed ground or fill), 0 owned by a place of {} claim(s)",
         moved.len(),
         claims.len()
     );

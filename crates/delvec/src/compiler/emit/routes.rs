@@ -607,6 +607,12 @@ pub(super) fn prove_world(
             // pinned registry, never written by hand, and every build states
             // the set its proofs read.
             crate::note!("{}", delvewright_dsl::blockshape::doors_by_hand().line());
+            // spec-0138 §8: the grade's ledger, beside the clear-width one;
+            // its line is printed by the validation every build runs.
+            if let Some(grade) = delvewright_dsl::siteplan::grade::GradeBinding::of(plan.campaign) {
+                let sha = super::text::sha256_hex(grade.grade.terrain_rows().as_bytes());
+                put_json(out, "validation/grade.json", &grade.to_json(&sha));
+            }
             // DW1057 (spec-0120): every way's declared clear width is clear
             // along the whole way, in every state its cells can take, and
             // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime

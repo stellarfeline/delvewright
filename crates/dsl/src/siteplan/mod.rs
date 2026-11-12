@@ -77,6 +77,7 @@ use crate::metrics::{
 mod check;
 mod claim;
 mod fillcheck;
+pub mod grade;
 mod ground;
 mod measure;
 mod pack;
@@ -178,6 +179,14 @@ crate::dw_code! {
     /// fewer than a structure's declared `height`. Validation tier, judged on
     /// the author's declarations against each other.
     pub const DW_PLOT_CANNOT_HOLD: DwCode = DwCode::new("DW1073", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW1108`: **a grade has no room to land** (spec-0138 §7): two places
+    /// that do not meet whose banks cannot share a column or change the
+    /// ground at the other's foot, or a cut beside a declared fluid.
+    /// Validation tier, from the plan and the terrain alone.
+    pub const DW_GRADE_NO_ROOM: DwCode = DwCode::new("DW1108", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -943,6 +952,116 @@ pub struct PlanBox {
     /// in an open side is `DW1064`; an open side built shut is `DW1065`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sides: Option<Sides>,
+    /// **How steeply this place's ground meets the land** (spec-0138 §3):
+    /// the slope of the bank the whole's terrain is stepped in beyond every
+    /// graded side, `rise` blocks per `run` columns. Absent: one block per
+    /// two columns. A side declared `sheer` or `wall` has no bank.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grade: Option<Slope>,
+}
+
+/// A bank's slope (spec-0138 §3): `rise` blocks of height per `run` columns
+/// across, each in its own range — a `rise` in `1..=5` and a `run` in
+/// `1..=4`, so the steepest bank drops five blocks a column and the gentlest
+/// one block in four. A value outside its range is refused where the plan is
+/// read (`DW0100`).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Slope {
+    /// Blocks of height per run.
+    #[schemars(range(min = 1, max = 5))]
+    pub rise: SlopeRise,
+    /// Columns across per rise.
+    #[schemars(range(min = 1, max = 4))]
+    pub run: SlopeRun,
+}
+
+impl Default for Slope {
+    fn default() -> Slope {
+        Slope {
+            rise: SlopeRise(1),
+            run: SlopeRun(2),
+        }
+    }
+}
+
+impl Slope {
+    /// A slope of `rise` per `run`; `None` outside the ranges.
+    #[must_use]
+    pub fn new(rise: u8, run: u8) -> Option<Slope> {
+        Some(Slope {
+            rise: SlopeRise::try_from(rise).ok()?,
+            run: SlopeRun::try_from(run).ok()?,
+        })
+    }
+
+    /// The rise, in blocks.
+    #[must_use]
+    pub fn rise(self) -> i64 {
+        i64::from(self.rise.0)
+    }
+
+    /// The run, in columns.
+    #[must_use]
+    pub fn run(self) -> i64 {
+        i64::from(self.run.0)
+    }
+}
+
+/// A slope's rise: `1..=5` blocks.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct SlopeRise(u8);
+
+impl TryFrom<u8> for SlopeRise {
+    type Error = String;
+    fn try_from(v: u8) -> Result<Self, String> {
+        if (1..=5).contains(&v) {
+            Ok(SlopeRise(v))
+        } else {
+            Err(format!(
+                "a bank's `rise` is {v}; it is whole blocks from 1 to 5, the steepest bank \
+                 dropping five blocks a column"
+            ))
+        }
+    }
+}
+
+impl From<SlopeRise> for u8 {
+    fn from(v: SlopeRise) -> u8 {
+        v.0
+    }
+}
+
+/// A slope's run: `1..=4` columns.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct SlopeRun(u8);
+
+impl TryFrom<u8> for SlopeRun {
+    type Error = String;
+    fn try_from(v: u8) -> Result<Self, String> {
+        if (1..=4).contains(&v) {
+            Ok(SlopeRun(v))
+        } else {
+            Err(format!(
+                "a bank's `run` is {v}; it is whole columns from 1 to 4, the gentlest bank \
+                 rising one block in four columns"
+            ))
+        }
+    }
+}
+
+impl From<SlopeRun> for u8 {
+    fn from(v: SlopeRun) -> u8 {
+        v.0
+    }
 }
 
 /// The four horizontal sides of a place, each walled or open (spec-0123
@@ -974,6 +1093,9 @@ pub enum SideKind {
     Wall,
     /// No wall: the ring on this side is the place's open ground.
     Open,
+    /// No wall, and the ground beyond is left as the terrain has it
+    /// (spec-0138 §3): the side is not graded, and is not judged as a way.
+    Sheer,
 }
 
 impl Sides {
@@ -995,6 +1117,27 @@ impl Sides {
             Face::Up | Face::Down => false,
             _ => side != Some(SideKind::Wall),
         }
+    }
+
+    /// What `face` declares: `None` for an absent key.
+    #[must_use]
+    pub fn kind(&self, face: Face) -> Option<SideKind> {
+        match face {
+            Face::East => self.east,
+            Face::West => self.west,
+            Face::South => self.south,
+            Face::North => self.north,
+            Face::Up | Face::Down => None,
+        }
+    }
+
+    /// Whether `face` meets the ground in steps (spec-0138 §3): a horizontal
+    /// side declared neither `wall` nor `sheer`. Whether the place and the
+    /// site grade at all is [`crate::siteplan::grade`]'s.
+    #[must_use]
+    pub fn is_graded(&self, face: Face) -> bool {
+        !matches!(face, Face::Up | Face::Down)
+            && !matches!(self.kind(face), Some(SideKind::Wall | SideKind::Sheer))
     }
 
     /// Whether `face` is declared `open` in words — the side the plan asks

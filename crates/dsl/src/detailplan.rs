@@ -282,6 +282,7 @@ mod tests {
     fn a_box() -> PlacedBox {
         PlacedBox {
             node: NodeId("node/hall".into()),
+            slope: Default::default(),
             foot: [10, 25, 4, 19],
             floor: 64,
             clearance: 8,

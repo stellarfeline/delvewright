@@ -828,8 +828,10 @@ fn shut_refusal(way: &Way, s: &Station, v: &StationVerdict) -> Failure {
             "{label} is declared open and built shut: {width} of {width} columns taken, first \
              at {first} ({station}). Taken: {cells}. An open side stands no wall; a body \
              meets the place's ground across it. Clear the run — move the hedge, the wall or the \
-             fence inside the play space or into the verge — or declare the side `wall`; at the \
-             region's edge, give the side ground beyond it.",
+             fence inside the play space or into the verge — or declare the side `wall`. The \
+             ground beyond the ring is graded to the walk plane's course: where a declared \
+             volume takes that column, move the volume off it; at the region's edge, grow the \
+             region so the side has ground beyond it.",
             label = way.label,
             station = s.label,
             cells = cells.join(", "),
@@ -3117,6 +3119,7 @@ mod tests {
         let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
         let hall = PlacedBox {
             node: node("node/hall"),
+            slope: Default::default(),
             foot: [0, 9, 0, 9],
             floor: 64,
             clearance: 8,
@@ -3127,6 +3130,7 @@ mod tests {
         };
         let loft = PlacedBox {
             node: node("node/loft"),
+            slope: Default::default(),
             foot: [11, 18, 0, 9],
             floor: 69,
             clearance: 3,
@@ -3279,6 +3283,7 @@ mod tests {
         let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
         let yard = PlacedBox {
             node: node("node/yard"),
+            slope: Default::default(),
             foot: [0, 17, 0, 9],
             floor: 64,
             clearance: 9,
@@ -3289,6 +3294,7 @@ mod tests {
         };
         let ledge = PlacedBox {
             node: node("node/ledge"),
+            slope: Default::default(),
             foot: [0, 9, 11, 16],
             floor: 69,
             clearance: 3,

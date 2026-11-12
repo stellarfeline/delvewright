@@ -4647,7 +4647,12 @@
           ]
         ],
         "contacts": [],
+        "drop": [
+          0,
+          0
+        ],
         "face": "south",
+        "meets": "graded",
         "walk_y": 1
       }
     ],

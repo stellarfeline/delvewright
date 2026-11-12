@@ -96,6 +96,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 
 ### Added
 
+- A place's side takes `sheer` beside `wall` and `open`: no wall stands there and the ground beyond is left as the terrain has it. Every other unwalled side of a ground place is met by the land in steps, at the place's `grade: {rise, run}` (one block per two columns when absent).
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
 - Every objective kind takes `record`, what the task was, and the `record-outcome` verb — in any effect bundle and on a dialogue option — writes a way the task went; the journal keeps a finished task with every line its play wrote.

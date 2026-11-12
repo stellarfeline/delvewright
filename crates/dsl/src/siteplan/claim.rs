@@ -844,10 +844,11 @@ impl SitePlan {
         let mut reads = crate::metrics::Reads::new();
         let boxes = super::placed_boxes(c, &mut reads);
         let seams = super::placed_seams(c, &boxes, &mut reads);
+        let ground = Ground::of_placed(c, &boxes);
         SitePlan {
             boxes,
             seams,
-            ground: Ground::of(c),
+            ground,
         }
     }
 
@@ -867,6 +868,7 @@ mod tests {
     fn a_box(node: &str, foot: [i64; 4], floor: i64, clearance: u32, open: bool) -> PlacedBox {
         PlacedBox {
             node: NodeId(node.into()),
+            slope: Default::default(),
             foot,
             floor,
             clearance,

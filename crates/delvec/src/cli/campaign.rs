@@ -730,6 +730,11 @@ fn validate_loaded_with(
             // spec-0091: the served view distance and the site-plan lines judged
             // against it (the diagnostics were raised in `validate_campaign_with`).
             examined.push(delvewright_dsl::viewdistance::checks(&campaign, &mut Vec::new()).line());
+            // spec-0138 §8: what the grade did, on every campaign with a site
+            // plan, zeroes included.
+            if let Some(grade) = delvewright_dsl::siteplan::grade::GradeBinding::of(&campaign) {
+                examined.push(grade.line());
+            }
             print_diags(&diags, json);
             match notes {
                 Some(notes) => *notes = binding_notes(&campaign, &examined),

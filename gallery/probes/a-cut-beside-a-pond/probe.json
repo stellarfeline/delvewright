@@ -1,0 +1,38 @@
+{
+  "code": "DW1108",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "replace",
+      "path": "/content/boxes/10/floor",
+      "value": {
+        "y": 60
+      }
+    },
+    {
+      "doc": "site-plan.json",
+      "op": "add",
+      "path": "/content/volumes/-",
+      "value": {
+        "block": "minecraft:water",
+        "id": "volume/pond",
+        "region": {
+          "extent": [
+            1,
+            2,
+            4
+          ],
+          "min": [
+            56,
+            62,
+            27
+          ]
+        },
+        "role": "massif"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The crag sunk four blocks under the ground, so its bank is cut down to it, beside a pond declared on the ground to its west. The cut removes the ground the pond's water stands against, and the water would run into it. Validation refuses the cut there, naming the side, the cell and the volume, with the remedies — declare the side `sheer`, or move the pond or the place."
+}

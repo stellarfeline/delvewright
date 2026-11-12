@@ -21,6 +21,7 @@ mod dw1077_trigger_agrees;
 mod dw1081_entrance;
 mod gate_consumers;
 mod give_item_enchantments;
+mod grade;
 mod holder_slots;
 mod horizon_library;
 mod interact_prop_stepped;

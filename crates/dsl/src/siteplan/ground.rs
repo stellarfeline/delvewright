@@ -43,6 +43,9 @@ pub struct Ground {
     kind: GroundKind,
     region_min: [i64; 3],
     region_max: [i64; 3],
+    /// The grade the terrain was stepped by (spec-0138), on a site with a
+    /// plan; its surface is what [`Ground::top`] reads.
+    grade: Option<Box<super::grade::Grade>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,30 +122,77 @@ pub fn pixel_top(base_y: i64, range: u32, value: u8) -> i64 {
 }
 
 impl Ground {
-    /// The ground a campaign's site plan declares.
+    /// The ground a campaign's site plan declares, graded for its places.
     #[must_use]
     pub fn of(c: &Campaign) -> Ground {
+        if c.site_plan.is_none() {
+            return Self::of_placed(c, &[]);
+        }
+        let boxes = super::placed_boxes(c, &mut crate::metrics::Reads::new());
+        Self::of_placed(c, &boxes)
+    }
+
+    /// [`Ground::of`] over the plan's places, already placed.
+    #[must_use]
+    pub fn of_placed(c: &Campaign, boxes: &[PlacedBox]) -> Ground {
         let Some(plan) = c.site_plan.as_ref().map(|p| &p.content) else {
             return Ground {
                 kind: GroundKind::None,
                 region_min: [0; 3],
                 region_max: [-1; 3],
+                grade: None,
             };
         };
+        let seed = c.world.content.seed;
         let region_min = plan.region.min;
         let region_max = plan.region.max();
+        let (w, d) = (
+            region_max[0] - region_min[0] + 1,
+            region_max[2] - region_min[2] + 1,
+        );
+        let grade;
         let kind = match &plan.fill {
-            Fill::Solid { block } => GroundKind::Solid {
-                block: block.clone(),
-            },
+            Fill::Solid { block } => {
+                grade = Some(Box::new(super::grade::Grade::of(
+                    boxes,
+                    [region_min[0], region_min[2]],
+                    w,
+                    d,
+                    None,
+                    seed,
+                )));
+                GroundKind::Solid {
+                    block: block.clone(),
+                }
+            }
             Fill::Open {
                 terrain,
                 surface,
                 below,
                 strata,
             } => {
-                let tops = Self::tops(plan, terrain, c.heightmap.as_ref());
-                let seed = c.world.content.seed;
+                let mut tops = Self::tops(plan, terrain, c.heightmap.as_ref());
+                let natural: Option<Vec<i64>> = match &tops {
+                    Tops::Unresolved => None,
+                    Tops::Flat(y) => Some(vec![*y; usize::try_from(w * d).unwrap_or(0)]),
+                    Tops::Map { tops, .. } => Some(tops.clone()),
+                };
+                let g = super::grade::Grade::of(
+                    boxes,
+                    [region_min[0], region_min[2]],
+                    w,
+                    d,
+                    natural.as_deref(),
+                    seed,
+                );
+                if let Some((width, depth, surface)) = g.surface() {
+                    tops = Tops::Map {
+                        width,
+                        depth,
+                        tops: surface.to_vec(),
+                    };
+                }
+                grade = Some(Box::new(g));
                 let cols = Self::columns(&tops, strata, seed, region_min, region_max);
                 GroundKind::Open {
                     surface: surface.clone(),
@@ -158,7 +208,31 @@ impl Ground {
             kind,
             region_min,
             region_max,
+            grade,
         }
+    }
+
+    /// The grade the terrain was stepped by (spec-0138), on a site with a
+    /// plan.
+    #[must_use]
+    pub fn grade(&self) -> Option<&super::grade::Grade> {
+        self.grade.as_deref()
+    }
+
+    /// **A bank's noise** (spec-0138 §4) at column `(x, z)`: a value in
+    /// `0..=amp`, smooth over a three-column lattice, drawn from the world's
+    /// seed and the column alone. `amp` is the rise of the bank's slope.
+    #[must_use]
+    pub fn bank_noise(seed: u64, x: i64, z: i64, amp: i64) -> i64 {
+        if amp <= 0 {
+            return 0;
+        }
+        let p = Patch {
+            scale: std::num::NonZeroU32::new(3).expect("three is not zero"),
+            salt: 0xBA4C,
+            min: 0,
+        };
+        i64::from(patch_reading(seed, &p, x, z)) * (amp + 1) / 1001
     }
 
     fn tops(plan: &SitePlanContent, terrain: &Terrain, read: Option<&HeightmapRead>) -> Tops {
@@ -401,6 +475,7 @@ impl Ground {
             },
             region_min: [i64::MIN / 4; 3],
             region_max: [i64::MAX / 4; 3],
+            grade: None,
         }
     }
 
@@ -418,7 +493,51 @@ impl Ground {
             },
             region_min: [i64::MIN / 4; 3],
             region_max: [i64::MAX / 4; 3],
+            grade: None,
         }
+    }
+
+    /// An `open` site over the region `min..=max` whose natural surface is
+    /// `natural` (row-major over `z` then `x`), graded for `boxes` with the
+    /// noise of `seed`, skinned by `strata` — standing alone, for a caller
+    /// that has no campaign (a test, a probe).
+    #[must_use]
+    pub fn open_over(
+        min: [i64; 3],
+        max: [i64; 3],
+        natural: Vec<i64>,
+        boxes: &[PlacedBox],
+        seed: u64,
+        (surface, below, strata): (&str, &str, Vec<Stratum>),
+    ) -> Ground {
+        let (w, d) = (max[0] - min[0] + 1, max[2] - min[2] + 1);
+        let g = super::grade::Grade::of(boxes, [min[0], min[2]], w, d, Some(&natural), seed);
+        let tops = Tops::Map {
+            width: w,
+            depth: d,
+            tops: g.surface().map_or(natural, |(_, _, s)| s.to_vec()),
+        };
+        let cols = Self::columns(&tops, &strata, seed, min, max);
+        Ground {
+            kind: GroundKind::Open {
+                surface: surface.to_string(),
+                below: below.to_string(),
+                tops,
+                strata,
+                cols,
+                seed,
+            },
+            region_min: min,
+            region_max: max,
+            grade: Some(Box::new(g)),
+        }
+    }
+
+    /// The block column `(x, z)`'s surface and the block under it take, on an
+    /// `open` site.
+    #[must_use]
+    pub fn skin(&self, x: i64, z: i64) -> Option<(&str, &str)> {
+        self.column_blocks(x, z)
     }
 
     /// True for an `open` site.

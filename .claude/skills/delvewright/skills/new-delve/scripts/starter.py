@@ -783,7 +783,9 @@ def contract(p: Place) -> dict:
         if cls in ("stair", "drop", "climb"):
             edge["rise"] = 0  # the level beyond is the neighbour's to measure
         edges.append(edge)
-    for s in p.sides:
+    # Scenery (`reached: false`) is never entered, so an unwalled side of it
+    # is no way out: it claims no edge (the contract refuses one).
+    for s in [] if p.scenery else p.sides:
         # A frontage a body crosses: the open side's cells are the way out
         # (spec-0123 §5.4). A counter a body does not cross stands at the play
         # space's edge, inside, and the side stays this edge's. On a plot the
@@ -830,6 +832,11 @@ def contract(p: Place) -> dict:
         # (grammar.md §2d; references/detail.md, the program's contract).
         "spaces": spaces,
     }
+    if p.scenery:
+        # An unwalled side of scenery is no way out: its ring cells are seen
+        # over and never walked.
+        for s in p.sides:
+            no_body[f"side-{s['face']}"] = {"reason": "an unwalled side of scenery: seen, never entered"}
     if p.lid is not None and p.lid.value + 1 < p.ey:
         no_body["roof"] = {"reason": "the roof zone over the lid, which no one is meant to walk"}
         out["no_body_majority_ack"] = "the roof zone the plan reserves over the lid is left for the roof the author builds; nobody walks it"

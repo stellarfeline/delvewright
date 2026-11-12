@@ -1451,7 +1451,7 @@ the three `loot` rows they hold, a `collect`'s `holder` written as its
 shows an empty stand; the item is not drawn by this renderer revision either way.
 
 ```sh
-delvec build <campaign> -o <out> --prefabs <dir>      # writes validation/worlds/<key>/ and review-frames.json
+delvec build <campaign> -o <out> --prefabs <dir>      # writes validation/worlds/<key>/, review-frames.json and the ledgers (validation/grade.json among them)
 delvec frames <out>                                   # every review frame -> <out>/frames/
 delvec frames <out> --shot pov/leg2/wp0 --labels      # one frame, its targets outlined
 delvec panorama <out> -o <dir>                        # the release panorama, hq

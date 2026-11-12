@@ -200,6 +200,8 @@ starter_places! {
         the_starter_passes_the_check_unedited_on_the_open_annex => "annex",
         the_starter_passes_the_check_unedited_on_the_open_beacon => "beacon",
         the_starter_passes_the_check_unedited_on_the_open_causeway => "causeway",
+        the_starter_passes_the_check_unedited_on_the_open_crag => "crag",
+        the_starter_passes_the_check_unedited_on_the_open_dais => "dais",
         the_starter_passes_the_check_unedited_on_the_open_exit => "exit",
         the_starter_passes_the_check_unedited_on_the_open_far_hall => "far-hall",
         the_starter_passes_the_check_unedited_on_the_open_gantry => "gantry",
