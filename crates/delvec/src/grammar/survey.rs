@@ -261,10 +261,15 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
     // Per space: its name, its floor a body reaches, and every cell of it
     // (the pool a walk between two spaces may swim).
     type Space<'a> = (&'a String, BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>);
+    // A walk's end is the floor of a space and the water a body swims in it
+    // ([`contract::walk_ends`]), as the edge proof takes it.
     let spaces: Vec<Space<'_>> = req
         .spaces
         .iter()
-        .map(|(n, c)| (n, floor_of(c), c.iter().copied().collect()))
+        .map(|(n, c)| {
+            let cells: BTreeSet<[i32; 3]> = c.iter().copied().collect();
+            (n, contract::walk_ends(&world, &floor_of(c), &cells), cells)
+        })
         .collect();
     let mut joined = Vec::new();
     for (i, (a, ca, pa)) in spaces.iter().enumerate() {
@@ -525,6 +530,60 @@ mod tests {
         let a = survey(&req).unwrap();
         assert!(a.reached.contains(&[11, 3, 1]), "{:?}", a.reached);
         assert_eq!(a.joined, vec![["east".to_string(), "west".to_string()]]);
+    }
+
+    /// **A space whose floor is the sea is joined by swimming** (the town's
+    /// cove): a bank outside every space, a `room` that is water through and
+    /// stands nothing, and an `island` of sand breaking the water's surface.
+    /// The room has no standable cell, so a walk between floors had nothing to
+    /// start from and the survey joined nothing — while the route proof swims
+    /// from the bank across the room to the island. A walk's ends are a space's
+    /// floor and the water a body swims in it ([`contract::walk_ends`]).
+    #[test]
+    fn a_space_that_is_all_water_is_joined_to_the_island_it_holds() {
+        let size = [12u32, 5, 3];
+        let mut blocks = Vec::new();
+        for x in 0..12 {
+            for z in 0..3 {
+                blocks.push((x, 0, z, "minecraft:stone".to_string()));
+                let (low, top) = match x {
+                    0..=1 => ("minecraft:stone", "minecraft:stone"),
+                    2..=8 => ("minecraft:water[level=0]", "minecraft:water[level=0]"),
+                    _ => ("minecraft:stone", "minecraft:sand"),
+                };
+                blocks.push((x, 1, z, low.to_string()));
+                blocks.push((x, 2, z, top.to_string()));
+            }
+        }
+        let at = |xs: std::ops::RangeInclusive<i32>| -> Vec<[i32; 3]> {
+            xs.flat_map(|x| (0..3).flat_map(move |z| (3..5).map(move |y| [x, y, z])))
+                .collect()
+        };
+        let mut spaces = BTreeMap::new();
+        spaces.insert("room".to_string(), at(2..=8));
+        spaces.insert("island".to_string(), at(9..=11));
+        let req = Request {
+            size,
+            blocks,
+            keep: None,
+            from: vec![[0, 3, 1]],
+            spaces,
+            palette: vec![],
+        };
+        let model = model_of(&req).unwrap();
+        let world = nav::body_world(&model);
+        assert!(
+            world.find_route([0, 3, 1], [11, 3, 1]).is_some(),
+            "the route proof swims the room to the island"
+        );
+        let a = survey(&req).unwrap();
+        assert!(a.reached.contains(&[11, 3, 1]), "{:?}", a.reached);
+        assert!(
+            !a.standable.iter().any(|c| (2..=8).contains(&c[0])),
+            "the room stands nothing: {:?}",
+            a.standable
+        );
+        assert_eq!(a.joined, vec![["island".to_string(), "room".to_string()]]);
     }
 
     /// **`sealed` is the out-of-walk gate's own object** (spec-0128 §3.2): a
