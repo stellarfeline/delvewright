@@ -3314,7 +3314,7 @@ fn perturb_short_walls_reddens_dw0838_beside_dw0836() {
     // body onto the commons: a stand-in has no opening but its seams, so that
     // is the derivation's own leak (spec-0098 §14).
     assert!(
-        err.contains("is a stand-in") && err.contains("ground outside every place's claim"),
+        err.contains("is a stand-in") && err.contains("a cell outside every place's claim"),
         "`DW0838` must name a stand-in leaking onto the commons: {err}"
     );
     assert!(
