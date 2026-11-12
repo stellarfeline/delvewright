@@ -459,3 +459,69 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, RecordsBinding) {
     }
     (d, b)
 }
+
+/// **The reviewer's table** (spec-0137 §9): per recorded objective, its title,
+/// its `record`, and each line in display order with the site that writes it
+/// and the count of story worlds whose walk ends holding it, of the worlds in
+/// which the objective settles — and the count that end holding none. A way
+/// with no line is seen here as a number, never refused. Empty for a campaign
+/// that records nothing.
+pub fn review_table(c: &Campaign) -> Vec<String> {
+    let flow = Flow::new(c);
+    let r = Records::ordered(c, &flow);
+    if !r.any() {
+        return Vec::new();
+    }
+    let worlds = r.worlds(c, &flow);
+    let plain = |s: &str| delvewright_dsl::l10n::plain(s).into_owned();
+    let mut out = vec![format!(
+        "journal records: {} recorded objective(s), {} line(s), over {} story world(s)",
+        r.objectives.len(),
+        r.sites.len(),
+        worlds.len()
+    )];
+    for (oi, o) in r.objectives.iter().enumerate() {
+        let settled: Vec<&Finished> = worlds
+            .iter()
+            .map(|w| &w.finished[oi])
+            .filter(|f| f.settles != Settles::Open)
+            .collect();
+        out.push(format!(
+            "  {} — {}",
+            o.id(),
+            o.objective.title().map(plain).unwrap_or_else(|| "(no title)".to_string())
+        ));
+        if let Some(rec) = o.objective.record() {
+            out.push(format!("    record: {}", plain(rec)));
+        }
+        for &si in &o.order {
+            let s = &r.sites[si];
+            let held = settled
+                .iter()
+                .filter(|f| f.written.as_ref().is_some_and(|w| w.contains(&s.ordinal)))
+                .count();
+            out.push(format!(
+                "    line {} ({}): \"{}\" — held in {held} of {} world(s) that settle it",
+                s.ordinal,
+                s.place(),
+                plain(s.line),
+                settled.len()
+            ));
+        }
+        let none = settled
+            .iter()
+            .filter(|f| f.written.as_ref().is_some_and(Vec::is_empty))
+            .count();
+        let unknown = settled.iter().filter(|f| f.written.is_none()).count();
+        out.push(format!(
+            "    no line held: {none} of {} world(s){}",
+            settled.len(),
+            if unknown > 0 {
+                format!("; {unknown} world(s) whose walk drives a line out of order, not counted")
+            } else {
+                String::new()
+            }
+        ));
+    }
+    out
+}

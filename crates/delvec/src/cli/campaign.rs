@@ -779,6 +779,12 @@ pub(crate) fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -
     }
     let adiags = analyze_campaign(&v.campaign, &v.prefabs);
     print_diags(&adiags, json);
+    // spec-0137 §9: the reviewer's table of what the journal keeps.
+    if !json {
+        for line in delvec::compiler::recording::review_table(&v.campaign) {
+            eprintln!("{line}");
+        }
+    }
     if adiags.is_empty() {
         ExitCode::SUCCESS
     } else {

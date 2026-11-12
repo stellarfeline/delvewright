@@ -541,3 +541,18 @@ fn every_site_key_is_an_inventory_key() {
     }
     assert!(inv.contains("obj.open_the_door.exit.record") || inv.contains("obj.open-the-door.exit.record"));
 }
+
+/// The reviewer's table: every recorded objective, its record, each line
+/// with its site and the worlds that end holding it.
+#[test]
+fn the_reviewers_table_counts_the_worlds_per_line() {
+    let dir = three_ways("table");
+    let c = common::campaign_at(&dir);
+    let t = delvec::compiler::recording::review_table(&c);
+    assert!(t[0].contains("1 recorded objective(s), 4 line(s)"), "{t:#?}");
+    assert!(t.iter().any(|l| l.contains("record: The keeper's door")), "{t:#?}");
+    assert_eq!(t.iter().filter(|l| l.contains("    line ")).count(), 4, "{t:#?}");
+    assert!(t.iter().any(|l| l.contains("We waited too long") && l.contains("held in 1 of")), "{t:#?}");
+    let none = fixture("table-none", |_| {}, |_| {});
+    assert!(delvec::compiler::recording::review_table(&common::campaign_at(&none)).is_empty());
+}
