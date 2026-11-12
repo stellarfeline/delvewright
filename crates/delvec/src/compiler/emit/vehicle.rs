@@ -19,11 +19,6 @@ const AT_MARK: &str = "1.5";
 /// The advancement a boarding answers through, and its reward function.
 pub(super) const BOARD: &str = "vehicle_board";
 
-/// The id of the modifier that holds a riderless mount still.
-fn wait_modifier(ns: &str) -> String {
-    format!("{ns}:vehicle_wait")
-}
-
 /// Where a vehicle's body is summoned: the mark's cell centre, a boat on the
 /// water's top face, where it floats.
 fn summon_point(v: &VehiclePlan) -> [f64; 3] {
@@ -35,19 +30,6 @@ fn summon_point(v: &VehiclePlan) -> [f64; 3] {
     }
 }
 
-/// **A riderless mount waits** (the record §11): its `movement_speed` is
-/// multiplied to nothing, so its own AI walks it nowhere; boarding takes the
-/// modifier off ([`emit_boarding`]).
-fn wait_line(ns: &str, v: &VehiclePlan) -> Option<String> {
-    (v.kind == VehicleKind::Mount).then(|| {
-        format!(
-            "attribute @e[tag={},limit=1] minecraft:movement_speed modifier add {} -1 add_multiplied_total",
-            v.tag(),
-            wait_modifier(ns)
-        )
-    })
-}
-
 /// The summon of one vehicle's body.
 pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     let decl = &plan.campaign.quests.content.vehicles[v.index];
@@ -57,6 +39,11 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     if v.kind == VehicleKind::Mount {
         nbt.push("PersistenceRequired:1b".to_string());
         nbt.push("Silent:1b".to_string());
+        // **A riderless mount waits** (the record §11, §13): without its AI it
+        // neither walks nor turns, so it stands at its mark facing the way it
+        // was seated, and the save holds the yaw the summon wrote; boarding
+        // gives it its AI back ([`boarding_lines`]).
+        nbt.push("NoAI:1b".to_string());
         if v.tame {
             nbt.push("Tame:1b".to_string());
         }
@@ -164,7 +151,6 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         let tag = v.tag();
         let mut seat = vehicle_removal_lines(ns, v);
         seat.push(vehicle_summon(plan, v));
-        seat.extend(wait_line(ns, v));
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
         let p = summon_point(v);
         let reseat = vec![
@@ -219,9 +205,8 @@ fn boarding_lines(plan: &Plan) -> Option<Vec<String>> {
                 ));
             }
             VehicleKind::Mount => out.push(format!(
-                "execute on vehicle run attribute @s[tag={}] minecraft:movement_speed modifier remove {}",
-                v.tag(),
-                wait_modifier(ns)
+                "execute on vehicle run data merge entity @s[tag={}] {{NoAI:0b}}",
+                v.tag()
             )),
             VehicleKind::Boat => {}
         }

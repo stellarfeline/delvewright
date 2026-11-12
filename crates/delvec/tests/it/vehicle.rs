@@ -623,20 +623,23 @@ fn each_kind_is_seated_in_its_medium() {
             "{reseat}"
         );
     }
-    // A riderless mount waits, and boarding gives it its speed back; a cart
-    // is pushed the way it faces; a boat is neither.
+    // A riderless mount waits without its AI — it neither walks nor turns
+    // from the yaw it was seated at (the record §13: with its AI, a mount at
+    // speed nothing turned within a second, and the save held the turn) — and
+    // boarding gives its AI back; a cart is pushed the way it faces; a boat is
+    // neither.
     let board = function(&out, "vehicle_board");
     for s in ["race_pig", "mare"] {
         let seat = function(&out, &format!("vehicle_seat_{s}"));
-        assert!(
-            seat.contains(&format!(
-                "attribute @e[tag=dw_vehicle_{s},limit=1] minecraft:movement_speed modifier add hello-world:vehicle_wait -1 add_multiplied_total"
-            )),
-            "{seat}"
-        );
+        let summon = seat
+            .lines()
+            .find(|l| l.starts_with("summon "))
+            .unwrap_or_else(|| panic!("{seat}"));
+        assert!(summon.contains("NoAI:1b"), "{summon}");
+        assert!(!seat.contains("movement_speed"), "{seat}");
         assert!(
             board.contains(&format!(
-                "execute on vehicle run attribute @s[tag=dw_vehicle_{s}] minecraft:movement_speed modifier remove hello-world:vehicle_wait"
+                "execute on vehicle run data merge entity @s[tag=dw_vehicle_{s}] {{NoAI:0b}}"
             )),
             "{board}"
         );
@@ -652,7 +655,7 @@ fn each_kind_is_seated_in_its_medium() {
         board.ends_with("advancement revoke @s only hello-world:vehicle_board\n"),
         "{board}"
     );
-    assert!(!function(&out, "vehicle_seat_gull").contains("vehicle_wait"));
+    assert!(!function(&out, "vehicle_seat_gull").contains("NoAI"));
     let adv = text(
         &out,
         out.keys()
