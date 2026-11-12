@@ -1454,7 +1454,9 @@ fn the_purchase_template_reads_the_purse_at_its_declared_scope() {
         let pick = fnc(&out, "shop_pick_0_0");
         let debit = if scope == "party" { "#party" } else { "@s" };
         assert!(
-            pick.contains(&format!("run scoreboard players remove {debit} dw.s_embers 1")),
+            pick.contains(&format!(
+                "run scoreboard players remove {debit} dw.s_embers 1"
+            )),
             "the offer debits the {scope} purse at `{debit}`:\n{pick}"
         );
         let t = text(
@@ -1466,7 +1468,10 @@ fn the_purchase_template_reads_the_purse_at_its_declared_scope() {
             format!("scoreboard players get {want} dw.s_embers"),
             format!("scoreboard players set {want} dw.s_embers 0"),
         ] {
-            assert!(t.contains(&line), "the {scope} purse is driven and read as `{line}`:\n{t}");
+            assert!(
+                t.contains(&line),
+                "the {scope} purse is driven and read as `{line}`:\n{t}"
+            );
         }
         let elsewhere = if scope == "party" {
             "@a[tag=dw_shoptest,limit=1] dw.s_embers"
