@@ -553,10 +553,8 @@ fn the_ledger_says_what_each_world_leaves_written() {
 fn every_site_key_is_an_inventory_key() {
     let dir = three_ways("keys");
     let c = common::campaign_at(&dir);
-    let inv: std::collections::BTreeSet<String> = delvewright_dsl::l10n::inventory(&c)
-        .into_iter()
-        .map(|(k, _)| k)
-        .collect();
+    let inv: std::collections::BTreeSet<String> =
+        delvewright_dsl::l10n::inventory(&c).into_keys().collect();
     let sites = delvewright_dsl::record::outcome_sites(&c);
     assert_eq!(sites.len(), 4);
     for s in &sites {
