@@ -654,6 +654,16 @@ fn validate_loaded_with(
                 examined.extend(ebind.lines());
                 diags.extend(ed);
             }
+            // spec-0137: every line the journal can keep is shown in some
+            // story world (`DW1104`). Bound in the one funnel; the binding line
+            // prints whenever the campaign records an objective.
+            {
+                let (rd, rbind) = delvec::compiler::recording::check(&campaign);
+                if rbind.objectives > 0 {
+                    examined.push(rbind.line());
+                }
+                diags.extend(rd);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares

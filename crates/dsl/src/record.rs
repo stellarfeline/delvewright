@@ -17,7 +17,7 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::{Campaign, DialogueEffect, EffectRootOwner, Objective, ObjectiveId, QuestEffect};
 
 /// Where one `record-outcome` sits.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum OutcomeAt<'a> {
     /// In an effect bundle: the root it hangs off and the effect itself.
     Effect {
@@ -44,7 +44,7 @@ pub enum OutcomeAt<'a> {
 }
 
 /// One `record-outcome`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OutcomeSite<'a> {
     /// The objective it names.
     pub objective: &'a ObjectiveId,
@@ -54,6 +54,9 @@ pub struct OutcomeSite<'a> {
     pub stage: &'static str,
     /// Its JSON pointer within that document.
     pub path: String,
+    /// The l10n inventory key its line is kept under (`fx.….outcome`,
+    /// `dlg.<npc>.<node>.opt.<i>.fx.<j>.outcome`).
+    pub key: String,
     /// Its ordinal among the sites naming the same objective, from 1.
     pub ordinal: usize,
     /// Where it sits.
@@ -80,9 +83,11 @@ impl OutcomeSite<'_> {
 /// Every `record-outcome` of the campaign, in walk order, each with its
 /// ordinal (spec-0137 §4).
 pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
+    #[allow(clippy::too_many_arguments)]
     fn deep<'a>(
         eff: &'a QuestEffect,
         path: String,
+        key: String,
         owner: EffectRootOwner<'a>,
         root: &str,
         stage: &'static str,
@@ -94,6 +99,7 @@ pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
                 line,
                 stage,
                 path: path.clone(),
+                key: format!("{key}.outcome"),
                 ordinal: 0,
                 at: OutcomeAt::Effect {
                     owner,
@@ -102,9 +108,17 @@ pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
                 },
             });
         }
-        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+        for (pseg, kseg, list) in eff.nested_effect_lists_labeled() {
             for (j, inner) in list.iter().enumerate() {
-                deep(inner, format!("{path}/{pseg}/{j}"), owner, root, stage, out);
+                deep(
+                    inner,
+                    format!("{path}/{pseg}/{j}"),
+                    format!("{key}.{kseg}.{j}"),
+                    owner,
+                    root,
+                    stage,
+                    out,
+                );
             }
         }
     }
@@ -114,6 +128,7 @@ pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
             deep(
                 eff,
                 format!("{}/{i}", site.path),
+                format!("{}.{i}", site.key),
                 site.owner,
                 &site.path,
                 site.stage,
@@ -121,8 +136,11 @@ pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
             );
         }
     });
+    let local = |id: &str| id.split_once('/').map_or(id, |(_, r)| r).to_string();
     for (ti, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let np = local(tree.npc.as_str());
         for (ni, node) in tree.nodes.iter().enumerate() {
+            let nd = local(node.id.as_str());
             for (oi, opt) in node.options.iter().enumerate() {
                 for (ei, de) in opt.effects.iter().enumerate() {
                     if let Some((objective, line)) = de.record_outcome() {
@@ -133,6 +151,7 @@ pub fn outcome_sites(c: &Campaign) -> Vec<OutcomeSite<'_>> {
                             path: format!(
                                 "/content/dialogues/{ti}/nodes/{ni}/options/{oi}/effects/{ei}"
                             ),
+                            key: format!("dlg.{np}.{nd}.opt.{oi}.fx.{ei}.outcome"),
                             ordinal: 0,
                             at: OutcomeAt::Option {
                                 tree: ti,

@@ -66,6 +66,7 @@
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
 //! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
+//! - [`recording`]: `DW1104` — a `record-outcome` some story world shows (spec-0137).
 //! - [`hop`]: `DW1103` — a staged body's hop passes through no block at the cell it is placed on (spec-0136).
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
@@ -221,6 +222,7 @@ pub mod pulse;
 pub mod rail;
 pub mod raster;
 pub mod reach;
+pub mod recording;
 pub mod region_fill;
 pub mod registry;
 pub mod rehearsal;

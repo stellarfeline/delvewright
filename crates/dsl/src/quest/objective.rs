@@ -101,7 +101,8 @@ pub enum Objective {
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -182,7 +183,8 @@ pub enum Objective {
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -260,7 +262,8 @@ pub enum Objective {
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -346,7 +349,8 @@ pub enum Objective {
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -515,7 +519,8 @@ pub enum Objective {
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
         /// no `title` is never announced whatever this says; `shown` on one is
-        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        /// `DW0961`. A hint with no `title` is `DW0862`; a hidden task's hint is
+        /// shown on its journal page once it has started (spec-0137 §3).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
         /// Whether this objective is one the compass can follow (spec-0104 §6).
@@ -1027,6 +1032,15 @@ impl Objective {
                 .announcement()
                 .unwrap_or(guidance.announcements)
                 .is_shown()
+    }
+
+    /// **Does this objective have an open journal page** (spec-0104 §8,
+    /// spec-0137 §3): it is announced, or it is a hidden task with a `title`
+    /// and a `hint` — whose page is shown once it has started, while nothing
+    /// of it is told in chat or followed by the compass.
+    pub fn open_paged(&self, guidance: &Guidance) -> bool {
+        self.announced(guidance)
+            || (self.title().is_some_and(|t| !t.trim().is_empty()) && self.hint().is_some())
     }
 
     /// The flags that must be set before this objective activates (v0.3).

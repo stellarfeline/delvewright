@@ -135,6 +135,10 @@ pub struct StoryRun {
     pub playthrough: Playthrough,
     /// Every effect pointer the run fired, deeds included.
     pub fired: BTreeSet<String>,
+    /// `fired` in the order the run fired it, with the index of the step in
+    /// front of which (a deed) or at which it fired — what the journal's
+    /// records read (spec-0137).
+    pub fired_in_order: Vec<(usize, String)>,
     /// The members of `fired` whose gate held only on an undatable term.
     pub undecided: BTreeSet<String>,
     /// What the party held as each final scene began to fire.
@@ -474,6 +478,7 @@ impl<'a> Flow<'a> {
         let mut deeds: Vec<(usize, String)> = Vec::new();
         let mut complete_at: Option<(usize, String)> = None;
         let mut fired: BTreeSet<String> = BTreeSet::new();
+        let mut fired_in_order: Vec<(usize, String)> = Vec::new();
         let mut undecided: BTreeSet<String> = BTreeSet::new();
         let mut incoherent: Option<String> = None;
         for (i, step) in pt.steps.iter().enumerate() {
@@ -487,6 +492,7 @@ impl<'a> Flow<'a> {
                 st.undecided.clear();
                 self.perform_act_ending(&mut st, act, i + 1, &mut complete_at);
                 fired.extend(st.fired.iter().cloned());
+                fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
                 undecided.extend(st.undecided.iter().cloned());
                 deeds.push((i, act.clone()));
             }
@@ -498,6 +504,7 @@ impl<'a> Flow<'a> {
             }
             self.advance_with(&mut st, step, i + 1, &mut complete_at, &credit);
             fired.extend(st.fired.iter().cloned());
+            fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
             undecided.extend(st.undecided.iter().cloned());
         }
         pt.story = Some(std::sync::Arc::new(StoryCtx {
@@ -507,6 +514,7 @@ impl<'a> Flow<'a> {
         StoryRun {
             playthrough: pt,
             fired,
+            fired_in_order,
             undecided,
             scene_at: st.scene_at,
             incoherent,

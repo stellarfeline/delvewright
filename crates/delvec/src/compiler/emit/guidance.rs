@@ -79,8 +79,20 @@ pub(super) struct Watched {
     /// Its `told_guard` — the window the party is told of it in — a run of
     /// ` if …`/` unless …` clauses.
     pub guard: String,
-    /// Announced: listed in the journal.
+    /// Announced: told in chat, and its open page in the journal.
     pub announced: bool,
+    /// Has an open page while pending: announced, or a hidden task with a
+    /// `title` and a `hint` (spec-0137 §3), shown once it has started.
+    pub open_page: bool,
+    /// Kept in the journal once settled: it has an open page, or it is
+    /// recorded (spec-0137 §3).
+    pub journaled: bool,
+    /// Its `record`, when it states one (spec-0137 §2.1).
+    pub record: Option<String>,
+    /// Its outcome sites' ordinals, in display order (spec-0137 §4).
+    pub outcomes: Vec<usize>,
+    /// It carries a `limit`: it settles done or expired (spec-0133).
+    pub limited: bool,
     /// Tracked: its ordinal on the compass, from 1, in document order.
     pub ordinal: Option<usize>,
     /// Where the compass points: a cell, a body's tag (a `talk-to`'s NPC), or
@@ -177,9 +189,12 @@ pub(super) struct Guide {
     pub highlights: Vec<HlAct>,
     /// Whether the campaign carries a compass (any objective is tracked).
     pub compass: bool,
-    /// Whether the campaign carries a journal (any objective is announced, or a
-    /// manual is declared).
+    /// Whether the campaign carries a journal (any objective is journaled, or
+    /// a manual is declared).
     pub journal: bool,
+    /// Every `record-outcome` site: `(objective, ordinal, line)`, in walk
+    /// order (spec-0137 §2.2).
+    pub sites: Vec<(String, usize, String)>,
 }
 
 impl Guide {
@@ -191,6 +206,16 @@ impl Guide {
     /// The announced objectives, in document order.
     pub fn announced(&self) -> impl Iterator<Item = &Watched> {
         self.watched.iter().filter(|w| w.announced)
+    }
+
+    /// The objectives with an open page, in document order.
+    pub fn open_paged(&self) -> impl Iterator<Item = &Watched> {
+        self.watched.iter().filter(|w| w.open_page)
+    }
+
+    /// The objectives the journal keeps once settled, in document order.
+    pub fn journaled(&self) -> impl Iterator<Item = &Watched> {
+        self.watched.iter().filter(|w| w.journaled)
     }
 
     /// Whether any guidance machinery is emitted at all.
@@ -294,12 +319,24 @@ pub(super) fn guide(
     let guidance = &c.quests.content.guidance;
     let mut g = Guide::default();
     let mut ordinal = 0usize;
+    // spec-0137: the recorded objectives and their lines, each objective's in
+    // the order the story enforces.
+    let flow = crate::compiler::flow::Flow::new(c);
+    let records = crate::compiler::recording::Records::ordered(c, &flow);
+    g.sites = records
+        .sites
+        .iter()
+        .map(|s| (s.objective.as_str().to_string(), s.ordinal, s.line.to_string()))
+        .collect();
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let qa = quest_active_score(q.id.as_str());
         for (oi, o) in q.objectives.iter().enumerate() {
             let announced = o.announced(guidance);
             let tracked = o.tracked(guidance);
-            if !announced && o.highlight().is_none() {
+            let recorded = records.objective(o.id().as_str());
+            let open_page = o.open_paged(guidance);
+            let journaled = open_page || recorded.is_some();
+            if !journaled && o.highlight().is_none() {
                 continue;
             }
             let ord = if tracked {
@@ -330,6 +367,13 @@ pub(super) fn guide(
                 safe: plan::safe_local(o.id().as_str()),
                 guard: told_guard(plan, o, &qa),
                 announced,
+                open_page,
+                journaled,
+                record: o.record().map(str::to_string),
+                outcomes: recorded
+                    .map(|r| r.order.iter().map(|&s| records.sites[s].ordinal).collect())
+                    .unwrap_or_default(),
+                limited: o.limit().is_some(),
                 ordinal: ord,
                 target,
                 line: Vec::new(),
@@ -341,9 +385,46 @@ pub(super) fn guide(
         w.line = l;
     }
     g.compass = ordinal > 0;
-    g.journal = g.watched.iter().any(|w| w.announced) || guidance.manual.is_some();
+    g.journal = g.watched.iter().any(|w| w.journaled) || guidance.manual.is_some();
     g.highlights = highlight_acts(plan, blocks, holders, &g, world);
     g
+}
+
+/// The holder of one `record-outcome` site's line (spec-0137 §5): `1` once
+/// the story has written it, never cleared.
+pub(super) fn held(oid: &str, ordinal: usize) -> String {
+    format!("#jr_{}.{ordinal}", plan::safe_local(oid))
+}
+
+/// The two lines a `record-outcome` writes: its line held, and the epoch
+/// moved so every player's book is rewritten.
+pub(super) fn record_lines(oid: &str, ordinal: usize) -> Vec<String> {
+    vec![
+        format!("scoreboard players set {} {GUIDE} 1", held(oid, ordinal)),
+        format!("scoreboard players add {EPOCH} {GUIDE} 1"),
+    ]
+}
+
+/// The score a journaled objective's finished pages are written under: its
+/// settled score when it is limited (done or expired, spec-0133), else its
+/// completion score.
+pub(super) fn settle_score(w: &Watched) -> String {
+    if w.limited {
+        super::limit::settled_score(&w.id)
+    } else {
+        obj_score(&w.id)
+    }
+}
+
+/// The item modifier of line `ordinal` of `oid`'s finished entry.
+pub(super) fn line_modifier(safe: &str, ordinal: usize) -> String {
+    format!("journal_done_{safe}.{ordinal}")
+}
+
+/// Whether a journaled objective's finished entry opens with a page of its
+/// own: it has a title or a record to put on it.
+pub(super) fn has_head(w: &Watched, o: &Objective) -> bool {
+    o.title().is_some_and(|t| !t.trim().is_empty()) || w.record.is_some()
 }
 
 fn highlight_acts(
@@ -916,6 +997,10 @@ pub(super) fn setup_lines(g: &Guide) -> Vec<String> {
     }
     v.push(format!("scoreboard objectives add {GUIDE} dummy"));
     v.push(format!("scoreboard players set {EPOCH} {GUIDE} 0"));
+    // spec-0137 §5: every line the story can write starts unwritten.
+    for (oid, k, _) in &g.sites {
+        v.push(format!("scoreboard players set {} {GUIDE} 0", held(oid, *k)));
+    }
     if g.compass || g.journal {
         for (o, kind) in [(SEEN, "dummy"), (DEATHS, "deathCount")] {
             v.push(format!("scoreboard objectives add {o} {kind}"));
@@ -1315,7 +1400,7 @@ pub(super) fn functions(
         let mut write = vec![format!(
             "$item modify entity @s $(slot) {ns}:journal_prefix"
         )];
-        for w in g.announced() {
+        for w in g.open_paged() {
             match w.ordinal {
                 Some(k) => {
                     write.push(format!(
@@ -1333,13 +1418,23 @@ pub(super) fn functions(
                 )),
             }
         }
-        for w in g.announced() {
-            write.push(format!(
-                "$execute if score {} {} matches 1 run item modify entity @s $(slot) {ns}:journal_done_{}",
-                plan::PARTY,
-                obj_score(&w.id),
-                w.safe
-            ));
+        for w in g.journaled() {
+            let o = &c.quests.content.quests[w.quest].objectives[w.objective];
+            let settled = format!("if score {} {} matches 1", plan::PARTY, settle_score(w));
+            if has_head(w, o) {
+                write.push(format!(
+                    "$execute {settled} run item modify entity @s $(slot) {ns}:journal_done_{}",
+                    w.safe
+                ));
+            }
+            // spec-0137 §4: every line the story wrote, in display order.
+            for k in &w.outcomes {
+                write.push(format!(
+                    "$execute {settled} if score {} {GUIDE} matches 1 run item modify entity @s $(slot) {ns}:{}",
+                    held(&w.id, *k),
+                    line_modifier(&w.safe, *k)
+                ));
+            }
         }
         fns.push(("journal_write".to_string(), lines(&write)));
     }
@@ -1696,9 +1791,14 @@ pub(super) fn item_modifiers(
         "journal_prefix".to_string(),
         json!({ "function": "minecraft:set_written_book_pages", "mode": "replace_all", "pages": prefix }),
     ));
-    for w in g.announced() {
+    for w in g.journaled() {
         let o = &c.quests.content.quests[w.quest].objectives[w.objective];
         let title = o.title().unwrap_or_default();
+        let page = |extra: &[Value]| json!({ "text": "", "extra": extra });
+        if !w.open_page {
+            out.extend(finished_modifiers(g, w, o, chrome));
+            continue;
+        }
         let mut open = vec![
             tr_with(
                 &chrome.get(ch::JOURNAL_OPEN),
@@ -1711,7 +1811,6 @@ pub(super) fn item_modifiers(
             open.push(gap());
             open.push(tr(hint));
         }
-        let page = |extra: &[Value]| json!({ "text": "", "extra": extra });
         out.push((
             format!("journal_open_{}", w.safe),
             json!({ "function": "minecraft:set_written_book_pages", "mode": "append", "pages": [page(&open)] }),
@@ -1728,17 +1827,50 @@ pub(super) fn item_modifiers(
                 json!({ "function": "minecraft:set_written_book_pages", "mode": "append", "pages": [page(&following)] }),
             ));
         }
-        let done = [
-            tr_with(
-                &chrome.get(ch::JOURNAL_DONE),
-                &[("color", json!("dark_gray"))],
-            ),
-            gap(),
-            tr_with(title, &[("strikethrough", json!(true))]),
-        ];
+        out.extend(finished_modifiers(g, w, o, chrome));
+    }
+    out
+}
+
+/// A journaled objective's finished entry (spec-0137 §5): its head page —
+/// the chrome heading, the title struck through, the `record` — when it has a
+/// title or a record, and one page per line the story can write, each its own
+/// modifier, appended under the line's held score.
+fn finished_modifiers(
+    g: &Guide,
+    w: &Watched,
+    o: &Objective,
+    chrome: &delvewright_dsl::Chrome,
+) -> Vec<(String, Value)> {
+    use delvewright_dsl::chrome as ch;
+    let gap = || json!({ "text": "\n\n" });
+    let page = |extra: &[Value]| json!({ "text": "", "extra": extra });
+    let mut out = Vec::new();
+    if has_head(w, o) {
+        let mut done = vec![tr_with(
+            &chrome.get(ch::JOURNAL_DONE),
+            &[("color", json!("dark_gray"))],
+        )];
+        if let Some(title) = o.title().filter(|t| !t.trim().is_empty()) {
+            done.push(gap());
+            done.push(tr_with(title, &[("strikethrough", json!(true))]));
+        }
+        if let Some(r) = &w.record {
+            done.push(gap());
+            done.push(tr(r));
+        }
         out.push((
             format!("journal_done_{}", w.safe),
             json!({ "function": "minecraft:set_written_book_pages", "mode": "append", "pages": [page(&done)] }),
+        ));
+    }
+    for k in &w.outcomes {
+        let Some((_, _, line)) = g.sites.iter().find(|(oid, n, _)| *oid == w.id && n == k) else {
+            continue;
+        };
+        out.push((
+            line_modifier(&w.safe, *k),
+            json!({ "function": "minecraft:set_written_book_pages", "mode": "append", "pages": [page(&[tr(line)])] }),
         ));
     }
     out

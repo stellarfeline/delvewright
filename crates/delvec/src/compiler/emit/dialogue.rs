@@ -539,6 +539,24 @@ pub(super) fn dialog_handler_fns(
             for n in &opt.spawns_npcs {
                 body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
             }
+            // spec-0137: the way this answer writes, held before the
+            // completion it may perform.
+            for s in delvewright_dsl::record::outcome_sites(c) {
+                if let delvewright_dsl::record::OutcomeAt::Option {
+                    tree, node, option, ..
+                } = s.at
+                    && c.dialogue.content.dialogues[tree].npc.as_str() == npc.npc_id
+                    && c.dialogue.content.dialogues[tree].nodes[..node]
+                        .iter()
+                        .map(|n| n.options.len())
+                        .sum::<usize>()
+                        + option
+                        + 1
+                        == opt.n
+                {
+                    body.extend(super::guidance::record_lines(s.objective.as_str(), s.ordinal));
+                }
+            }
             // The click completes the objective under the same pending guard the
             // button is drawn under (spec-0093 §6.3): a press that arrives while
             // the objective is not pending completes nothing.
