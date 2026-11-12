@@ -23,7 +23,7 @@ use std::path::Path;
 
 use crate::admit::scenery;
 use crate::grammar::block::BlockState;
-use crate::grammar::contract::{ContractReport, check_at};
+use crate::grammar::contract::{ContractReport, EntityHolders, check_handed};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::schem::prefab::PrefabMeta;
@@ -55,6 +55,32 @@ pub fn grid(s: &Structure) -> VoxelModel {
         }
     }
     model
+}
+
+/// **The item-holder entities a piece's templates carry** (spec-0111 §3.1),
+/// by the cell each occupies in the piece: each template's `entities` list,
+/// offset by where the template sits (`[0, 0, 0]` for a single template, the
+/// tile's offset in a zone). An entity that is not a frame or a stand is not
+/// a holder and is left out.
+pub fn template_holders(templates: &[([i32; 3], &Structure)]) -> EntityHolders {
+    let mut out = EntityHolders::new();
+    for (offset, s) in templates {
+        for e in &s.entities {
+            let Some(kind) = crate::admit::entities::entity_id(e)
+                .and_then(delvewright_dsl::holders::entity_holder)
+            else {
+                continue;
+            };
+            let Some(c) = crate::admit::entities::entity_cell(e) else {
+                continue;
+            };
+            out.insert(
+                [c[0] + offset[0], c[1] + offset[1], c[2] + offset[2]],
+                kind.family,
+            );
+        }
+    }
+    out
 }
 
 /// The anchors a metadata document declares, as the point the checker needs.
@@ -215,7 +241,12 @@ impl Door {
     ///   loses a top-level key on write keeps the anchors it modelled — and its
     ///   own binding count (`resolved_anchors`) is stated, because a document
     ///   with no anchors is one nothing here could contradict.
-    pub fn open(model: &VoxelModel, files: usize, meta_path: &Path) -> Door {
+    pub fn open(
+        model: &VoxelModel,
+        holders: &EntityHolders,
+        files: usize,
+        meta_path: &Path,
+    ) -> Door {
         let meta = match PrefabMeta::read(meta_path) {
             Ok(Some(m)) => m,
             Ok(None) => {
@@ -271,7 +302,7 @@ impl Door {
         // never read from the piece itself; judged by the one checker the
         // writer judged it by, with the kind `delvec detail` sealed it on.
         let kind = scenery::place_kind(meta_path, &meta);
-        let mut report = check_at(model, contract, &anchors, kind.place());
+        let mut report = check_handed(model, contract, &anchors, kind.place(), &[], holders);
         report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {
             spaces: contract.spaces.len(),

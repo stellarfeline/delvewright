@@ -58,6 +58,7 @@ use crate::grammar::block::BlockState;
 use crate::grammar::gates::{Gate, verdict};
 use crate::grammar::model::VoxelModel;
 use crate::grammar::nav;
+use delvewright_dsl::holders::HolderFamily;
 
 /// The endpoint name that means "outside the piece".
 pub use crate::grammar::ir::EXTERIOR;
@@ -672,7 +673,7 @@ pub fn check_at(
     anchors: &BTreeMap<String, [i32; 3]>,
     place: Place,
 ) -> ContractReport {
-    check_handed(model, contract, anchors, place, &[])
+    check_handed(model, contract, anchors, place, &[], &EntityHolders::new())
 }
 
 /// [`check_at`] for a piece whose place declares open sides (spec-0123
@@ -680,12 +681,18 @@ pub fn check_at(
 /// inclusive corners, and closure takes each as a declared opening of the
 /// space behind it. A face answering neither a seam nor an open side stays
 /// the discovered seam (`DW0844`); that is the assembly's to judge.
+///
+/// `holders` are the item-holder entities the piece carries (its marks'
+/// frames and stands, or its template's `entities` list), by cell: an anchor
+/// on one of them, or on a container block of `model`, lands in that holder
+/// when no declared element holds it ([`resolves_to`]).
 pub fn check_handed(
     model: &VoxelModel,
     contract: &SpatialContract,
     anchors: &BTreeMap<String, [i32; 3]>,
     place: Place,
     open_sides: &[([i32; 3], [i32; 3])],
+    holders: &EntityHolders,
 ) -> ContractReport {
     let mut ix = Index::new(model, contract);
     ix.open_sides = open_sides
@@ -710,7 +717,14 @@ pub fn check_handed(
     let kinds = no_body_kinds(&ix, model, anchors, &mut enumeration);
     gates.push(no_body_gate(&ix, &kinds));
     gates.push(reachability(&ix, model, &mut enumeration));
-    gates.push(anchors_gate(&ix, anchors, &kinds, &mut enumeration));
+    gates.push(anchors_gate(
+        &ix,
+        model,
+        holders,
+        anchors,
+        &kinds,
+        &mut enumeration,
+    ));
     gates.push(exterior_faces_gate(&ix, model, &mut enumeration));
     gates.push(no_body_majority(&ix, &kinds));
 
@@ -2850,8 +2864,49 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
 // --- §2.7 anchors ----------------------------------------------------------
 
+/// The item-holder entities a piece carries — an item frame, a glow item
+/// frame, an armour stand (spec-0111) — by the cell each occupies. A container
+/// is a block and is read off the model, so it is not listed here.
+pub type EntityHolders = BTreeMap<[i32; 3], HolderFamily>;
+
+/// **The item holder standing at `pos`**: a container block of `model` (any of
+/// the twelve kinds, spec-0105), else a holder entity the piece carries.
+pub fn holder_at(
+    model: &VoxelModel,
+    holders: &EntityHolders,
+    pos: [i32; 3],
+) -> Option<HolderFamily> {
+    if model
+        .get(pos)
+        .is_some_and(|b| delvewright_dsl::blocks::container_slots(&b.name).is_some())
+    {
+        return Some(HolderFamily::Container);
+    }
+    holders.get(&pos).copied()
+}
+
 /// Which contract element an anchor lands in, in the form the metadata records.
-pub fn resolves_to(contract: &SpatialContract, pos: [i32; 3]) -> Option<String> {
+///
+/// A declared element first — a `no_body` region, an edge's bar, way or via, a
+/// space. **Then the item holder at the cell** (`holder:<family>`): a `loot`
+/// entry or an adopting `collect` names a holder's own cell by definition, and
+/// a container is a solid block, never a space a body stands in. The holder is
+/// read off the piece — a container block of `model`, or a frame or stand in
+/// `holders` — so an anchor in nothing that has no holder still lands in
+/// nothing, and whether a fill really finds its holder in the built world
+/// stays `DW0431`'s to prove.
+pub fn resolves_to(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    holders: &EntityHolders,
+    pos: [i32; 3],
+) -> Option<String> {
+    declared_element(contract, pos)
+        .or_else(|| holder_at(model, holders, pos).map(|f| format!("holder:{}", f.name())))
+}
+
+/// The declared contract element `pos` lies in, narrowest first.
+fn declared_element(contract: &SpatialContract, pos: [i32; 3]) -> Option<String> {
     let hit = |boxes: &[MetaRegion]| {
         boxes
             .iter()
@@ -2891,6 +2946,8 @@ pub fn resolves_to(contract: &SpatialContract, pos: [i32; 3]) -> Option<String> 
 
 fn anchors_gate(
     ix: &Index,
+    model: &VoxelModel,
+    holders: &EntityHolders,
     anchors: &BTreeMap<String, [i32; 3]>,
     kinds: &CellKinds,
     enumeration: &mut Vec<String>,
@@ -2898,7 +2955,7 @@ fn anchors_gate(
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut unresolved: Vec<String> = Vec::new();
     for (name, &pos) in anchors {
-        match resolves_to(ix.contract, pos) {
+        match resolves_to(model, ix.contract, holders, pos) {
             Some(element) => {
                 let head = element.split(':').next().unwrap_or("").to_string();
                 *by_kind.entry(head).or_insert(0) += 1;
@@ -2916,7 +2973,10 @@ fn anchors_gate(
                     ));
                 }
             }
-            None => unresolved.push(format!("{name:?} at [{},{},{}]", pos[0], pos[1], pos[2])),
+            None => unresolved.push(format!(
+                "{name:?} at [{},{},{}] (no item holder stands there either)",
+                pos[0], pos[1], pos[2]
+            )),
         }
     }
     let summary: Vec<String> = by_kind

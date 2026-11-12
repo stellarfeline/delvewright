@@ -927,11 +927,12 @@ fn measured_walk_y(expansion: &Expansion) -> Option<i32> {
 /// Each anchor also carries **which contract element it lands in**
 /// (spec-0036 §1b/§2.7): a campaign binds content to an anchor, and the thing
 /// that says whether that place is play space, a door or dressing is the
-/// contract. Resolved here, from the resolved contract alone, so the metadata a
-/// reader gets and the element the checker's anchor obligation reads are the
-/// same string.
+/// contract. Resolved here, from the resolved contract and the item holders
+/// the piece carries, so the metadata a reader gets and the element the
+/// checker's anchor obligation reads are the same string.
 fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
     let contract = contract_metadata(expansion);
+    let holders = expansion.entity_holders();
     let mut out: BTreeMap<String, AnchorMetadata> = expansion
         .anchors
         .iter()
@@ -942,9 +943,9 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
             // could not reference, and the role is what lets a generated zone
             // declare an entry point without needing to.
             meta.role = anchor.role;
-            meta.resolves_to = contract
-                .as_ref()
-                .and_then(|c| crate::grammar::contract::resolves_to(c, anchor.pos));
+            meta.resolves_to = contract.as_ref().and_then(|c| {
+                crate::grammar::contract::resolves_to(&expansion.model, c, &holders, anchor.pos)
+            });
             (name.clone(), meta)
         })
         .collect();
@@ -1262,6 +1263,7 @@ fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
         &anchors,
         place,
         &expansion.open_sides,
+        &expansion.entity_holders(),
     );
     let failed: Vec<String> = verdict
         .gates
