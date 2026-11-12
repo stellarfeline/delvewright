@@ -1229,6 +1229,61 @@ fn a_via_at_a_corner_is_one_face_on_the_plane_it_lies_in() {
     assert_eq!(dirs, ["west", "north"], "{faces:?}");
 }
 
+/// **A walk via one course thick faces out through its wall, never its
+/// floor.** A seam answered one course high lies in a floor's plane as well as
+/// the wall's it opens: at the piece's top course (both outer planes), or
+/// inside the frame (no outer plane, the space above it and behind it). Read
+/// plane by plane, each exported an `up` or `down` way beside its side, which
+/// no seam allocates (`DW0844`). The perturbation: the same vias as a `stair`,
+/// which is crossed either way, keep both planes.
+#[test]
+fn a_one_course_walk_via_faces_out_through_its_wall_and_never_its_floor() {
+    let mut b = Build::new([6, 4, 4]);
+    b.stone([0, 0, 0], [5, 0, 3]);
+    let top = |class: &str| {
+        let mut c = contract("room");
+        c.spaces.insert(
+            "room".to_string(),
+            space("open", vec![region([1, 1, 0], [4, 3, 2])]),
+        );
+        c.edges.push(with_via(
+            edge("room", "exterior", class),
+            "way",
+            vec![region([1, 3, 3], [3, 3, 3])],
+        ));
+        c
+    };
+    let inside = |class: &str| {
+        let mut c = contract("room");
+        c.spaces.insert(
+            "room".to_string(),
+            space(
+                "open",
+                vec![region([1, 1, 0], [3, 1, 1]), region([1, 2, 0], [3, 2, 2])],
+            ),
+        );
+        c.edges.push(with_via(
+            edge("room", "exterior", class),
+            "way",
+            vec![region([1, 1, 2], [3, 1, 2])],
+        ));
+        c
+    };
+    let dirs = |c: &SpatialContract| -> Vec<&'static str> {
+        exterior_faces(&b.model, c)
+            .iter()
+            .map(|f| f.dir.as_str())
+            .collect()
+    };
+    assert_eq!(dirs(&top("walk")), ["south"], "at the top course");
+    assert_eq!(dirs(&inside("walk")), ["south"], "inside the frame");
+    let faces = exterior_faces(&b.model, &inside("walk"));
+    assert_eq!(faces[0].cells.len(), 3, "{faces:?}");
+    // Crossed either way, a stair keeps every plane its via lies in.
+    assert_eq!(dirs(&top("stair")), ["south", "up"]);
+    assert_eq!(dirs(&inside("stair")), ["down", "south"]);
+}
+
 /// **Two openings meeting at the room's corner are both openings** (spec-0098
 /// §6b). A street with a way along its whole west side and another across its
 /// north end, each answered in the piece's first layer as a place that owns

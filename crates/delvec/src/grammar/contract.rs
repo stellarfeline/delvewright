@@ -3054,7 +3054,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // is the crossing the neighbour meets, so it is every via cell on the
         // plane, not only the passable ones.
         let transit = is_transit(edge) || edge.class == "barred";
-        let before = out.len();
+        let mut mine: Vec<ExteriorFace> = Vec::new();
         for (axis, dir) in [
             (0, [1, 0, 0]),
             (0, [-1, 0, 0]),
@@ -3079,7 +3079,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             if on_face.is_empty() {
                 continue;
             }
-            out.push(ExteriorFace {
+            mine.push(ExteriorFace {
                 space: space_name.clone(),
                 class: edge.class.clone(),
                 dir: FaceDir(dir),
@@ -3094,7 +3094,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // from the space it opens: the side of the plane the space's own cells
         // are not on. Read only when the via is on no outer layer, so a piece
         // that was answered on its boundary exports exactly what it did.
-        if whole_via && out.len() == before {
+        if whole_via && mine.is_empty() {
             let space_cells = cells(&space.boxes);
             for axis in 0..3usize {
                 let Some(first) = opening.iter().next() else {
@@ -3126,13 +3126,18 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
                 }
                 let mut dir = [0, 0, 0];
                 dir[axis] = dir_sign;
-                out.push(ExteriorFace {
+                mine.push(ExteriorFace {
                     space: space_name.clone(),
                     class: edge.class.clone(),
                     dir: FaceDir(dir),
                     cells: on_face,
                 });
             }
+        }
+        if whole_via {
+            out.extend(walked_through_its_wall(mine, &edge.class));
+        } else {
+            out.extend(mine);
         }
     }
     out.sort_by(|a, b| {
@@ -3142,6 +3147,23 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             .then_with(|| a.class.cmp(&b.class))
     });
     out
+}
+
+/// **A walk via that lies in a wall's plane faces out through the wall**
+/// (spec-0098 §2). A via one course thick on a side — the walk-plane course of
+/// a seam at a piece's top course, or one answered inside the frame — lies in
+/// a horizontal plane as well as the vertical one it opens, and read plane by
+/// plane it exported an `up` or `down` way beside its side, which nothing
+/// allocated (`DW0844`). A body crosses a `walk` edge walking, so where its via
+/// lies in a wall's plane, the floor's plane is no face of it. Every other
+/// class, and a via that lies only in floors or only in walls, keeps every
+/// plane it lies in.
+fn walked_through_its_wall(faces: Vec<ExteriorFace>, class: &str) -> Vec<ExteriorFace> {
+    let floor = |f: &ExteriorFace| f.dir.0[1] != 0;
+    if class != "walk" || faces.iter().all(floor) {
+        return faces;
+    }
+    faces.into_iter().filter(|f| !floor(f)).collect()
 }
 
 fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
