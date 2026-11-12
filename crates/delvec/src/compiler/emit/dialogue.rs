@@ -554,7 +554,10 @@ pub(super) fn dialog_handler_fns(
                         + 1
                         == usize::try_from(opt.n).unwrap_or(0)
                 {
-                    body.extend(super::guidance::record_lines(s.objective.as_str(), s.ordinal));
+                    body.extend(super::guidance::record_lines(
+                        s.objective.as_str(),
+                        s.ordinal,
+                    ));
                 }
             }
             // The click completes the objective under the same pending guard the

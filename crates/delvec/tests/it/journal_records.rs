@@ -64,7 +64,10 @@ fn three_ways(tag: &str) -> PathBuf {
             q["content"]["quests"][0]["on_complete"]
                 .as_array_mut()
                 .unwrap()
-                .insert(0, outcome("obj/exit", "We went through, and did not look back."));
+                .insert(
+                    0,
+                    outcome("obj/exit", "We went through, and did not look back."),
+                );
         },
         |d| {
             d["content"]["dialogues"][0]["nodes"][0]["options"][1]["effects"]
@@ -130,7 +133,10 @@ fn text(out: &BuildOutput, path: &str) -> String {
 }
 
 fn func(out: &BuildOutput, name: &str) -> String {
-    text(out, &format!("datapack/data/{NS}/function/{name}.mcfunction"))
+    text(
+        out,
+        &format!("datapack/data/{NS}/function/{name}.mcfunction"),
+    )
 }
 
 fn modifier_path(name: &str) -> String {
@@ -187,11 +193,7 @@ fn the_schema_carries_the_record_and_the_outcome() {
     for f in ["objective", "line"] {
         assert!(verb["properties"].get(f).is_some(), "{f}: {verb}");
         assert!(
-            verb["required"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|r| r == f),
+            verb["required"].as_array().unwrap().iter().any(|r| r == f),
             "{f} is required"
         );
     }
@@ -212,8 +214,14 @@ fn each_state_of_a_finished_entry_is_one_committed_page() {
     let dir = three_ways("pages");
     let out = build(&dir);
     let head = keys(&modifier(&out, "journal_done_exit"));
-    assert!(ends(&head, ".title"), "the head carries the title: {head:?}");
-    assert!(ends(&head, ".record"), "the head carries the record: {head:?}");
+    assert!(
+        ends(&head, ".title"),
+        "the head carries the title: {head:?}"
+    );
+    assert!(
+        ends(&head, ".record"),
+        "the head carries the record: {head:?}"
+    );
     // Walk order: `on_objective_complete[obj/talk]` (1), the quest's
     // `on_complete` (2), the limit's `on_expire` (3), the answer (4).
     let want = [
@@ -309,7 +317,10 @@ fn an_unrecorded_campaign_emits_what_it_emitted() {
     );
     assert!(!out.keys().any(|k| k.contains("journal_done_exit.1")));
     assert!(!out.contains_key("validation/journal-records.json"));
-    assert!(!out.values().any(|b| String::from_utf8_lossy(b).contains("#jr_")));
+    assert!(
+        !out.values()
+            .any(|b| String::from_utf8_lossy(b).contains("#jr_"))
+    );
     // Perturbation: one `record` adds that objective's head bytes and the ledger.
     let dir = fixture(
         "plain-rec",
@@ -351,7 +362,10 @@ fn a_task_nobody_announced_is_kept_once_done() {
     // Not recorded and no hint: no page at all.
     let dir = fixture("hidden-bare", |q| hidden(q, false, false), |_| {});
     let out = build(&dir);
-    assert!(!out.keys().any(|k| k.contains("journal_done_exit") || k.contains("journal_open_exit")));
+    assert!(
+        !out.keys()
+            .any(|k| k.contains("journal_done_exit") || k.contains("journal_open_exit"))
+    );
     // A hint: an open page once it starts, still no announcement.
     let dir = fixture("hidden-hint", |q| hidden(q, false, true), |_| {});
     let out = build(&dir);
@@ -400,7 +414,11 @@ fn dw1104_a_way_no_story_reaches() {
         },
         |_| {},
     );
-    assert_eq!(has_1104(&records_check(&dir)), 1, "behind a flag nothing sets");
+    assert_eq!(
+        has_1104(&records_check(&dir)),
+        1,
+        "behind a flag nothing sets"
+    );
     // Refused 2 and 3: an `on_expire` of an objective no world expires, and a
     // site naming an objective that settles in no world.
     let dir = fixture(
@@ -452,7 +470,8 @@ fn a_finished_page_fits_in_every_language() {
         .count();
     // Σ over recorded objectives of (1 + sites) × languages = (1 + 4) × 1.
     assert_eq!(finished, 5, "{measured:#?}");
-    let long = "We waited at the door until the light went grey and the birds went quiet. ".repeat(7);
+    let long =
+        "We waited at the door until the light went grey and the birds went quiet. ".repeat(7);
     let dir = fixture(
         "fit-long",
         |q| {
@@ -515,9 +534,13 @@ fn the_ledger_says_what_each_world_leaves_written() {
         .collect();
     // The world that completes the door writes the answer, the talk's line
     // and the quest's; the world that lets it expire writes the expiry's.
-    assert!(rows.iter().any(|r| r["settles"] == "done" && r["written"] == json!([1, 2, 4])
-        || r["settles"] == "done" && r["written"] == json!([4, 1, 2])),
-        "{rows:#?}");
+    assert!(
+        rows.iter().any(
+            |r| r["settles"] == "done" && r["written"] == json!([1, 2, 4])
+                || r["settles"] == "done" && r["written"] == json!([4, 1, 2])
+        ),
+        "{rows:#?}"
+    );
     assert!(rows.iter().any(|r| r["settles"] == "expired"), "{rows:#?}");
     assert_eq!(
         ledger["counts"]["rows"].as_u64().unwrap() as usize,
@@ -539,7 +562,10 @@ fn every_site_key_is_an_inventory_key() {
     for s in &sites {
         assert!(inv.contains(&s.key), "{} is not in the inventory", s.key);
     }
-    assert!(inv.contains("obj.open_the_door.exit.record") || inv.contains("obj.open-the-door.exit.record"));
+    assert!(
+        inv.contains("obj.open_the_door.exit.record")
+            || inv.contains("obj.open-the-door.exit.record")
+    );
 }
 
 /// The reviewer's table: every recorded objective, its record, each line
@@ -549,10 +575,24 @@ fn the_reviewers_table_counts_the_worlds_per_line() {
     let dir = three_ways("table");
     let c = common::campaign_at(&dir);
     let t = delvec::compiler::recording::review_table(&c);
-    assert!(t[0].contains("1 recorded objective(s), 4 line(s)"), "{t:#?}");
-    assert!(t.iter().any(|l| l.contains("record: The keeper's door")), "{t:#?}");
-    assert_eq!(t.iter().filter(|l| l.contains("    line ")).count(), 4, "{t:#?}");
-    assert!(t.iter().any(|l| l.contains("We waited too long") && l.contains("held in 1 of")), "{t:#?}");
+    assert!(
+        t[0].contains("1 recorded objective(s), 4 line(s)"),
+        "{t:#?}"
+    );
+    assert!(
+        t.iter().any(|l| l.contains("record: The keeper's door")),
+        "{t:#?}"
+    );
+    assert_eq!(
+        t.iter().filter(|l| l.contains("    line ")).count(),
+        4,
+        "{t:#?}"
+    );
+    assert!(
+        t.iter()
+            .any(|l| l.contains("We waited too long") && l.contains("held in 1 of")),
+        "{t:#?}"
+    );
     let none = fixture("table-none", |_| {}, |_| {});
     assert!(delvec::compiler::recording::review_table(&common::campaign_at(&none)).is_empty());
 }

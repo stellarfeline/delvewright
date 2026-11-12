@@ -411,7 +411,10 @@ fn emit_record_packtests(
     let c = plan.campaign;
     let title = artifact_title(c);
     let _ = chrome;
-    for w in g.journaled().filter(|w| w.record.is_some() || !w.outcomes.is_empty()) {
+    for w in g
+        .journaled()
+        .filter(|w| w.record.is_some() || !w.outcomes.is_empty())
+    {
         let o = &c.quests.content.quests[w.quest].objectives[w.objective];
         let settle = settle_score(w);
         let head: Option<String> = if !has_head(w, o) {
@@ -419,7 +422,9 @@ fn emit_record_packtests(
         } else if let Some(t) = o.title().filter(|t| !t.trim().is_empty()) {
             Some(format!("{{strikethrough:1b,{}}}", match_of(&tr(t))))
         } else {
-            w.record.as_ref().map(|r| format!("{{{}}}", match_of(&tr(r))))
+            w.record
+                .as_ref()
+                .map(|r| format!("{{{}}}", match_of(&tr(r))))
         };
         let lines_of: Vec<(usize, String)> = w
             .outcomes
@@ -478,7 +483,10 @@ fn emit_record_packtests(
         }
         state(&mut b, true, &all);
         for (k, _) in &lines_of {
-            b.push(format!("scoreboard players set {} {GUIDE} 0", held(&w.id, *k)));
+            b.push(format!(
+                "scoreboard players set {} {GUIDE} 0",
+                held(&w.id, *k)
+            ));
         }
         b.extend(d.close());
         b.push("clear @s".to_string());

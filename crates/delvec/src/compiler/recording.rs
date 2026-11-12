@@ -123,7 +123,12 @@ pub struct WorldRecords {
 /// index a `talk-to` step's `talk_option` names.
 fn flat_option(c: &Campaign, tree: usize, node: usize, option: usize) -> usize {
     let t = &c.dialogue.content.dialogues[tree];
-    t.nodes[..node].iter().map(|n| n.options.len()).sum::<usize>() + option + 1
+    t.nodes[..node]
+        .iter()
+        .map(|n| n.options.len())
+        .sum::<usize>()
+        + option
+        + 1
 }
 
 impl<'a> Records<'a> {
@@ -261,10 +266,7 @@ impl<'a> Records<'a> {
             .iter()
             .map(|s| match &s.at {
                 OutcomeAt::Option {
-                    tree,
-                    node,
-                    option,
-                    ..
+                    tree, node, option, ..
                 } => {
                     let npc = c.dialogue.content.dialogues[*tree].npc.as_str().to_string();
                     match options.get(&(npc, flat_option(c, *tree, *node, *option))) {
@@ -321,11 +323,7 @@ impl<'a> Records<'a> {
                     } else {
                         Settles::Done
                     };
-                    let written = if o
-                        .order
-                        .iter()
-                        .any(|&s| fired[s] == Firing::Undetermined)
-                    {
+                    let written = if o.order.iter().any(|&s| fired[s] == Firing::Undetermined) {
                         None
                     } else {
                         Some(
@@ -359,7 +357,11 @@ impl<'a> Records<'a> {
                             .iter()
                             .all(|f| run.flags.contains(f.as_str())),
                         // A bundle the world performs fires where its gate holds.
-                        OutcomeAt::Effect { owner, root, effect } => match owner {
+                        OutcomeAt::Effect {
+                            owner,
+                            root,
+                            effect,
+                        } => match owner {
                             EffectRootOwner::ObjectiveComplete { .. }
                             | EffectRootOwner::QuestComplete { .. }
                             | EffectRootOwner::ObjectiveExpire { .. } => false,
@@ -427,13 +429,17 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, RecordsBinding) {
     let worlds = r.worlds(c, &flow);
     b.worlds = worlds.len();
     for (si, s) in r.sites.iter().enumerate() {
-        let Some(oi) = r.objectives.iter().position(|o| o.id() == s.objective.as_str()) else {
+        let Some(oi) = r
+            .objectives
+            .iter()
+            .position(|o| o.id() == s.objective.as_str())
+        else {
             // An objective no quest declares is `DW0112`.
             continue;
         };
-        let shown = worlds.iter().any(|w| {
-            w.possible[si] && !matches!(w.finished[oi].settles, Settles::Open)
-        });
+        let shown = worlds
+            .iter()
+            .any(|w| w.possible[si] && !matches!(w.finished[oi].settles, Settles::Open));
         if !shown {
             b.refused += 1;
             let fires = worlds.iter().filter(|w| w.possible[si]).count();
@@ -489,7 +495,10 @@ pub fn review_table(c: &Campaign) -> Vec<String> {
         out.push(format!(
             "  {} — {}",
             o.id(),
-            o.objective.title().map(plain).unwrap_or_else(|| "(no title)".to_string())
+            o.objective
+                .title()
+                .map(plain)
+                .unwrap_or_else(|| "(no title)".to_string())
         ));
         if let Some(rec) = o.objective.record() {
             out.push(format!("    record: {}", plain(rec)));

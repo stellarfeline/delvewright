@@ -547,15 +547,17 @@ pub(super) fn outcome_ordinal(
 ) -> usize {
     let sites = delvewright_dsl::record::outcome_sites(plan.campaign);
     let english = |l: &str| -> String {
-        delvewright_dsl::l10n::untag(l).map_or(l, |(_, e)| e).to_string()
+        delvewright_dsl::l10n::untag(l)
+            .map_or(l, |(_, e)| e)
+            .to_string()
     };
     sites
         .iter()
         .find(|s| is(s))
         .or_else(|| {
-            sites.iter().find(|s| {
-                s.objective.as_str() == objective && english(s.line) == english(line)
-            })
+            sites
+                .iter()
+                .find(|s| s.objective.as_str() == objective && english(s.line) == english(line))
         })
         .map(|s| s.ordinal)
         .expect("every emitted record-outcome is one of the campaign's outcome sites")

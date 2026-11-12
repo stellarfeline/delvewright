@@ -326,7 +326,13 @@ pub(super) fn guide(
     g.sites = records
         .sites
         .iter()
-        .map(|s| (s.objective.as_str().to_string(), s.ordinal, s.line.to_string()))
+        .map(|s| {
+            (
+                s.objective.as_str().to_string(),
+                s.ordinal,
+                s.line.to_string(),
+            )
+        })
         .collect();
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let qa = quest_active_score(q.id.as_str());
@@ -999,7 +1005,10 @@ pub(super) fn setup_lines(g: &Guide) -> Vec<String> {
     v.push(format!("scoreboard players set {EPOCH} {GUIDE} 0"));
     // spec-0137 §5: every line the story can write starts unwritten.
     for (oid, k, _) in &g.sites {
-        v.push(format!("scoreboard players set {} {GUIDE} 0", held(oid, *k)));
+        v.push(format!(
+            "scoreboard players set {} {GUIDE} 0",
+            held(oid, *k)
+        ));
     }
     if g.compass || g.journal {
         for (o, kind) in [(SEEN, "dummy"), (DEATHS, "deathCount")] {

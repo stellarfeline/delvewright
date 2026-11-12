@@ -206,7 +206,8 @@ pub enum DialogueEffect {
     SpawnNpc {
         /// The NPC (stage-2 ref) to summon.
         npc: NpcId,
-    },    /// Writes the way an objective ended (spec-0137 §2.2), mirroring
+    },
+    /// Writes the way an objective ended (spec-0137 §2.2), mirroring
     /// [`Verb::RecordOutcome`]: an answer writes the way it chose.
     RecordOutcome {
         /// The objective whose way this writes (any quest's).

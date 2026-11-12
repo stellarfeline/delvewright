@@ -10,8 +10,8 @@ use crate::serde_fields::{is_zero3, present};
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, CameraSubject, Carrier, CutsceneParty,
     DamageKind, DespawnStyle, EndingId, EquipSlot, FireworkExplosion, FlagId, Mark, NpcId,
-    ObjectiveId, PlaceRef, PrefabId, QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone,
-    WaveId, WorldTime, WorldWeather,
+    ObjectiveId, PlaceRef, PrefabId, QuestEffect, SequenceStep, SoundCategory, StakeId, StateId,
+    StealthZone, WaveId, WorldTime, WorldWeather,
 };
 
 #[cfg(doc)]
