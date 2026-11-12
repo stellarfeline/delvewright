@@ -5939,7 +5939,9 @@
         },
         "facing": "west",
         "id": "vehicle/race-pig",
-        "name": "Clover"
+        "left": "at-its-mark",
+        "name": "Clover",
+        "seated": "at-load"
       },
       {
         "at": {
