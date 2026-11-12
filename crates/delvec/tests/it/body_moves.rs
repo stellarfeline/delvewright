@@ -265,9 +265,14 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
         fns["load"].contains(&"scoreboard objectives add dw.hop dummy".to_string())
             && fns["load"].contains(&"scoreboard objectives add dw.hop_arc dummy".to_string())
     );
-    assert!(fns["tick"].contains(
-        &"execute as @e[scores={dw.hop=1..}] at @s run function souls-bonfire:hop_step".to_string()
-    ));
+    assert!(fns["tick"].contains(&"function souls-bonfire:hop_tick".to_string()));
+    assert_eq!(
+        fns["hop_tick"],
+        vec![
+            "execute as @e[scores={dw.hop=1..}] at @s run function souls-bonfire:hop_step"
+                .to_string()
+        ]
+    );
     assert_eq!(
         fns["hop_step"],
         vec![
@@ -757,5 +762,108 @@ fn dw1103_is_asked_at_the_bodys_placed_cell_by_the_build() {
     assert!(
         try_build(&c, &inputs).is_ok(),
         "a one-block hop clears the hall"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The running-server witness: a declared hop moves its body and returns it
+// ---------------------------------------------------------------------------
+
+/// The generated PackTest of a hop starts it by the very line the pack
+/// carries, walks it by the pack's own driver once per tick of the arc, and
+/// reads the body's height three times: counting after the start, the arc's
+/// peak above where it stood on the peak tick, and back on the height it
+/// left, counting 0, after the last.
+#[test]
+fn every_declared_hop_has_its_running_server_witness() {
+    let (c, inputs) = campaign(vec![
+        json!({"type": "hop", "height": 1, "audience": {"bodies": [npc("npc/keeper"),
+            {"actor": "actor/herald"}]}, "stagger_ticks": 2}),
+        json!({"type": "hop", "height": 0.5, "audience": {"actor": "actor/moth"}}),
+    ]);
+    let e = errors(&c);
+    assert!(e.is_empty(), "{e:#?}");
+    let out = build(&c, &inputs);
+    let template = |n: usize| -> Vec<String> {
+        let path = format!("packtest-datapack/data/souls-bonfire/test/hop_{n}.mcfunction");
+        let (_, bytes) = out
+            .iter()
+            .find(|(p, _)| **p == path)
+            .unwrap_or_else(|| panic!("no {path}"));
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .map(str::to_string)
+            .collect()
+    };
+    assert!(
+        !out.iter()
+            .any(|(p, _)| p.ends_with("/test/hop_2.mcfunction")),
+        "one template per declared hop"
+    );
+    let pack = all_lines(&out);
+    for (n, height, body) in [
+        (0usize, 1.0, KEEPER.to_string()),
+        (1, 0.5, "@e[tag=dw_pup_moth,limit=1]".to_string()),
+    ] {
+        let arc = hop_arc(Some(height));
+        let peak = *arc.iter().max().unwrap();
+        let peak_tick = arc.iter().position(|h| *h == peak).unwrap() + 1;
+        let t = template(n);
+        // The start is the pack's own line for that body, cadence and all
+        // other bodies set aside.
+        let start = t
+            .iter()
+            .position(|l| l.contains(&format!("as {body} unless score @s dw.hop matches 1..")))
+            .unwrap_or_else(|| panic!("hop_{n} starts its body: {t:#?}"));
+        assert!(
+            pack.contains(&t[start]),
+            "the start line is one the pack itself carries: {}",
+            t[start]
+        );
+        let ticks: Vec<usize> = t
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| *l == "function souls-bonfire:hop_tick")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            ticks.len(),
+            arc.len(),
+            "the driver, once per tick of the arc"
+        );
+        let asserts: Vec<(usize, &String)> = t
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.starts_with("assert score "))
+            .collect();
+        assert_eq!(
+            asserts.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>(),
+            vec![
+                format!("assert score #hopf{n} dw.sys matches 1"),
+                format!("assert score #hopy{n} dw.sys matches {peak}"),
+                format!("assert score #hopy{n} dw.sys matches 0"),
+                format!("assert score #hopf{n} dw.sys matches 1"),
+            ]
+        );
+        // Taken before any tick; at its peak after exactly the peak tick's
+        // call; home after the last.
+        assert!(asserts[0].0 > start && asserts[0].0 < ticks[0]);
+        assert!(asserts[1].0 > ticks[peak_tick - 1] && asserts[1].0 < ticks[peak_tick]);
+        assert!(asserts[2].0 > *ticks.last().unwrap());
+        assert!(
+            t.contains(&format!(
+                "execute as {body} if score @s dw.hop matches {} run scoreboard players set #hopf{n} dw.sys 1",
+                arc.len()
+            )) && t.contains(&format!(
+                "execute as {body} if score @s dw.hop matches 0 run scoreboard players set #hopf{n} dw.sys 1"
+            ))
+        );
+    }
+    // The keeper's start asks his walk's latch, so the template clears it.
+    assert!(
+        template(0)
+            .iter()
+            .any(|l| l.starts_with("scoreboard players set #mrun_keeper_")
+                && l.ends_with(" dw.sys 0"))
     );
 }

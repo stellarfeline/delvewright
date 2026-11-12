@@ -27,6 +27,7 @@ mod lightning;
 mod limit;
 mod r#loop;
 mod loot;
+mod moves;
 mod music;
 mod npc;
 mod objective;
@@ -153,6 +154,9 @@ pub(super) fn emit_packtest(
     boundary::emit_boundary_packtest(plan, out);
     boundary::emit_night_vision_packtest(plan, out);
     lightning::emit_lightning_packtests(plan, out);
+    // spec-0136: every declared hop moves its body and returns it. Emits
+    // nothing for a campaign that declares no hop.
+    moves::emit_hop_packtests(plan, out);
     standin::emit_standin_packtest(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
