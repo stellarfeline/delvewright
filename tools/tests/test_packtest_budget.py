@@ -19,7 +19,7 @@ RUNNER = ROOT / "validation" / "packtest-run.sh"
 
 def budget(build: pathlib.Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["bash", "-c", f'. "{LIB}"; dw_packtest_budget "{build}"; '
+        ["bash", "-c", f'. "{LIB}"; dw_packtest_budget "{build}" || exit $?; '
          'echo "start=$DW_PACKTEST_START_SECONDS default=$DW_PACKTEST_DEFAULT_TIMEOUT_TICKS"'],
         capture_output=True, text=True,
     )
