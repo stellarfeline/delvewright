@@ -94,7 +94,9 @@ fn build(dir: &Path) -> BuildOutput {
         .collect();
     assert!(errors.is_empty(), "the fixture must validate: {errors:#?}");
     let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let mut campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    // As the build does: every authored string carries its key to the page.
+    delvewright_dsl::l10n::tag_translatables(&mut campaign);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
