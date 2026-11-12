@@ -1683,10 +1683,17 @@ fn judge_runtime(
     // Cell → every state a runtime write may leave there, with the write.
     let mut may: BTreeMap<[i32; 3], Vec<(BlockState, usize, Lays)>> = BTreeMap::new();
     let mut writes: Vec<SequenceWrite> = Vec::new();
-    for (name, body) in bodies {
+    // Per write: the function it is a line of, and whether that function
+    // always runs it whole once it runs it at all — unconditional, laid
+    // everywhere, in a function with no `return` (the co-writes rule below).
+    let mut whole: Vec<(usize, bool)> = Vec::new();
+    for (f, (name, body)) in bodies.iter().enumerate() {
         if at_load.contains(*name) {
             continue;
         }
+        let returns = body
+            .lines()
+            .any(|l| l.split_whitespace().any(|w| w == "return"));
         let mut writes_here = false;
         for (i, line) in body.lines().enumerate() {
             let write = SequenceWrite {
@@ -1704,6 +1711,10 @@ fn judge_runtime(
                     r.conditional += usize::from(conditional);
                     let k = writes.len();
                     writes.push(write);
+                    whole.push((
+                        f,
+                        !returns && !conditional && laid.filter == Lays::Everywhere,
+                    ));
                     for (c, s) in laid.shape.cells_within(None) {
                         may.entry(c).or_default().push((s, k, laid.filter.clone()));
                     }
@@ -1746,18 +1757,28 @@ fn judge_runtime(
         |c: [i32; 3], skip: &BTreeSet<usize>| admitted(c, vec![(loaded.at(c), None)], skip);
     let states = |c: [i32; 3]| states_but(c, &BTreeSet::new());
     // While a block write `origin` left beside it stands: where that one
-    // command also wrote this cell, from what it wrote there — never what
-    // stood before it. `ends` are the writes that end that block's standing
-    // (below): what they leave is never beside it.
+    // command also wrote this cell, or a line of its own function that runs
+    // whenever it runs (a co-write: unconditional, laid everywhere, in a
+    // function with no `return` — one batch's cloth and the lantern hung
+    // under it), from what the last of them in line order left there — never
+    // what stood before the function ran. `ends` are the writes that end that
+    // block's standing (below): what they leave is never beside it.
     let beside_states = |c: [i32; 3], origin: Option<usize>, ends: &BTreeSet<usize>| {
         let mut skip = ends.clone();
         skip.extend(origin);
         let own = origin.and_then(|k| {
+            let f = whole[k].0;
             may.get(&c)?
                 .iter()
-                .find(|(_, o, _)| *o == k)
-                .map(|(st, _, _)| (st.as_str(), Some(k)))
+                .filter(|(_, o, _)| {
+                    *o == k || (whole[*o].0 == f && whole[*o].1 && !ends.contains(o))
+                })
+                .max_by_key(|(_, o, _)| *o)
+                .map(|(st, o, _)| (st.as_str(), Some(*o)))
         });
+        if let Some((_, Some(o))) = own {
+            skip.insert(o);
+        }
         match own {
             Some(first) => admitted(c, vec![first], &skip),
             None => states_but(c, ends),
@@ -2227,6 +2248,67 @@ mod tests {
                 ("prop", &[hang]),
                 ("later", &["setblock 5 66 6 minecraft:glass_pane"]),
             ],
+        ));
+        assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+    }
+
+    /// The town's night batch, reduced: one by-effect batch writes a row of
+    /// cloth and hangs a lantern under it. The two writes are lines of one
+    /// function that runs whole, so the lantern never stands under the air the
+    /// cell held before the batch ran; held, in either line order. The same
+    /// cloth written by another batch, by no batch, or behind a condition of
+    /// its own leaves the air beside the lantern, and is refused.
+    #[test]
+    fn a_lantern_hung_under_cloth_its_own_batch_writes_is_held() {
+        let cloth = "fill -4 71 0 4 71 0 minecraft:red_wool";
+        let lamp = "setblock 2 70 0 minecraft:lantern[hanging=true,waterlogged=false]";
+        let w = writes(&load(&[], &[("edit_batch_festival_night", &[cloth, lamp])]));
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+        let w = writes(&load(&[], &[("edit_batch_festival_night", &[lamp, cloth])]));
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+        // Another batch writes the cloth: the lantern's batch may run alone.
+        let w = writes(&load(
+            &[],
+            &[
+                ("edit_batch_festival_night", &[lamp]),
+                ("edit_batch_bunting", &[cloth]),
+            ],
+        ));
+        let why = w.runtime.refusal().expect("a support another batch writes");
+        assert!(why.contains("`minecraft:air` at load"), "{why}");
+        // No batch writes the cloth, and another clears the cell above.
+        let w = writes(&load(
+            &[],
+            &[
+                ("edit_batch_festival_night", &[lamp]),
+                ("later", &["setblock 2 71 0 minecraft:air"]),
+            ],
+        ));
+        assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+        // The cloth behind its own condition: not run whenever the lantern is.
+        let gated = "execute if score #party dw.f_night matches 1 run fill -4 71 0 4 71 0 minecraft:red_wool";
+        let w = writes(&load(&[], &[("edit_batch_festival_night", &[gated, lamp])]));
+        assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+        // A batch function that may return before its cloth.
+        let w = writes(&load(
+            &[],
+            &[(
+                "edit_batch_festival_night",
+                &[
+                    lamp,
+                    "execute if score #party dw.f_night matches 1 run return 0",
+                    cloth,
+                ],
+            )],
+        ));
+        assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+        // A later write of the same batch clears the cloth again.
+        let w = writes(&load(
+            &[],
+            &[(
+                "edit_batch_festival_night",
+                &[cloth, lamp, "setblock 2 71 0 minecraft:air"],
+            )],
         ));
         assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
     }
