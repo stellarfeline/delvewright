@@ -264,13 +264,20 @@ fn file_hash(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Records a later revision added beside the base's files: each is its own
+/// binding statement, and the files the base emitted are still hashed whole.
+const ADDED_SINCE_BASE: &[&str] = &["validation/packtest-own-cells.json"];
+
 /// SHA-256 over one line `path sha256` per emitted file, in path order, but
-/// the grade's own ledger and `manifest.json` (the index of the input
-/// documents, whose `dsl_version` lines moved).
+/// the grade's own ledger, `manifest.json` (the index of the input documents,
+/// whose `dsl_version` lines moved) and the records added since the base.
 fn digest(out: &BTreeMap<String, Vec<u8>>) -> String {
     let mut text = String::new();
     for (path, bytes) in out {
-        if path == "validation/grade.json" || path == "manifest.json" {
+        if path == "validation/grade.json"
+            || path == "manifest.json"
+            || ADDED_SINCE_BASE.contains(&path.as_str())
+        {
             continue;
         }
         text.push_str(&format!("{path} {}\n", file_hash(bytes)));
@@ -337,6 +344,11 @@ fn a_campaign_with_nothing_to_grade_emits_what_it_emitted() {
             want,
             "{name}: the bytes the base revision emitted"
         );
+        // A record added since the base changes no file the base emitted: here,
+        // no template lays a world container.
+        let own: serde_json::Value =
+            serde_json::from_slice(&out["validation/packtest-own-cells.json"]).expect("json");
+        assert_eq!(own["laying_count"], 0, "{name}: {own}");
         if c.site_plan.is_some() {
             let ledger: Value =
                 serde_json::from_slice(out.get("validation/grade.json").expect("the ledger"))

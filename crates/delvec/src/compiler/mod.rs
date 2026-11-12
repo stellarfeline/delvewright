@@ -84,6 +84,7 @@
 //! - [`notes`]: the build's binding notes, printed as said or held by a caller that writes them elsewhere.
 //! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
+//! - [`owncells`]: a generated PackTest template lays down every world container it reads before it reads it.
 //! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`plot`]: a plot is built as it was planned — its parts bound, judged (`DW1074`) and measured into `validation/plot-program.json` (spec-0125).
