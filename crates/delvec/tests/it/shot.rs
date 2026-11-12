@@ -449,3 +449,53 @@ fn a_shot_that_counts_a_gate_up_is_on_the_path() {
         assert!(s["stand"].is_array(), "loosed from the stance: {s}");
     }
 }
+
+/// spec-0134 §2 × spec-0135: the route proof that takes a campaign's links
+/// and rides (`nav::take_links`, run by `with_links_taken` whenever a
+/// campaign declares a vehicle, a link or a keep-out) walks a shot's leg to
+/// its stance, as every other proof does — and is the first proof over the
+/// plan to ask, so it fixes the stance. Measured on the town with Sverre's
+/// boats declared: the take walked the belfry shot's leg to the target in the
+/// tower, failed, took no ride, and the build refused the leg (`DW0311`).
+/// Red before: `take_links` read the positions with no stance fixed.
+#[test]
+fn the_take_of_rides_and_links_fixes_a_shots_stance() {
+    let (c, q) = docs(|_, q| {
+        q["content"]["state"] = json!([{"id": "state/hits", "scope": "party"}]);
+        let t = &mut q["content"]["triggers"][0];
+        t["once"] = json!(false);
+        t["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/hits", "amount": 1}));
+        let exit = q["content"]["quests"][0]["objectives"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|o| o["id"] == "obj/exit")
+            .unwrap();
+        exit["requires_state"] = json!([{"state": "state/hits", "op": "at-least", "value": 3}]);
+    });
+    let camp = campaign(&c, &q);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&camp, &prefabs).expect("plan builds");
+    let nbt = room(&[]);
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
+            structures.insert(t.structure_file.clone(), nbt.clone());
+        }
+    }
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    // The geometry alone: the relight pass over it would ask first.
+    let world = delvec::compiler::light::geometry_world(&assembled);
+    assert!(plan.shot_stances.get().is_none(), "no proof has asked yet");
+    let _ = delvec::compiler::nav::take_links(&plan, &world);
+    assert!(
+        plan.shot_stances
+            .get()
+            .is_some_and(|m| m.contains_key("trigger/hit-the-mark")),
+        "the take walked the shot's leg with its stance fixed: {:?}",
+        plan.shot_stances.get()
+    );
+}

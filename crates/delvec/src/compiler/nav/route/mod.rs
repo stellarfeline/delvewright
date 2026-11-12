@@ -563,6 +563,10 @@ pub fn check_critical_path_bound(
 /// [`Plan::relinked`] splices into the path. Empty for every campaign whose legs
 /// all walk.
 pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    // A shot's leg ends at its stance on this proof as on every other
+    // (`shot::fix_stances`): the links and rides a campaign declares are taken
+    // over the same legs the walk proof walks.
+    crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
         &critical_positions(plan),
@@ -592,6 +596,12 @@ pub fn with_links_taken<'a>(
         return Ok(None);
     }
     let relinked = plan.relinked(prefabs, takes).map_err(|e| e.failure)?;
+    // One stance per shot, whichever plan of the lineage asks: the relinked
+    // plan is this plan with carries spliced in, and its shots are loosed from
+    // where this plan's are.
+    if let Some(m) = plan.shot_stances.get() {
+        let _ = relinked.shot_stances.set(m.clone());
+    }
     // The relinked path is the proof's own decision: a second pass over it
     // must take nothing more, or the path and the proof disagree.
     if !take_links(&relinked, world)?.is_empty() {

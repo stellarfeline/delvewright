@@ -775,3 +775,32 @@ fn a_limits_templates_hold_its_state_still_while_the_clock_runs() {
     // A limit whose gate reads no census leaves the tick alone.
     assert!(!tpl("limit_o_key_expires").contains("census_tick"));
 }
+
+/// spec-0104 §6 × spec-0133 §3: the compass template drives which objectives
+/// are open, and a limited objective is open only while its expired score is
+/// not 1, and settles for the objectives `after` it on its settled score. The
+/// template owns both, as it owns the objective's own score: an expiry
+/// template that stopped before its own close leaves the expired score at 1,
+/// and in the gallery's PackTest `guide_compass` read the open set that
+/// sibling left (red by turns with the suite's order). Red before: the
+/// template wrote `dw.o_<obj>` and neither of the two.
+#[test]
+fn the_compass_template_owns_a_limited_objectives_settlement() {
+    let out = build(&fixture("compass", minute(), |_| {}));
+    let Some(bytes) = out.get(&format!(
+        "packtest-datapack/data/{NS}/test/guide_compass.mcfunction"
+    )) else {
+        panic!("hello-world emits the compass template");
+    };
+    let t = String::from_utf8(bytes.clone()).unwrap();
+    let drive = line_of(&t, "function hello-world:compass_give");
+    for owned in [
+        "scoreboard players set #party dw.x_exit 0",
+        "scoreboard players set #party dw.os_exit ",
+    ] {
+        assert!(
+            line_of(&t, owned) < drive,
+            "`{owned}` before the drive:\n{t}"
+        );
+    }
+}
