@@ -1461,11 +1461,12 @@ fn a_crate_out_on_the_water_is_opened_from_the_boat() {
     assert_eq!(out_ride["stays"], true, "{out_ride}");
     let end = cell(out_ride["medium"].as_array().unwrap().last().unwrap());
     assert_eq!(cell(&out_ride["leave"]), end, "a ride that stays ends at its last medium cell");
-    assert_eq!(end[1], 3, "on the water: {end:?}");
+    // The bay sits 64 courses up: the pool's surface course is y = 67.
+    assert_eq!(end[1], 67, "on the water: {end:?}");
     // The rider's eye at the end cell is within the block reach of the barrel.
-    let eye = [end[0] as f64 + 0.5, 3.0 + 0.52 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
+    let eye = [end[0] as f64 + 0.5, 67.0 + 0.52 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
     let gap = |e: f64, lo: f64| (lo - e).max(e - (lo + 1.0)).max(0.0);
-    let d = (gap(eye[0], 11.0).powi(2) + gap(eye[1], 4.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
+    let d = (gap(eye[0], 11.0).powi(2) + gap(eye[1], 68.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
     assert!(d <= 4.5, "the barrel is {d} from the rider's eye at {end:?}");
     assert_eq!(on["boards"], false, "the ride on starts aboard: {on}");
     assert_eq!(on["stays"], false, "{on}");
