@@ -1685,16 +1685,6 @@
                 }
               ],
               "type": "sequence"
-            },
-            {
-              "line": "We left the label's words with her, and she nodded as if we had paid.",
-              "objective": "obj/hear-the-curator",
-              "type": "record-outcome",
-              "when": {
-                "requires_flags": [
-                  "flag/read-the-label"
-                ]
-              }
             }
           ],
           "obj/press-the-case": [
@@ -1878,6 +1868,16 @@
               "line": "We pressed the case, and the hall gave up what it kept.",
               "objective": "obj/press-the-case",
               "type": "record-outcome"
+            },
+            {
+              "line": "We left the label's words with her, and she nodded as if we had paid.",
+              "objective": "obj/hear-the-curator",
+              "type": "record-outcome",
+              "when": {
+                "requires_flags": [
+                  "flag/read-the-label"
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [
