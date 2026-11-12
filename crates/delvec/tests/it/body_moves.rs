@@ -839,10 +839,10 @@ fn every_declared_hop_has_its_running_server_witness() {
         assert_eq!(
             asserts.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>(),
             vec![
-                format!("assert score #hopf{n} dw.sys matches 1"),
+                format!("assert score #hopt{n} dw.sys matches 1"),
                 format!("assert score #hopy{n} dw.sys matches {peak}"),
                 format!("assert score #hopy{n} dw.sys matches 0"),
-                format!("assert score #hopf{n} dw.sys matches 1"),
+                format!("assert score #hopl{n} dw.sys matches 1"),
             ]
         );
         // Taken before any tick; at its peak after exactly the peak tick's
@@ -852,10 +852,10 @@ fn every_declared_hop_has_its_running_server_witness() {
         assert!(asserts[2].0 > *ticks.last().unwrap());
         assert!(
             t.contains(&format!(
-                "execute as {body} if score @s dw.hop matches {} run scoreboard players set #hopf{n} dw.sys 1",
+                "execute as {body} if score @s dw.hop matches {} run scoreboard players set #hopt{n} dw.sys 1",
                 arc.len()
             )) && t.contains(&format!(
-                "execute as {body} if score @s dw.hop matches 0 run scoreboard players set #hopf{n} dw.sys 1"
+                "execute as {body} if score @s dw.hop matches 0 run scoreboard players set #hopl{n} dw.sys 1"
             ))
         );
     }

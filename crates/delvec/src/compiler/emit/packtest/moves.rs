@@ -46,10 +46,12 @@ pub(super) fn emit_hop_packtests(plan: &Plan, out: &mut BuildOutput) {
         let peak = arc.iter().copied().max().unwrap_or(0);
         let peak_tick = arc.iter().position(|h| *h == peak).unwrap_or(0) + 1;
         let body = body_sel(&key, true);
-        let (base, now, flag) = (
+        // One holder per reading, so a red names the reading that failed.
+        let (base, now, flag, landed) = (
             format!("#hopb{n}"),
             format!("#hopy{n}"),
-            format!("#hopf{n}"),
+            format!("#hopt{n}"),
+            format!("#hopl{n}"),
         );
         let read = |holder: &str| {
             format!(
@@ -118,11 +120,11 @@ pub(super) fn emit_hop_packtests(plan: &Plan, out: &mut BuildOutput) {
             "scoreboard players operation {now} dw.sys -= {base} dw.sys"
         ));
         b.push(format!("assert score {now} dw.sys matches 0"));
-        b.push(format!("scoreboard players set {flag} dw.sys 0"));
+        b.push(format!("scoreboard players set {landed} dw.sys 0"));
         b.push(format!(
-            "execute as {body} if score @s {HOP_OBJECTIVE} matches 0 run scoreboard players set {flag} dw.sys 1"
+            "execute as {body} if score @s {HOP_OBJECTIVE} matches 0 run scoreboard players set {landed} dw.sys 1"
         ));
-        b.push(format!("assert score {flag} dw.sys matches 1"));
+        b.push(format!("assert score {landed} dw.sys matches 1"));
 
         // No residue: the body as its entrance leaves it.
         match &key {
