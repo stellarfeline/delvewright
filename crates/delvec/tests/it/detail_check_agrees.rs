@@ -225,6 +225,8 @@ place_agrees! {
     check_and_commit_agree_on_annex => "annex",
     check_and_commit_agree_on_beacon => "beacon",
     check_and_commit_agree_on_causeway => "causeway",
+    check_and_commit_agree_on_crag => "crag",
+    check_and_commit_agree_on_dais => "dais",
     check_and_commit_agree_on_far_hall => "far-hall",
     check_and_commit_agree_on_gantry => "gantry",
     check_and_commit_agree_on_loft => "loft",
