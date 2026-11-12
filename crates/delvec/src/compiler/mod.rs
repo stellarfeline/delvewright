@@ -210,6 +210,7 @@ pub(crate) mod nbtread;
 pub mod notes;
 pub mod observer;
 pub mod onkill;
+pub mod owncells;
 pub mod placed;
 pub mod plan;
 pub mod plot;

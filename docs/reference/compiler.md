@@ -2384,7 +2384,7 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   and left before it came back leaves `dw.deaths` above `dw.death_ack`, and its
   successor fires the death edge on its first tick and, with another player
   present, is put on the respawn wait (tagged `dw_cutscene`, spectator). After
-  every emitter, `compiler::solo` and `compiler::handback`, every template whose
+  every emitter, `compiler::solo`, `compiler::handback` and `compiler::owncells`, every template whose
   directives carry `# @dummy` gains `scoreboard players reset @s` as its first
   command: its dummy enters as a player who has never joined. The build prints
   `packtest fresh-body binding: R of T template(s) carry a dummy and reset
@@ -2403,6 +2403,17 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   after every assertion and `await`. The build prints `packtest hand-back
   binding: H of T template(s) write one of C pressable cell(s) and lay it back
   when they end` and writes `validation/packtest-handback.json`.
+- **Own world containers, laid (`compiler::owncells`).** The suite runs on
+  PackTest's level, where a prefab's container stands only once some template's
+  drive has run the campaign's placement; a template that pins `#placed` to 1
+  places nothing. After `compiler::handback`, every absolute cell a template's
+  own body addresses as a block entity (`… block <x> <y> <z> …`) that the
+  assembled world holds a container at is laid with that state by `setblock`
+  right after the template's `function <ns>:setup` (or after its opening
+  comment lines when it has none), before any line that reads or writes it. The
+  build prints `packtest own-cells binding: L of T template(s) read a world
+  container and lay it down before they read it` and writes
+  `validation/packtest-own-cells.json`.
 - **Own members (spec-0018).** A division-of-labour template needs more than one
   player, and `# @dummy` gives exactly one. It spawns the rest itself
   (`/dummy <name> spawn`, PackTest's own command), addresses them by
