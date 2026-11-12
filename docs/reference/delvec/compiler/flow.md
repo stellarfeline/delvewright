@@ -72,14 +72,21 @@ moves the purse on a death, and a `player`-scoped datum under `min_players >= 2`
 depends on which agent acts. A flag is monotone and so is credited
 unconditionally in all four cases; a number is not. Undatable **absorbs**,
 `set-state` and `clear-state` included — a write pins a value only until the next
-undated write, which can land the beat after.
+undated write, which can land the beat after. A loop's `counts` and a **census**
+(a datum declaring `counts {region, of}`, spec-0134 §1) are undatable too: the
+engine writes them from bodies, never the path. A census term on a step's own
+gate is answered by the census that step performs — the bodies the term needs,
+put in the box (`StateCompare::census_bodies`, the same count the critical
+path's `census` row hands the harness) — and is never judged against the path's
+writes.
 
 **Ordering.** It withholds itself entirely where `DW0201` (no branch completes
 the finale) or `DW0204` (the exported path is not walkable) already names a
 cause, and says which, rather than adding a second refusal about one break.
 
 **Binding**: paths walked, steps, numeric gate terms read — split into the ones
-read against an undatable datum and the ones withheld for an unforced order —
+answered by the census their step performs, the ones read against an undatable
+datum and the ones withheld for an unforced order —
 state writes replayed, and declared data with how many of them are undatable.
 Stated on every validate, analyze and build of a campaign, including the zeroes.
 The split is the load-bearing half: a run that read twenty terms and decided all

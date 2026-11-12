@@ -19,8 +19,8 @@
 //! path: it is declared, no stake forfeits it, no loop counts it, it has one
 //! holder on this walk (`party`, or `player` in a one-player delve), and every
 //! write to it anywhere in the campaign is a top-level effect of a **pressable
-//! trigger** — a `use` or `strike` on an anchor, which the harness performs by
-//! hand and whose bundle prints a fired marker ([`super::trigger_may_be_performed`]).
+//! trigger** — a `use`, `strike` or `shot` on an anchor, which the harness
+//! performs by hand and whose bundle prints a fired marker ([`super::trigger_may_be_performed`]).
 //! Such a datum moves only when the path presses something, so its value is a
 //! function of the presses alone.
 //!
@@ -55,12 +55,15 @@ pub(crate) const MAX_PRESSES: usize = 64;
 /// The most distinct replay states one search may visit.
 pub(crate) const MAX_STATES: usize = 16_384;
 
-/// Whether `t` is a trigger the harness presses by hand at a place: a `use` or
-/// a `strike` on an anchor.
+/// Whether `t` is a trigger the harness performs by hand at a place: a `use`
+/// or a `strike` on an anchor, or a `shot` at its target block (spec-0134 §2:
+/// the harness looses the arrow from the stance the compiler proved).
 pub(crate) fn pressable(t: &EnvTrigger) -> bool {
     matches!(
         t.on,
-        delvewright_dsl::TriggerOn::Use | delvewright_dsl::TriggerOn::Strike
+        delvewright_dsl::TriggerOn::Use
+            | delvewright_dsl::TriggerOn::Strike
+            | delvewright_dsl::TriggerOn::Shot
     ) && t.at.is_some()
 }
 

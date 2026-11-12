@@ -252,3 +252,60 @@ fn no_census_emits_no_tick() {
         .collect();
     assert!(!all.contains("census_tick"));
 }
+
+/// **A census gate on the path is answered by the census its step performs**
+/// (`DW0879`). `obj/shrine`, on the critical path, waits on two sheep home.
+/// Nothing on the path writes the datum — the engine does, from the bodies in
+/// the box, and the step's census puts the two there — so the state-gate walk
+/// reads the term as the census answers it (`StateCompare::census_bodies`,
+/// the row the manifest hands the harness), never against the path's writes.
+/// Red before: the walk read the datum's declared `initial` and refused the
+/// gate as one the path had never written.
+#[test]
+fn a_census_gate_on_the_path_is_answered_by_its_census() {
+    let q = quests(|q| {
+        let trial = q["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|x| x["id"] == "quest/trial")
+            .unwrap();
+        let shrine = trial["objectives"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|o| o["id"] == "obj/shrine")
+            .unwrap();
+        shrine["requires_state"] =
+            json!([{"state": "state/sheep-home", "op": "at-least", "value": 2}]);
+    });
+    let c = campaign(&q);
+    let (d, b) = delvec::compiler::statepath::check(&c);
+    assert!(
+        d.iter().all(|x| x.code != "DW0879"),
+        "a census gate is not judged against the path's writes: {d:#?}"
+    );
+    // Once per path walked: the critical path and each branch world's own.
+    assert!(b.paths >= 1, "{b:?}");
+    assert_eq!(
+        b.walk.census, b.paths,
+        "the shrine's term, answered by its census on every path: {b:?}"
+    );
+    assert!(b.line().contains(&format!(
+        "{} answered by the census its step performs",
+        b.paths
+    )));
+    // The perturbation toward the defect: the same datum without `counts` is a
+    // datum nothing writes, and the walk refuses the gate on it.
+    let mut plain = q.clone();
+    plain["content"]["state"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("counts");
+    let plain_c = campaign(&plain);
+    let (d, _) = delvec::compiler::statepath::check(&plain_c);
+    assert!(
+        d.iter().any(|x| x.code == "DW0879"),
+        "an uncounted datum nothing writes is still refused: {d:#?}"
+    );
+}

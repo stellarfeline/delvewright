@@ -1520,7 +1520,7 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
 /// [`relight`] for an unedited world (both derive from the same
 /// [`crate::compiler::assembled::Assembled`]).
 pub fn relight_over(plan: &Plan, assembled: &crate::compiler::assembled::Assembled) -> Relight {
-    relight_with(plan, assembled, &geometry_world(assembled))
+    relight_with(plan, assembled, &geometry_world(assembled), None)
 }
 
 /// The nav model of `assembled`'s geometry alone, with no campaign premise —
@@ -1589,7 +1589,7 @@ pub fn final_world(
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world is the same cells under the campaign's premises.
     let geometry = geometry_world(assembled);
-    let relight = relight_with(plan, assembled, &geometry);
+    let relight = relight_with(plan, assembled, &geometry, None);
     let world = lit_world(
         assembled,
         &relight,
@@ -1605,27 +1605,47 @@ pub fn final_world(
 /// stopped at its budget is partial, and a survey over it judges a part of
 /// the area and reports it as the whole: the cells it never reached read as
 /// neither dark nor lit, and the binding counts what it happened to reach.
+///
+/// `since` is the world a batch of writes derived `nav` from: the survey of
+/// that world, from the same starts, is taken first, and this one is charged
+/// only what the batch changes ([`World::body_reach_snapped_since`]) — a
+/// batch's re-check never pays for the whole island again.
 pub(crate) fn surveyed_region(
     nav: &World,
     area: &str,
     starts: &[[i32; 3]],
     budget: u64,
+    since: Option<&World>,
 ) -> Result<BTreeSet<[i32; 3]>, Failure> {
-    let reach = nav.body_reach_snapped_within(starts, budget);
+    let over = |reach: &crate::compiler::nav::Reach, budget: u64, which: &str| Failure {
+        code: crate::compiler::nav::DW_REACH_BUDGET,
+        message: format!(
+            "the darkness survey (`DW0210`) of `{area}`{which} reads a reach graph whose work \
+             passed its budget: {} launch state(s) simulated and {} template arc(s) credited, \
+             {} of that work taken unchanged from the world the batch was written over, {} \
+             charged, past the ceiling of {budget} (`metrics::REACH_BUDGET_STATES`). The survey \
+             is refused rather than taken over a partial graph — a cell the closure never \
+             reached would be judged neither dark nor lit — and the ceiling is the engine's, so \
+             this build is one the engine cannot yet afford; it is not something the campaign \
+             wrote wrong",
+            reach.simulated,
+            reach.credited,
+            reach.inherited,
+            reach.charged(),
+        ),
+    };
+    let reach = match since {
+        Some(base) => {
+            let (prior, reach) = nav.body_reach_snapped_since(starts, budget, base);
+            if let Some(budget) = prior.over_budget {
+                return Err(over(&prior, budget, " over the world before the batch"));
+            }
+            reach
+        }
+        None => nav.body_reach_snapped_within(starts, budget),
+    };
     if let Some(budget) = reach.over_budget {
-        return Err(Failure {
-            code: crate::compiler::nav::DW_REACH_BUDGET,
-            message: format!(
-                "the darkness survey (`DW0210`) of `{area}` reads a reach graph whose work passed \
-                 its budget: {} launch state(s) simulated and {} template arc(s) credited, past \
-                 the ceiling of {budget} (`metrics::REACH_BUDGET_STATES`). The survey is refused \
-                 rather than taken over a partial graph — a cell the closure never reached would \
-                 be judged neither dark nor lit — and the ceiling is the engine's, so this build \
-                 is one the engine cannot yet afford; it is not something the campaign wrote \
-                 wrong",
-                reach.simulated, reach.credited,
-            ),
-        });
+        return Err(over(&reach, budget, ""));
     }
     Ok(reach.standing())
 }
@@ -1668,10 +1688,14 @@ pub(crate) fn fixture_keep_out(plan: &Plan, nav: &World) -> BTreeSet<[i32; 3]> {
 }
 
 /// [`relight_over`] over `nav`, the [`geometry_world`] of `assembled`.
+/// `since` is the [`geometry_world`] a batch of writes derived it from, when
+/// one did: each area's survey is then charged what the batch changes
+/// ([`surveyed_region`]).
 pub fn relight_with(
     plan: &Plan,
     assembled: &crate::compiler::assembled::Assembled,
     nav: &World,
+    since: Option<&World>,
 ) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
@@ -1739,6 +1763,7 @@ pub fn relight_with(
             &area.area_id,
             &starts,
             delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            since,
         ) {
             Ok(r) => r
                 .into_iter()
@@ -2751,14 +2776,74 @@ mod tests {
             "area/room",
             &start,
             delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            None,
         )
         .expect("the room's graph is far under the shipped ceiling");
         assert_eq!(whole, nav.body_region(&start));
         assert!(whole.len() >= 25, "{}", whole.len());
-        let partial = surveyed_region(&nav, "area/room", &start, 1);
+        let partial = surveyed_region(&nav, "area/room", &start, 1, None);
         let f = partial.expect_err("a closure past its ceiling is no survey");
         assert_eq!(f.code.id(), "DW1042");
         assert!(f.message.contains("`area/room`"), "{}", f.message);
+    }
+
+    /// **A batch's re-check is charged what the batch changes** (`DW1042`).
+    /// Two halls behind one wall, and the same halls with a doorway cut
+    /// through it: the survey of the cut world, charged against the world it
+    /// was cut in, pays for the second hall and the flights the doorway
+    /// reaches, never again for the first hall's — so a ceiling both surveys
+    /// fit under (the first hall's survey, and the cut's charge) admits it,
+    /// where the cut world surveyed whole (a fresh graph of it, moved along
+    /// x) is refused under that ceiling. Red before: the re-check paid for
+    /// both halls.
+    #[test]
+    fn a_batch_re_check_is_charged_what_the_batch_changes() {
+        let pair = |dx: i32| {
+            let mut map: BTreeMap<[i32; 3], String> = room(61, 4, 30, true)
+                .into_iter()
+                .map(|(c, b)| ([c[0] + dx, c[1], c[2]], b))
+                .collect();
+            for y in 1..3 {
+                for z in 1..29 {
+                    map.insert([30 + dx, y, z], "minecraft:stone".to_string());
+                }
+            }
+            let mut cut = map.clone();
+            for y in 1..3 {
+                cut.remove(&[30 + dx, y, 15]);
+            }
+            (nav_of(&map), nav_of(&cut))
+        };
+        let (base, nav) = pair(0);
+        let start = [[5, 1, 5]];
+        let (prior, reach) = nav.body_reach_snapped_since(
+            &start,
+            delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            &base,
+        );
+        assert_eq!(prior.over_budget, None);
+        let whole = reach.simulated + reach.credited;
+        assert!(
+            reach.inherited > 0 && reach.charged() < whole,
+            "the first hall's flights are not paid again: {} of {whole} charged",
+            reach.charged()
+        );
+        assert!(
+            reach.standing().iter().any(|c| c[0] > 30),
+            "the doorway opens the second hall"
+        );
+        assert_eq!(reach.standing(), nav.body_region(&start));
+        let budget = reach.charged().max(prior.charged());
+        assert!(
+            budget < whole,
+            "a ceiling both fit under, which the whole does not: {budget} of {whole}"
+        );
+        assert!(surveyed_region(&nav, "area/room", &start, budget, Some(&base)).is_ok());
+        let (_, fresh) = pair(200);
+        let f = surveyed_region(&fresh, "area/room", &[[205, 1, 5]], budget, None)
+            .expect_err("surveyed whole, the cut world is past the ceiling its charge fits");
+        assert_eq!(f.code.id(), "DW1042");
+        assert!(f.message.contains("charged"), "{}", f.message);
     }
 
     fn nav_of(map: &BTreeMap<[i32; 3], String>) -> World {

@@ -170,10 +170,11 @@ fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
         },
     ];
     let transports = vec![Some([2, 67, 16]), None];
-    let got: Vec<([i32; 3], bool, usize)> = positions_of(Some([2, 67, 2]), &steps, &transports)
-        .iter()
-        .map(|p| (p.pos, p.transport_before, p.src_step))
-        .collect();
+    let got: Vec<([i32; 3], bool, usize)> =
+        positions_of(Some([2, 67, 2]), &steps, &transports, None)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
     assert_eq!(
         got,
         vec![
@@ -1028,4 +1029,39 @@ fn a_pool_under_a_ceiling_states_its_submerged_run_in_the_water_ledger() {
         "{line}"
     );
     assert!(line.contains("longest submerged run"), "{line}");
+}
+
+/// spec-0134 §2: a `shot` step's leg ends where the shot is loosed from — its
+/// fixed stance, the `stand` the export hands the bot — and never at the
+/// target it hits, which stands where no body does (a belfry's opening). Red
+/// before: the leg was routed to the target and refused `DW0311` where the
+/// target stood out of every walk.
+#[test]
+fn a_shot_steps_leg_ends_at_its_stance() {
+    let steps = vec![Step::Trigger {
+        trigger_id: "trigger/belfry-shot".into(),
+        on: "shot",
+        anchor_id: Some("anchor/belfry-target".into()),
+        npc_id: None,
+        assembly_id: None,
+        pos: [9, 80, 9],
+        range: None,
+        stand: None,
+        block: None,
+        item: None,
+    }];
+    let transports = vec![None];
+    let stances = BTreeMap::from([("trigger/belfry-shot".to_string(), [2, 67, 30])]);
+    let at = |shots| {
+        positions_of(Some([2, 67, 2]), &steps, &transports, shots)
+            .iter()
+            .map(|p| p.pos)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(at(Some(&stances)), vec![[2, 67, 2], [2, 67, 30]]);
+    assert_eq!(
+        at(None),
+        vec![[2, 67, 2], [9, 80, 9]],
+        "with no stance fixed, the target"
+    );
 }

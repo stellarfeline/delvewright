@@ -1574,6 +1574,7 @@ fn prove_branch_world(
         campaign_spawn(plan),
         &cp.steps,
         &cp.transport_by_step,
+        plan.shot_stances.get(),
         &region_events,
         &ancestor,
     );
