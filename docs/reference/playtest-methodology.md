@@ -414,8 +414,9 @@ unmeasured rather than failed.
 The server can die the same way. A server out of Java heap logs
 `java.lang.OutOfMemoryError`, loses the structure templates it was loading, and
 either goes quiet or takes the bot down before it spawns. The ladders name it:
-`validation/packtest-run.sh` stops at the first OOM line with exit 125 and at its
-`--timeout` with exit 124, neither of them a test count; `validation/bot-run.sh`
+`validation/packtest-run.sh` stops at the first OOM line with exit 125 and past the
+build's budget (`tools/lib/packtest-budget.sh`: the timeouts its tests declare
+plus a start-up allowance) with exit 124, neither of them a test count; `validation/bot-run.sh`
 and `validation/branch-runs.sh` read the server log after a red run and say OOM
 instead of the bot's socket error. Every server gets the heap ceiling in
 `versions.toml` `[server].heap_max` unless its operator sets one

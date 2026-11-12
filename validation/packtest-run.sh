@@ -44,7 +44,11 @@
 # its templates, and goes quiet — a ladder once waited ~20 minutes on one with
 # no log growth. So the run is watched (`dw_server_watch`, the shared rule in
 # `tools/lib/server-heap.sh`): the OOM line ends it at once, exit 125, named;
-# and a run still going after `--timeout` seconds ends as a timeout, exit 124.
+# and a run still going past its budget ends as a timeout, exit 124. The
+# budget is the build's own (`dw_packtest_budget`, `tools/lib/packtest-budget.sh`):
+# the sum of the timeouts its tests declare plus a start-up allowance, printed
+# with its parts, so a long suite is never stopped while it is still making
+# progress and a hang is still stopped.
 # Neither is a test count. The heap the server got is asserted from its own log
 # (`max to <versions.toml [server].heap_max>`), so a default that never reached
 # the JVM reds rather than passing on itzg's 1G.
@@ -61,9 +65,10 @@ usage: EULA=TRUE validation/packtest-run.sh --project <compose-project>
              Distinct per concurrent ladder; there is no default, because a
              shared default is what made ladders queue on each other.
   --output   Build tree to boot, relative to validation/ (default ./delve-output).
-  --timeout  Seconds the server run may take before it is stopped and reported
-             as a timeout, exit 124 (default 900; the largest suite measured,
-             vesperhold's, ran ~100 s of server time on a workstation).
+  --timeout  An explicit override, printed as one, of the seconds the server
+             run may take before it is stopped and reported as a timeout,
+             exit 124. Absent, the budget is the build's: the timeouts its
+             tests declare plus a start-up allowance (tools/lib/packtest-budget.sh).
 
   Exit: the number of failed tests; 125 when the server ran out of heap
   (java.lang.OutOfMemoryError); 124 when the run passed --timeout; 1 when a
@@ -74,7 +79,7 @@ USAGE
 
 project=""
 output="${DELVE_OUTPUT:-./delve-output}"
-timeout=900
+timeout=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project|-p) [ $# -ge 2 ] || usage; project="$2"; shift 2 ;;
@@ -92,7 +97,8 @@ if [ -z "$project" ]; then
 fi
 : "${EULA:?set EULA=TRUE to accept the Mojang EULA (https://aka.ms/MinecraftEULA)}"
 case "$timeout" in
-  ''|*[!0-9]*) echo "packtest-run: --timeout '$timeout' is not a whole number of seconds" >&2; usage ;;
+  '') ;;
+  *[!0-9]*) echo "packtest-run: --timeout '$timeout' is not a whole number of seconds" >&2; usage ;;
 esac
 
 # The heap default and the OOM rule every server this engine starts shares.
@@ -102,6 +108,17 @@ esac
 # compose file's); the heap statement is read from that same tree.
 build_dir="$(dw_compose_build_dir "$here" "$output")" || exit 2
 heap_max="$(dw_server_heap_max "$build_dir")"
+# The run's budget, from what the build declares (one rule, sourced).
+# shellcheck source=tools/lib/packtest-budget.sh
+. "$here/../tools/lib/packtest-budget.sh"
+budget="$(dw_packtest_budget "$build_dir")" || exit 2
+read -r budget_s budget_tests budget_ticks <<<"$budget"
+if [ -z "$timeout" ]; then
+  timeout="$budget_s"
+  bound="bounded at ${timeout}s, the build's budget: ${DW_PACKTEST_START_SECONDS}s start-up + ${budget_ticks} tick(s) the ${budget_tests} test(s) declare at ${DW_GAME_TICKS_PER_SECOND}/s"
+else
+  bound="bounded at ${timeout}s by an explicit --timeout OVERRIDE of the build's budget ${budget_s}s (${budget_tests} test(s), ${budget_ticks} tick(s))"
+fi
 
 export DELVE_OUTPUT="$output"
 cache="${DW_SERVER_CACHE:-$here/server-cache}"
@@ -144,7 +161,7 @@ echo "==> packtest: seeding the server bootstrap into '$project' world volume"
 
 runlog="$(mktemp)"
 trap 'rm -f "$runlog"; cleanup' EXIT
-echo "==> packtest: heap ceiling $heap_max; bounded at ${timeout}s; an OutOfMemoryError ends the run at once"
+echo "==> packtest: heap ceiling $heap_max; $bound; an OutOfMemoryError ends the run at once"
 set +e
 "${COMPOSE[@]}" up --abort-on-container-exit --exit-code-from packtest >"$runlog" 2>&1 &
 up_pid=$!
