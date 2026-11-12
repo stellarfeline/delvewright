@@ -12,9 +12,11 @@ import {
   allowNonCollidingEntities,
   configureLeg,
   describeStuckNeighbours,
+  installSwimMoves,
   isDoorByHand,
   parkourFor,
   swimFor,
+  type SwimMovements,
 } from "../movement.ts";
 import {
   doorsCrossed,
@@ -568,6 +570,9 @@ export const methods = {
     const bot = this.requireBot();
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
+    // spec-0134 §10: on a leg whose liquid is admitted, the bot swims up and
+    // climbs out where the route proof does.
+    installSwimMoves(movements as unknown as SwimMovements);
     // spec-0135 §6: a rider who leaves a boat is on its hull over open water
     // (the vanilla record §5), and the walk to the leaving cell crosses the
     // water between hull and shore.

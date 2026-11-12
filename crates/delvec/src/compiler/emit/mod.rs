@@ -1602,6 +1602,18 @@ fn emit_all(
         &handback.to_json(),
     );
 
+    // ---- a template lays the world containers it reads ----
+    // The suite runs on PackTest's level, where a prefab's container stands
+    // only once some template has run the placement (`crate::compiler::owncells`).
+    let own_cells =
+        crate::compiler::owncells::lay_containers(&plan.namespace, &assembled.blocks, &mut out);
+    crate::note!("{}", own_cells.line());
+    put_json(
+        &mut out,
+        "validation/packtest-own-cells.json",
+        &own_cells.to_json(),
+    );
+
     // ---- a template's dummy enters as a new player ----
     // A score belongs to a name, and PackTest reuses dummy names across a
     // suite (`crate::compiler::freshbody`).

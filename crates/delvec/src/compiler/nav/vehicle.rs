@@ -135,8 +135,8 @@ impl VehiclePlan {
     /// leaving.
     pub fn rider_eye(&self, world: &World, m: [i32; 3]) -> Option<[f64; 3]> {
         let rest = match self.kind {
-            // The record §5: a boat settles 0.52 over its water cell's floor.
-            VehicleKind::Boat => f64::from(m[1]) + BOAT_REST_OVER_WATER_CELL,
+            // The record §5: where a boat rests over its water cell's floor.
+            VehicleKind::Boat => f64::from(m[1]) + BOAT_AFLOAT,
             VehicleKind::Mount if self.entity == "minecraft:pig" => world.feet_y(m),
             VehicleKind::Mount | VehicleKind::Minecart => return None,
         };
@@ -159,10 +159,12 @@ impl VehiclePlan {
     }
 }
 
-/// The height a boat settles at over the floor of the water cell it floats
-/// in: the record §5 (an oak boat summoned over water flush with the pad
-/// settled at y = 100.52 over the water cell at y = 100).
-pub const BOAT_REST_OVER_WATER_CELL: f64 = 0.52;
+/// **Where a boat on a source water cell comes to rest**, over the cell's
+/// floor: the pinned server's save of a boat summoned over its water
+/// (`docs/reference/vehicles-animals-and-targets.md` §5), its `Motion` at
+/// rest. A boat summoned there stays there, so the body the summon places is
+/// the body the save holds (`DW1040`); a rider's eye stands on it (§15).
+pub const BOAT_AFLOAT: f64 = 0.523_264_312_744_13;
 
 /// A boat's passenger attachment over its feet, as a share of its height:
 /// `Boat.getPassengerAttachmentPoint`, `dimensions.height() / 3.0F` (the

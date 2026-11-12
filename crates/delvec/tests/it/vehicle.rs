@@ -656,6 +656,27 @@ fn each_kind_is_seated_in_its_medium() {
             "{reseat}"
         );
     }
+    // A boat is summoned afloat in its water cell, where the pinned server's
+    // save holds it at rest (the record §5: 0.52326431274413 over the cell's
+    // floor), and its re-seat measures the mark from there: the body the
+    // summon places is the body the save holds (`DW1040`). Summoned on the
+    // water's top face, it settled a block lower than the ledger wrote it.
+    let gull = function(&out, "vehicle_seat_gull");
+    let summon = gull
+        .lines()
+        .find(|l| l.starts_with("summon minecraft:oak_boat "))
+        .unwrap_or_else(|| panic!("{gull}"));
+    let y: f64 = summon
+        .split(' ')
+        .nth(3)
+        .and_then(|t| t.parse().ok())
+        .expect(summon);
+    assert!(
+        (y - y.floor() - 0.523_264_312_744_13).abs() < 1e-9,
+        "the boat is summoned at y {y}, not afloat in its water cell: {summon}"
+    );
+    let reseat = function(&out, "vehicle_reseat_gull");
+    assert!(reseat.contains(&format!(",y={y:?},")), "{reseat}");
     // A riderless mount waits without its AI — it neither walks nor turns
     // from the yaw it was seated at (the record §13: with its AI, a mount at
     // speed nothing turned within a second, and the save held the turn) — and
@@ -1465,7 +1486,7 @@ fn a_crate_out_on_the_water_is_opened_from_the_boat() {
     // The bay sits 64 courses up: the pool's surface course is y = 67.
     assert_eq!(end[1], 67, "on the water: {end:?}");
     // The rider's eye at the end cell is within the block reach of the barrel.
-    let eye = [end[0] as f64 + 0.5, 67.0 + 0.52 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
+    let eye = [end[0] as f64 + 0.5, 67.0 + 0.523 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
     let gap = |e: f64, lo: f64| (lo - e).max(e - (lo + 1.0)).max(0.0);
     let d = (gap(eye[0], 11.0).powi(2) + gap(eye[1], 68.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
     assert!(d <= 4.5, "the barrel is {d} from the rider's eye at {end:?}");

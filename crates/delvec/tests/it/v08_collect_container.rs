@@ -292,6 +292,25 @@ fn the_generated_packtest_drives_the_adopted_container_and_the_named_stack() {
         pt.contains("item replace entity") && pt.contains("custom_name"),
         "the stack presented to the adjudication must be the NAMED one:\n{pt}"
     );
+    // The suite runs on PackTest's level, where the prefab's barrel stands only
+    // once some template has run the placement: the template lays it down
+    // itself, after `setup` and before its first read (`compiler::owncells`).
+    // Unlaid, the town's `collect_container` read 0 when it ran alone.
+    let lines: Vec<&str> = pt.lines().collect();
+    let first_read = lines
+        .iter()
+        .position(|l| l.contains(" block ") && l.contains("container."))
+        .expect(&pt);
+    let laid = lines
+        .iter()
+        .position(|l| l.starts_with("setblock ") && l.contains("minecraft:barrel"))
+        .unwrap_or_else(|| {
+            panic!("the template must lay its adopted barrel before reading it:\n{pt}")
+        });
+    assert!(
+        laid < first_read,
+        "the barrel must be laid before its first read:\n{pt}"
+    );
     assert!(
         !pt.contains("give @a[tag=dw_t_cadp,limit=1] minecraft:bread 3"),
         "handing over the plain item would make the named-stack assertion vacuous:\n{pt}"
