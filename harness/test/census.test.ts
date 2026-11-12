@@ -151,8 +151,8 @@ function censusExecutor(reach: (self: { atStance?: () => Promise<void> }, log: s
     },
     async selectClass() {},
     async assertComplete() {},
-    async reach(this: typeof self) {
-      await reach(this as never, log);
+    async reach(this: { atStance?: () => Promise<void> }) {
+      await reach(this, log);
     },
   };
   return { self, log };
