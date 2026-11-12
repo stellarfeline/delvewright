@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use delvewright_dsl::record::{OutcomeAt, OutcomeSite, outcome_sites};
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, EffectRootOwner, ExitTier, Objective};
 
-use crate::compiler::flow::Flow;
+use crate::compiler::flow::{Flow, StoryRun, StoryWorld};
 
 delvewright_dsl::dw_code! {
     /// `DW1104`: a `record-outcome` whose line no story world can show — in
@@ -230,7 +230,12 @@ impl<'a> Records<'a> {
     /// [`Self::sites`].
     pub fn firings(&self, c: &Campaign, flow: &Flow<'_>, k: usize) -> Vec<Firing> {
         let story = flow.story();
-        let run = &story.runs[k];
+        self.firings_in(c, &story.forced, &story.runs[k])
+    }
+
+    /// How every site stands in `run`'s walk, the acts every world performs
+    /// being `forced`, aligned with [`Self::sites`].
+    fn firings_in(&self, c: &Campaign, forced: &BTreeSet<String>, run: &StoryRun) -> Vec<Firing> {
         let pt = &run.playthrough;
         // The walk's order: each step's deeds and bundle, an option's effects
         // first within its step.
@@ -261,7 +266,6 @@ impl<'a> Records<'a> {
                 fired.next();
             }
         }
-        let forced = &story.forced;
         self.sites
             .iter()
             .map(|s| match &s.at {
@@ -303,14 +307,57 @@ impl<'a> Records<'a> {
     /// objective ends and what the walk leaves written.
     pub fn worlds(&self, c: &Campaign, flow: &Flow<'_>) -> Vec<WorldRecords> {
         let story = flow.story();
-        let mut out = Vec::new();
-        for k in 0..story.worlds.len() {
-            let run = &story.runs[k];
-            if run.incoherent.is_some() {
-                continue;
-            }
+        (0..story.worlds.len())
+            .filter_map(|k| {
+                self.world_records(c, &story.forced, &story.worlds[k], &story.runs[k], k)
+            })
+            .collect()
+    }
+
+    /// **Whether a story world shows site `si`** (spec-0137 §8): a player's
+    /// play of it can write the site, and the objective the site names
+    /// settles in it. The one answer `DW1104` and the story worlds' witness
+    /// search both read.
+    pub fn shows(
+        &self,
+        c: &Campaign,
+        forced: &BTreeSet<String>,
+        world: &StoryWorld,
+        run: &StoryRun,
+        si: usize,
+    ) -> bool {
+        self.world_records(c, forced, world, run, 0)
+            .is_some_and(|w| self.shown_in(&w, si))
+    }
+
+    /// Whether the world `w` the records read shows site `si`.
+    fn shown_in(&self, w: &WorldRecords, si: usize) -> bool {
+        let Some(oi) = self
+            .objectives
+            .iter()
+            .position(|o| o.id() == self.sites[si].objective.as_str())
+        else {
+            return false;
+        };
+        w.possible[si] && !matches!(w.finished[oi].settles, Settles::Open)
+    }
+
+    /// One story world as the records read it, `None` when its run is
+    /// incoherent.
+    fn world_records(
+        &self,
+        c: &Campaign,
+        forced: &BTreeSet<String>,
+        world: &StoryWorld,
+        run: &StoryRun,
+        k: usize,
+    ) -> Option<WorldRecords> {
+        if run.incoherent.is_some() {
+            return None;
+        }
+        {
             let pt = &run.playthrough;
-            let fired = self.firings(c, flow, k);
+            let fired = self.firings_in(c, forced, run);
             let finished = self
                 .objectives
                 .iter()
@@ -367,7 +414,7 @@ impl<'a> Records<'a> {
                             | EffectRootOwner::ObjectiveExpire { .. } => false,
                             other => {
                                 crate::compiler::ending::act_of_owner(other, root)
-                                    .is_some_and(|a| story.worlds[k].performs.contains(&a))
+                                    .is_some_and(|a| world.performs.contains(&a))
                                     && effect
                                         .requires_flags()
                                         .iter()
@@ -377,13 +424,12 @@ impl<'a> Records<'a> {
                     },
                 })
                 .collect();
-            out.push(WorldRecords {
+            Some(WorldRecords {
                 world: k,
                 finished,
                 possible,
-            });
+            })
         }
-        out
     }
 }
 
@@ -437,9 +483,7 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, RecordsBinding) {
             // An objective no quest declares is `DW0112`.
             continue;
         };
-        let shown = worlds
-            .iter()
-            .any(|w| w.possible[si] && !matches!(w.finished[oi].settles, Settles::Open));
+        let shown = worlds.iter().any(|w| r.shown_in(w, si));
         if !shown {
             b.refused += 1;
             let fires = worlds.iter().filter(|w| w.possible[si]).count();
