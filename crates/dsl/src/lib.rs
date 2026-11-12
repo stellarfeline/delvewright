@@ -79,6 +79,7 @@ pub mod producers;
 pub mod pulse;
 pub mod quest;
 pub mod quest_plan;
+pub mod record;
 pub mod registry;
 pub mod rig;
 pub mod schema;

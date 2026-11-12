@@ -10,7 +10,7 @@ use crate::serde_fields::{is_zero3, present};
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, CameraSubject, Carrier, CutsceneParty,
     DamageKind, DespawnStyle, EndingId, EquipSlot, FireworkExplosion, FlagId, Mark, NpcId,
-    PlaceRef, PrefabId, QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone,
+    ObjectiveId, PlaceRef, PrefabId, QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone,
     WaveId, WorldTime, WorldWeather,
 };
 
@@ -156,6 +156,19 @@ pub enum Verb {
     ApplyEdits {
         /// The batch (stage-7 `batches` ref) to apply.
         batch: crate::EditBatchId,
+    },
+    /// **Writes the way an objective ended** (spec-0137 §2.2): `line` is the
+    /// sentence the journal's finished page of `objective` shows, held from the
+    /// moment this fires until a later `record-outcome` of the same objective
+    /// replaces it. It addresses no player and changes nothing a proof reads;
+    /// it sits in any effect bundle, behind the envelope's `when`. An
+    /// objective no quest declares is `DW0112`; a line no story world can show
+    /// is `DW1104`.
+    RecordOutcome {
+        /// The objective whose way this writes (any quest's).
+        objective: ObjectiveId,
+        /// The sentence: what the party did, in the span grammar.
+        line: String,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
@@ -1209,6 +1222,7 @@ impl Verb {
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
+            Verb::RecordOutcome { .. } => "record-outcome",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1306,6 +1320,8 @@ impl Verb {
             | Verb::DespawnVehicle { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
+            // spec-0137: the journal's page is the party's.
+            | Verb::RecordOutcome { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1411,6 +1427,8 @@ impl Verb {
             | Verb::Resize { .. } => true,
             // spec-0136: a hop ends where it began.
             Verb::Hop { .. }
+            // spec-0137: a line in the journal is said, not left in the world.
+            | Verb::RecordOutcome { .. }
             | Verb::Narrate { .. }
             | Verb::PlaySound { .. }
             | Verb::StopSound { .. }

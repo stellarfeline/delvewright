@@ -89,6 +89,14 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -162,6 +170,14 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -232,6 +248,14 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -310,6 +334,14 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -471,6 +503,14 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// **What the task was** (spec-0137 §2.1): one line, read on the
+        /// journal's finished page once the objective is over — beside its
+        /// title and the way it ended (`record-outcome`). Needs no `title` and
+        /// no announcement: an objective that carries it, or that a
+        /// `record-outcome` names, is recorded, and a recorded objective has a
+        /// finished page whether or not it was announced.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        record: Option<String>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -888,6 +928,28 @@ impl Objective {
             | Objective::Kill { hint, .. }
             | Objective::Collect { hint, .. }
             | Objective::Interact { hint, .. } => hint.as_deref(),
+        }
+    }
+
+    /// **What the task was** (spec-0137 §2.1), when the objective states it.
+    pub fn record(&self) -> Option<&str> {
+        match self {
+            Objective::TalkTo { record, .. }
+            | Objective::ReachAnchor { record, .. }
+            | Objective::Kill { record, .. }
+            | Objective::Collect { record, .. }
+            | Objective::Interact { record, .. } => record.as_deref(),
+        }
+    }
+
+    /// Mutable access to the optional `record` (i18n localization).
+    pub fn record_mut(&mut self) -> &mut Option<String> {
+        match self {
+            Objective::TalkTo { record, .. }
+            | Objective::ReachAnchor { record, .. }
+            | Objective::Kill { record, .. }
+            | Objective::Collect { record, .. }
+            | Objective::Interact { record, .. } => record,
         }
     }
 
