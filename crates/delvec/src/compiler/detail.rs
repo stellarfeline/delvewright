@@ -357,6 +357,11 @@ pub struct HandedBrief {
     pub stations: Vec<String>,
     /// `roofed` or `open`.
     pub kind: String,
+    /// `false` on scenery (`reached: false`, spec-0098 §14): built to be seen
+    /// and never entered, so the piece claims no way in. Absent on a place a
+    /// body reaches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reached: Option<bool>,
 }
 
 /// One approved image of the design record, by path.
@@ -834,6 +839,7 @@ fn allocation_in(c: &Campaign, node: &NodeId, plan: &SitePlan) -> Option<Allocat
             })
             .unwrap_or_default(),
         kind: kind_of(b),
+        reached: graph_node.and_then(|n| (!n.reached).then_some(false)),
     };
     let stem = node.0.strip_prefix("node/").unwrap_or(&node.0);
     let concept_name = format!("concept/{stem}");

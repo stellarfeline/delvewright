@@ -61,7 +61,7 @@ neighbour owns, at the place's own first layer beside it.
 
 **`delvec allocation <place>` / `--all` — the handout** (spec-0098 §4) emits,
 per place, JSON derived from the plan on every invocation and **an input to
-nothing**: `brief` (the node's intent, note, class, stations and kind),
+nothing**: `brief` (the node's intent, note, class, stations and kind, and `reached: false` on scenery),
 `palette`, `concept` (the design record's `concept/<place stem>` row, or its
 named absence before step 9), `sheet` (the record's `reference/` rows), the
 frame's `extent`, `datum_y`, `world_min` and `space` (the play space,
@@ -77,7 +77,9 @@ the lid and top `y`, and every clipped eave), `seams` (each piece-local with its
 this place owns the plane, and the ring's ground under a vertical seam),
 `sides` (spec-0123 §5.3: each side the place declares open — its face, its ring
 run at the walk plane with the two corner cells excluded, piece-local, the walk
-plane, and every `contact` seam covering cells of it with the covered run;
+plane, every `contact` seam covering cells of it with the covered run, and
+`meets` (`graded` or `sheer`) and `drop` (spec-0138 §6: the least and greatest
+natural surface minus the floor course one beyond the ring);
 absent when the place declares none), `parts` (spec-0125 §5.1: the plot's `holds[]`, read by `compiler::plot::handed_parts`, in declaration order; absent on a place that is not a plot), `owed_anchors`, and `voids` (each run of the frame the place does not own, with
 its owner). Two invocations print the same bytes. Every obligation is
 recomputed from the plan at every validation.
