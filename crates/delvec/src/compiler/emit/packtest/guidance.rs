@@ -441,7 +441,7 @@ fn emit_record_packtests(
         let mut d = Drive::new("jrec");
         d.put(&settle, 0);
         b.extend(d.open());
-        let mut state = |b: &mut Vec<String>, settled: bool, written: &[usize]| {
+        let state = |b: &mut Vec<String>, settled: bool, written: &[usize]| {
             b.push(format!(
                 "scoreboard players set {} {settle} {}",
                 plan::PARTY,

@@ -150,6 +150,7 @@ mod l10n_apply;
 mod laid_footing_root;
 mod lava_floor;
 mod layout_graph;
+mod journal_records;
 mod limit;
 mod limit_worlds;
 mod line_activity;
