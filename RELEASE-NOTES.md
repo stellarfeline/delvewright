@@ -86,7 +86,7 @@ The entry leaves out documentation, tests and release machinery, which change no
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.75.0
+## delvewright-dsl 0.76.0
 
 ### Highlights
 
@@ -96,6 +96,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 
 ### Added
 
+- A place's side takes `sheer` beside `wall` and `open`: no wall stands there and the ground beyond is left as the terrain has it. Every other unwalled side of a ground place is met by the land in steps, at the place's `grade: {rise, run}` (one block per two columns when absent).
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.

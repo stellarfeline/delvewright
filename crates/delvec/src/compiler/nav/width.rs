@@ -828,8 +828,10 @@ fn shut_refusal(way: &Way, s: &Station, v: &StationVerdict) -> Failure {
             "{label} is declared open and built shut: {width} of {width} columns taken, first \
              at {first} ({station}). Taken: {cells}. An open side stands no wall; a body \
              meets the place's ground across it. Clear the run — move the hedge, the wall or the \
-             fence inside the play space or into the verge — or declare the side `wall`; at the \
-             region's edge, give the side ground beyond it.",
+             fence inside the play space or into the verge — or declare the side `wall`. The \
+             ground beyond the ring is graded to the walk plane's course: where a declared \
+             volume takes that column, move the volume off it; at the region's edge, grow the \
+             region so the side has ground beyond it.",
             label = way.label,
             station = s.label,
             cells = cells.join(", "),

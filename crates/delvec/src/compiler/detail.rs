@@ -43,7 +43,7 @@ use serde::Serialize;
 use delvewright_dsl::detailplan::Frame;
 use delvewright_dsl::layout::{Direction, Edge};
 use delvewright_dsl::prefab::ContractFace;
-use delvewright_dsl::siteplan::{PlacedBox, PlacedSeam, SitePlan};
+use delvewright_dsl::siteplan::{Ground, PlacedBox, PlacedSeam, SitePlan};
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 
 use crate::compiler::plan::PiecePlacement;
@@ -421,6 +421,15 @@ pub struct HandedSide {
     /// Every `contact` seam covering cells of this side: the crossing stated
     /// from the connection.
     pub contacts: Vec<HandedContact>,
+    /// How the ground beyond meets this side (spec-0138 §6): `graded` — the
+    /// terrain is stepped to the walk plane's course — or `sheer`, left as the
+    /// terrain has it.
+    pub meets: String,
+    /// The least and greatest natural surface minus the floor course's `y`,
+    /// over the columns one beyond the ring along this side; absent where the
+    /// site has no terrain there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drop: Option<[i64; 2]>,
 }
 
 /// The way this place is (spec-0120 §1.4), as the plan declares it, with its
@@ -651,8 +660,13 @@ fn face_toward(b: &PlacedBox, q: &PlacedBox) -> Option<delvewright_dsl::siteplan
 pub(crate) fn handed_sides(
     b: &PlacedBox,
     seams: &[PlacedSeam],
+    ground: &Ground,
     local: impl Fn([i64; 3]) -> [i64; 3],
 ) -> Vec<HandedSide> {
+    let rows = ground
+        .grade()
+        .map(|g| g.sides.as_slice())
+        .unwrap_or_default();
     b.open_sides()
         .into_iter()
         .map(|side| {
@@ -665,11 +679,19 @@ pub(crate) fn handed_sides(
                     cells: [local(clo), local(chi)],
                 })
                 .collect();
+            let row = rows
+                .iter()
+                .find(|r| r.node == b.node && r.face == side.face);
             HandedSide {
                 face: side.face.as_str().to_string(),
                 cells: [local(lo), local(hi)],
                 walk_y: local(lo)[1],
                 contacts,
+                meets: row
+                    .filter(|_| ground.grade().is_some_and(|g| g.terrain))
+                    .map_or("sheer", |r| r.meets.as_str())
+                    .to_string(),
+                drop: row.and_then(|r| r.drop),
             }
         })
         .collect()
@@ -1028,7 +1050,7 @@ fn allocation_in(c: &Campaign, node: &NodeId, plan: &SitePlan) -> Option<Allocat
                 }
             })
             .collect(),
-        sides: handed_sides(b, &plan.seams, local),
+        sides: handed_sides(b, &plan.seams, &plan.ground, local),
         parts: crate::compiler::plot::handed_parts(c, node),
         bands: crate::compiler::plot::handed_parts(c, node)
             .iter()
@@ -2347,10 +2369,12 @@ pub fn check_aloft(c: &Campaign) -> (Vec<Diagnostic>, AloftBinding) {
                  ring reaches that course in {k} column(s) — {list}{more}. An aloft place owns \
                  no ground: the whole's terrain inside its claim has no owner that can draw it. \
                  Stand the place on the ground (`base: \"ground\"`, so it is handed the ground \
-                 under it), raise its floor clear of the terrain, or lower the terrain under it.",
+                 under it), raise its floor clear of the terrain, or lower the terrain under \
+                 it.{graded}",
                 node = b.node,
                 k = hits.len(),
                 list = shown.join(", "),
+                graded = graded_by(&plan.boxes, &plan.ground, &hits),
                 more = if hits.len() > shown.len() {
                     format!(", and {} more", hits.len() - shown.len())
                 } else {
@@ -2360,6 +2384,38 @@ pub fn check_aloft(c: &Campaign) -> (Vec<Diagnostic>, AloftBinding) {
         ));
     }
     (d, binding)
+}
+
+/// Where `DW0990`'s columns were raised by a grade (spec-0138 §5): the
+/// sides whose banks raised them, each with its remedy, else nothing.
+fn graded_by(boxes: &[PlacedBox], ground: &Ground, hits: &[[i64; 3]]) -> String {
+    let Some(grade) = ground.grade() else {
+        return String::new();
+    };
+    let mut sides: Vec<(String, &'static str)> = Vec::new();
+    for h in hits {
+        if let Some(r) = grade.regraded_at(h[0], h[1])
+            && r.graded > r.natural
+            && let Some(b) = boxes.get(r.place)
+        {
+            let s = (b.node.0.clone(), r.face.as_str());
+            if !sides.contains(&s) {
+                sides.push(s);
+            }
+        }
+    }
+    if sides.is_empty() {
+        return String::new();
+    }
+    let named: Vec<String> = sides
+        .iter()
+        .map(|(n, f)| format!("`{n}`'s {f} side"))
+        .collect();
+    format!(
+        " The terrain there was raised by the bank of {}: declare that side `sheer`, so the \
+         ground beside it is left as the terrain has it.",
+        named.join(" and ")
+    )
 }
 
 // ---------------------------------------------------------------------------
