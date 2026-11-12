@@ -144,6 +144,9 @@ impl Ground {
             };
         };
         let seed = c.world.content.seed;
+        let sea = crate::horizon_base(&c.world.content.horizon)
+            .sea_level()
+            .map(i64::from);
         let region_min = plan.region.min;
         let region_max = plan.region.max();
         let (w, d) = (
@@ -159,6 +162,7 @@ impl Ground {
                     w,
                     d,
                     None,
+                    sea,
                     seed,
                 )));
                 GroundKind::Solid {
@@ -183,6 +187,7 @@ impl Ground {
                     w,
                     d,
                     natural.as_deref(),
+                    sea,
                     seed,
                 );
                 if let Some((width, depth, surface)) = g.surface() {
@@ -511,7 +516,7 @@ impl Ground {
         (surface, below, strata): (&str, &str, Vec<Stratum>),
     ) -> Ground {
         let (w, d) = (max[0] - min[0] + 1, max[2] - min[2] + 1);
-        let g = super::grade::Grade::of(boxes, [min[0], min[2]], w, d, Some(&natural), seed);
+        let g = super::grade::Grade::of(boxes, [min[0], min[2]], w, d, Some(&natural), None, seed);
         let tops = Tops::Map {
             width: w,
             depth: d,

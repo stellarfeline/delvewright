@@ -20,6 +20,11 @@
 //! - **The bound**: `lo = max(P − k)`, `hi = min(P + k)` over every place with
 //!   an edge column; a whole column's surface is its natural surface clamped
 //!   into `[lo, hi]`.
+//! - **The sea meets a side as ground does**: on a horizon with a sea, a
+//!   column whose terrain stands under the sea's surface is met at that
+//!   surface — a body swims there — so the bound reads the higher of the two.
+//!   A bank raised toward the sea ends at the sea as a shore does, and a
+//!   column the bound leaves at the sea keeps its own sea floor.
 //!
 //! `DW1108` is refused from what this module finds: two settings that meet,
 //! and a cut beside a declared fluid ([`check`]).
@@ -296,7 +301,9 @@ fn places_meet(a: &PlacedBox, b: &PlacedBox) -> bool {
 impl Grade {
     /// Resolve the grade of `boxes` over a site whose natural surface over
     /// the region is `natural` (row-major `z` then `x`, `width × depth`, from
-    /// `min`), or over a site with no terrain (`natural` `None`).
+    /// `min`), or over a site with no terrain (`natural` `None`), beside a sea
+    /// whose surface is the `y` of its top water course (`sea`, on a horizon
+    /// with one).
     #[must_use]
     pub fn of(
         boxes: &[PlacedBox],
@@ -304,6 +311,7 @@ impl Grade {
         width: i64,
         depth: i64,
         natural: Option<&[i64]>,
+        sea: Option<i64>,
         seed: u64,
     ) -> Grade {
         let ground_places: Vec<usize> = (0..boxes.len())
@@ -355,7 +363,10 @@ impl Grade {
             })
         };
         let whole = |c: [i64; 2]| idx(c[0], c[1]).is_some_and(|k| cover[k] == 0);
-        let nat = |c: [i64; 2]| natural[idx(c[0], c[1]).unwrap_or(0)];
+        // The surface a body meets in a column: the terrain's, or the sea's
+        // where the terrain stands under it.
+        let met = |t: i64| sea.map_or(t, |s| t.max(s));
+        let nat = |c: [i64; 2]| met(natural[idx(c[0], c[1]).unwrap_or(0)]);
 
         // **Each place's bank** (§4): the whole columns joined to its edge,
         // 4-adjacent, through columns its own bound moves. It ends at the
@@ -439,6 +450,7 @@ impl Grade {
         for (&c, among) in &reaching {
             let k = idx(c[0], c[1]).unwrap_or(0);
             let t = natural[k];
+            let m = met(t);
             let (lo, hi, lr, hr) = bound(c, &mut among.iter().copied());
             if lo > hi {
                 // (a) two banks that cannot share the column.
@@ -458,8 +470,11 @@ impl Grade {
                     });
                 }
             }
-            let amp = if t < lo { lr } else { hr };
-            let g = settle(t, lo, hi, Ground::bank_noise(seed, c[0], c[1], amp));
+            let amp = if m < lo { lr } else { hr };
+            let g = settle(m, lo, hi, Ground::bank_noise(seed, c[0], c[1], amp));
+            // A column the bound holds at its met surface, or lowers no lower
+            // than its own floor under the sea, keeps its terrain.
+            let g = if g == m || (g < m && g >= t) { t } else { g };
             graded[k] = g;
             if g == t {
                 continue;
@@ -567,7 +582,7 @@ impl Grade {
                 };
                 let drops: Vec<i64> = beyond
                     .iter()
-                    .filter_map(|c| idx(c[0], c[1]).map(|k| natural[k] - p))
+                    .filter_map(|c| idx(c[0], c[1]).map(|k| met(natural[k]) - p))
                     .collect();
                 let drop = drops
                     .iter()

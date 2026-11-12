@@ -744,6 +744,11 @@ pub enum Horizon {
     Spec(HorizonSpec),
 }
 
+/// **The sea level of the `ocean` horizon** (spec-0013): the pinned
+/// bedrock/stone/water superflat tops its water at `y` 62. The one statement
+/// of it; the compiler's `SEA_LEVEL` is this number.
+pub const OCEAN_SEA_LEVEL: i32 = 62;
+
 /// What surrounds the map.
 ///
 /// **One enumeration of bases.** The authorable form is the object
@@ -781,6 +786,12 @@ impl HorizonBase {
             HorizonBase::Ocean => "ocean",
             HorizonBase::Valley => "valley",
         }
+    }
+
+    /// The `y` of the top water course of this base's sea, where it has one:
+    /// the `ocean` superflat's ([`OCEAN_SEA_LEVEL`]).
+    pub fn sea_level(self) -> Option<i32> {
+        matches!(self, HorizonBase::Ocean).then_some(OCEAN_SEA_LEVEL)
     }
 
     /// Whether this base generates a surround — compiler-built terrain outside

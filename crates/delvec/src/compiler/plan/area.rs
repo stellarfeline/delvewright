@@ -11,7 +11,7 @@ pub const BASE_Y: i32 = 64;
 /// Sea level of the `ocean` horizon superflat (spec-0013): the pinned
 /// bedrock/stone/water layer stack (1 + 118 + 8 from the -64 build floor) tops the
 /// water at y=62. Emission pins the same stack in `generator-settings`.
-pub const SEA_LEVEL: i32 = 62;
+pub const SEA_LEVEL: i32 = delvewright_dsl::OCEAN_SEA_LEVEL;
 /// Height of the `ocean` horizon superflat's water layer (spec-0013) — the `8`
 /// in the pinned `generator-settings` stack emission writes
 /// (`emit::emit_server`). Ambient water occupies `SEA_LEVEL - 7 ..= SEA_LEVEL`.

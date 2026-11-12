@@ -546,17 +546,98 @@ impl<'a> Flow<'a> {
             if !forks.contains(p.flag) {
                 continue;
             }
-            use delvewright_dsl::producers::{ProducerSite, expiry_act};
-            let named: Vec<String> = match p.site {
-                ProducerSite::ObjectiveComplete { quest, objective }
-                | ProducerSite::ObjectiveExpire { quest, objective } => {
-                    vec![expiry_act(objective), quest.to_string()]
-                }
-                ProducerSite::QuestComplete { quest } => vec![quest.to_string()],
-                ProducerSite::Ambient { .. } => p.act.clone().into_iter().collect(),
-            };
-            out.extend(named.into_iter().filter(|a| acts.elective_ids.contains(a)));
+            out.extend(
+                producer_acts(&p)
+                    .into_iter()
+                    .filter(|a| acts.elective_ids.contains(a)),
+            );
         }
+        out
+    }
+
+    /// **The elective acts a journal line turns on** (spec-0137 §8): the
+    /// participations that decide whether its `record-outcome` fires and its
+    /// objective settles — the act its root is, the quest that holds its
+    /// root, its objective's quest, the expiry of each objective either names,
+    /// and every act that writes a flag or a datum a gate on its way reads (its
+    /// objective's gate, its root's, and every `when` from the root down to
+    /// it). A line whose way is decided by how many of a set of acts a world
+    /// performs ("three crates or fewer") is found by the witness search over
+    /// these acts, which takes every subset by size.
+    fn line_acts(&self, site: &delvewright_dsl::record::OutcomeSite<'_>) -> BTreeSet<String> {
+        use delvewright_dsl::EffectRootOwner as O;
+        use delvewright_dsl::producers::expiry_act;
+        let c = self.c;
+        let acts = self.acts();
+        let mut out: BTreeSet<String> = BTreeSet::new();
+        let mut flags: BTreeSet<String> = BTreeSet::new();
+        let mut data: BTreeSet<String> = BTreeSet::new();
+        let mut read = |g: delvewright_dsl::Gate<'_>| {
+            flags.extend(
+                g.requires_flags
+                    .iter()
+                    .chain(g.forbids_flags)
+                    .map(|f| f.as_str().to_string()),
+            );
+            data.extend(
+                g.requires_state
+                    .iter()
+                    .map(|t| t.state.as_str().to_string()),
+            );
+        };
+        let objective = site.objective.as_str();
+        out.insert(expiry_act(objective));
+        for q in &c.quests.content.quests {
+            if let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == objective) {
+                out.insert(q.id.as_str().to_string());
+                read(o.gate());
+            }
+        }
+        match &site.at {
+            delvewright_dsl::record::OutcomeAt::Effect { owner, root, .. } => {
+                out.extend(owner_acts(owner, root));
+                match owner {
+                    O::Trigger(t) => read(t.gate()),
+                    O::TrapPayload(t) => read(t.gate()),
+                    _ => {}
+                }
+                delvewright_dsl::for_each_effect_root(c, &mut |r, list| {
+                    if r.path == *root {
+                        let mut on_way = Vec::new();
+                        chain(list, root, &site.path, &mut on_way);
+                        for e in on_way {
+                            read(e.gate());
+                        }
+                    }
+                });
+            }
+            delvewright_dsl::record::OutcomeAt::Option {
+                tree, node, option, ..
+            } => {
+                read(c.dialogue.content.dialogues[*tree].nodes[*node].options[*option].gate());
+            }
+        }
+        for p in delvewright_dsl::producers::flag_producers(c) {
+            if flags.contains(p.flag) {
+                out.extend(producer_acts(&p));
+            }
+        }
+        if !data.is_empty() {
+            delvewright_dsl::for_each_effect_root(c, &mut |r, list| {
+                let mut writes = false;
+                for e in list {
+                    e.visit_deep(&mut |x| {
+                        writes |= x
+                            .writes_state()
+                            .is_some_and(|(d, _)| data.contains(d.as_str()));
+                    });
+                }
+                if writes {
+                    out.extend(owner_acts(&r.owner, &r.path));
+                }
+            });
+        }
+        out.retain(|a| acts.elective_ids.contains(a));
         out
     }
 
@@ -871,6 +952,14 @@ impl<'a> Flow<'a> {
             .into_iter()
             .collect();
         let branches = crate::compiler::branch::enumerate(self.c);
+        // Every journal line, with the acts its way turns on (spec-0137 §8).
+        let records = crate::compiler::recording::Records::plain(self.c);
+        let lines: Vec<Vec<String>> = records
+            .sites
+            .iter()
+            .map(|s| self.line_acts(s).into_iter().collect())
+            .collect();
+        let mut lines_shown: Vec<bool> = vec![false; lines.len()];
         let mut worlds: Vec<StoryWorld> = Vec::new();
         let mut runs: Vec<StoryRun> = Vec::new();
         let mut targets: Vec<Target> = Vec::new();
@@ -1054,6 +1143,46 @@ impl<'a> Flow<'a> {
                     .find(|&ri| realized(ri));
                 if let Some(ri) = first {
                     chosen.insert(ri);
+                }
+            }
+            // Per journal line no world yet shows: the first coherent run of
+            // this selection, over the subsets of the acts its way turns on by
+            // size then act id, that fires it and settles its objective — a
+            // way a declared line names is a world the records proof reads
+            // (spec-0137 §8).
+            let shows =
+                |si: usize, ri: usize, local: &[(BTreeSet<String>, WorldOrigin, StoryRun)]| {
+                    let (performs, origin, run) = &local[ri];
+                    let world = StoryWorld {
+                        selection: sel,
+                        performs: performs.clone(),
+                        origin: *origin,
+                    };
+                    records.shows(self.c, &acts.forced, &world, run, si)
+                };
+            for si in 0..lines.len() {
+                if lines_shown[si] || chosen.iter().any(|&ri| shows(si, ri, &local)) {
+                    lines_shown[si] = true;
+                    continue;
+                }
+                let acts_of = &lines[si];
+                let mut tried = 0usize;
+                'line: for size in 0..=acts_of.len() {
+                    for combo in combinations(acts_of.len(), size) {
+                        if tried >= MAX_CANDIDATES {
+                            at_bound += 1;
+                            break 'line;
+                        }
+                        tried += 1;
+                        let p: BTreeSet<String> =
+                            combo.iter().map(|&i| acts_of[i].clone()).collect();
+                        let ri = run_of(p, WorldOrigin::Witness, &mut local);
+                        if shows(si, ri, &local) {
+                            chosen.insert(ri);
+                            lines_shown[si] = true;
+                            break 'line;
+                        }
+                    }
                 }
             }
             // This selection's worlds in canonical order: all, none, then the
@@ -1348,6 +1477,65 @@ impl<'a> Flow<'a> {
 }
 
 /// Every `size`-subset of `0..n`, in lexicographic order.
+/// The acts a flag producer's firing turns on: its ambient act, or the
+/// quest that holds it and the expiry of the objective that fires it.
+fn producer_acts(p: &delvewright_dsl::producers::FlagProducer<'_>) -> Vec<String> {
+    use delvewright_dsl::producers::{ProducerSite, expiry_act};
+    match p.site {
+        ProducerSite::ObjectiveComplete { quest, objective }
+        | ProducerSite::ObjectiveExpire { quest, objective } => {
+            vec![expiry_act(objective), quest.to_string()]
+        }
+        ProducerSite::QuestComplete { quest } => vec![quest.to_string()],
+        ProducerSite::Ambient { .. } => p.act.clone().into_iter().collect(),
+    }
+}
+
+/// The acts an effect root's firing turns on, by the same rule as
+/// [`producer_acts`]: the act it is, or the quest that holds it and the expiry
+/// of the objective that fires it.
+fn owner_acts(owner: &delvewright_dsl::EffectRootOwner<'_>, root: &str) -> Vec<String> {
+    use delvewright_dsl::EffectRootOwner as O;
+    use delvewright_dsl::producers::expiry_act;
+    match owner {
+        O::ObjectiveComplete { quest, objective } | O::ObjectiveExpire { quest, objective } => {
+            vec![expiry_act(objective), quest.id.as_str().to_string()]
+        }
+        O::QuestComplete { quest } => vec![quest.id.as_str().to_string()],
+        other => crate::compiler::ending::act_of_owner(other, root)
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// The effects on the way from a root list at `base` down to the effect at
+/// `target`, outermost first, the target included; `false` when `target` is
+/// not under `base`.
+fn chain<'e>(
+    list: &'e [QuestEffect],
+    base: &str,
+    target: &str,
+    out: &mut Vec<&'e QuestEffect>,
+) -> bool {
+    for (i, e) in list.iter().enumerate() {
+        let p = format!("{base}/{i}");
+        if p == target {
+            out.push(e);
+            return true;
+        }
+        if target.starts_with(&format!("{p}/")) {
+            out.push(e);
+            for (seg, _, inner) in e.nested_effect_lists_labeled() {
+                if chain(inner, &format!("{p}/{seg}"), target, out) {
+                    return true;
+                }
+            }
+            out.pop();
+        }
+    }
+    false
+}
+
 fn combinations(n: usize, size: usize) -> Vec<Vec<usize>> {
     let mut out = Vec::new();
     let mut cur: Vec<usize> = Vec::new();

@@ -456,6 +456,105 @@ fn dw1104_a_way_no_story_reaches() {
     assert_eq!(has_1104(&records_check(&dir)), 0, "the expiry has no line");
 }
 
+fn happening(text: &str) -> Value {
+    json!({"text": text, "verb": "arrives"})
+}
+
+/// **A line whose way is a count reaches the world that counts it.** Two
+/// timed objectives each keep a thing when done; the door's line for "kept
+/// nothing" needs both to run out. The story worlds lost one at a time, so
+/// no world held it and `DW1104` refused a line a party can see. The witness
+/// search over the acts the line turns on — the two expiries, which write the
+/// count by not writing it — takes the pair. The line for "kept both", which
+/// the world that does everything shows, passes as before.
+#[test]
+fn dw1104_a_line_two_expiries_reach_is_shown() {
+    let dir = fixture(
+        "count",
+        |q| {
+            let c = &mut q["content"];
+            c["state"] = json!([{"id": "state/kept", "scope": "party", "initial": 0,
+                                 "note": "The things the party kept."}]);
+            let quest = &mut c["quests"][0];
+            let timed = |id: &str| {
+                json!({"type": "reach-anchor", "id": id, "anchor": "anchor/exit", "radius": 2,
+                       "after": ["obj/talk"], "happening": happening("the party keeps a thing"),
+                       "limit": {"ticks": 1200}})
+            };
+            let objectives = quest["objectives"].as_array_mut().unwrap();
+            objectives.insert(1, timed("obj/a"));
+            objectives.insert(2, timed("obj/b"));
+            objectives[3]["after"] = json!(["obj/a", "obj/b"]);
+            let keep = json!([{"type": "add-state", "state": "state/kept", "amount": 1}]);
+            quest["on_objective_complete"]["obj/a"] = keep.clone();
+            quest["on_objective_complete"]["obj/b"] = keep;
+            let mut none = outcome("obj/exit", "We came through with nothing kept.");
+            none["when"] = json!({"requires_state": [
+                {"state": "state/kept", "op": "at-most", "value": 0}]});
+            let mut both = outcome("obj/exit", "We came through with both.");
+            both["when"] = json!({"requires_state": [
+                {"state": "state/kept", "op": "at-least", "value": 2}]});
+            quest["on_objective_complete"]["obj/exit"] = json!([none, both]);
+        },
+        |_| {},
+    );
+    let d = records_check(&dir);
+    assert_eq!(has_1104(&d), 0, "{d:#?}");
+}
+
+/// **A line whose way is an optional task left half done reaches the world
+/// that leaves it so.** A lent mule is borrowed in one optional quest and
+/// brought back in another; the finale's line for "never brought back" needs
+/// the borrowing done, the lending trigger fired and the return not taken.
+/// The witness search ran over the acts an ending or a fork turns on, which
+/// hold the trigger and the return but not the borrowing, so the world it
+/// found never settled the borrowing and `DW1104` refused the line. The acts
+/// the line turns on hold its objective's quest.
+#[test]
+fn dw1104_a_line_an_optional_task_left_half_done_reaches_is_shown() {
+    let dir = scratch("lent");
+    common::copy_dir_all(&common::hello_world_dir(), &dir);
+    common::patch_file(&dir.join("quest-plan.json"), |p| {
+        let qs = p["content"]["quests"].as_array_mut().unwrap();
+        for (id, deps) in [
+            ("quest/borrow", json!([])),
+            ("quest/return", json!(["quest/borrow"])),
+        ] {
+            qs.push(
+                json!({"id": id, "act": 1, "activity": ["reach"], "area": "area/keep",
+                           "depends_on": deps, "goal": "Lend and return the mule.",
+                           "mandatory": false, "npcs": []}),
+            );
+        }
+    });
+    common::patch_file(&dir.join("quests.json"), |q| {
+        let c = &mut q["content"];
+        c["triggers"] = json!([{"id": "trigger/lend", "at": "anchor/exit",
+            "on": {"on": "approach", "range": 4},
+            "effects": [{"type": "set-flag", "flag": "flag/out"}]}]);
+        let qs = c["quests"].as_array_mut().unwrap();
+        qs.push(json!({
+            "id": "quest/borrow", "trigger": {"type": "campaign-start"},
+            "happening": {"text": "the party hears of a mule", "verb": "learns"},
+            "objectives": [{"type": "reach-anchor", "id": "obj/borrow", "anchor": "anchor/exit",
+                "radius": 2, "requires_flags": ["flag/out"], "record": "We borrowed the mule.",
+                "happening": happening("the party takes the mule")}],
+            "on_complete": []}));
+        qs.push(json!({
+            "id": "quest/return", "trigger": {"type": "quest-complete", "quest": "quest/borrow"},
+            "happening": {"text": "the mule must go home", "verb": "learns"},
+            "objectives": [{"type": "reach-anchor", "id": "obj/return", "anchor": "anchor/exit",
+                "radius": 2, "happening": happening("the party brings the mule home")}],
+            "on_objective_complete": {"obj/return": [{"type": "set-flag", "flag": "flag/home"}]},
+            "on_complete": []}));
+        let mut lost = outcome("obj/borrow", "We never brought the mule back.");
+        lost["when"] = json!({"requires_flags": ["flag/out"], "forbids_flags": ["flag/home"]});
+        qs[0]["on_complete"].as_array_mut().unwrap().insert(0, lost);
+    });
+    let d = records_check(&dir);
+    assert_eq!(has_1104(&d), 0, "{d:#?}");
+}
+
 /// Criterion 7 (amended): every finished page measured, in every language;
 /// an overlong record and an overlong line each warn `DW0330` naming the
 /// objective and, for a line, its site.
