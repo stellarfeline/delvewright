@@ -33,11 +33,13 @@
 //! resolved `announcement` is `shown` ([`Objective::announced`]) — and the hint's
 //! `tellraw` is nested inside that announcement. So:
 //!
-//! * an objective that is not announced prints **nothing at all** — no chat
-//!   line, no cue sound;
-//! * an objective with a `hint` that is not announced shows **neither** — the
-//!   hint is authored prose the emitter drops on the floor, with nothing
-//!   anywhere saying so.
+//! * an objective that is not announced prints no activation line and no cue;
+//!   with a `title` its completion is still told, and with a `title` and a
+//!   `hint` it is a hidden task whose hint is on its journal page once it has
+//!   started (spec-0137 §3);
+//! * an objective with a `hint` and no `title` shows **neither** — the hint is
+//!   authored prose the emitter drops on the floor, with nothing anywhere
+//!   saying so.
 //!
 //! # Three obligations and one contradiction
 //!
