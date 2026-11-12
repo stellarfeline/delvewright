@@ -223,3 +223,221 @@ export function journalFailures(verdicts: readonly JournalVerdict[]): string[] {
     .filter((v) => v.outcome === "missing")
     .map((v) => `journal: ${v.quest} started at step ${v.step} and ${v.objective}'s hint is on no page — ${v.detail}`);
 }
+
+// ---------------------------------------------------------------------------
+// The journal keeps what was done (spec-0137 §8).
+//
+// The compiler states, per recorded objective, the keys its finished entry
+// carries — its `record`, each line the story can write — and, per story
+// world, how the objective ends and which lines that world's walk leaves
+// written (`validation/journal-records.json`). After the walk's last step the
+// bot reads the book it holds: a settled row must show the record and exactly
+// the written lines among the objective's lines; an open row must show none of
+// them. The expectation is the compiler's world, never the scores the pages
+// were selected by.
+// ---------------------------------------------------------------------------
+
+/** Where the records ledger sits relative to `critical-path.json`. */
+export const RECORDS_LEDGER_SUBPATH = ["validation", "journal-records.json"] as const;
+
+/** One line the story can write for an objective. */
+export interface RecordOutcome {
+  readonly ordinal: number;
+  /** The translation key the line's page carries; `null` in a `--lang` bake. */
+  readonly key: string | null;
+  readonly site: string;
+}
+
+/** One recorded objective. */
+export interface RecordObjective {
+  readonly objective: string;
+  readonly announced: boolean;
+  readonly recordKey: string | null;
+  readonly outcomes: readonly RecordOutcome[];
+}
+
+/** How one recorded objective ends in one world. */
+export interface RecordRow {
+  readonly objective: string;
+  readonly settles: "done" | "expired" | "open";
+  /** The ordinals the walk leaves written; `null` where the build cannot say. */
+  readonly written: readonly number[] | null;
+}
+
+/** The records ledger as the bot reads it. */
+export interface RecordsLedger {
+  readonly mainline: string | null;
+  readonly objectives: readonly RecordObjective[];
+  readonly worlds: ReadonlyMap<string, readonly RecordRow[]>;
+}
+
+function keyOrNull(v: unknown, at: string): string | null {
+  return v === null ? null : str(v, at);
+}
+
+/** Parse the records ledger strictly. */
+export function parseRecordsLedger(raw: unknown): RecordsLedger {
+  const badR = (d: string): never => {
+    throw new JournalLedgerParseError(`journal-records.json ${d}`);
+  };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) badR("is not an object");
+  const root = raw as Record<string, unknown>;
+  const os = root["objectives"];
+  const ws = root["worlds"];
+  if (!Array.isArray(os)) badR("/objectives is not an array");
+  if (!Array.isArray(ws)) badR("/worlds is not an array");
+  const objectives = (os as unknown[]).map((o, i): RecordObjective => {
+    const r = o as Record<string, unknown>;
+    const outs = r["outcomes"];
+    if (!Array.isArray(outs)) badR(`/objectives/${i}/outcomes is not an array`);
+    return {
+      objective: str(r["objective"], `/objectives/${i}/objective`),
+      announced: r["announced"] === true,
+      recordKey: keyOrNull(r["record_key"] ?? null, `/objectives/${i}/record_key`),
+      outcomes: (outs as unknown[]).map((x, j) => {
+        const y = x as Record<string, unknown>;
+        const ordinal = y["ordinal"];
+        if (typeof ordinal !== "number") badR(`/objectives/${i}/outcomes/${j}/ordinal is not a number`);
+        return {
+          ordinal: ordinal as number,
+          key: keyOrNull(y["key"] ?? null, `/objectives/${i}/outcomes/${j}/key`),
+          site: str(y["site"], `/objectives/${i}/outcomes/${j}/site`),
+        };
+      }),
+    };
+  });
+  const worlds = new Map<string, readonly RecordRow[]>();
+  (ws as unknown[]).forEach((w, i) => {
+    const r = w as Record<string, unknown>;
+    const fin = r["finished"];
+    if (!Array.isArray(fin)) badR(`/worlds/${i}/finished is not an array`);
+    worlds.set(
+      str(r["world"], `/worlds/${i}/world`),
+      (fin as unknown[]).map((f, j): RecordRow => {
+        const x = f as Record<string, unknown>;
+        const settles = x["settles"];
+        if (settles !== "done" && settles !== "expired" && settles !== "open") {
+          badR(`/worlds/${i}/finished/${j}/settles is not done, expired or open`);
+        }
+        const written = x["written"];
+        if (written !== null && !(Array.isArray(written) && written.every((n) => typeof n === "number"))) {
+          badR(`/worlds/${i}/finished/${j}/written is neither null nor a list of ordinals`);
+        }
+        return {
+          objective: str(x["objective"], `/worlds/${i}/finished/${j}/objective`),
+          settles: settles as RecordRow["settles"],
+          written: written as number[] | null,
+        };
+      }),
+    );
+  });
+  const mainline = root["mainline"];
+  return {
+    mainline: mainline === null || mainline === undefined ? null : str(mainline, "/mainline"),
+    objectives,
+    worlds,
+  };
+}
+
+/** Load the records ledger beside a critical path; absent is a build that records nothing. */
+export async function loadRecordsLedgerForCriticalPath(
+  criticalPathFile: string,
+): Promise<RecordsLedger | undefined> {
+  const file = path.join(path.dirname(criticalPathFile), ...RECORDS_LEDGER_SUBPATH);
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw e;
+  }
+  return parseRecordsLedger(JSON.parse(text) as unknown);
+}
+
+/** The world a path file walks: `world-path-<k>.json` is `world/<k>`; the critical path is the mainline. */
+export function worldOfPath(file: string, ledger: RecordsLedger): string | null {
+  const base = path.basename(file);
+  const m = /^world-path-(\d+)\.json$/.exec(base);
+  if (m) return `world/${m[1]}`;
+  return ledger.mainline;
+}
+
+/** The verdict on one row. */
+export interface RecordVerdict {
+  readonly world: string;
+  readonly objective: string;
+  readonly outcome: "shown" | "missing" | "unjudged";
+  readonly detail: string;
+}
+
+/** Judge one row against the pages the bot read. */
+export function judgeRecordRow(
+  world: string,
+  pages: readonly string[],
+  obj: RecordObjective,
+  row: RecordRow,
+): RecordVerdict {
+  const v = (outcome: RecordVerdict["outcome"], detail: string): RecordVerdict => ({
+    world,
+    objective: obj.objective,
+    outcome,
+    detail,
+  });
+  if (row.written === null) return v("unjudged", "the walk does not order this objective's lines");
+  if (obj.recordKey === null && obj.outcomes.every((o) => o.key === null)) {
+    return v("unjudged", "no key: a --lang bake");
+  }
+  const shows = (k: string | null) => k !== null && pagesShow(pages, k);
+  const wrong: string[] = [];
+  if (row.settles === "open") {
+    if (shows(obj.recordKey)) wrong.push(`the record ${obj.recordKey} is shown while the task is open`);
+    for (const o of obj.outcomes) {
+      if (shows(o.key)) wrong.push(`line ${o.ordinal} (${o.key}) is shown while the task is open`);
+    }
+  } else {
+    if (obj.recordKey !== null && !shows(obj.recordKey)) wrong.push(`the record ${obj.recordKey} is on no page`);
+    for (const o of obj.outcomes) {
+      const owed = row.written.includes(o.ordinal);
+      if (o.key === null) continue;
+      if (owed && !shows(o.key)) wrong.push(`line ${o.ordinal} (${o.key}, ${o.site}) is on no page`);
+      if (!owed && shows(o.key)) wrong.push(`line ${o.ordinal} (${o.key}, ${o.site}) is shown and this world never wrote it`);
+    }
+  }
+  return wrong.length === 0
+    ? v("shown", `${row.settles}, lines [${row.written.join(", ")}]`)
+    : v("missing", wrong.join("; "));
+}
+
+/** The binding of the records gate over one run. */
+export interface RecordsBinding {
+  readonly owed: number;
+  readonly judged: number;
+  readonly shown: number;
+  readonly missing: number;
+  readonly unjudged: number;
+}
+
+export function recordsBinding(verdicts: readonly RecordVerdict[]): RecordsBinding {
+  const n = (o: RecordVerdict["outcome"]) => verdicts.filter((v) => v.outcome === o).length;
+  return {
+    owed: verdicts.length,
+    judged: n("shown") + n("missing"),
+    shown: n("shown"),
+    missing: n("missing"),
+    unjudged: n("unjudged"),
+  };
+}
+
+export function recordsBindingLine(world: string | null, b: RecordsBinding): string {
+  return (
+    `journal records binding: ${b.judged} of ${b.owed} row(s) judged in ${world ?? "no world"}, ` +
+    `${b.shown} shown as the world left them, ${b.missing} wrong, ${b.unjudged} unjudged` +
+    (b.owed > 0 && b.judged === 0 ? " — UNBOUND: no row this walk owes could be judged" : "")
+  );
+}
+
+export function recordsFailures(verdicts: readonly RecordVerdict[]): string[] {
+  return verdicts
+    .filter((v) => v.outcome === "missing")
+    .map((v) => `journal records: ${v.objective} in ${v.world} — ${v.detail}`);
+}

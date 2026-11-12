@@ -112,3 +112,74 @@ test("a missing page reds the run and the binding states its zeroes", () => {
   assert.match(journalBindingLine(none), /UNBOUND/);
   assert.doesNotMatch(journalBindingLine(b), /UNBOUND/);
 });
+
+// spec-0137 §8: the finished pages a world's walk leaves.
+
+import {
+  judgeRecordRow,
+  parseRecordsLedger,
+  recordsBinding,
+  recordsBindingLine,
+  worldOfPath,
+} from "../src/journal.ts";
+
+const records = parseRecordsLedger({
+  party: "#party",
+  mainline: "world/0",
+  objectives: [
+    {
+      objective: "obj/horse",
+      announced: false,
+      record_key: "delve.x.obj.q.horse.record",
+      outcomes: [
+        { ordinal: 1, key: "delve.x.dlg.keeper.n.opt.0.fx.0.outcome", site: "dialogue#/a", held: "#jr_horse.1" },
+        { ordinal: 2, key: "delve.x.dlg.keeper.n.opt.1.fx.0.outcome", site: "dialogue#/b", held: "#jr_horse.2" },
+      ],
+    },
+  ],
+  worlds: [
+    { world: "world/0", finished: [{ objective: "obj/horse", settles: "done", written: [1] }] },
+    { world: "world/1", finished: [{ objective: "obj/horse", settles: "open", written: [] }] },
+    { world: "world/2", finished: [{ objective: "obj/horse", settles: "done", written: null }] },
+  ],
+});
+const horse = records.objectives[0]!;
+const page = (...keys: string[]) => [keys.map((k) => `{translate:"${k}"}`).join(",")];
+
+test("a settled row shows the record and exactly the lines its world wrote", () => {
+  const row = records.worlds.get("world/0")![0]!;
+  const ok = judgeRecordRow("world/0", page(horse.recordKey!, horse.outcomes[0]!.key!), horse, row);
+  assert.equal(ok.outcome, "shown");
+  const missing = judgeRecordRow("world/0", page(horse.recordKey!), horse, row);
+  assert.equal(missing.outcome, "missing");
+  assert.match(missing.detail, /line 1 .* is on no page/);
+  const sibling = judgeRecordRow(
+    "world/0",
+    page(horse.recordKey!, horse.outcomes[0]!.key!, horse.outcomes[1]!.key!),
+    horse,
+    row,
+  );
+  assert.equal(sibling.outcome, "missing");
+  assert.match(sibling.detail, /line 2 .* never wrote it/);
+});
+
+test("an open hidden task has no page", () => {
+  const row = records.worlds.get("world/1")![0]!;
+  assert.equal(judgeRecordRow("world/1", [], horse, row).outcome, "shown");
+  const leak = judgeRecordRow("world/1", page(horse.recordKey!), horse, row);
+  assert.equal(leak.outcome, "missing");
+});
+
+test("a row the build cannot order is counted, never judged", () => {
+  const row = records.worlds.get("world/2")![0]!;
+  const v = judgeRecordRow("world/2", [], horse, row);
+  assert.equal(v.outcome, "unjudged");
+  const b = recordsBinding([v]);
+  assert.deepEqual([b.owed, b.judged, b.unjudged], [1, 0, 1]);
+  assert.match(recordsBindingLine("world/2", b), /UNBOUND/);
+});
+
+test("the world a path walks is named by its file", () => {
+  assert.equal(worldOfPath("/b/validation/world-path-3.json", records), "world/3");
+  assert.equal(worldOfPath("/b/critical-path.json", records), "world/0");
+});
