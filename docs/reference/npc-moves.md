@@ -93,4 +93,4 @@ Measured for spec-0136 on the pinned server; the arc is `dsl::moves::hop_arc`'s 
 - Whether the client-side interpolation of a 10 Hz `tp` arc reads as a smooth hop or as a stutter.
 - The head banner and flower on a mannequin head, and an elytra with `fall_flying`, as rendered.
 - `levitation` / `slow_falling` / `jump_boost` on a released body, and a team colour for the `Glowing` outline.
-- A hop under a ceiling lower than its peak: the teleport passes the head through the block. Not measured, and not judged by the build.
+- A hop under a ceiling lower than its peak: the teleport passes the head through the block (a `tp` collides with nothing). Not measured here; the build refuses it at the body's placed cell (`DW1103`).
