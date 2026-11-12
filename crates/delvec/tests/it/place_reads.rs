@@ -100,7 +100,7 @@ fn the_site_plan_point_draws_a_threshold_shot_per_door_and_open_side() {
     let p = point("threshold");
     assert!(
         p.stderr.contains(
-            "threshold shots: 26 over 10 place(s), 18 door(s), 5 open side(s), 3 part(s)"
+            "threshold shots: 26 over 12 place(s), 18 door(s), 5 open side(s), 3 part(s)"
         ),
         "{}",
         p.stderr
@@ -168,7 +168,7 @@ fn an_undeclared_side_owes_no_clear_width_and_has_no_front() {
     assert!(run.status.success(), "{stderr}");
     assert!(
         stderr.contains(
-            "threshold shots: 25 over 10 place(s), 18 door(s), 4 open side(s), 3 part(s)"
+            "threshold shots: 25 over 12 place(s), 18 door(s), 4 open side(s), 3 part(s)"
         ),
         "{stderr}"
     );
@@ -216,7 +216,7 @@ fn the_census_states_the_annex_front_the_doors_and_the_court_water() {
     let p = point("census");
     assert!(
         p.stderr.contains(
-            "piece census: 10 piece(s), 30 face(s), 19 opening(s), 2 water cell(s); doors framed: 2 of 2"
+            "piece census: 12 piece(s), 38 face(s), 27 opening(s), 2 water cell(s); doors framed: 2 of 2"
         ),
         "{}",
         p.stderr

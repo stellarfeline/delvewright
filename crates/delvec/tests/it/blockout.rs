@@ -2930,7 +2930,24 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         }
     }
     // Nothing else moved: the other three runs, the lid, the floor, every
-    // neighbour and the whole.
+    // neighbour and the whole — but the land the open side's bank steps down
+    // (spec-0138): every other moved cell stands in a column the grade
+    // regraded, and the walled landing regrades none.
+    let open_grade = plan.ground.grade().expect("a plan grades").clone();
+    let undeclared_plan = SitePlan::of(&undeclared);
+    let undeclared_grade = undeclared_plan.ground.grade().expect("graded");
+    let regraded = |x: i64, z: i64| {
+        open_grade.regraded_at(x, z).is_some() || undeclared_grade.regraded_at(x, z).is_some()
+    };
+    assert!(
+        SitePlan::of(&walled)
+            .ground
+            .grade()
+            .expect("graded")
+            .regraded
+            .is_empty(),
+        "the walled landing has no bank"
+    );
     let moved: Vec<[i64; 3]> = before
         .keys()
         .chain(after.keys())
@@ -2939,8 +2956,9 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    assert_eq!(moved.len(), opened.len(), "{moved:?}");
-    assert!(moved.iter().all(|c| opened.contains(c)), "{moved:?}");
+    let banked: Vec<&[i64; 3]> = moved.iter().filter(|c| !opened.contains(*c)).collect();
+    assert!(banked.iter().all(|c| regraded(c[0], c[2])), "{banked:?}");
+    assert_eq!(moved.len() - banked.len(), opened.len(), "{moved:?}");
     assert!(!opened.is_empty());
 }
 

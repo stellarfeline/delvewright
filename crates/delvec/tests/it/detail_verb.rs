@@ -1223,6 +1223,13 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
                 b["base"] = json!({"aloft": 0});
                 b["floor"] = json!({"y": 70});
             }
+            // Hung, the causeway owns no ground, and the yard's bank beside
+            // it (spec-0138) would raise the terrain into its claim
+            // (`DW0990`, which names this remedy): the yard's east side keeps
+            // its drop.
+            if b["node"] == "node/exit" {
+                b["sides"]["east"] = json!("sheer");
+            }
         }
     });
     common::patch_file(&dir.join("detail-plan.json"), |v| {
