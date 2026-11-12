@@ -696,7 +696,7 @@ fn dw1103_a_hop_through_a_block_is_refused() {
     );
 
     // A beam where the head arrives.
-    let (gate, findings) = hop::judge(&[jump.clone()], &stone_at(&[[10, 67, 10]]));
+    let (gate, findings) = hop::judge(std::slice::from_ref(&jump), &stone_at(&[[10, 67, 10]]));
     assert_eq!((gate.bodies, gate.cells, gate.refused), (1, 3, 1));
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].code, "DW1103");
@@ -712,7 +712,7 @@ fn dw1103_a_hop_through_a_block_is_refused() {
     // beam one cell higher, one column over, or under the feet is clear; so
     // is a lower hop under the same beam.
     for clear in [[10, 68, 10], [11, 66, 10], [10, 64, 10], [10, 63, 10]] {
-        let (gate, findings) = hop::judge(&[jump.clone()], &stone_at(&[clear]));
+        let (gate, findings) = hop::judge(std::slice::from_ref(&jump), &stone_at(&[clear]));
         assert!(findings.is_empty(), "{clear:?}: {findings:?}");
         assert_eq!(gate.cells, 3, "the sweep still looked");
     }
@@ -723,7 +723,7 @@ fn dw1103_a_hop_through_a_block_is_refused() {
     // A block a body passes — a torch — is no ceiling.
     let mut torch = BlockMap::new();
     torch.insert([10, 66, 10], BlockState::new("minecraft:torch"));
-    assert!(hop::judge(&[jump.clone()], &torch).1.is_empty());
+    assert!(hop::judge(std::slice::from_ref(&jump), &torch).1.is_empty());
 
     // A body wider than a block sweeps the columns its width covers.
     let wide = Hop { width: 1.4, ..jump };
