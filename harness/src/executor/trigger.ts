@@ -11,8 +11,10 @@ import type { MineflayerExecutor } from "../executor.ts";
 import {
   SHOT_DRAW_MS,
   SHOT_FLIGHT_MS,
+  SHOT_TRIES,
   USE_ITEM_HOLD_MS,
   shotAim,
+  shotOutOfReach,
   shotSpent,
 } from "../shot.ts";
 
@@ -158,11 +160,12 @@ export const methods = {
    * another body fails here, naming both, rather than as a silent miss.
    */
   /**
-   * spec-0134 §2: one real hit — equip the bow, aim over the target's centre
-   * by the record's elevation for the distance, draw past a full charge,
-   * release, and pass on the trigger's fired marker; a miss re-aims from the
-   * table, and the step fails by name once it is spent. Every arrow loosed is
-   * counted on the run log.
+   * spec-0134 §2: one real hit — equip the bow, aim along the full-drawn
+   * arrow's arc through the target's centre (`shot.ts`, the pinned version's
+   * ballistics), draw past a full charge, release, and pass on the trigger's
+   * fired marker; a miss looses again on the same arc, and the step fails by
+   * name once `SHOT_TRIES` arrows are spent, or at once when no arc reaches
+   * the target. Every arrow loosed is counted on the run log.
    */
   async loose(
     this: MineflayerExecutor,
@@ -176,10 +179,11 @@ export const methods = {
     await bot.equip(bow, "hand");
     let loosed = 0;
     for (let k = 0; ; k++) {
+      if (k >= SHOT_TRIES) throw new Error(shotSpent(label, loosed));
       const p = bot.entity.position;
       const eye: [number, number, number] = [p.x, p.y + bot.entity.height * 0.9, p.z];
-      const aim = shotAim(eye, step.pos, k);
-      if (aim === undefined) throw new Error(shotSpent(label, loosed));
+      const aim = shotAim(eye, step.pos);
+      if (aim === undefined) throw new Error(shotOutOfReach(label));
       await bot.lookAt(p.offset(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z), true);
       bot.activateItem();
       await delay(SHOT_DRAW_MS);
@@ -191,7 +195,7 @@ export const methods = {
         SCORE_POLL_MS,
       );
       process.stderr.write(
-        `[shot] ${step.trigger}: arrow ${loosed} at elevation try ${k + 1} — ${hit ? "hit" : "missed"}\n`,
+        `[shot] ${step.trigger}: arrow ${loosed} on the arc through the centre — ${hit ? "hit" : "missed"}\n`,
       );
       if (hit) {
         this.shotsLoosed.push({ trigger: step.trigger, arrows: loosed });
