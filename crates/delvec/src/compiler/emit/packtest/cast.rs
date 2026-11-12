@@ -115,15 +115,9 @@ fn cast_drive_lines(
     b
 }
 
-/// Who holds a datum in a generated cast template: the party fake player, or
-/// the template's own pinned dummy for a `player`-scoped datum. The dummy is
-/// named outright rather than through `@s` because these pin lines run at the
-/// template's top level, where there is no acting player to be `@s`.
+/// Who holds a datum in a generated cast template ([`dummy_state_holder`]).
 fn cast_state_holder(plan: &Plan, sel: &str, id: &str) -> String {
-    match plan.campaign.quests.content.state_decl(id).map(|s| s.scope) {
-        Some(StateScope::Player) => sel.to_string(),
-        _ => plan::PARTY.to_string(),
-    }
+    dummy_state_holder(plan, sel, &StateId(id.to_string()))
 }
 
 /// One NPC's ladder proof: `cast_ladder_<npc>.mcfunction`.

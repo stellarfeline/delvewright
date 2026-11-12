@@ -142,10 +142,7 @@ pub(super) fn emit_kill_pays_packtests(
         // The bundle's first ungated `add-state`, asserted beside the ledger.
         let paid = ok.effects.iter().find_map(|e| match &e.verb {
             Verb::AddState { state, amount, .. } if e.when.is_none() => {
-                let holder = match state_holder(plan, state).as_str() {
-                    "@s" => sel.clone(),
-                    h => h.to_string(),
-                };
+                let holder = dummy_state_holder(plan, &sel, state);
                 Some((holder, plan::state_score(state.as_str()), *amount))
             }
             _ => None,

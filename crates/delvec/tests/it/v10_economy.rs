@@ -1433,6 +1433,55 @@ fn the_packtest_tier_covers_what_it_can_witness_and_claims_nothing_more() {
     }
 }
 
+/// The purchase template reads the purse **where the purse is held**, for every
+/// scope a named datum can have: on the buyer for a `player` datum, on the party
+/// fake player for a `party` one — the holder the offer's own debit names. A
+/// template that set and read a party purse on the buyer drove a balance the
+/// offer never reads, and its first assertion read a debit that never happened.
+#[test]
+fn the_purchase_template_reads_the_purse_at_its_declared_scope() {
+    let mut bound = 0;
+    for (scope, want) in [
+        ("player", "@a[tag=dw_shoptest,limit=1]"),
+        ("party", "#party"),
+    ] {
+        // The purse alone, at this scope: a stake is a personal wager (`DW0520`).
+        let start = PURSE_AND_STAKE.find("    \"stakes\"").unwrap();
+        let end = PURSE_AND_STAKE.find("    \"shops\"").unwrap();
+        let src = format!("{}{}", &PURSE_AND_STAKE[..start], &PURSE_AND_STAKE[end..])
+            .replace("\"scope\": \"player\"", &format!("\"scope\": \"{scope}\""));
+        let out = build(&parse_hw(&quests_doc(&src, "")));
+        let pick = fnc(&out, "shop_pick_0_0");
+        let debit = if scope == "party" { "#party" } else { "@s" };
+        assert!(
+            pick.contains(&format!("run scoreboard players remove {debit} dw.s_embers 1")),
+            "the offer debits the {scope} purse at `{debit}`:\n{pick}"
+        );
+        let t = text(
+            &out,
+            "packtest-datapack/data/hello-world/test/v10_shop_purchase.mcfunction",
+        );
+        for line in [
+            format!("scoreboard players set {want} dw.s_embers 100"),
+            format!("scoreboard players get {want} dw.s_embers"),
+            format!("scoreboard players set {want} dw.s_embers 0"),
+        ] {
+            assert!(t.contains(&line), "the {scope} purse is driven and read as `{line}`:\n{t}");
+        }
+        let elsewhere = if scope == "party" {
+            "@a[tag=dw_shoptest,limit=1] dw.s_embers"
+        } else {
+            "#party dw.s_embers"
+        };
+        assert!(
+            !t.contains(elsewhere),
+            "the {scope} purse is never read at `{elsewhere}`:\n{t}"
+        );
+        bound += 1;
+    }
+    assert_eq!(bound, 2, "both scopes a named datum can have");
+}
+
 // --- the CI fixture -------------------------------------------------------
 
 /// The `economy` fixture validates clean and emits the whole chain.

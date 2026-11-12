@@ -44,6 +44,9 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
     {
         let obj = plan::state_score(state.as_str());
         let (pin, me) = pin_dummy("dw_shoptest");
+        // The purse is read where it is held: the buyer for a `player` datum,
+        // the party fake player for a `party` one.
+        let purse = dummy_state_holder(plan, &me, &state);
         let mut t = packtest_header(&format!(
             "{title}: a purchase debits the purse, and one that cannot be afforded is refused \
              (spec-0032)"
@@ -67,21 +70,21 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         }
         // Afford it: the balance the offer's own gate and its effects' gates both
         // read is set high enough for every comparison in the bundle to open.
-        t.push(format!("scoreboard players set {me} {obj} 100"));
+        t.push(format!("scoreboard players set {purse} {obj} 100"));
         t.push(format!(
             "execute as {me} run function {ns}:shop_pick_{i}_{j}"
         ));
         t.push(format!(
-            "execute store result score #sh_paid dw.sys run scoreboard players get {me} {obj}"
+            "execute store result score #sh_paid dw.sys run scoreboard players get {purse} {obj}"
         ));
         t.push("assert score #sh_paid dw.sys matches ..99".to_string());
         // …and cannot: with nothing in the purse the same press must move nothing.
-        t.push(format!("scoreboard players set {me} {obj} 0"));
+        t.push(format!("scoreboard players set {purse} {obj} 0"));
         t.push(format!(
             "execute as {me} run function {ns}:shop_pick_{i}_{j}"
         ));
         t.push(format!(
-            "execute store result score #sh_broke dw.sys run scoreboard players get {me} {obj}"
+            "execute store result score #sh_broke dw.sys run scoreboard players get {purse} {obj}"
         ));
         t.push("assert score #sh_broke dw.sys matches 0".to_string());
         out.insert(
