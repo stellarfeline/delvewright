@@ -64,8 +64,11 @@ struct Bay {
     nook: bool,
     /// The pool runs `x = 4..=16`, too wide for a hand on either shore to
     /// reach its middle, with crates — barrels standing one block over the
-    /// water, touching its surface — at `[10, 4, 4]` and `[10, 4, 6]`.
+    /// water, touching its surface — at `[11, 4, 4]`, and at `[11, 4, 6]`
+    /// with `second_crate`.
     wide: bool,
+    /// The second crate of the wide pool.
+    second_crate: bool,
     /// The objectives after `obj/talk`, written whole (each from a leading
     /// comma), in place of the reach-anchor `obj/exit`.
     objectives: Option<&'static str>,
@@ -93,8 +96,10 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
         }
     }
     if bay.wide {
-        by.insert([10, 4, 4], "minecraft:barrel[facing=up,open=false]");
-        by.insert([10, 4, 6], "minecraft:barrel[facing=up,open=false]");
+        by.insert([11, 4, 4], "minecraft:barrel[facing=up,open=false]");
+    }
+    if bay.second_crate {
+        by.insert([11, 4, 6], "minecraft:barrel[facing=up,open=false]");
     }
     if bay.bridge {
         for x in POOL {
@@ -175,11 +180,11 @@ fn anchors() -> serde_json::Value {
         "anchor/rail-mid": { "pos": [10, 4, 6] },
         "anchor/room": { "pos": [10, 4, 4] },
         "anchor/nook": { "pos": [16, 4, 7] },
-        "anchor/near-dock": { "pos": [4, 3, 3] },
-        "anchor/crate": { "pos": [10, 4, 4] },
-        "anchor/crate-alongside": { "pos": [9, 3, 4] },
-        "anchor/crate-two": { "pos": [10, 4, 6] },
-        "anchor/crate-two-alongside": { "pos": [11, 3, 6] }
+        "anchor/near-dock": { "pos": [5, 3, 3] },
+        "anchor/crate": { "pos": [11, 4, 4] },
+        "anchor/crate-alongside": { "pos": [10, 3, 4] },
+        "anchor/crate-two": { "pos": [11, 4, 6] },
+        "anchor/crate-two-alongside": { "pos": [12, 3, 6] }
     })
 }
 
@@ -1455,7 +1460,7 @@ fn a_crate_out_on_the_water_is_opened_from_the_boat() {
     // The rider's eye at the end cell is within the block reach of the barrel.
     let eye = [end[0] as f64 + 0.5, 3.0 + 0.52 + 0.1875 - 0.6 + 1.62, end[2] as f64 + 0.5];
     let gap = |e: f64, lo: f64| (lo - e).max(e - (lo + 1.0)).max(0.0);
-    let d = (gap(eye[0], 10.0).powi(2) + gap(eye[1], 4.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
+    let d = (gap(eye[0], 11.0).powi(2) + gap(eye[1], 4.0).powi(2) + gap(eye[2], 4.0).powi(2)).sqrt();
     assert!(d <= 4.5, "the barrel is {d} from the rider's eye at {end:?}");
     assert_eq!(on["boards"], false, "the ride on starts aboard: {on}");
     assert_eq!(on["stays"], false, "{on}");
@@ -1474,7 +1479,7 @@ fn a_crate_no_ride_reaches_is_refused() {
     };
     let short = r#"{ "id": "vehicle/gull", "entity": "minecraft:oak_boat",
         "at": { "anchor": "anchor/near-dock" },
-        "bounds": { "anchor": "anchor/near-dock", "extent": [1, 3, 2] } }"#;
+        "bounds": { "anchor": "anchor/near-dock", "extent": [0, 3, 2] } }"#;
     let (code, msg) = refused("crate-out-of-reach", bay, short);
     assert_eq!(code, "DW0311", "{msg}");
     assert!(msg.contains("declared ridden on `vehicle/gull`"), "{msg}");
@@ -1486,6 +1491,7 @@ fn a_crate_no_ride_reaches_is_refused() {
 fn two_crates_are_opened_without_leaving_the_boat() {
     let bay = Bay {
         wide: true,
+        second_crate: true,
         objectives: Some(
             r#",
           { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
