@@ -633,14 +633,15 @@ impl Ledger {
 }
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
-/// a shortcut gate's `seal_arm_`, a holder's `holder_<id>` and a vehicle's `vehicle_seat_<v>` at setup; `activate_<obj>` at the step
+/// a shortcut gate's `seal_arm_`, a holder's `holder_<id>` and an `at-load` vehicle's `vehicle_seat_<v>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
 /// or `loop_` function unforced; and a beat's function —
 /// `spawn_npc_<n>`, `despawn_npc_<n>`, `spawn_actor_<a>`, `despawn_actor_<a>`,
-/// `asm_summon_<s>`, `asm_despawn_<s>` — at every step an effect that runs it
-/// fires, unforced where the effect is.
+/// `asm_summon_<s>`, `asm_despawn_<s>`, and a `by-story` vehicle's
+/// `vehicle_seat_<v>` — at every step an effect that runs it fires, unforced
+/// where the effect is.
 fn firings_of(
     plan: &crate::compiler::plan::Plan,
     path: &OnPath<'_>,
@@ -753,12 +754,21 @@ fn firings_of(
         // `item replace entity` fills place nothing the ledger records.
         return Some(vec![Firing::Setup]);
     }
-    if name.starts_with("vehicle_seat_") {
-        // A vehicle's body (spec-0135 §2): seated at world init by
-        // `setup_finish` (`emit::vehicle::vehicle_setup`); a `seat-vehicle`
-        // beat and the re-seat run the same function and put the same body on
-        // the same mark, so every frame's world holds it from setup.
-        return Some(vec![Firing::Setup]);
+    if let Some(safe) = name.strip_prefix("vehicle_seat_") {
+        // A vehicle's body (spec-0135 §2). Seated `at-load`, it is seated at
+        // world init by `setup_finish` (`emit::vehicle::vehicle_setup`); a
+        // `seat-vehicle` beat and the re-seat run the same function and put
+        // the same body on the same mark, so every frame's world holds it from
+        // setup. Seated `by-story`, nothing seats it at load: it stands from
+        // the step a `seat-vehicle` naming it fires, as a beat's body does.
+        let at_load = plan
+            .vehicles
+            .iter()
+            .find(|v| v.safe == safe)
+            .is_none_or(|v| v.seated == delvewright_dsl::VehicleSeated::AtLoad);
+        if at_load {
+            return Some(vec![Firing::Setup]);
+        }
     }
     if name.starts_with("shortcut_open_") {
         return Some(vec![Firing::Unforced(
@@ -783,6 +793,7 @@ fn firings_of(
         ("despawn_actor_", "despawn-actor"),
         ("asm_summon_", "spawn-assembly"),
         ("asm_despawn_", "despawn-assembly"),
+        ("vehicle_seat_", "seat-vehicle"),
     ];
     let (prefix, verb) = beats.iter().find(|(p, _)| name.starts_with(p))?;
     let safe = &name[prefix.len()..];
@@ -797,6 +808,7 @@ fn firings_of(
             (Verb::DespawnActor { actor, .. }, "despawn-actor") => actor.as_str(),
             (Verb::SpawnAssembly { assembly }, "spawn-assembly") => assembly.as_str(),
             (Verb::DespawnAssembly { assembly }, "despawn-assembly") => assembly.as_str(),
+            (Verb::SeatVehicle { vehicle }, "seat-vehicle") => vehicle.as_str(),
             _ => return,
         };
         if safe_local(target) != safe {

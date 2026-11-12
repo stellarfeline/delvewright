@@ -4694,7 +4694,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (at the objective's, or the quest's last objective's, step);
   `trig_<trigger>` (at the trigger's step); `spawn_npc_`, `despawn_npc_`,
   `spawn_actor_`, `despawn_actor_`, `asm_summon_`, `asm_despawn_` (at every step
-  an effect running it fires, `plan::firing_of`); and the `trap_` and `loop_`
+  an effect running it fires, `plan::firing_of`); `vehicle_seat_<v>` (at setup
+  for a vehicle seated `at-load`; for one seated `by-story`, at every step a
+  `seat-vehicle` naming it fires, so the load world holds no such body,
+  spec-0135 §2); and the `trap_` and `loop_`
   functions (unforced) — every `summon`, `setblock` and `item replace block`
   line (under an `execute … run` prefix too), every `kill @e[tag=…]` and every
   unseen hand-off. **Each such line is written back from its row**
