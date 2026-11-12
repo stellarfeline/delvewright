@@ -1,0 +1,13 @@
+{
+  "code": "DW1103",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/11/steps/1/effects/2/height",
+      "value": 4
+    }
+  ],
+  "units": [],
+  "why": "The hall moth's half-block hop, raised to four blocks. The moth is placed at [25, 67, 22] and is 0.9 blocks tall, so at the top of a four-block arc its body reaches the cell at y 71 — and [25, 71, 22] is solid. A hop is walked by teleport on a body that never collides, so the ceiling would not stop it: the moth would pass into the block and out again in front of the party. The build sweeps the arc's cells at the body's placed cell and names the hop, the body, the cell and the clearance. It declares no unit: `hop` and its `height` are bound by the primary, at half a block. The remedy is a lower hop or a taller room, never removing the check; perturbing the other way is the primary, whose hops print `0 refused` on the build's hop binding line."
+}

@@ -236,6 +236,7 @@ holding them at once.
 | `a-bolt-beside-the-arrival` | `DW0958` | `build` | striking a lightning bolt two cells from `anchor/arrival`, where every player first stands |
 | `a-pose-on-a-body-with-no-skin` | `DW1101` | `validate` | asking a plain villager to crouch beside the skinned curator |
 | `a-flag-set-three-times` | `DW1102` | `validate` | repeating a `set-flag` on a cadence only a move, a particle and a sound keep |
+| `a-moth-hopped-through-the-rafters` | `DW1103` | `build` | raising the hall moth's hop to four blocks, through the block over it |
 | `a-bolt-on-a-copper-tile` | `DW0959` | `build` | laying a waxed copper tile under the exit and striking a bolt on it, so the game would scrape copper along a random walk |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
