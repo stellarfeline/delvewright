@@ -576,6 +576,7 @@ export const methods = {
           this.stageNow = "critical-path";
         }
       }
+      await this.atStance();
       await this.clearWave(step, enc);
       this.encounterPhases.set(enc.wave, "cleared");
     } finally {

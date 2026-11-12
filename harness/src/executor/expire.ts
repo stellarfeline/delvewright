@@ -71,6 +71,7 @@ export const methods = {
     // The walk to the stand is no leg of the path's: it names none, so it
     // can never take the next step's.
     await this.walkTo(step.stand, 0, `the wait for ${step.objective}`, step.sneak, undefined, undefined, null);
+    await this.atStance();
     const campaign = this.campaignId ?? "?";
     const windowMs = expireWindowMs(step.waitTicks);
     process.stderr.write(

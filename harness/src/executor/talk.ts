@@ -22,6 +22,7 @@ export const methods = {
       objective: step.objective,
       transport: step.transport,
     });
+    await this.atStance();
     // The trigger stands in for a dialog button this bot cannot click — so before
     // it is sent, prove the button was REACHABLE: cast the crosshair ray a player
     // casts and require this NPC's own hitbox to be what it meets first. Without
