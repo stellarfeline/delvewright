@@ -1121,7 +1121,12 @@ Five rulings on this spec, applied as stated.
 2. **Undeclared ground on an open site is ordinary walkable ground.** On a
    `fill: open` site, ground no place claims is an implicit **commons** that
    every place may open onto through its own openings, with no declaration
-   needed: a narrow gap between two houses is simply ground. What stays refused
+   needed: a narrow gap between two houses is simply ground. **Amended while
+   built — the sea**: water a body swims in outside every claim, the open sea
+   of an `ocean` horizon, is the commons as the ground there is, so two places
+   open to the sea are joined through it as two open to open ground are; read
+   as ground alone, a body swimming from a harbour basin into a cove across the
+   open sea was refused as an unallocated join. What stays refused
    is a place leaking (`DW0838`): a body crossing between two places other than
    through an allocated opening, with the commons excluded from the walk; a
    stand-in — the engine's closed shell, whose only openings are its seams —

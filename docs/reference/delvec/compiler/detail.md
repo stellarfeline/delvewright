@@ -71,7 +71,10 @@ its side toward this place is declared open), `views` (each plan view
 whose eye sees the place, with the `delvec frames --campaign --camera` that frames it),
 `ground` (the fill kind, the claim's bottom and the floor piece-local, the
 terrain along the perimeter with its min and max, every fixed ring cell with its
-block, and the terrain-shaped columns under the plot), `roof` (courses, eaves,
+block, the terrain-shaped columns under the plot, and `sea_y`, the sea's top
+water course piece-local on a horizon with a sea — where the floor course is at
+or under it, the starter fills an open side's ring with the sea's water from its
+ground up), `roof` (courses, eaves,
 the lid and top `y`, and every clipped eave), `seams` (each piece-local with its
 `form`, the other place, face, cells, class, rise, answering classes, whether
 this place owns the plane, and the ring's ground under a vertical seam),
