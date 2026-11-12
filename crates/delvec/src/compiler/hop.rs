@@ -152,7 +152,7 @@ pub fn declares_one(plan: &Plan) -> bool {
 /// hop's bodies against the solved layout and hands them to [`judge`].
 pub fn check(
     plan: &Plan,
-    world: &crate::compiler::nav::world::World,
+    world: &crate::compiler::nav::World,
     blocks: &crate::compiler::blockstate::BlockMap,
 ) -> (HopGate, Vec<Failure>) {
     let declared = declared_hops(plan);
