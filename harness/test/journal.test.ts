@@ -9,7 +9,9 @@ import {
   parseJournalLedger,
   scoreIsOne,
   scoreIsOneCommand,
-  JOURNAL_PAGES_COMMAND,
+  JOURNAL_PAGES_PATH,
+  journalPageCommand,
+  readJournalPages,
   type JournalVerdict,
 } from "../src/journal.ts";
 
@@ -81,7 +83,7 @@ test("a score reads 1 by its own marker and by nothing else", () => {
   assert.equal(scoreIsOne([], "dw.qa_the_boat"), false);
   // Another score's marker is not this one's.
   assert.equal(scoreIsOne(["[dw:journal dw.qa_the_house 1]"], "dw.qa_the_boat"), false);
-  assert.match(JOURNAL_PAGES_COMMAND, /^\/tellraw @s \{"nbt":"Inventory\[/);
+  assert.match(journalPageCommand(3), /^\/tellraw @s \{"nbt":"Inventory\[.*\.pages\[3\]"/);
 });
 
 test("a page shows a hint by its translation key and by nothing else", () => {
@@ -182,4 +184,41 @@ test("a row the build cannot order is counted, never judged", () => {
 test("the world a path walks is named by its file", () => {
   assert.equal(worldOfPath("/b/validation/world-path-3.json", records), "world/3");
   assert.equal(worldOfPath("/b/critical-path.json", records), "world/0");
+});
+
+// The client cuts a chat line at 4096 characters (prismarine-chat's
+// MAX_CHAT_LENGTH); the book has no page bound, so a long book's late pages
+// must still be read.
+const CHAT_CUT = 4096;
+
+function fakeServer(pages: readonly string[]) {
+  const whole = `[${pages.join(", ")}]`;
+  return async (commands: readonly string[]) =>
+    commands.map((c) => {
+      const m = /\.pages\[(\d+)\]"/.exec(c);
+      if (m === null) return { lines: [whole.slice(0, CHAT_CUT)], answered: true };
+      const page = pages[Number(m[1])];
+      return { lines: page === undefined ? [] : [page.slice(0, CHAT_CUT)], answered: true };
+    });
+}
+
+test("every page of a book longer than one chat line is read, past the cut and past a batch", async () => {
+  const pages = Array.from(
+    { length: 21 },
+    (_, i) => `{raw: {translate: "delve.x.page-${i}.hint", fallback: "${"x".repeat(600)}"}}`,
+  );
+  const send = fakeServer(pages);
+  // The whole book in one line is cut: the late pages are on no page.
+  const cut = (await send(["/tellraw @s " + JSON.stringify({ nbt: JOURNAL_PAGES_PATH, entity: "@s" })]))[0]!;
+  assert.equal(pagesShow(cut.lines, "delve.x.page-20.hint"), false);
+  const read = await readJournalPages(send);
+  assert.equal(read.answered, true);
+  assert.equal(read.pageCount, 21);
+  for (let i = 0; i < 21; i++) assert.equal(pagesShow(read.lines, `delve.x.page-${i}.hint`), true);
+});
+
+test("a book whose read is not answered is not read to its end", async () => {
+  const read = await readJournalPages(async (cs) => cs.map(() => ({ lines: [], answered: false })));
+  assert.equal(read.answered, false);
+  assert.equal(read.pageCount, 0);
 });
