@@ -754,9 +754,9 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
                     column_clear(w, c, y0(c))
                         || way.outward.is_some_and(|out| {
                             let met = met.get_or_insert_with(|| across_the_side(w, &way, out));
-                            (y0(c) - 1..=y0(c) + 1)
-                                .map(|y| [c.x, y, c.z])
-                                .any(|cell| met.contains(&cell) && meets_the_plane(w, cell, y0(c)))
+                            (y0(c) - 1..=y0(c) + 1).map(|y| [c.x, y, c.z]).any(|cell| {
+                                met.contains(&cell) && meets_the_plane(w, cell, y0(c), out)
+                            })
                         })
                 })
                 .collect();
@@ -876,15 +876,21 @@ fn across_the_side(w: &World, way: &Way, out: [i32; 2]) -> BTreeSet<[i32; 3]> {
 }
 
 /// **Whether a body in `cell` meets an open side's walk plane `y0`**: in it,
-/// afloat on the sea's top course under it, or standing a course over it. A
+/// afloat on the sea's top course under it, or standing a course over it on
+/// ground that runs on outward at that course (`out`, the side's outward
+/// step) — a shore or a bank, not a post or a block standing on the plane,
+/// whose top a body can stand on and the ground beyond does not continue. A
 /// body under water, or one held by a climbable off the plane, is passing
 /// under or over the side, not crossing it.
-fn meets_the_plane(w: &World, cell: [i32; 3], y0: i32) -> bool {
+fn meets_the_plane(w: &World, cell: [i32; 3], y0: i32, out: [i32; 2]) -> bool {
     use super::RestKind;
-    matches!(
-        (cell[1] - y0, w.rest_kind(cell)),
-        (0, Some(_)) | (-1, Some(RestKind::Afloat)) | (1, Some(RestKind::Standing))
-    )
+    let standing = |c: [i32; 3]| w.rest_kind(c) == Some(RestKind::Standing);
+    match cell[1] - y0 {
+        0 => w.rest_kind(cell).is_some(),
+        -1 => w.rest_kind(cell) == Some(RestKind::Afloat),
+        1 => standing(cell) && standing([cell[0] + out[0], cell[1], cell[2] + out[1]]),
+        _ => false,
+    }
 }
 
 /// The `DW1065` refusal for an open side built shut at one station: every
@@ -3786,8 +3792,10 @@ mod tests {
         // water, met by stepping down off it into the water.
         let mut shore = cove();
         put(&mut shore, (12..=14).map(|z| [10, 63, z]), "minecraft:sand");
-        put(&mut shore, (6..=20).map(|z| [11, 62, z]), "minecraft:sand");
-        put(&mut shore, (6..=20).map(|z| [11, 63, z]), "minecraft:sand");
+        for x in 11..=13 {
+            put(&mut shore, (6..=20).map(|z| [x, 62, z]), "minecraft:sand");
+            put(&mut shore, (6..=20).map(|z| [x, 63, z]), "minecraft:sand");
+        }
         let rec = judge_at(cove_side(), &shore, &ocean);
         assert!(rec.refusal.is_none(), "{:?}", rec.refusal);
         let plane = judge_at(
@@ -3800,6 +3808,12 @@ mod tests {
         );
         assert_eq!(plane.refusal.as_ref().map(|f| f.code.id()), Some("DW1065"));
 
+        // A post one block high on the sea's ring, a body can stand on and
+        // the ground beyond does not continue at its top, takes its column.
+        let mut block = cove();
+        put(&mut block, [[10, 63, 13]], MASONRY);
+        let rec = judge_at(cove_side(), &block, &ocean);
+        assert_eq!(rec.refusal.as_ref().map(|f| f.code.id()), Some("DW1057"));
         // A masonry post on the shore's ring, two blocks over the sand, takes
         // its column.
         let mut posted = shore.clone();
