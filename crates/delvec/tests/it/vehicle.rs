@@ -1719,7 +1719,7 @@ fn a_lapse_after_an_act_from_the_seat_is_waited_aboard() {
     let out = build("lapse-aboard", bay, &skiff());
     // The world that lets the second crate lapse is exported as a world path
     // whose step for it is an `expire`.
-    let lapsed: Vec<serde_json::Value> = out
+    let lapsed: Vec<Vec<serde_json::Value>> = out
         .iter()
         .filter(|(k, _)| k.ends_with(".json"))
         .filter_map(|(_, v)| serde_json::from_slice::<serde_json::Value>(v).ok())
