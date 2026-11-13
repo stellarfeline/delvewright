@@ -6233,6 +6233,11 @@ which everything has fired from answering as if nothing has, and the answer ther
 matters both ways — a door the party is FORCED to open reads shut again at the end
 of the delve (refusing a rest point behind it), and a `close-gate` fired by the
 LAST objective goes missing (admitting a rest point sealed in).
+A **path act** is keyed too: a `trigger` step and a `ride` step (spec-0135 §4)
+each take the ancestors of the objective the path performs next, before the act
+itself — the world a ride arrives in is the one the party rides through toward
+that objective, never the world as it loaded, in which every door the path
+opened reads shut and every staged lethal volume reads dead.
 
 **Forcedness is decided one layer earlier, and the set is deliberately every
 objective on the path rather than the mandatory ones** (spec-0051).
