@@ -495,7 +495,10 @@ pub(in crate::compiler::nav) fn positions_of(
                 talk_to: false,
                 src_step: i,
                 by_link: false,
-                by_loop: false,
+                // Carried there by the vehicle, as a ride's landing is: no
+                // crossing between areas, whose landing every reader of a
+                // crossing would take for a new place the party is put down.
+                by_loop: aboard,
             });
             transport_pending = false;
             if let Some(to) = to {

@@ -186,6 +186,77 @@ fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
     );
 }
 
+/// spec-0135 §5: a ride that stays aboard carries the party to its last
+/// medium cell, the act after it is done there, and a ride on from aboard is
+/// carried into too — every one a vehicle's carry (`by_loop`), never a
+/// crossing, which every reader of a crossing takes for a place the party is
+/// put down in (the recovery stake's death regions among them).
+#[test]
+fn an_act_from_the_seat_and_a_ride_on_from_aboard_are_carries() {
+    let ride = |pos: [i32; 3], medium: Vec<[i32; 3]>, to: [i32; 3], boards: bool, stays: bool| {
+        Step::Ride {
+            vehicle_id: "vehicle/b".into(),
+            kind: "boat",
+            pos,
+            medium,
+            rate: 5.0,
+            transport: to,
+            steering_item: None,
+            body: vec![[3, 66, 2], [3, 67, 2]],
+            boards,
+            stays,
+        }
+    };
+    let steps = vec![
+        ride(
+            [2, 67, 2],
+            vec![[3, 66, 2], [4, 66, 2]],
+            [4, 66, 2],
+            true,
+            true,
+        ),
+        Step::Collect {
+            objective_id: "obj/crate".into(),
+            item: "minecraft:cod".into(),
+            count: 1,
+            pos: [5, 67, 2],
+            dropped: None,
+        },
+        ride(
+            [4, 66, 2],
+            vec![[4, 66, 2], [5, 66, 3]],
+            [6, 67, 3],
+            false,
+            false,
+        ),
+        Step::Reach {
+            objective_id: "obj/end".into(),
+            anchor_id: "anchor/end".into(),
+            pos: [9, 67, 3],
+            radius: 1,
+            completion: crate::compiler::reach::reach_completion([9, 67, 3], 1),
+        },
+    ];
+    let transports = vec![None; 4];
+    let got: Vec<([i32; 3], bool, bool, usize)> =
+        positions_of(Some([1, 67, 2]), &steps, &transports, None)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.by_loop, p.src_step))
+            .collect();
+    assert_eq!(
+        got,
+        vec![
+            ([1, 67, 2], false, false, 0),
+            ([2, 67, 2], false, false, 0),
+            ([4, 66, 2], true, true, 0),
+            ([4, 66, 2], true, true, 1),
+            ([4, 66, 2], true, true, 2),
+            ([6, 67, 3], true, true, 2),
+            ([9, 67, 3], false, false, 3),
+        ]
+    );
+}
+
 fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
     VisitedPos {
         pos,
