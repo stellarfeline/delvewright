@@ -65,9 +65,10 @@ pub struct DesignContent {
     /// The approved reference images, one row each.
     ///
     /// **At least one** (`minItems: 1`): a record of nothing is not a record,
-    /// and a campaign that has approved no design writes no `design.json` at
-    /// all rather than an empty one. The difference matters at staging, where
-    /// zero approved images is the state that is refused.
+    /// and a campaign that approved no reference picture writes no
+    /// `design.json` at all rather than an empty one. The difference matters at
+    /// staging, where an absent record is a stated zero and a present one is
+    /// held whole.
     #[schemars(length(min = 1))]
     pub references: Vec<Reference>,
 }

@@ -167,7 +167,7 @@ A key pasted under (c) or (d) goes into `.out/env.sh` under its provider's name,
 
 ## 4. The design gate — the user says yes
 
-**Needs**: step 3. **Hands over** (A2): a visual walkthrough of the whole design — every scene, a near view and a far view, each image shown under the hour and weather it was drawn under — and the one line *Is this the delve you want built?* **Waits for an explicit yes** from the user, never inferred from silence and never from a reviewer you invented. **Produces**, once they say yes: `campaigns/<id>/design/`, `design/README.md` and `design.json`. **Read**: `references/design-gate.md`.
+**Needs**: step 3. **Hands over** (A2): a visual walkthrough of the whole design — every scene, a near view and a far view, each image shown under the hour and weather it was drawn under — and the one line *Is this the delve you want built?* **Waits for an explicit yes** from the user, never inferred from silence and never from a reviewer you invented. **Produces**, once they say yes: `campaigns/<id>/design/`, `design/README.md` and `design.json` — or none of them, when the design was approved with no picture drawn. **Read**: `references/design-gate.md`.
 
 ## 5. The content documents — `quests` and `dialogue`
 

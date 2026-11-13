@@ -265,6 +265,10 @@ carrier `DW0900` and binding `{"kind": "artifact", "file":
 "design-record.json", "path": "answered"}`, `applies_when` as `drill3-01`'s
 (`world.json`, every campaign), so a zero is `UNBOUND` and refuses. Edited by
 the pull request that lands the code, on the branch that holds the row.
+**Amended: the pictures are optional.** `applies_when` counts `design.json`'s
+record itself, so a present record with any picture unanswered (or with no
+row) is `UNBOUND`, and a campaign that took no reference picture carries no
+record and reads `INAPPLICABLE`, its zero stated, never refused.
 
 **Tier and subject.** Raised in `compiler::design`, beside `DW0890`, from the
 same `DesignFiles`; `Subject::Campaign`; `ExitTier::Build`.
@@ -275,7 +279,7 @@ same `DesignFiles`; `Subject::Campaign`; `ExitTier::Build`.
 
 | state | `validate` | `build` | `cameras` | staging |
 |---|---|---|---|---|
-| no `design/` images, no `design.json`, no record | passes; line says `0 reference(s) … 0 of 0 answered` | passes; ledger `references: 0, answered: 0` | `DW0721`: no record, nothing to emit (today) | refused, `drill3-01` `UNBOUND` (today) |
+| no `design/` images, no `design.json`, no record | passes; line says `0 reference(s) … 0 of 0 answered` | passes; ledger `references: 0, answered: 0` | `DW0721`: no record, nothing to emit (today) | passes, `drill3-01` and `drill3-03` `INAPPLICABLE`, the zero stated (amended: the pictures are optional) |
 | no `design.json`, a record present | passes; line counts the cameras | `DW0721`: every camera answers a row that does not exist — a camera is an answer to a picture | `DW0721` (today) | never reached |
 | rows, no record — every campaign between step 4 and its first build | passes; `0 of N answered` | passes; ledger `cameras: 0, answered: 0, unanswered_rows: all` | `DW0721` (today) | refused, `drill3-03` `UNBOUND` |
 | rows, a record answering every row | passes; `N of N` | passes; every camera proven (`DW0724`); ledger `answered: N` | emits | bound, `answered = N` |
