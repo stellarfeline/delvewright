@@ -117,8 +117,9 @@ them a sentence on a page:
 2. `delvec validate` refuses an approved image with no row and a row with no
    image — the record and the directory are held to each other, in both
    directions, the way `DW0887` holds a waterline to the bytes.
-3. The staging gate refuses a campaign whose record has no rows (§7): a build
-   the owner walks carries an approved design or is not staged.
+3. The staging gate holds a present record whole (§7). Reference pictures are
+   an optional step: a campaign that took none carries no record, and the gate
+   states its zero and stages it.
 4. `DESIGN.md` stays the prose design record for humans; `design.json` is its
    machine half, and the page's `design/README.md` sentence about tokens is
    retired the moment this lands (§10) — one authority for the sky.
@@ -248,8 +249,8 @@ design record: 4 reference(s) recorded over 4 image file(s) under design/
 
 A run over a campaign with no `design/` and no `design.json` prints
 `0 reference(s) recorded over 0 image file(s)` and does not refuse: that is a
-measured zero of an optional surface, and staging (§7) is where a zero of this
-class is a red.
+measured zero of an optional surface, and staging (§7) states the same zero
+without refusing it.
 
 **Shape a — the world reaches a sky no approved picture shows** (the drill's
 shape, inverted: the rows say `night`, the world says `noon`):
@@ -345,6 +346,15 @@ enforced.
    to it; one or more rows with `DW-SKY` in the engine is bound. `INAPPLICABLE`
    is unreachable for this row by construction, which is the point: a skipped
    design gate is not a design choice.
+
+   **Amended: the pictures are optional.** A design approved as text and
+   plans has no picture to record, so a campaign with no record is a declared
+   zero, never a refusal. `applies_when` counts the approved set the design
+   gate names in `design/README.md`, the file the same step writes beside
+   `design.json`: no record at all reads **`INAPPLICABLE`**, counted and
+   named; an approved set whose `design.json` is gone stays **`UNBOUND`**, a
+   record lost rather than a choice; an approved image with no row is still
+   `DW-SKY` at validation.
 3. `tools/tests/test_staging_gate.py` drives both directions from fixtures
    (zero rows → `UNBOUND`; one row → bound; a design record the gate cannot
    parse → `MISSING-CHECK`).
@@ -488,7 +498,8 @@ a debt, stated as such, never a pass.
    present after every `delvec build`, with `references` as an integer and the
    fields of §6; a build with no record writes `references: 0`.
    *Checked: debt.*
-8. **Staging refuses a campaign with no approved design.** `design.json` is in
+8. **Staging holds a present design record** (amended: a campaign with no
+   record stages, its zero stated, §7). `design.json` is in
    `Subject.STAGE_FILES`; `docs/playtest-findings.json` row `drill3-01`
    carries the carrier, binding and `applies_when` of §7 (edited by the PR that
    lands the code, not here); `tools/tests/test_staging_gate.py` proves zero

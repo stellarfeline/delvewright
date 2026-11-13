@@ -197,8 +197,8 @@ impl DesignFiles {
 /// What this module examined, printed on every run whether or not it refuses.
 ///
 /// A campaign with no `design/` and no `design.json` prints zeroes and does not
-/// refuse: that is a measured zero of an optional surface, and staging — where
-/// a zero of this class is a red — is the tier that judges it.
+/// refuse: that is a measured zero of an optional surface — reference pictures
+/// are an optional step — and the staging gate states the same zero.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DesignBinding {
     /// Rows in `design.json`.
@@ -348,7 +348,7 @@ impl DesignBinding {
 /// **every** build.
 ///
 /// Including a build with no record at all: `references: 0` is a number the
-/// staging gate reads and refuses on, and an absent file is *I could not look*,
+/// staging gate reads and states, and an absent file is *I could not look*,
 /// which is a different fact and would red the gate as format rot instead.
 pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value {
     serde_json::json!({
@@ -558,7 +558,7 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
     //
     // Only when the record has rows. With none, there is no art side to
     // compare, and the campaign's state is the measured zero the binding line
-    // reports and staging refuses — not a disagreement.
+    // reports — not a disagreement.
     if !rows.is_empty() {
         let mut stated: std::collections::BTreeMap<Clock, WorldTime> = Default::default();
         for r in rows {
@@ -667,11 +667,11 @@ fn camera_record(files: &DesignFiles, rows: &[Reference]) -> CameraRecord {
 /// before `Plan::build`, so the creator's previous build tree is still on disk
 /// for `delvec cameras --preview` to draw against.
 ///
-/// An **absent** record raises nothing: the first build of every campaign is the
-/// build a camera is written against, so refusing it here would refuse the state
-/// every campaign passes through. That zero is measured in the binding line and
-/// in `validation/design-record.json`, and refused at the staging gate
-/// (`drill3-03`).
+/// An **absent** camera record raises nothing: the first build of every
+/// campaign is the build a camera is written against, so refusing it here would
+/// refuse the state every campaign passes through. That zero is measured in the
+/// binding line and in `validation/design-record.json`, and refused at the
+/// staging gate (`drill3-03`) whenever `design.json` is present.
 pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
     let rows: &[Reference] = c
         .design

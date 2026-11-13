@@ -716,8 +716,8 @@ fn validate_loaded_with(
             // built at noon. Bound in the one funnel every subcommand's
             // validation goes through, so a mismatch cannot reach a datapack by
             // skipping `delvec validate`. The binding line states what it
-            // examined, zeroes included: a campaign with no approved design is
-            // a measured zero here and a refusal at staging.
+            // examined, zeroes included: a campaign with no design record is
+            // a measured zero here and at staging.
             {
                 let (dd, dbind, _) =
                     delvec::compiler::design::check(&campaign, &loaded.design_files);
