@@ -450,9 +450,8 @@ fn the_records_own_refusals_are_ordinary_and_are_not_dw0890() {
 }
 
 /// **The measured zero.** A campaign with no `design/` and no `design.json`
-/// prints its zeroes and does not refuse — an optional surface nobody has
-/// reached yet is not a defect at this tier, and staging is where that zero is
-/// a red.
+/// prints its zeroes and does not refuse — reference pictures are an optional
+/// step, so this zero is not a defect at this tier or at staging.
 #[test]
 fn a_campaign_with_no_approved_design_states_its_zero_and_passes() {
     let camp = campaign("measured-zero", "noon");
@@ -717,7 +716,8 @@ fn a_picture_with_no_camera_refuses_the_build_and_the_second_camera_builds_it() 
 
 /// **Criterion 4, the build's half.** With no record the build exits 0 and the
 /// ledger reads `cameras: 0`, `answered: 0` and every row unanswered — the
-/// measured zero the staging gate refuses and the build cannot.
+/// measured zero the staging gate refuses, beside a present `design.json`, and
+/// the build cannot.
 #[test]
 fn a_campaign_with_no_camera_record_builds_and_its_ledger_counts_the_zero() {
     let camp = campaign("answers-ledger", "noon");

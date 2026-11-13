@@ -2362,16 +2362,16 @@ def test_every_live_ledger_row_anchors_its_absence_in_the_source(gate):
 
 
 # ---------------------------------------------------------------------------
-# The design gate (spec-0061): a build the owner walks carries an approved
-# design, or is not staged
+# The design gate (spec-0061): a build that carries a design record is held to
+# it before it is staged
 # ---------------------------------------------------------------------------
 #
-# `drill3-01`'s row, driven from fixtures in all three directions. The row is
-# the shape the ledger really carries: a `dw` carrier, a count of rows in a
-# derived artifact, and a precondition measured over the campaign SOURCE.
-# `INAPPLICABLE` is unreachable for it by construction — every campaign has a
-# `world.json`, so every campaign is a member of the class — and that is the
-# point rather than an accident: a skipped design gate is not a design choice.
+# A `drill3-01`-shaped row, driven from fixtures in all three directions: a `dw`
+# carrier, a count of rows in a derived artifact, and a precondition measured
+# over the campaign SOURCE. The fixture row's precondition is `world.json`, so
+# every campaign is a member of its class and its zero is always `UNBOUND`; the
+# LIVE rows, whose class is the record a campaign carries, are driven in the
+# block below.
 
 DESIGN_ROW = {
     "id": "drill3-01-like",
@@ -2399,10 +2399,10 @@ def design_subject(gate, tmp_path, *, references, record=True, unparseable=False
     return gate.Subject(camp, build)
 
 
-def test_a_campaign_with_no_approved_design_is_refused_at_staging(gate, tmp_path):
-    """Zero approved reference images on a campaign that exists. The class is
-    present — every campaign owes a design gate — and nothing binds to it, so
-    the gate refuses rather than calling the zero a design choice."""
+def test_zero_rows_over_a_class_the_campaign_carries_is_refused(gate, tmp_path):
+    """Zero rows in the build's record while the row's precondition counts a
+    member of the class on this campaign: nothing binds to an object that is
+    there, so the gate refuses rather than calling the zero a design choice."""
     subj = design_subject(gate, tmp_path, references=0)
     r = gate.adjudicate(DESIGN_ROW, engine_of(gate), subj)
     assert r["verdict"] == "UNBOUND", r
@@ -2503,11 +2503,13 @@ def test_the_design_record_is_a_stage_document_the_gate_holds(gate):
 # A test level: the object determines the kind
 # ---------------------------------------------------------------------------
 #
-# A test level carries no design record (spec-0122 §7.2). The LIVE `drill3-01`
-# / `drill3-03` rows are driven here, not copies, because copies kept passing
-# while the live rows' class was keyed to something else. Every subject below
-# has zero approved pictures; what moves is only what the campaign declares and
-# what its build carries.
+# A test level carries no design record (spec-0122 §7.2), and neither does any
+# campaign that approved its design with no reference picture: the pictures are
+# an optional step. The LIVE `drill3-01` / `drill3-03` rows are driven here, not
+# copies, because copies kept passing while the live rows' class was keyed to
+# something else. What moves is only which parts of a design record the
+# campaign carries — `design.json`, the approved set `design/README.md` names —
+# and what its build carries.
 
 LIVE_DESIGN_ROWS = ("drill3-01", "drill3-03")
 
@@ -2519,10 +2521,15 @@ def live_row(rid):
     return rows[0]
 
 
-def tl_tree(root, name, *, declared, carried, design_dir=False):
-    """`(campaign, build)`: a campaign called `name` with no approved design.
-    `declared` is what its `world.json` says (`True`, `False`, or `None` for no
-    field); `carried` is the build manifest's `test_level` (`None` for no key)."""
+def tl_tree(
+    root, name, *, declared, carried, design_dir=False, readme=False, references=None, answered=0
+):
+    """`(campaign, build)`: a campaign called `name`, by default with no design
+    record at all. `declared` is what its `world.json` says (`True`, `False`, or
+    `None` for no field); `carried` is the build manifest's `test_level` (`None`
+    for no key). `readme` writes the approved set's `design/README.md`;
+    `references` (a count, `0` for an empty list) writes `design.json` with that many rows and
+    a build record counting them; `answered` is how many a camera answers."""
     camp = root / name
     camp.mkdir(parents=True, exist_ok=True)
     content = {"title": "t", "theme": "t", "premise": "p", "seed": 1, "target_minutes": 10}
@@ -2532,14 +2539,28 @@ def tl_tree(root, name, *, declared, carried, design_dir=False):
     if design_dir:
         (camp / "design").mkdir(exist_ok=True)
         (camp / "design" / "build_pieces.py").write_text("print('a piece')\n")
+    if readme:
+        (camp / "design").mkdir(exist_ok=True)
+        (camp / "design" / "README.md").write_text("# approved design\n\n| `concept/a` |\n")
+    inputs = {"world.json": "0" * 8}
+    if references is not None:
+        refs = [
+            {"name": f"concept/r{i}", "shows": "s", "time": "noon", "weather": "clear"}
+            for i in range(references)
+        ]
+        (camp / "design.json").write_text(
+            json.dumps({"stage": "design", "content": {"references": refs}})
+        )
+        inputs["design.json"] = "1" * 8
     build = root / f"{name}.out"
     (build / "validation").mkdir(parents=True, exist_ok=True)
-    fields = {"inputs": {"world.json": "0" * 8}}
+    fields = {"inputs": inputs}
     if carried is not None:
         fields["test_level"] = carried
     (build / "manifest.json").write_text(manifest(**fields))
+    n = references or 0
     (build / "validation" / "design-record.json").write_text(
-        json.dumps({"references": 0, "image_files": 0, "cameras": 0, "answered": 0})
+        json.dumps({"references": n, "image_files": n, "cameras": answered, "answered": answered})
     )
     return camp, build
 
@@ -2550,16 +2571,20 @@ def tl_subject(gate, root, name, **kw):
 
 @pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
 @pytest.mark.parametrize("design_dir", [False, True])
-def test_a_campaign_with_no_design_record_is_refused_wherever_its_scripts_live(
-    gate, tmp_path, rid, design_dir
+@pytest.mark.parametrize("declared", [None, False])
+def test_a_campaign_that_approved_no_reference_picture_measures_the_design_class_zero(
+    gate, tmp_path, rid, design_dir, declared
 ):
-    """No declaration, no approved picture: refused, whether or not something
-    else (a build script) sits under `design/`. Where a script lives is not
-    what makes a campaign owe a design gate."""
-    subj = tl_subject(gate, tmp_path, "c", declared=None, carried=None, design_dir=design_dir)
+    """No `design.json`, no approved set named in `design/README.md`: the
+    reference pictures are an optional step, and a campaign that took none is a
+    declared zero — counted, never refused — whether or not something else (a
+    build script) sits under `design/`, and whether or not it is a test level."""
+    subj = tl_subject(
+        gate, tmp_path, "c", declared=declared, carried=None, design_dir=design_dir
+    )
     r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
-    assert r["verdict"] == "UNBOUND", r
-    assert r["precondition"] == 1, r
+    assert r["verdict"] == "INAPPLICABLE", r
+    assert r["binding"] == 0 and r["precondition"] == 0, r
 
 
 @pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
@@ -2570,11 +2595,44 @@ def test_a_declared_test_level_measures_the_design_class_zero(gate, tmp_path, ri
     assert r["precondition"] == 0, r
 
 
-@pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
-def test_test_level_false_is_no_declaration(gate, tmp_path, rid):
-    subj = tl_subject(gate, tmp_path, "c", declared=False, carried=None)
-    r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
+def test_an_approved_set_with_its_record_lost_is_refused(gate, tmp_path):
+    """`design/README.md` names an approved set and `design.json` is gone: a
+    record lost, never a campaign that chose no pictures. The README is written
+    by the same step that writes the record, so a lost `design.json` cannot
+    supply the absence of both."""
+    subj = tl_subject(gate, tmp_path, "c", declared=None, carried=None, readme=True)
+    r = gate.adjudicate(live_row("drill3-01"), engine_of(gate), subj)
     assert r["verdict"] == "UNBOUND", r
+    assert r["binding"] == 0 and r["precondition"] == 1, r
+
+
+def test_a_present_record_with_an_unanswered_picture_is_refused(gate, tmp_path):
+    """A present record is held whole: three approved pictures and no camera
+    answering any of them refuses `drill3-03`, while `drill3-01` binds the rows."""
+    subj = tl_subject(gate, tmp_path, "c", declared=None, carried=None, readme=True, references=3)
+    r = gate.adjudicate(live_row("drill3-03"), engine_of(gate), subj)
+    assert r["verdict"] == "UNBOUND", r
+    assert r["binding"] == 0 and r["precondition"] == 1, r
+    r = gate.adjudicate(live_row("drill3-01"), engine_of(gate), subj)
+    assert r["verdict"] == "BOUND" and r["binding"] == 3, r
+
+
+def test_a_present_but_empty_record_is_refused(gate, tmp_path):
+    """`design.json` with no row is not how a campaign says it took no pictures
+    (that campaign carries no `design.json`): present, it is judged, and the
+    zero it states is a red."""
+    subj = tl_subject(gate, tmp_path, "c", declared=None, carried=None, references=0)
+    r = gate.adjudicate(live_row("drill3-03"), engine_of(gate), subj)
+    assert r["verdict"] == "UNBOUND", r
+
+
+@pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
+def test_a_present_record_answered_whole_binds(gate, tmp_path, rid):
+    subj = tl_subject(
+        gate, tmp_path, "c", declared=None, carried=None, readme=True, references=3, answered=3
+    )
+    r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
+    assert r["verdict"] == "BOUND" and r["binding"] == 3, r
 
 
 @pytest.mark.parametrize(
@@ -2607,11 +2665,11 @@ def test_the_gate_reads_no_demo_queue():
         assert gone not in src, gone
 
 
-def tl_cli(tmp_path, name, *, declared, carried, rows, extra=()):
+def tl_cli(tmp_path, name, *, declared, carried, rows, extra=(), **design):
     """The real gate end to end."""
     root = tmp_path / "cli"
     root.mkdir(parents=True, exist_ok=True)
-    camp, tree = tl_tree(root, name, declared=declared, carried=carried)
+    camp, tree = tl_tree(root, name, declared=declared, carried=carried, **design)
     ledger = root / "led.json"
     ledger.write_text(json.dumps({"findings": rows}))
     proc = subprocess.run(
@@ -2658,16 +2716,33 @@ def test_a_build_not_of_its_source_is_refused_unless_overridden(tmp_path):
     assert (tree / "staging-admission.json").is_file()
 
 
-def test_the_same_level_without_the_declaration_is_refused_end_to_end(tmp_path):
-    """The other direction: a level with no record and no declaration is a
-    campaign that owes a design record."""
+def test_a_campaign_with_no_reference_pictures_stages_end_to_end(tmp_path):
+    """No declaration and no design record: the pictures are optional, so the
+    campaign stages, and the two design rows are stated as zeros — in the
+    report's INAPPLICABLE section and in the token — never refused."""
     proc, tree = tl_cli(
-        tmp_path, "a-test", declared=None, carried=None,
+        tmp_path, "no-pictures", declared=None, carried=None,
         rows=[live_row(r) for r in LIVE_DESIGN_ROWS],
     )
-    assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert proc.stderr.count("UNBOUND") >= 1
-    assert not (tree / "staging-admission.json").exists()
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert sorted(token["inapplicable"]) == sorted(LIVE_DESIGN_ROWS)
+    assert "validation/design-record.json:references = 0" in proc.stdout, proc.stdout
+    assert "validation/design-record.json:answered = 0" in proc.stdout, proc.stdout
+    assert "2 of 2 finding class(es) are INAPPLICABLE" in proc.stderr, proc.stderr
+
+
+def test_a_campaign_whose_record_is_partial_is_refused_end_to_end(tmp_path):
+    """The other direction: the approved set is named and its record is gone,
+    or the record is present and a picture is unanswered — refused, no token."""
+    for case, design in (("lost", {"readme": True}), ("unanswered", {"references": 2})):
+        proc, tree = tl_cli(
+            tmp_path / case, "a-delve", declared=None, carried=None,
+            rows=[live_row(r) for r in LIVE_DESIGN_ROWS], **design,
+        )
+        assert proc.returncode == 1, (case, proc.stdout + proc.stderr)
+        assert "UNBOUND" in proc.stderr, (case, proc.stderr)
+        assert not (tree / "staging-admission.json").exists(), case
 
 
 # ---------------------------------------------------------------------------

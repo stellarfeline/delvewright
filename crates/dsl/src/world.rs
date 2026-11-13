@@ -183,12 +183,13 @@ pub struct WorldContent {
     pub jumps: Vec<Jump>,
     /// **This campaign is a test level** (spec-0122 §7.2): a level built to try
     /// something, with no approved design record. The staging gate's
-    /// design-record rows measure zero over it, a camera of its record answers
+    /// design-record rows measure zero over it, as over every campaign that
+    /// carries no record, a camera of its record answers
     /// no `design.json` row (its `note` names what it frames), and `true` is
     /// written to `manifest.json` as `test_level: true`; nothing a player meets
     /// changes. A test level that also carries `design.json` is refused
     /// (`DW1061`). Absent or `false` = a campaign, which carries the design
-    /// record step 4 writes.
+    /// record step 4 writes when its design was approved with pictures.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub test_level: bool,
 }
