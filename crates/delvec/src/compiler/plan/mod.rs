@@ -578,6 +578,11 @@ pub struct LinkTakes {
     /// (spec-0135 §4): a `ride` step spliced directly in front of the leg's
     /// end, after any link taken on it.
     pub rides: BTreeMap<usize, crate::compiler::nav::vehicle::RideTake>,
+    /// Leg end (unlinked step index) → the ride on that carries the party
+    /// off the vehicle it sat in for the act before (spec-0135 §5): a `ride`
+    /// step spliced first in front of the leg's end, before any link or ride
+    /// the leg takes.
+    pub leaves: BTreeMap<usize, crate::compiler::nav::vehicle::RideTake>,
 }
 
 impl LinkTakes {
@@ -588,6 +593,7 @@ impl LinkTakes {
             && self.performed.is_empty()
             && self.stood.is_empty()
             && self.rides.is_empty()
+            && self.leaves.is_empty()
     }
 }
 
@@ -1216,6 +1222,7 @@ impl<'a> Plan<'a> {
             campaign,
             &objective_steps,
             &trigger_steps,
+            &path::ride_steps(&cp.steps),
             cp.steps.len(),
         );
         // ---- loops (spec-0086) ----

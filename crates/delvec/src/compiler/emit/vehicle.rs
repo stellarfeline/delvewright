@@ -2,7 +2,7 @@
 //! boarding one does.
 
 use super::*;
-use crate::compiler::nav::vehicle::VehiclePlan;
+use crate::compiler::nav::vehicle::{BOAT_AFLOAT, VehiclePlan};
 use delvewright_dsl::{EquipSlot, VehicleKind};
 
 /// Ticks between two re-seat checks: a replace-mode `schedule`, so a vehicle
@@ -18,13 +18,6 @@ const AT_MARK: &str = "1.5";
 
 /// The advancement a boarding answers through, and its reward function.
 pub(super) const BOARD: &str = "vehicle_board";
-
-/// **Where a boat on a source water cell comes to rest**, over the cell's
-/// floor: the pinned server's save of a boat summoned over its water
-/// (`docs/reference/vehicles-animals-and-targets.md` §5), its `Motion` at
-/// rest. A boat summoned there stays there, so the body the summon places is
-/// the body the save holds (`DW1040`).
-pub(crate) const BOAT_AFLOAT: f64 = 0.523_264_312_744_13;
 
 /// Where a vehicle's body is summoned: the mark's cell centre, a boat afloat
 /// in its water cell where the server keeps it ([`BOAT_AFLOAT`]).

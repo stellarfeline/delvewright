@@ -216,7 +216,10 @@ pub enum Step {
     /// **Ride a vehicle on a leg its objective declares ridden** (spec-0135 §4, §6):
     /// walk to `pos` (the boarding cell), mount the vehicle, be carried along
     /// `medium`, leave and stand at `transport` (the leaving cell). Spliced in
-    /// front of the step whose leg it carries.
+    /// front of the step whose leg it carries. A ride that `stays` ends aboard
+    /// at its last medium cell (`transport`), and the step after it is done
+    /// from the seat; a ride that does not `board` starts aboard at `pos`, the
+    /// cell the last ride stayed at (spec-0135 §5).
     Ride {
         /// The `vehicle/<id>` ridden.
         vehicle_id: String,
@@ -235,6 +238,12 @@ pub enum Step {
         /// The cells the vehicle's body stands in at its mark: the walk to
         /// the boarding cell goes round them.
         body: Vec<[i32; 3]>,
+        /// The party walks to `pos` and mounts; `false` when it is aboard
+        /// already.
+        boards: bool,
+        /// The party stays aboard at the ride's end and does the next step's
+        /// act from the seat.
+        stays: bool,
     },
     /// Assert a scoreboard objective value.
     AssertComplete {
@@ -369,6 +378,38 @@ impl Step {
     }
 }
 
+/// The indices of the `ride` steps of `steps` (spec-0135 §4): path acts whose
+/// arrival takes what precedes the objective each carries the party toward
+/// ([`compute_strict_ancestor_steps`]).
+pub(in crate::compiler::plan) fn ride_steps(steps: &[Step]) -> Vec<usize> {
+    steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s, Step::Ride { .. }))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The `ride` step a ride the route proof took splices into the path
+/// (spec-0135 §4, §6).
+fn ride_step(
+    v: &crate::compiler::nav::vehicle::VehiclePlan,
+    r: &crate::compiler::nav::vehicle::RideTake,
+) -> Step {
+    Step::Ride {
+        vehicle_id: v.id.clone(),
+        kind: v.kind.token(),
+        pos: r.board,
+        medium: r.medium.clone(),
+        rate: v.rate(),
+        transport: r.leave,
+        steering_item: v.steering_item.clone(),
+        body: v.body_cells().into_iter().collect(),
+        boards: r.boards,
+        stays: r.stays,
+    }
+}
+
 /// **Does the carry that ends step `i - 1` complete step `i`?** — the reach a
 /// landing puts the party inside.
 ///
@@ -457,8 +498,11 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   step would wait on a count no body of its making raises.
 ///
 /// * `9` — a step may be `ride` (spec-0135 §6): `{vehicle, kind, board,
-///   medium, rate, leave, steering_item?}` — walk to `board`, mount, be
-///   carried along `medium`, leave and stand at `leave`. A format change for
+///   medium, rate, leave, body, boards, stays, steering_item?}` — walk to
+///   `board`, mount, be carried along `medium`, leave and stand at `leave`;
+///   a ride that does not `board` starts aboard at `board`, and one that
+///   `stays` ends aboard at `leave`, the last medium cell, where the next
+///   step's act is done from the seat (spec-0135 §5). A format change for
 ///   `7`'s reason: an older bot handed one would refuse the kind.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
@@ -557,6 +601,7 @@ impl<'a> Plan<'a> {
             self.campaign,
             &cp.firing.obj_step,
             &cp.firing.trigger_step,
+            &ride_steps(&cp.steps),
             cp.steps.len(),
         );
         (
@@ -1800,7 +1845,7 @@ pub(super) fn build_critical_path(
             transport_by_step[k] = Some(l.to);
         }
     }
-    if !takes.spliced.is_empty() || !takes.rides.is_empty() {
+    if !takes.spliced.is_empty() || !takes.rides.is_empty() || !takes.leaves.is_empty() {
         let n = steps.len();
         let mut new_steps = Vec::with_capacity(n);
         let mut new_transport = Vec::with_capacity(n);
@@ -1811,6 +1856,19 @@ pub(super) fn build_critical_path(
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
         for (k, step) in steps.into_iter().enumerate() {
+            // A ride on off the vehicle the party sat in for the act before
+            // (spec-0135 §5) leads the leg: every link and ride it takes
+            // starts where that ride leaves the party.
+            if let Some(r) = takes.leaves.get(&k)
+                && let Some(v) = vehicles.get(r.vehicle)
+            {
+                new_steps.push(ride_step(v, r));
+                new_transport.push(None);
+                new_sneak.push(false);
+                new_live.push(live_links_by_step[k].clone());
+                new_armed.push(armed_by_step[k].clone());
+                new_armed_ids.push(armed_ids_by_step[k].clone());
+            }
             for &(li, stand) in takes.spliced.get(&k).into_iter().flatten() {
                 let Some(l) = links.get(li) else { continue };
                 spliced_at.push((l.trigger_id.clone(), new_steps.len()));
@@ -1835,16 +1893,7 @@ pub(super) fn build_critical_path(
             if let Some(r) = takes.rides.get(&k)
                 && let Some(v) = vehicles.get(r.vehicle)
             {
-                new_steps.push(Step::Ride {
-                    vehicle_id: v.id.clone(),
-                    kind: v.kind.token(),
-                    pos: r.board,
-                    medium: r.medium.clone(),
-                    rate: v.rate(),
-                    transport: r.leave,
-                    steering_item: v.steering_item.clone(),
-                    body: v.body_cells().into_iter().collect(),
-                });
+                new_steps.push(ride_step(v, r));
                 new_transport.push(None);
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());

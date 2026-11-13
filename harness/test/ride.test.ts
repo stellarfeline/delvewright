@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, drivePoints, vehicleTag } from "../src/executor/ride.ts";
+import { arrivedAt, drivePoints, holdLooksForced, vehicleTag } from "../src/executor/ride.ts";
 import { methods } from "../src/executor/ride.ts";
 import type { RideStep, Vec3Tuple } from "../src/critical-path.ts";
 
@@ -35,13 +35,16 @@ test("arrival is the landing tolerance around the last cell", () => {
 /** What the mock server answers a census read with; a test sets it. */
 const census: { read: boolean | undefined } = { read: true };
 
-function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
+function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[], aboardAt?: { vehicle: string; y: number; at: Vec3Tuple }) {
   const sent: { name: string; data: unknown }[] = [];
   const walked: Vec3Tuple[] = [];
   const reads = [...serverReads];
-  let mounted = false;
+  let mounted = serverReads.length > 0 && aboardAt !== undefined;
   const self = {
     rides: [] as unknown[],
+    aboard: aboardAt as { vehicle: string; y: number; at: Vec3Tuple } | undefined,
+    releaseSeatLooks: undefined as (() => void) | undefined,
+    leaveSeat: methods.leaveSeat,
     requireBot: () => ({
       inventory: { items: () => [{ name: "carrot_on_a_stick" }] },
       equip: async () => {},
@@ -49,7 +52,16 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[]) {
       lookAt: async () => {},
       on: () => {},
       removeListener: () => {},
-      entity: { position: { x: 0, y: 0, z: 0 } },
+      entity: {
+        position: {
+          x: 0,
+          y: 0,
+          z: 0,
+          set(x: number, y: number, z: number) {
+            Object.assign(this, { x, y, z });
+          },
+        },
+      },
       mount: () => {
         mounted = true;
       },
@@ -79,6 +91,8 @@ const step: RideStep = {
     body: [[8, 67, 3], [8, 68, 3]],
   rate: 10,
   leave: [11, 67, 4],
+  boards: true,
+  stays: false,
   steeringItem: "minecraft:carrot_on_a_stick",
 };
 
@@ -176,4 +190,65 @@ test("a cart is waited for, never driven", async () => {
   delete (cart as { steeringItem?: string }).steeringItem;
   await methods.ride.call(self as never, cart);
   assert.equal(sent.filter((s) => s.name === "vehicle_move").length, 0);
+});
+
+// spec-0135 §5: an act done from the seat.
+const boatOut: RideStep = {
+  action: "ride",
+  vehicle: "vehicle/gull",
+  kind: "boat",
+  board: [3, 4, 3],
+  pos: [3, 4, 3],
+  medium: [[4, 3, 3], [5, 3, 3], [6, 3, 3]],
+  body: [[4, 3, 3], [4, 4, 3]],
+  rate: 5,
+  leave: [6, 3, 3],
+  boards: true,
+  stays: true,
+};
+
+test("a ride that stays leaves the bot aboard, unseated by nothing", async () => {
+  const { self, sent, walked } = mock([
+    { riding: true, pos: [4.5, 3.11, 3.5] },
+    { riding: true, pos: [6.5, 3.11, 3.5] },
+  ]);
+  await methods.ride.call(self as never, boatOut);
+  assert.deepEqual(walked, [boatOut.board], "walks to the boarding cell and nowhere after");
+  assert.equal(sent.filter((s) => s.name === "player_input").length, 0, "no sneak: the bot stays seated");
+  assert.equal(self.aboard?.vehicle, "vehicle/gull");
+  const rec = self.rides[0] as { passed: boolean; left: boolean };
+  assert.ok(rec.passed && !rec.left);
+});
+
+test("a ride on from aboard boards nothing and needs the bot seated", async () => {
+  const on: RideStep = { ...boatOut, board: [6, 3, 3], pos: [6, 3, 3], medium: [[6, 3, 3], [7, 3, 3]], leave: [9, 4, 3], boards: false, stays: false };
+  const seated = mock(
+    [
+      { riding: true, pos: [6.5, 3.11, 3.5] },
+      { riding: true, pos: [7.5, 3.11, 3.5] },
+      { riding: false, pos: [8.5, 4, 3.5] },
+    ],
+    { vehicle: "vehicle/gull", y: 3.52, at: [6.5, 3.11, 3.5] },
+  );
+  await methods.ride.call(seated.self as never, on);
+  assert.deepEqual(seated.walked, [on.leave], "no walk to a boarding cell; the walk off is to the shore");
+  const moves = seated.sent.filter((s) => s.name === "vehicle_move").map((s) => s.data as { y: number });
+  assert.ok(moves.length > 0 && moves.every((m) => m.y === 3.52), "driven at the height the first ride reported");
+  assert.equal(seated.self.aboard, undefined);
+  const elsewhere = mock([{ riding: true, pos: [6.5, 3.11, 3.5] }], { vehicle: "vehicle/tern", y: 3.52, at: [6.5, 3.11, 3.5] });
+  await assert.rejects(() => methods.ride.call(elsewhere.self as never, on), /sits in vehicle\/tern/);
+});
+
+test("a seat holds every look forced, and leaving it lets go", () => {
+  const forced: (boolean | undefined)[] = [];
+  const bot = {
+    lookAt: async (_p: never, force?: boolean) => {
+      forced.push(force);
+    },
+  };
+  const release = holdLooksForced(bot);
+  void bot.lookAt(undefined as never, false);
+  release();
+  void bot.lookAt(undefined as never, false);
+  assert.deepEqual(forced, [true, false]);
 });

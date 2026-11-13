@@ -41,11 +41,15 @@ fn transitive_closure<'a>(
 /// A `trigger` step (`trigger_step`) is a path act rather than a DAG node: it
 /// takes what precedes the objective it is performed in front of, and it
 /// precedes every later step on the path — the arrivals past the last objective
-/// included.
+/// included. A `ride` step (`ride_steps`, spec-0135 §4) is a path act too, and
+/// takes what precedes the objective it carries the party toward: the world a
+/// ride arrives in is the one the party rides through on the way to that
+/// objective, never the world as it loaded.
 pub(in crate::compiler::plan) fn compute_strict_ancestor_steps(
     campaign: &Campaign,
     obj_step: &BTreeMap<String, usize>,
     trigger_step: &BTreeMap<String, usize>,
+    ride_steps: &[usize],
     steps: usize,
 ) -> BTreeMap<usize, BTreeSet<usize>> {
     // Quest direct `depends_on`, then its transitive-ancestor closure.
@@ -120,7 +124,7 @@ pub(in crate::compiler::plan) fn compute_strict_ancestor_steps(
     // precedes the objective it is performed in front of, since the party
     // arrives at it on the way to that objective.
     let mut trigger_anc: Vec<(usize, BTreeSet<usize>)> = Vec::new();
-    for &t in trigger_step.values() {
+    for &t in trigger_step.values().chain(ride_steps) {
         let next = obj_step.values().copied().filter(|&o| o > t).min();
         let mut anc = next.and_then(|n| out.get(&n)).cloned().unwrap_or_default();
         anc.retain(|&a| a < t);

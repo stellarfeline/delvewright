@@ -68,6 +68,9 @@ export const methods = {
    */
   async awaitTransport(this: MineflayerExecutor, dest: readonly [number, number, number]): Promise<void> {
     const bot = this.requireBot();
+    // A teleport unseats a rider (the vanilla record §5): an act done from a
+    // seat that carries the party leaves it standing where it lands.
+    this.leaveSeat();
     const [x, y, z] = dest;
     const arrived = await this.waitFor(
       () => this.atTransportDest(dest),

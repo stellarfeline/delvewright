@@ -2064,6 +2064,7 @@ jobs:
           PY
       # spec-0135 §7: the gallery owes a declared ride of each kind, and the bot
       # rides every ride step the build exported — boarded, arrived and left,
+      # or kept aboard where the step stays for an act from the seat (§5),
       # each read on the server. The count is the build's own, never written
       # here.
       - name: the gallery's rides are ridden, one of each kind
@@ -2082,9 +2083,16 @@ jobs:
               sys.exit(f"the gallery's path rides {kinds}, not one of each kind")
           if [x["vehicle"] for x in rides] != [s["vehicle"] for s in steps]:
               sys.exit("the bot's record does not carry the build's ride steps, in order")
-          for x in rides:
-              if not (x.get("passed") and x.get("left") and x.get("seat") is not None):
-                  sys.exit(f"ride {x['vehicle']} ({x['kind']}) was not boarded, ridden to its end and left: {x.get('why')}")
+          stays = sum(1 for s in steps if s["stays"])
+          print(f"ride steps that stay aboard for an act from the seat: {stays} of {len(steps)}")
+          if stays < 1:
+              sys.exit("no ride step stays aboard: the gallery's act from a seat binds nothing")
+          for s, x in zip(steps, rides):
+              if not (x.get("passed") and x.get("seat") is not None):
+                  sys.exit(f"ride {x['vehicle']} ({x['kind']}) was not boarded and ridden to its end: {x.get('why')}")
+              if bool(x.get("left")) == s["stays"]:
+                  want = "left aboard for the act from its seat" if s["stays"] else "left"
+                  sys.exit(f"ride {x['vehicle']} ({x['kind']}) was not {want}: {x.get('why')}")
           PY
       # A crush gate's death is walked at the one boundary the build names
       # (`death-plan.json` `trial_at`), never at one the run's pathfinder found:

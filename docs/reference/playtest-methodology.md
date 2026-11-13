@@ -268,6 +268,8 @@ parkour hop`.
 
 **A ride that carries a census reads it aboard.** Where the ridden objective waits for its own rider, the `ride` step carries a `riders` row; at the ride's end, still seated, the bot waits one census period and reads the datum on the server. It is the one body the census counts: a read that is not 1, a gate that needs more than one rider, or a row for another vehicle fails the ride by name.
 
+**An act from the seat keeps the bot aboard.** A `ride` step that `stays` ends with the arrival: the bot is not unseated, its client body is set where the server holds the rider, and the next step's act — a container opened, a block pressed, a hitbox or an NPC answered — is done with no walk. A `ride` step that does not `board` goes on only if the server already seats the bot on that vehicle. A walk while seated, or a take off a holder or the floor, fails by name: the compiler leads every leg after an act from a seat with a ride on (spec-0135 §5). Whether a rider's eye reaches the target is vanilla, read once from the pinned jar (`vehicles-animals-and-targets.md` §15); the objective's own marker is the verdict.
+
 **What the ladder does not assert.** That the server takes a reported move whole, and that `/ride` seats and unseats a body, are vanilla, measured once in the record and never re-checked. `rides[]` carries the distance reported beside the distance the server saw for a reader; the verdict is the arrival.
 
 ## What the ladder asserts at a sculk device

@@ -1031,7 +1031,8 @@ const ANCHORS: &[Anchor] = &[
 /// the cabin and the brewing stand at the long gallery's far end are filled by
 /// `loot` — the stand is the gallery's container that is not a box, five slots
 /// with its own rules for each; the one container no declaration claims is the
-/// long hall's end chest, in a place of its own, which is the gallery's scenery.
+/// annex's corner chest, which a stage-7 batch lays in a place of its own: the
+/// gallery's scenery.
 const CONTAINERS: &[Anchor] = &[
     Anchor {
         name: "anchor/cabin-barrel",
@@ -4981,15 +4982,6 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
-        name: "anchor/long-hall-chest",
-        pos: [5, 2, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH - 1],
-        facing: None,
-        trigger_block: None,
-        note: "the top of the chest against the end room's far wall: what the end room holds, \
-               in front of the eye that arrives at the end",
-        role: None,
-    },
-    Anchor {
         name: "anchor/long-hall-cart",
         pos: [LONG_HALL_RAIL_X, 1, LONG_HALL_RAIL_FROM],
         facing: None,
@@ -5050,6 +5042,24 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         trigger_block: None,
         note: "the east wall's foot past the basin's far rim: where the sluice lever a rider \
                rows to is set (spec-0135)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-crate",
+        pos: [LONG_HALL_BASIN_X.1, 2, LONG_HALL_BASIN_Z.1],
+        facing: None,
+        trigger_block: None,
+        note: "the barrel afloat in the basin's far corner, one block over the water: the crate \
+               a rider opens from the boat's seat (spec-0135 §5)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-crate-alongside",
+        pos: [LONG_HALL_BASIN_X.1 - 1, 1, LONG_HALL_BASIN_Z.1 - 1],
+        facing: None,
+        trigger_block: None,
+        note: "the water beside the floating crate: where the boat comes alongside it \
+               (spec-0135 §5)",
         role: None,
     },
     Anchor {
@@ -5160,6 +5170,13 @@ fn build_long_hall() -> Structure {
         "minecraft:polished_deepslate",
     );
     fill([bx0, 1, bz0], [bx1, 1, bz1], "minecraft:water[level=0]");
+    // The crate afloat in its far corner (spec-0135 §5): a barrel one block
+    // over the water, touching its surface, opened from the boat's seat.
+    fill(
+        [bx1, 2, bz1],
+        [bx1, 2, bz1],
+        "minecraft:barrel[facing=up,open=false]",
+    );
     // The rail line (spec-0135 §7): level plain rail, and the stop past its
     // far end.
     let (rx, r0, r1) = (LONG_HALL_RAIL_X, LONG_HALL_RAIL_FROM, LONG_HALL_RAIL_TO);
@@ -5179,13 +5196,6 @@ fn build_long_hall() -> Structure {
         [rx, 1, r0 - 1],
         [rx, 1, r0 - 1],
         "minecraft:polished_deepslate",
-    );
-    // What the end room holds: a chest against its far wall, on the hall's
-    // axis, in front of the eye that arrives at the end.
-    fill(
-        [5, 1, room_end - 1],
-        [5, 1, room_end - 1],
-        "minecraft:chest[facing=north,type=single]",
     );
     let mut palette = Palette::new();
     let blocks = cells
@@ -5231,8 +5241,14 @@ fn write_long_hall(out: &Path) {
         .collect();
     for a in LONG_HALL_ANCHORS {
         let [x, y, z] = a.pos;
+        // A holder's anchor names the container it stands on (a `collect`'s
+        // `holder`), and a boat's alongside names the water it floats on:
+        // its own cell is the barrel or the water, and the cell over it clear.
+        let holds = cells.get(&[x, y, z]).is_some_and(|(name, _)| {
+            matches!(name.as_str(), "minecraft:barrel" | "minecraft:water")
+        });
         assert!(
-            !solid.contains(&[x, y, z]) && !solid.contains(&[x, y + 1, z]),
+            (holds || !solid.contains(&[x, y, z])) && !solid.contains(&[x, y + 1, z]),
             "{LONG_HALL_ID}: `{}` at {:?} is not a clear cell",
             a.name,
             a.pos

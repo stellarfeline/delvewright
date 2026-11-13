@@ -18,11 +18,16 @@ export const methods = {
     // trigger is sent HOWEVER the walk ended — arriving is the means, the trigger is
     // the step — and `chatTrigger` records the server's answer so a step that then
     // times out can name which side swallowed it.
-    await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak, {
-      objective: step.objective,
-      transport: step.transport,
-    });
-    await this.atStance();
+    if (this.aboard === undefined) {
+      await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.atStance();
+    } else {
+      // spec-0135 §5: spoken to from the seat the ride before it stayed in.
+      process.stderr.write(`[seat] talk-to ${step.npc}: from ${this.aboard.vehicle}'s seat\n`);
+    }
     // The trigger stands in for a dialog button this bot cannot click — so before
     // it is sent, prove the button was REACHABLE: cast the crosshair ray a player
     // casts and require this NPC's own hitbox to be what it meets first. Without

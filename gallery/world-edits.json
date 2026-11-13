@@ -993,6 +993,47 @@
         ],
         "id": "batch/light-the-floor-lamps",
         "note": "A row of floor lamps along the west wall, set in when the party reaches the counter (spec-0134 §6). Exercises `applied: by-effect` and `apply-edits`: resolved and judged at build with and without it, written by `edit_light_the_floor_lamps`."
+      },
+      {
+        "applied": "at-build",
+        "area": "area/annex",
+        "edits": [
+          {
+            "name": "region/annex-corner",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/annex-threshold",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                -2,
+                0,
+                -2
+              ],
+              "min": [
+                -2,
+                0,
+                -2
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:chest[facing=south,type=single]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/annex-corner",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/annex-a-chest-nobody-claims",
+        "note": "A chest in the annex entry's corner that no declaration claims: the gallery's one scenery container, in the one place holding no container that matters, so the containers notice has something to speak for."
       }
     ]
   },

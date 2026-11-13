@@ -104,6 +104,11 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/open-the-crate",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/ride-the-line",
         "quest": "quest/long-hall"
       },

@@ -4356,6 +4356,26 @@
             "after": [
               "obj/row-the-basin"
             ],
+            "anchor": "anchor/long-hall-crate-alongside",
+            "count": 1,
+            "happening": {
+              "subject": "anchor/long-hall-crate",
+              "text": "the party comes alongside the floating crate and opens it from the boat",
+              "verb": "gains"
+            },
+            "hint": "A crate floats in the basin's far corner; take the catch from it, still in the boat.",
+            "holder": "anchor/long-hall-crate",
+            "id": "obj/open-the-crate",
+            "item": "minecraft:cod",
+            "item_name": "Salted Cod",
+            "ride": "vehicle/yard-skiff",
+            "title": "Take the catch from the floating crate",
+            "type": "collect"
+          },
+          {
+            "after": [
+              "obj/open-the-crate"
+            ],
             "happening": {
               "subject": "npc/groom",
               "text": "The groom tells the party the cart still runs.",

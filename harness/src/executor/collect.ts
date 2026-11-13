@@ -28,6 +28,13 @@ const DROP_SEARCH_NEAR = WAVE_ENGAGE_NEAR;
 const FRAME_CHECK_MS = 150;
 
 /**
+ * How long a collect waits for an opened container's contents to reach the
+ * client before it reads the window as empty: the open resolves on the
+ * window's opening, and the stack can arrive after it.
+ */
+const WINDOW_CONTENTS_MS = 3000;
+
+/**
  * The dropped `item` (unnamespaced id) nearest `anchor` within `radius` blocks,
  * off the item entities the client tracks, or `undefined` when none is in sight.
  */
@@ -91,6 +98,13 @@ export const methods = {
    */
   async collect(this: MineflayerExecutor, step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    const seated = this.aboard;
+    if (seated !== undefined && (step.holder !== undefined || step.droppedBy !== undefined)) {
+      throw new Error(
+        `collect ${step.item}: the bot sits in ${seated.vehicle}, and a take off a holder ` +
+          "or the floor is done on foot (spec-0135 §5)",
+      );
+    }
     if (step.holder !== undefined) {
       await this.takeFromHolder(step, step.holder);
       return;
@@ -105,11 +119,20 @@ export const methods = {
       await this.requireObjective(step.objective, `collect ${step.item}`);
       return;
     }
-    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
-      objective: step.objective,
-      transport: step.transport,
-    });
-    await this.atStance();
+    if (seated !== undefined) {
+      // spec-0135 §5: opened from the seat, at the eye the compiler proved
+      // has the container in reach and in sight.
+      process.stderr.write(
+        `[seat] collect ${step.item}: opening [${step.pos.join(", ")}] from ${seated.vehicle}'s seat at ` +
+          `${fmt(bot.entity.position)}\n`,
+      );
+    } else {
+      await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.atStance();
+    }
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,
@@ -122,7 +145,32 @@ export const methods = {
     }
     const chest = await bot.openContainer(block);
     try {
-      for (const item of chest.containerItems()) {
+      let held = chest.containerItems();
+      if (held.length === 0) {
+        // The server's own reading of the block beside the client's: a window
+        // that shows nothing is told apart from a container that holds nothing.
+        const from = this.chatMark();
+        bot.chat(
+          `/tellraw @s ${JSON.stringify([{ text: "[dw:holds " }, { nbt: "Items", block: step.pos.join(" ") }, { text: "]" }])}`,
+        );
+        // mineflayer resolves the open on the window's opening, and its
+        // contents can come after: the gallery's crate opened from a boat's
+        // seat read empty, the server holding the stack, and full 600 ms on.
+        const by = Date.now() + WINDOW_CONTENTS_MS;
+        while (held.length === 0 && Date.now() < by) {
+          await delay(REACH_POLL_MS);
+          held = chest.containerItems();
+        }
+        process.stderr.write(
+          `[collect] ${step.item}: the window showed nothing at first; the server says ` +
+            `${this.chatSince(from).lines.join(" | ").slice(0, 400) || "nothing"}\n`,
+        );
+      }
+      process.stderr.write(
+        `[collect] ${step.item}: the ${block.name} at [${step.pos.join(", ")}] opened as window ` +
+          `${chest.id} holding ${held.map((i) => `${i.count} ${i.name}`).join(", ") || "nothing"}\n`,
+      );
+      for (const item of held) {
         await chest.withdraw(item.type, null, item.count);
       }
     } finally {

@@ -106,6 +106,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
 - Every objective kind takes `ride`: the leg to it is ridden on the named vehicle.
+- A ridden objective whose act a rider can do — a container opened, a lever or button pressed, a hitbox or an NPC clicked — is done from the seat of a boat, a raft or a pig, and the next objective ridden on the same vehicle goes on without getting off.
 - A census counts a vehicle's riders: `state[].counts.of: {"riders": id}`.
 - A vehicle takes `seated` (`at-load` or `by-story`: first placed by a `seat-vehicle`) and `left` (`at-its-mark` or `where-left`: a riderless body stays where its rider left it).
 - Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
