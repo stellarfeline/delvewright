@@ -2392,8 +2392,11 @@ fn seal_unopened(
 ///
 /// # What a column crossing MEANS, and the one asymmetry
 ///
-/// A body stands on a standable cell of the span at the wall plane and steps out
-/// of it. For a `walk` contact it must be able to step out on **both** sides:
+/// A body rests in a cell of the span at the wall plane — standing, holding,
+/// afloat or swimming, as the reach graph's rest states have it
+/// ([`crate::compiler::nav::World::rests_with_body_in`], so a sea whose surface
+/// lies a cell under the plane is crossed afloat with the head in it) — and
+/// moves out of it. For a `walk` contact it must be able to step out on **both** sides:
 /// walking ground is two-way and a front a body can only enter is not a
 /// hand-off. For a `drop` contact only the **high** side is required: the far
 /// side is `DW0837`'s, which reaches it by the reach graph's fall over the
@@ -2442,21 +2445,30 @@ fn contact_profile(s: &PlacedSeam, world: &crate::compiler::nav::World) -> Vec<i
             c[s.normal_axis] = s.plane;
             c[col_axis] = u;
             c[scan_axis] = v;
-            if !world.is_standable(narrow(c)) {
-                continue;
-            }
-            let n = steps_out(world, narrow(c));
-            // A move onto a side lands anywhere past the plane on it: a jump
-            // clears more than the one cell a step takes.
-            let side = |off: i64| {
-                n.iter()
-                    .any(|x| (i64::from(x[s.normal_axis]) - s.plane).signum() == off.signum())
-            };
-            let crosses = if need_both {
-                side(a_off) && side(b_off)
-            } else {
-                side(high_off)
-            };
+            // Where a body rests with its body in this cell, as the reach
+            // graph has it: standing, holding, afloat or swimming — a sea
+            // whose surface lies one cell under the plane is crossed afloat
+            // with the head in it. Only a state at the plane is a column of
+            // the front; a feet cell off the plane belongs to a side.
+            let crosses = world
+                .rests_with_body_in(narrow(c))
+                .into_iter()
+                .filter(|r| i64::from(r[s.normal_axis]) == s.plane)
+                .any(|r| {
+                    let n = steps_out(world, r);
+                    // A move onto a side lands anywhere past the plane on
+                    // it: a jump clears more than the one cell a step takes.
+                    let side = |off: i64| {
+                        n.iter().any(|x| {
+                            (i64::from(x[s.normal_axis]) - s.plane).signum() == off.signum()
+                        })
+                    };
+                    if need_both {
+                        side(a_off) && side(b_off)
+                    } else {
+                        side(high_off)
+                    }
+                });
             if crosses {
                 out.push(u);
                 break;
@@ -4953,5 +4965,94 @@ mod hatch_refusal_tests {
         hatch_refusals(&w, &w, run, &mut findings);
         let codes: Vec<&str> = findings.iter().map(|(c, _)| c.id()).collect();
         assert_eq!(codes, ["DW1066", "DW0838"], "{codes:?}");
+    }
+}
+
+#[cfg(test)]
+mod contact_profile_tests {
+    use super::*;
+    use crate::compiler::nav::World;
+    use delvewright_dsl::siteplan::Face;
+
+    /// A `walk` contact on the south face of `node/cove` at z = 10, its
+    /// opening x 0..5 at y 63 — the walk plane a place floored at y 63 has.
+    fn seam() -> PlacedSeam {
+        let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
+        PlacedSeam {
+            edge: delvewright_dsl::ids::EdgeId("edge/cove-to-sea".to_string()),
+            class: "walk",
+            a: node("node/cove"),
+            b: node("node/sea"),
+            face: Face::South,
+            normal_axis: 2,
+            plane: 10,
+            opening: ([0, 63, 10], [5, 63, 10]),
+            shared: ([0, 63, 10], [5, 66, 10]),
+            crossing: Crossing::Contact,
+            rise: 0,
+            stair_in: None,
+            form: "the cove opens onto the sea".to_string(),
+            shut: false,
+        }
+    }
+
+    /// Open sea on both sides of the plane: a bed at y 55 and water y 56..62,
+    /// its surface one cell under the opening, as a sea at level 62 lies under
+    /// a place floored at 63. `walled` stands a wall across the plane from the
+    /// bed to above the opening.
+    fn sea(walled: bool) -> World {
+        let mut solid = BTreeSet::new();
+        let mut water = BTreeSet::new();
+        for x in -3..9 {
+            for z in 4..17 {
+                solid.insert([x, 55, z]);
+                for y in 56..=62 {
+                    if walled && z == 10 {
+                        solid.insert([x, y, z]);
+                    } else {
+                        water.insert([x, y, z]);
+                    }
+                }
+                if walled && z == 10 {
+                    for y in 63..=66 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        World::from_solid_and_flooded(solid, water)
+    }
+
+    /// The same front on dry ground: a floor at y 62, so a body stands at 63.
+    fn ground() -> World {
+        let mut solid = BTreeSet::new();
+        for x in -3..9 {
+            for z in 4..17 {
+                solid.insert([x, 62, z]);
+            }
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// `DW0877` asks the reach graph where a body crosses: a front of open
+    /// water is crossed afloat with the head in the plane, every column of it,
+    /// as on dry ground; a front walled across is crossed nowhere. Red on a
+    /// profile that counts only a cell a body stands in: the sea has none at
+    /// the plane, and its profile was empty.
+    #[test]
+    fn an_open_water_front_is_crossed_afloat_and_a_walled_one_is_not() {
+        let s = seam();
+        let all: Vec<i64> = (0..=5).collect();
+        assert_eq!(contact_profile(&s, &ground()), all, "dry ground");
+        assert_eq!(
+            contact_profile(&s, &sea(false)),
+            all,
+            "open water is crossed afloat in every column"
+        );
+        assert_eq!(
+            contact_profile(&s, &sea(true)),
+            Vec::<i64>::new(),
+            "a wall across the plane is crossed nowhere"
+        );
     }
 }

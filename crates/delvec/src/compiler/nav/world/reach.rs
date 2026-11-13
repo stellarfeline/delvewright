@@ -2838,6 +2838,40 @@ impl World {
         v
     }
 
+    /// **The rest states of the reach graph a body holds with its body in
+    /// `c`**: `c` itself where it is a rest state ([`World::rest_kind`]), and
+    /// the water rest state under it ([`RestKind::Afloat`],
+    /// [`RestKind::Submerged`]) whose head is in `c` — a body afloat on a sea
+    /// whose surface lies one cell under a plane has its head in that plane.
+    /// A standing or holding body under `c` is not counted: its feet are not
+    /// in `c` and it does not pass through `c` unless it moves there. The one
+    /// answer to "where does a body in this cell rest" that the seam profile
+    /// (`DW0877`) and the contract's swum water ([`swum_at`](World::swum_at))
+    /// both ask, so the two cannot drift on what water holds.
+    pub fn rests_with_body_in(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        let mut out = Vec::with_capacity(2);
+        if self.rest_kind(c).is_some() {
+            out.push(c);
+        }
+        out.extend(self.swum_at(c).into_iter().filter(|x| *x != c));
+        out
+    }
+
+    /// **The water rest states a body swims in with its feet or head in
+    /// `c`**: `c` and the cell under it, each where it is
+    /// [`RestKind::Afloat`] or [`RestKind::Submerged`].
+    pub fn swum_at(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        [c, [c[0], c[1] - 1, c[2]]]
+            .into_iter()
+            .filter(|x| {
+                matches!(
+                    self.rest_kind(*x),
+                    Some(RestKind::Afloat | RestKind::Submerged)
+                )
+            })
+            .collect()
+    }
+
     /// The rest state `c` holds a body in, if any (spec-0113 §4.1).
     pub fn rest_kind(&self, c: [i32; 3]) -> Option<RestKind> {
         let fp = Footprint::player();
