@@ -978,7 +978,7 @@ fn build_as(
     // after validation and analysis, before a piece is seated and before
     // anything is written under `-o` — because the two documents are already in
     // hand, and a refusal at this point leaves the creator's previous build tree
-    // on disk, which is what `delvec cameras --preview` needs to place the
+    // on disk, which is what `delvec cameras`' quick frames need to place the
     // camera the refusal asks for. Not at validation: every view command
     // validates first, so a validation-tier refusal would refuse the instrument.
     {

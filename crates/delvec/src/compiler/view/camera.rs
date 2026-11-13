@@ -48,7 +48,9 @@
 //!   [`crate::compiler::view::frames::HQ_EXPOSURE`], derived by the engine. A
 //!   record that states one is refused ([`DW_EXPOSURE_STATED`]); a room that
 //!   reads too dark is lit, never exposed.
-//! - `width`, `height` and `spp` are the frame and the path tracer's sample target:
+//! - `width`, `height` and `spp` are the frame and the path tracer's sample target
+//!   of the delivered (`--hq`) picture — `spp` 300 in daylight, the showcase
+//!   budget of `showcase-shots.md` §3.8 ([`crate::compiler::view::panorama::DEFAULT_SPP`]):
 //!   everything else the renderer needs to reproduce the frame comes from the
 //!   build (the written world and its loaded chunks) or from the record (the sky).
 //! - `answers` names the row of `design.json` whose approved image the camera is
@@ -64,7 +66,9 @@
 //! truck=3,rise=3` emits, beside each camera, the camera moved each way by each step, and
 //! writes every candidate into `candidates.json` in the same record format — so the
 //! one a creator picks, by looking at it beside the approved image, is copied into
-//! `design/cameras.json` verbatim. `--draft` renders any of them small and cheap.
+//! `design/cameras.json` verbatim. Every one is drawn quick by default — the
+//! frame to work in, in seconds; `--draft` path traces them small and cheap, and
+//! `--hq` draws the delivered pictures.
 
 use std::collections::BTreeSet;
 
@@ -1460,7 +1464,7 @@ pub(crate) fn prove_showcase(
             }
             Source::Estimated => {
                 "The geometry is what the picture is of, so it is never moved: move the camera \
-                 (`delvec cameras --preview` draws it and names the block beside the lens)"
+                 (`delvec cameras` draws it quick and names the block beside the lens)"
             }
         };
         let cell = [

@@ -441,7 +441,7 @@ fn main() -> ExitCode {
             only,
             bracket,
             draft,
-            preview,
+            hq,
             draw,
         }) => delvec::compiler::view::cli::run_cameras(
             build_dir,
@@ -451,9 +451,10 @@ fn main() -> ExitCode {
             delvec::compiler::view::camera::EmitOptions {
                 only: only.clone(),
                 bracket: *bracket,
-                draft: *draft,
+                draft: delvec::compiler::view::cli::Pass::of(*hq, *draft)
+                    == delvec::compiler::view::cli::Pass::Draft,
             },
-            *preview,
+            delvec::compiler::view::cli::Pass::of(*hq, *draft),
             draw,
             &mut |cams, ledger| camera_stands(campaign, &cli.prefabs, cli.json, cams, ledger),
         ),

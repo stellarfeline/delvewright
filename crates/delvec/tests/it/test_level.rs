@@ -192,7 +192,7 @@ fn record(camp: &Path, cam: serde_json::Value) {
 
 /// **A test level's camera answers no approved image.** Its row states no
 /// `answers` and names what it frames in `note`, with a stated sky: the build
-/// passes with no `design.json`, and `delvec cameras --preview` draws it. The
+/// passes with no `design.json`, and `delvec cameras` draws it quick. The
 /// same row on a campaign that is not a test level is refused `DW0721`, by the
 /// build and by `delvec cameras`, naming the camera.
 #[test]
@@ -222,7 +222,6 @@ fn a_test_levels_camera_answers_no_row_and_is_drawn() {
         test.to_str().unwrap(),
         "-o",
         shots.to_str().unwrap(),
-        "--preview",
         "--prefabs",
         common::prefabs_dir().to_str().unwrap(),
     ]);
@@ -250,7 +249,6 @@ fn a_test_levels_camera_answers_no_row_and_is_drawn() {
         campaign.to_str().unwrap(),
         "-o",
         tmp.join("shots-campaign").to_str().unwrap(),
-        "--preview",
         "--prefabs",
         common::prefabs_dir().to_str().unwrap(),
     ]);
