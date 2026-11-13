@@ -1626,3 +1626,67 @@ fn a_ride_arrives_after_what_precedes_its_objective() {
     );
     assert!(linked.gate_fired_before(talk, exit));
 }
+
+/// A world-edits batch judges the vehicle class before the route's verdict,
+/// as the final build does: a leg declared ridden on a boat seated on the
+/// floor, walled off by a course two high, is refused as the boat out of its
+/// medium (`DW1097`) at the batch's door, never as the walk it is not
+/// (`DW0311`). The batch only stamps one cell of the shell; red on a batch
+/// door that asks the route proof alone.
+#[test]
+fn a_batch_names_an_unseated_ride_by_its_vehicle_not_as_a_walk() {
+    let boat = r#"{ "id": "vehicle/v", "entity": "minecraft:oak_boat",
+        "at": { "anchor": "anchor/floor" },
+        "bounds": { "anchor": "anchor/room", "extent": [9, 3, 3] } }"#;
+    let bay = Bay {
+        step: Some(2),
+        ride: Some("vehicle/v"),
+        ..Bay::default()
+    };
+    // The final build's own door, with no batch.
+    let (code, msg) = refused("unseated-final", bay, boat);
+    assert_eq!(code, "DW1097", "{msg}");
+
+    let (dir, lib) = write("unseated-batch", bay, boat, "");
+    let doc = serde_json::json!({
+        "dsl_version": DSL_VERSION,
+        "campaign_id": "hello-world",
+        "stage": "world-edits",
+        "content": { "batches": [{
+            "id": "batch/stamp",
+            "area": "area/keep",
+            "edits": [
+                {
+                    "verb": "select",
+                    "name": "region/corner",
+                    "shape": {
+                        "kind": "box",
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": format!("prefab/{ROOM}") },
+                        "min": [20, 0, 0],
+                        "max": [20, 0, 0]
+                    }
+                },
+                {
+                    "verb": "fill",
+                    "region": "region/corner",
+                    "recipe": { "blocks": [{ "block": "minecraft:stone", "weight": 1.0 }], "scale": 1.0 }
+                }
+            ]
+        }]}
+    });
+    std::fs::write(
+        dir.join("world-edits.json"),
+        serde_json::to_string_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+    let (code, msg) = match try_build(&dir, &lib) {
+        Ok(_) => panic!("expected the build to be refused"),
+        Err(BuildFailure::Diagnostic { code, message }) => (code.to_string(), message),
+        Err(e) => panic!("expected a diagnostic, got {e:?}"),
+    };
+    assert!(
+        msg.contains("after world-edits batch `batch/stamp`"),
+        "the batch's door is the one that refuses: {code}: {msg}"
+    );
+    assert_eq!(code, "DW1097", "{msg}");
+}
