@@ -891,32 +891,45 @@ pub type SeatActOf<'a> = dyn Fn(&VehiclePlan, [i32; 3]) -> bool + 'a;
 /// The seats every vehicle a ride leg's party can board carries
 /// (`DW1099`'s last arm): the seats of every vehicle with a boarding cell the
 /// party walks to from `from` and whose ride reaches `goal` — by leaving, or
-/// by the act `seat_act` asks after done from its seat.
+/// by the act `seat_act` asks after done from its seat. The leg's own vehicle
+/// `first` is counted first, and the count stops at [`PARTY_SEATS`]: the
+/// rule asks whether the party is seated, and a vehicle that carries no
+/// leg tries every leaving cell before it says so. Under four, every vehicle
+/// was asked and the count is exact.
 pub fn boardable_seats(
     world: &World,
     vehicles: &[VehiclePlan],
+    first: usize,
     from: [i32; 3],
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
     seat_act: Option<&SeatActOf<'_>>,
 ) -> u32 {
-    (0..vehicles.len())
-        .filter(|&i| {
-            let v = &vehicles[i];
-            let acts = seat_act.map(|f| move |m: [i32; 3]| f(v, m));
-            ride_of(
-                world,
-                i,
-                v,
-                RideFrom::Foot(from),
-                walks,
-                goal,
-                acts.as_ref().map(|f| f as &dyn Fn([i32; 3]) -> bool),
-            )
-            .is_ok()
-        })
-        .map(|i| vehicles[i].seats)
-        .sum()
+    let order = std::iter::once(first)
+        .filter(|&i| i < vehicles.len())
+        .chain((0..vehicles.len()).filter(|&i| i != first));
+    let mut seats = 0;
+    for i in order {
+        if seats >= PARTY_SEATS {
+            break;
+        }
+        let v = &vehicles[i];
+        let acts = seat_act.map(|f| move |m: [i32; 3]| f(v, m));
+        if ride_of(
+            world,
+            i,
+            v,
+            RideFrom::Foot(from),
+            walks,
+            goal,
+            acts.as_ref().map(|f| f as &dyn Fn([i32; 3]) -> bool),
+        )
+        .is_ok()
+        {
+            seats += v.seats;
+        }
+    }
+    seats
 }
 
 #[cfg(test)]
@@ -1010,9 +1023,12 @@ mod tests {
         assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
         // Two boats at one dock seat four; one seats two.
         let two = [b.clone(), boat([1, 1, 2], b.bounds)];
-        assert_eq!(boardable_seats(&w, &two, from, &|_, _| true, goal, None), 4);
         assert_eq!(
-            boardable_seats(&w, &two[..1], from, &|_, _| true, goal, None),
+            boardable_seats(&w, &two, 0, from, &|_, _| true, goal, None),
+            4
+        );
+        assert_eq!(
+            boardable_seats(&w, &two[..1], 0, from, &|_, _| true, goal, None),
             2
         );
     }

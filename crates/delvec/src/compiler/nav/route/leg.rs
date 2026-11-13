@@ -841,7 +841,7 @@ fn ride_leg(
     // only carries the party off its vehicle (`RideOn::Leave`) acts nowhere.
     let target = match on {
         RideOn::Leave(_) => None,
-        RideOn::Foot | RideOn::Aboard(_) => carries
+        RideOn::Foot(_) | RideOn::Aboard(_) => carries
             .steps
             .get(end.src_step)
             .and_then(|s| seat_target(leg, s)),
@@ -855,7 +855,7 @@ fn ride_leg(
     let acts = |m: [i32; 3]| acts_on(v, m);
     let seat_act: Option<&dyn Fn([i32; 3]) -> bool> = target.is_some().then_some(&acts as _);
     let start = match on {
-        RideOn::Foot => RideFrom::Foot(from.pos),
+        RideOn::Foot(_) => RideFrom::Foot(from.pos),
         RideOn::Aboard(_) | RideOn::Leave(_) => RideFrom::Aboard(from.pos),
     };
     let onward = |a: [i32; 3], b: [i32; 3]| match on {
@@ -868,9 +868,11 @@ fn ride_leg(
         // Aboard, the party is the one the boarding seated.
         RideOn::Aboard(seats) => seats,
         RideOn::Leave(_) => crate::compiler::nav::vehicle::PARTY_SEATS,
-        RideOn::Foot => crate::compiler::nav::vehicle::boardable_seats(
+        RideOn::Foot(false) => crate::compiler::nav::vehicle::PARTY_SEATS,
+        RideOn::Foot(true) => crate::compiler::nav::vehicle::boardable_seats(
             leg,
             carries.vehicles,
+            vi,
             from.pos,
             &walks,
             end.pos,
@@ -883,8 +885,9 @@ fn ride_leg(
 /// How a ride leg starts and what it ends in (spec-0135 §4, §5).
 #[derive(Clone, Copy)]
 enum RideOn<'a> {
-    /// On foot: board the vehicle at its mark.
-    Foot,
+    /// On foot: board the vehicle at its mark — counting the seats every
+    /// vehicle boardable there carries (`DW1099`) when asked.
+    Foot(bool),
     /// Aboard at the leg's start, the party the boarding seated (its seats).
     Aboard(u32),
     /// Aboard at the leg's start, and the leg is not the vehicle's: ride on
@@ -1383,7 +1386,7 @@ pub(in crate::compiler::nav) fn route_with_links(
                         ancestor,
                         carries,
                         w,
-                        RideOn::Foot,
+                        RideOn::Foot(false),
                     )
                     .is_ok(),
                     None => judge_leg(world, &[at, *next], region_events, ancestor).is_ok(),
@@ -1514,7 +1517,9 @@ pub(in crate::compiler::nav) fn route_with_links(
                 ancestor,
                 carries,
                 vi,
-                RideOn::Foot,
+                // The seats a party boards here are asked only of a leg no
+                // walk crosses (`DW1099`).
+                RideOn::Foot(walked.is_err()),
             ) {
                 Ok((_, seats))
                     if walked.is_err() && seats < crate::compiler::nav::vehicle::PARTY_SEATS =>
