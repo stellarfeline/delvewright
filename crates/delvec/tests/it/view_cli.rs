@@ -136,7 +136,21 @@ fn panorama_draws_a_framed_frame_of_the_built_place() {
     assert!(pos[1].as_f64().unwrap() > max[1].as_f64().unwrap(), "{v}");
     assert!(v["subject"]["span"]["fill"].as_f64().unwrap() > 0.0, "{v}");
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.starts_with("renderer: lumenwright "), "{stderr}");
+    // The delivery mode says what it will spend before it draws; the renderer
+    // that drew it is the line after.
+    let mut lines = stderr.lines();
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("panorama: hq, the delivery mode: 1 frame(s)")),
+        "{stderr}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("renderer: lumenwright ")),
+        "{stderr}"
+    );
     assert!(
         stderr.contains("covers") && stderr.contains("% of the frame"),
         "{stderr}"
