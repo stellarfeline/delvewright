@@ -3386,6 +3386,78 @@ fn stands_in(
     })
 }
 
+/// **The water a contact's front is crossed through** (`DW0838`'s deletion):
+/// the water under each cell of a contact's opening in its plane, and, past
+/// each end of the opening, the water of the plane inside either place's
+/// claim (`claims`, the two places' claim bounds — their rings) that runs on
+/// from it unbroken, with the cells over it to the top of the opening.
+///
+/// A front of open water is crossed afloat or swimming (the seam profile,
+/// `DW0877`), so the opening the plan cut runs down through the water under
+/// it; and where the engine writes both places' open-side rings as water,
+/// the two rings meet at the front's ends, so the water there is the same
+/// one body of water the front is — the plan's allocation, read as the water
+/// it declares, never an unallocated join. A dry front has no water under it
+/// and gains nothing; a front on a horizontal face is a hole, not a shore,
+/// and gains nothing either.
+fn contact_water(
+    s: &PlacedSeam,
+    world: &crate::compiler::nav::World,
+    claims: &[([i64; 3], [i64; 3])],
+) -> BTreeSet<[i32; 3]> {
+    let mut out = BTreeSet::new();
+    if s.crossing != Crossing::Contact || s.normal_axis == 1 {
+        return out;
+    }
+    let col_axis = (0..3)
+        .find(|a| *a != s.normal_axis && *a != 1)
+        .expect("a vertical face has one horizontal in-plane axis");
+    let (lo, hi) = s.opening;
+    let at = |u: i64, y: i64| {
+        let mut c = [0i64; 3];
+        c[s.normal_axis] = s.plane;
+        c[col_axis] = u;
+        c[1] = y;
+        narrow(c)
+    };
+    // The water under one column of the plane, from the course under the
+    // opening down to the first cell that is not water.
+    let water_under = |u: i64, out: &mut BTreeSet<[i32; 3]>| {
+        let mut y = lo[1] - 1;
+        let mut any = false;
+        while world.holds_water(at(u, y)) {
+            out.insert(at(u, y));
+            any = true;
+            y -= 1;
+        }
+        any
+    };
+    let mut wet_front = false;
+    for u in lo[col_axis]..=hi[col_axis] {
+        wet_front |= water_under(u, &mut out);
+    }
+    if !wet_front {
+        return out;
+    }
+    let claimed = |c: [i32; 3]| {
+        let w = [i64::from(c[0]), i64::from(c[1]), i64::from(c[2])];
+        claims
+            .iter()
+            .any(|(clo, chi)| (0..3).all(|a| w[a] >= clo[a] && w[a] <= chi[a]))
+    };
+    for (start, step) in [(lo[col_axis] - 1, -1i64), (hi[col_axis] + 1, 1i64)] {
+        let mut u = start;
+        while claimed(at(u, lo[1] - 1)) && world.holds_water(at(u, lo[1] - 1)) {
+            water_under(u, &mut out);
+            for y in lo[1]..=hi[1] {
+                out.insert(at(u, y));
+            }
+            u += step;
+        }
+    }
+    out
+}
+
 /// `DW0838`: two places are joined only through the ways the plan declared.
 ///
 /// # The spec says "every legal step", and a step-level rule cannot fire
@@ -3455,6 +3527,21 @@ fn crossings(
     let mut seam: BTreeSet<[i32; 3]> = seam_cells(&b.seams);
     for wall in wall_openings(b, world) {
         seam.extend(wall.well.into_iter().map(narrow));
+    }
+    // A contact across open water is cut through the water under it, and on
+    // through the two rings' water where they meet at its ends
+    // ([`contact_water`]).
+    {
+        let site = Site::new(&b.boxes, &b.seams, &b.ground);
+        let index = |n: &NodeId| b.boxes.iter().position(|x| &x.node == n);
+        for s in &b.seams {
+            let claims: Vec<([i64; 3], [i64; 3])> = [index(&s.a), index(&s.b)]
+                .into_iter()
+                .flatten()
+                .map(|i| site.claim_bounds(i))
+                .collect();
+            seam.extend(contact_water(s, world, &claims));
+        }
     }
     // Every open side's run is a declared opening as a seam is (spec-0123
     // §5.3): two seamless places meet across it by the plan's declaration, so
@@ -5077,6 +5164,35 @@ mod contact_profile_tests {
         );
         let dry = place("node/cove", -3, 8);
         assert_eq!(built_plane(&dry, &[dry.clone()], &ground()), Some(63));
+    }
+
+    /// `DW0838` deletes a contact across open water through the water under
+    /// it and on through the two rings' water at its ends: every column of
+    /// the front from the course under the opening to the bed, and past each
+    /// end the plane's water inside either claim, with the opening's courses
+    /// over it, to the claims' edge. A dry front, and a front walled across,
+    /// add nothing.
+    #[test]
+    fn a_water_contact_is_cut_through_its_water_and_its_rings_meeting_at_its_ends() {
+        let s = seam();
+        // The two claims, rings included: x -2..=7, either side of z = 10.
+        let claims = [([-2, 50, 4], [7, 70, 10]), ([-2, 50, 10], [7, 70, 16])];
+        let got = contact_water(&s, &sea(false), &claims);
+        let mut want = BTreeSet::new();
+        for x in -2..=7 {
+            for y in 56..=62 {
+                want.insert([x, y, 10]);
+            }
+            if !(0..=5).contains(&x) {
+                want.insert([x, 63, 10]);
+            }
+        }
+        assert_eq!(got, want);
+        assert!(contact_water(&s, &ground(), &claims).is_empty(), "dry");
+        assert!(
+            contact_water(&s, &sea(true), &claims).is_empty(),
+            "walled across"
+        );
     }
 
     /// `DW0877` asks the reach graph where a body crosses: a front of open
