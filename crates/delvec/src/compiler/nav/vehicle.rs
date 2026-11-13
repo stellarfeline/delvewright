@@ -606,6 +606,61 @@ pub fn judge_plan_vehicles(
     (vb, verdict)
 }
 
+/// **Whether a body set down at some cells gets to the walk region** by the
+/// reach graph (`DW1098`): the closure from the cells holds a standing cell
+/// the party walks. Asked once per medium cell of a vehicle, so it is
+/// answered from what an earlier question already learned: every closure
+/// asked keeps the states that reach the walk region over its own edges
+/// ([`crate::compiler::nav::world::Reach::reaching`]), and a set holding one
+/// of them reaches it too — those edges are moves a body makes. Any other set
+/// asks the graph for its own closure, as every question once did, so the
+/// answer is the closure's own; a bay is flooded once, and walked backwards
+/// once, rather than walked forwards from every cell of it.
+pub(crate) struct OffWalk<'w> {
+    world: &'w World,
+    walk: &'w BTreeSet<[i32; 3]>,
+    /// The states known to reach the walk region, over every closure asked.
+    reaching: BTreeSet<[i32; 3]>,
+    /// How many closures were asked of the graph.
+    pub(crate) asked: usize,
+}
+
+impl<'w> OffWalk<'w> {
+    pub(crate) fn new(world: &'w World, walk: &'w BTreeSet<[i32; 3]>) -> Self {
+        Self {
+            world,
+            walk,
+            reaching: BTreeSet::new(),
+            asked: 0,
+        }
+    }
+
+    /// Whether a body at any of `from` gets to a standing cell of the walk
+    /// region.
+    pub(crate) fn reaches(&mut self, from: &[[i32; 3]]) -> bool {
+        if from.iter().any(|c| self.reaching.contains(c)) {
+            return true;
+        }
+        self.asked += 1;
+        let r = self.world.body_reach(from);
+        let seeds: Vec<[i32; 3]> = r
+            .standing()
+            .into_iter()
+            .filter(|c| self.walk.contains(c))
+            .collect();
+        if seeds.is_empty() {
+            return false;
+        }
+        // Every state of the closure is reached from `from` over its own
+        // edges, so the closure holds a standing cell of the walk region
+        // exactly when one of `from` walks back from one.
+        let back = r.reaching(seeds, |_| true, true);
+        let off = from.iter().any(|c| back.contains(c));
+        self.reaching.extend(back);
+        off
+    }
+}
+
 /// **The proofs over the class** (spec-0135 §4): every resolved vehicle's seat
 /// is in its medium (`DW1097`), its mark inside its bounds and a boarding cell
 /// beside it (`DW1099`), and from every medium cell a leaving cell reaches
@@ -618,6 +673,8 @@ pub fn judge_vehicles(
 ) -> (VehicleBinding, Result<(), Failure>) {
     let mut b = VehicleBinding::default();
     let mut verdict = Ok(());
+    // One for every vehicle: two boats on one bay ask the graph once.
+    let mut off_walk = OffWalk::new(world, walk);
     for v in vehicles {
         let mut row = VehicleRow {
             id: v.id.clone(),
@@ -695,24 +752,18 @@ pub fn judge_vehicles(
             // A rider who leaves is never stranded when a leaving cell is
             // ground the party walks, or a body there gets to such ground by
             // the reach graph — walking, falling, jumping, climbing, swimming
-            // (`World::body_reach`). A rider who leaves a boat in open water
-            // is in that water (the record §5), so the water under the hull
-            // is one more place the flood starts. The flood is run only for a
-            // cell the walk region does not already touch, and only until the
-            // first refusal; the graph keeps a closure it already took, so a
-            // bay is flooded once.
+            // (`World::body_reach`). The graph is asked only for a cell the
+            // walk region does not already touch, and only until the first
+            // refusal ([`OffWalk`]).
             let off = l.iter().any(|c| walk.contains(c)) || {
+                // A rider who leaves a boat in open water is in that water
+                // (the record §5): the water under the hull is one more place
+                // the body starts.
                 let mut from = l.clone();
                 if v.medium == VehicleMedium::Water {
                     from.push(*m);
                 }
-                !from.is_empty()
-                    && verdict.is_ok()
-                    && world
-                        .body_reach(&from)
-                        .standing()
-                        .iter()
-                        .any(|c| walk.contains(c))
+                !from.is_empty() && verdict.is_ok() && off_walk.reaches(&from)
             };
             leaves.extend(l);
             if !off && verdict.is_ok() {
@@ -1056,6 +1107,36 @@ mod tests {
             boardable_seats(&w, &two[..1], 0, from, &|_, _| true, goal, None),
             2
         );
+    }
+
+    /// `DW1098` asks, of every medium cell, whether a rider set down there
+    /// gets to the walk region. The bay is one closure: the graph is asked
+    /// once for it, not once per cell, and every answer is the one the cell's
+    /// own closure gives.
+    #[test]
+    fn the_way_off_a_bay_is_asked_of_the_graph_once() {
+        let w = pond(12);
+        let b = boat([3, 1, 0], ([-10, -5, -5], [20, 5, 5]));
+        let walk = w.walk_region(&[[-3, 1, 0]]);
+        let tree = w.medium_tree(&b);
+        assert!(tree.len() > 20, "a bay of many cells: {}", tree.len());
+        let mut off = OffWalk::new(&w, &walk);
+        for m in tree.keys() {
+            let mut from = w.leaving_cells_of(&b, *m);
+            from.push(*m);
+            let own = w
+                .body_reach(&from)
+                .standing()
+                .iter()
+                .any(|c| walk.contains(c));
+            assert!(own, "every cell of the pond swims ashore: {m:?}");
+            assert_eq!(off.reaches(&from), own, "{m:?}");
+        }
+        assert_eq!(off.asked, 1, "the graph asked once over the bay");
+        // A set nothing in the walk region is reached from answers no.
+        let island: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut none = OffWalk::new(&w, &island);
+        assert!(!none.reaches(&[[3, 1, 0]]));
     }
 
     #[test]
