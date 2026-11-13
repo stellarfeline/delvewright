@@ -396,7 +396,7 @@ red (versions.toml [render]).
 
 [[pin]]
 id = "lumenwright-version"
-value = "0.4.0"
+value = "0.4.1"
 sites = ["crates/delvec/Cargo.toml", "versions.toml", "crates/delvec/src/compiler/view/frames.rs"]
 policy = "immutable"
 bound_by = "validation/check-versions.sh"
@@ -407,7 +407,11 @@ showcase camera and panorama from, from crates.io at exactly this version
 (spec-0112 §6.2, versions.toml [render], ADR-0023 §5). A published version
 names fixed source; `validation/check-versions.sh` holds the manifest's `=`
 requirement and the version every frame states equal to it. A bump is a
-reviewed edit that re-derives every frame the gallery baseline holds.
+reviewed edit that re-derives every frame the gallery baseline holds. 0.4.1 set
+the HQ path tracer's emitter intensity to 0 on the clear day plateau, so only
+clear daytime hq frames move; the re-derivation measured one gallery hq
+daylight camera (`delvec cameras --hq`) before and after, and every committed
+frame manifest states the new renderer.
 """
 
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
