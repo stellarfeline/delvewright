@@ -138,7 +138,21 @@ export const methods = {
     }
     const chest = await bot.openContainer(block);
     try {
-      const held = chest.containerItems();
+      let held = chest.containerItems();
+      if (held.length === 0) {
+        // The server's own reading of the block beside the client's: a window
+        // that shows nothing is told apart from a container that holds nothing.
+        const from = this.chatMark();
+        bot.chat(
+          `/tellraw @s ${JSON.stringify([{ text: "[dw:holds " }, { nbt: "Items", block: step.pos.join(" ") }, { text: "]" }])}`,
+        );
+        await delay(600);
+        held = chest.containerItems();
+        process.stderr.write(
+          `[collect] ${step.item}: the window showed nothing at first; the server says ` +
+            `${this.chatSince(from).lines.join(" | ").slice(0, 400) || "nothing"}\n`,
+        );
+      }
       process.stderr.write(
         `[collect] ${step.item}: the ${block.name} at [${step.pos.join(", ")}] opened as window ` +
           `${chest.id} holding ${held.map((i) => `${i.count} ${i.name}`).join(", ") || "nothing"}\n`,
