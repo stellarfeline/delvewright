@@ -1324,6 +1324,23 @@ pub(in crate::compiler::nav) fn route_with_links(
         // leg starts with a ride on to a leaving cell, from which the rest of
         // it is judged as every leg is.
         if let Some((vi, seated)) = aboard.take() {
+            // A lapse walks nowhere (spec-0133 §8): the party waits where it
+            // sits, aboard, and the step's wait is that seat — not the cell
+            // the act before it named, which a rider acting from the seat
+            // never stood in.
+            if matches!(carries.steps.get(next.src_step), Some(Step::Expire { .. })) {
+                aboard = Some((vi, seated));
+                b.legs += 1;
+                b.ridden += 1;
+                if cur.pos != next.pos {
+                    takes.stood.insert(next.src_step, cur.pos);
+                }
+                cur = VisitedPos {
+                    pos: cur.pos,
+                    ..*next
+                };
+                continue;
+            }
             if carries.declared_ride(next.src_step) == Some(vi) {
                 match ride_leg(
                     world,

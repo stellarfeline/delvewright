@@ -281,18 +281,7 @@ pub(crate) fn swum_cells(
     world: &crate::compiler::nav::World,
     pool: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
-    pool.iter()
-        .flat_map(|c| [*c, [c[0], c[1] - 1, c[2]]])
-        .filter(|c| {
-            matches!(
-                world.rest_kind(*c),
-                Some(
-                    crate::compiler::nav::RestKind::Afloat
-                        | crate::compiler::nav::RestKind::Submerged
-                )
-            )
-        })
-        .collect()
+    pool.iter().flat_map(|c| world.swum_at(*c)).collect()
 }
 
 // ---------------------------------------------------------------------------

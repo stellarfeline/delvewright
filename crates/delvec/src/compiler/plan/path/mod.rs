@@ -1832,10 +1832,12 @@ pub(super) fn build_critical_path(
     // A trigger the route proof performs from a cell of its own choosing,
     // outside every volume the step keeps out of (`DW0311`).
     for (&k, &cell) in &takes.stood {
-        if let Some(Step::Trigger { stand: at, .. }) = steps.get_mut(k)
-            && at.is_none()
-        {
-            *at = Some(cell);
+        match steps.get_mut(k) {
+            Some(Step::Trigger { stand: at, .. }) if at.is_none() => *at = Some(cell),
+            // A lapse waited out aboard (spec-0135 §5): the wait is where the
+            // party sits, as the route proof found it.
+            Some(Step::Expire { pos, .. }) => *pos = cell,
+            _ => {}
         }
     }
     for (&k, &(li, stand)) in &takes.performed {
