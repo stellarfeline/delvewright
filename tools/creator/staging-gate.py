@@ -134,9 +134,13 @@ derivation's binding line and the places it massed — counts a place no piece
 fills, names one, or is missing from a site-plan build. See `Subject.pre_detail`
 and `Subject.stand_ins`.
 
-**A declared test level carries no design record** (spec-0122 §7.2): the
-design-record rows name their class as a `world.json` whose content does not
-declare `test_level: true`, so a declared test level measures them zero. The
+**A campaign that took no reference pictures carries no design record**, and
+the design-record rows measure it zero: the pictures are an optional step of
+the design gate. Each row names its class by what the campaign source carries
+of a record — `drill3-01` the approved set `design/README.md` names, the file
+the design gate writes beside `design.json`; `drill3-03` `design.json` itself —
+so a record lost from an approved set, or present and partial, is still judged.
+A declared test level (spec-0122 §7.2) is one such campaign. The test-level
 declaration stands only on a build compiled from it: a source and a build that
 disagree about it — the source's `world.json` against the compiler's own
 `manifest.json` `test_level` — are refused before any row is adjudicated, as a
@@ -675,11 +679,12 @@ class Subject:
 def test_level_refusal(subj: Subject) -> str | None:
     """Why a subject's test-level declaration does not stand, or `None`.
 
-    A test level carries no design record (spec-0122 §7.2), and the rows whose
-    class is a campaign that owes one measure a declared test level zero. The
-    declaration buys that only on a build compiled from it: the compiler's own
-    `manifest.json` carries `test_level: true`, and a source and a build that
-    disagree, in either direction, are a build that is not of this source.
+    A test level carries no design record (spec-0122 §7.2), and the
+    design-record rows measure it zero as they measure every campaign carrying
+    none. The declaration still stands only on a build compiled from it: the
+    compiler's own `manifest.json` carries `test_level: true`, and a source and
+    a build that disagree, in either direction, are a build that is not of this
+    source.
 
     A subject declaring nothing, in source or build, is `None`.
     """
