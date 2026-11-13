@@ -24,7 +24,7 @@
   },
   "manifest_version": 3,
   "mode": "hq",
-  "renderer": "lumenwright 0.4.0",
+  "renderer": "lumenwright 0.4.1",
   "renderer_stats": {
     "block_entities": {
       "glyphs": 0,

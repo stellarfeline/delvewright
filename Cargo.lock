@@ -1309,9 +1309,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lumenwright"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d60909ab9e541a2dc45299543fc1b0c8f4e82cedc96dacffeda330054038a389"
+checksum = "5ac12fd5360f4d4d108302a2bb5bbb6420389f7228902045388fe57b274f25fb"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1332,9 +1332,9 @@ dependencies = [
 
 [[package]]
 name = "lumenwright-kernel"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d9a27aac5600fed55235026a130a5e30ca6901849738861cf8817671981f31e"
+checksum = "6f55e03655697988b9ae79e0f98e9546eeb72b77cf6eb72e80d0667482d71322"
 dependencies = [
  "bytemuck",
 ]
