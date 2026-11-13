@@ -305,6 +305,7 @@ fn cameras(build: &Path, camp: &Path, out: &Path) -> Output {
         .arg(camp)
         .arg("-o")
         .arg(out)
+        .arg("--hq")
         .output()
         .unwrap()
 }

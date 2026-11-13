@@ -1,0 +1,54 @@
+{
+  "backend": "cpu",
+  "camera": {
+    "convention": "minecraft degrees: yaw 0 = south (+Z), 90 = west (-X); pitch positive looks down; fov is vertical",
+    "fov": 55.0,
+    "name": "hall",
+    "pitch": 12.0,
+    "pos": [
+      9.5,
+      72.0,
+      -6.0
+    ],
+    "yaw": 20.0
+  },
+  "campaign_id": "hello-world",
+  "delvec": "<delvec>",
+  "frame": {
+    "featureless": null
+  },
+  "image": {
+    "height": 90,
+    "path": "hello-world_camera_hall.png",
+    "width": 160
+  },
+  "manifest_version": 3,
+  "mode": "hq",
+  "renderer": "lumenwright 0.4.0",
+  "renderer_stats": {
+    "block_entities": {
+      "glyphs": 0,
+      "rendered": {},
+      "skipped": {},
+      "text_lines": 0
+    },
+    "entities": {
+      "fallback_boxes": {},
+      "items_rendered": {},
+      "items_skipped": {},
+      "rendered": {
+        "villager": 1
+      },
+      "skipped": {}
+    }
+  },
+  "sky": {
+    "day": 0,
+    "daytime_ticks": 12000,
+    "weather": "clear"
+  },
+  "world": {
+    "key": "at-load",
+    "path": "worlds/at-load"
+  }
+}

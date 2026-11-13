@@ -99,8 +99,11 @@ const CENTRING_STEPS: usize = 100;
 /// (single-block) AABB still yields a usable scene.
 const MIN_DISTANCE: f64 = 16.0;
 
-/// Default sample target for a final frame (`--spp` overrides). The tiered
-/// doctrine: ~64 for a draft look, ~300 for release art.
+/// **The showcase sample budget in daylight**, from the record
+/// (`docs/reference/showcase-shots.md` §3.8: 300 spp in daylight, more in a
+/// lamp-lit room): the panorama's `--hq` default (`--spp` overrides) and the
+/// `spp` a new hand camera row takes. It is spent only by a frame drawn
+/// `--hq`; a frame drawn while working is quick and spends none.
 pub const DEFAULT_SPP: u32 = 300;
 
 /// Default frame width, pixels. A storybook or repository README shows an image

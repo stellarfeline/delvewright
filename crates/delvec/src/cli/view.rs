@@ -307,7 +307,7 @@ pub(crate) fn run_frames_campaign(
 }
 
 /// **Where each camera stands** (spec-0089 §4): the campaign assembled as
-/// `delvec cameras --preview` assembles it, the world given the premises the
+/// `delvec cameras` assembles it, the world given the premises the
 /// build's proofs carry, and every camera's configuration asked of
 /// [`delvec::compiler::view::beat::stands`] — the record's `after` rules
 /// refused under `DW0721` (exit 2). A campaign that does not plan has its

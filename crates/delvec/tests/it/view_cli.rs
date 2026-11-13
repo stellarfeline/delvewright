@@ -100,6 +100,7 @@ fn panorama(built: &Path, out: &Path, extra: &[&str]) -> std::process::Output {
             "64",
             "--height",
             "36",
+            "--hq",
             "--spp",
             "1",
             "--backend",
@@ -135,7 +136,21 @@ fn panorama_draws_a_framed_frame_of_the_built_place() {
     assert!(pos[1].as_f64().unwrap() > max[1].as_f64().unwrap(), "{v}");
     assert!(v["subject"]["span"]["fill"].as_f64().unwrap() > 0.0, "{v}");
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.starts_with("renderer: lumenwright "), "{stderr}");
+    // The delivery mode says what it will spend before it draws; the renderer
+    // that drew it is the line after.
+    let mut lines = stderr.lines();
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("panorama: hq, the delivery mode: 1 frame(s)")),
+        "{stderr}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|l| l.starts_with("renderer: lumenwright ")),
+        "{stderr}"
+    );
     assert!(
         stderr.contains("covers") && stderr.contains("% of the frame"),
         "{stderr}"
@@ -255,7 +270,10 @@ fn a_record_that_states_an_exposure_is_refused_by_the_cameras_command() {
         serde_json::json!([a_camera("gate", "concept/gate"), hall]),
     );
     let out = dir.join("scenes");
-    let r = cameras_cmd(&built, &campaign, &out).output().unwrap();
+    let r = cameras_cmd(&built, &campaign, &out)
+        .arg("--hq")
+        .output()
+        .unwrap();
     let stderr = String::from_utf8_lossy(&r.stderr);
     assert_eq!(r.status.code(), Some(2), "{stderr}");
     assert!(stderr.contains("DW1010"), "{stderr}");
@@ -283,7 +301,10 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     );
     let out = build_dir.join("scenes");
 
-    let result = cameras_cmd(&built, &campaign, &out).output().unwrap();
+    let result = cameras_cmd(&built, &campaign, &out)
+        .arg("--hq")
+        .output()
+        .unwrap();
     assert_eq!(result.status.code(), Some(0), "{result:?}");
     let v = scene_json(&out.join("hello-world_camera_gate.manifest.json"));
     assert_eq!(v["image"]["path"], "hello-world_camera_gate.png");
@@ -358,7 +379,10 @@ fn cameras_refuses_a_camera_that_answers_nothing() {
         let campaign = build_dir.join(tag);
         camera_campaign(&campaign, cameras);
         let out = build_dir.join(format!("out-{tag}"));
-        let result = cameras_cmd(&built, &campaign, &out).output().unwrap();
+        let result = cameras_cmd(&built, &campaign, &out)
+            .arg("--hq")
+            .output()
+            .unwrap();
         assert_eq!(result.status.code(), Some(2), "{tag}: {result:?}");
         assert!(
             String::from_utf8_lossy(&result.stderr).contains("DW0721"),
@@ -389,6 +413,7 @@ fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
     for (tag, extra) in [("all", vec![]), ("only", vec!["--only", "gate"])] {
         let out = build_dir.join(format!("out-{tag}"));
         let result = cameras_cmd(&built, &campaign, &out)
+            .arg("--hq")
             .args(&extra)
             .output()
             .unwrap();
@@ -457,6 +482,7 @@ fn cameras_prints_the_sky_binding_line() {
             serde_json::json!([a_camera("gate", "concept/gate"), hall]),
         );
         let result = cameras_cmd(&built, &campaign, &build_dir.join(format!("out-{tag}")))
+            .arg("--hq")
             .output()
             .unwrap();
         let stderr = String::from_utf8_lossy(&result.stderr);

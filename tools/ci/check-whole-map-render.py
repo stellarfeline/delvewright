@@ -29,7 +29,7 @@ what each frame's manifest says, never its pixels:
 - **the frame loads the ground.** The manifest's chunk rectangle covers the
   landform the horizon declares, not merely the layout.
 - **every frame shows something**: the manifest's `frame.featureless` is null.
-- **every stated camera is the frame's camera** (`delvec cameras --preview`, on
+- **every stated camera is the frame's camera** (`delvec cameras`, quick, on
   every point whose campaign carries a `design/cameras.json`): one manifest per
   camera whose position, yaw, pitch and `fov` are the record's, whose world is
   a world the run wrote, and whose sky's weather is the camera's own `sky`,
@@ -73,8 +73,9 @@ REPO = Path(__file__).resolve().parents[2]
 MIN_FILL = 1.0 / 3.0
 # How far the manifest's own fill may sit from this gate's projection.
 FILL_SLACK = 0.02
-# The panorama's frame here: small, one sample — the manifest is what is judged.
-PANORAMA = ["--width", "160", "--height", "90", "--spp", "1", "--backend", "cpu"]
+# The panorama's frame here: path traced (`--hq`, named), small, one sample — the
+# manifest is what is judged.
+PANORAMA = ["--hq", "--width", "160", "--height", "90", "--spp", "1", "--backend", "cpu"]
 WEATHERS = {"clear", "rain", "thunder"}
 
 
@@ -262,7 +263,7 @@ def main() -> int:
             got["cameras"] = run(
                 [str(delvec), "--prefabs", args.prefabs, "cameras", str(out),
                  "--campaign", str(src), "-o", str(work / f"cameras-{label}"),
-                 "--preview", "--backend", "cpu"],
+                 "--backend", "cpu"],
                 "delvec cameras",
             )
         got["panorama"] = run(

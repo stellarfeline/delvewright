@@ -205,6 +205,7 @@ mod press_agreement;
 mod preview_palette;
 mod promise;
 mod pulse;
+mod quick_by_default;
 mod quiet_guidance;
 mod quorum;
 mod r6_staging;
