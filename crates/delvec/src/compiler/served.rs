@@ -102,8 +102,6 @@ pub struct Binding {
     pub chunks: u8,
     /// Whether the campaign declared it (else the floor).
     pub declared: bool,
-    /// Showcase cameras whose subject was judged against the served radius.
-    pub showcase_cameras: usize,
     /// Cutscene shots whose keyframes were judged against it.
     pub cutscene_shots: usize,
 }
@@ -116,7 +114,7 @@ impl Binding {
     pub fn line(&self) -> String {
         format!(
             "view distance binding: {n} chunk(s) ({how}) serve {r} blocks in every direction; \
-             {c} showcase camera(s) and {s} cutscene shot(s) judged against it, 0 beyond it; \
+             {s} cutscene shot(s) judged against it, 0 beyond it; \
              stated to the host: heap-max {heap} for {p} players × {k} chunks each \
              (server/resources.properties).",
             n = self.chunks,
@@ -126,7 +124,6 @@ impl Binding {
                 "the engine's floor, undeclared"
             },
             r = viewdistance::served_radius_blocks(self.chunks),
-            c = self.showcase_cameras,
             s = self.cutscene_shots,
             heap = heap_max_label(self.chunks),
             p = PLAYERS,

@@ -1531,23 +1531,18 @@ pub fn render_plan(
             code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
             message: d.message,
         })?;
-        let radius = delvewright_dsl::viewdistance::served_radius_blocks(
-            delvewright_dsl::viewdistance::chunks(c),
-        );
-        let showcase = prove_showcase(record, &parsed, radius, |cell| !world.is_clear(cell))
-            .map_err(|refusal| match refusal {
-                ShowcaseRefusal::Record(d) => Failure {
-                    code: crate::compiler::view::camera::record_code_at_build(&d),
-                    message: d.message,
-                },
-                ShowcaseRefusal::Camera(message) => Failure {
-                    code: crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED,
-                    message,
-                },
-                ShowcaseRefusal::Beyond(message) => Failure {
-                    code: delvewright_dsl::codes::VIEW_BEYOND_SERVED,
-                    message,
-                },
+        let showcase =
+            prove_showcase(record, &parsed, |cell| !world.is_clear(cell)).map_err(|refusal| {
+                match refusal {
+                    ShowcaseRefusal::Record(d) => Failure {
+                        code: crate::compiler::view::camera::record_code_at_build(&d),
+                        message: d.message,
+                    },
+                    ShowcaseRefusal::Camera(message) => Failure {
+                        code: crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED,
+                        message,
+                    },
+                }
             })?;
         root["camera_eye_proof"]["showcase"] = json!(showcase);
         // spec-0089: every camera's `after` stands somewhere — the record's own
