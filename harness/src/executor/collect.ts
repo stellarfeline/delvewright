@@ -138,7 +138,12 @@ export const methods = {
     }
     const chest = await bot.openContainer(block);
     try {
-      for (const item of chest.containerItems()) {
+      const held = chest.containerItems();
+      process.stderr.write(
+        `[collect] ${step.item}: the ${block.name} at [${step.pos.join(", ")}] opened as window ` +
+          `${chest.id} holding ${held.map((i) => `${i.count} ${i.name}`).join(", ") || "nothing"}\n`,
+      );
+      for (const item of held) {
         await chest.withdraw(item.type, null, item.count);
       }
     } finally {
