@@ -5,15 +5,16 @@
 //! views need more declares more, and the build states what the declaration
 //! costs the host. The radius a body is sure to see in every direction is a
 //! function of the number — [`served_radius_blocks`] — and it is the one fact
-//! every far-view check reads: a sightline, a view, a showcase camera or a
-//! cutscene shot aimed past it is refused under `DW0956`, because what it aims
-//! at is never sent to the client.
+//! every far-view check reads: a sightline, a view or a cutscene shot aimed
+//! past it is refused under `DW0956`, because what it aims at is never sent to
+//! the client. A showcase camera is not a player's view and is not judged: its
+//! frame draws to its own distance.
 //!
 //! The document-tier shapes live here, with no world built: the declared
 //! number's range, and the site plan's `sightlines[]` and `views[]`, whose two
 //! ends are world coordinates the document already holds. The build-tier
-//! shapes — a showcase camera's subject and a cutscene shot's aim — are the
-//! compiler's, in `delvec`, against the assembled world.
+//! shape — a cutscene shot's aim — is the compiler's, in `delvec`, against the
+//! assembled world.
 //!
 //! Measured on the pinned server (`tools/spike-view-distance/ at 80f1a72135e9`, spec-0091 §2):
 //! the server sends one more ring of chunks than `view-distance`, and the

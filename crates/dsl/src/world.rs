@@ -105,9 +105,9 @@ pub struct WorldContent {
     /// is a declaration here, not a hope. Absent = the engine's floor
     /// ([`crate::viewdistance::FLOOR`], 10 chunks = 160 blocks), which every
     /// proof in the engine is written against; declared in
-    /// `FLOOR..=CEILING` (vanilla serves at most 32). A camera, a sightline, a
-    /// view or a cutscene shot aimed past the served radius is refused
-    /// (`DW0956`); the build states the heap the declared distance costs the
+    /// `FLOOR..=CEILING` (vanilla serves at most 32). A sightline, a view or a
+    /// cutscene shot aimed past the served radius is refused (`DW0956`); a
+    /// showcase camera is not a player's view and draws to its own distance; the build states the heap the declared distance costs the
     /// host at the player cap, and the hosting side meets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view_distance: Option<u8>,
