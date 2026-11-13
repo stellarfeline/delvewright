@@ -28,6 +28,13 @@ const DROP_SEARCH_NEAR = WAVE_ENGAGE_NEAR;
 const FRAME_CHECK_MS = 150;
 
 /**
+ * How long a collect waits for an opened container's contents to reach the
+ * client before it reads the window as empty: the open resolves on the
+ * window's opening, and the stack can arrive after it.
+ */
+const WINDOW_CONTENTS_MS = 3000;
+
+/**
  * The dropped `item` (unnamespaced id) nearest `anchor` within `radius` blocks,
  * off the item entities the client tracks, or `undefined` when none is in sight.
  */
@@ -146,8 +153,14 @@ export const methods = {
         bot.chat(
           `/tellraw @s ${JSON.stringify([{ text: "[dw:holds " }, { nbt: "Items", block: step.pos.join(" ") }, { text: "]" }])}`,
         );
-        await delay(600);
-        held = chest.containerItems();
+        // mineflayer resolves the open on the window's opening, and its
+        // contents can come after: the gallery's crate opened from a boat's
+        // seat read empty, the server holding the stack, and full 600 ms on.
+        const by = Date.now() + WINDOW_CONTENTS_MS;
+        while (held.length === 0 && Date.now() < by) {
+          await delay(REACH_POLL_MS);
+          held = chest.containerItems();
+        }
         process.stderr.write(
           `[collect] ${step.item}: the window showed nothing at first; the server says ` +
             `${this.chatSince(from).lines.join(" | ").slice(0, 400) || "nothing"}\n`,
