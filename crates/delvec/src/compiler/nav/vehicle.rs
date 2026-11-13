@@ -581,6 +581,31 @@ impl VehicleBinding {
     }
 }
 
+/// **The proofs over the class, over a plan's vehicles** — [`judge_vehicles`]
+/// with the walk region the party walks (rooted at the plan's anchors) and the
+/// binding's ride counts filled from `ridden`, the legs the route proof rode.
+/// The one call every door that asks the route proof makes before it reads
+/// the route's verdict, so a vehicle out of its medium is named as that
+/// (`DW1097`) and not as the leg it could not carry, judged as the walk it is
+/// not (`DW0311`): the final build and a world-edits batch both ask here.
+pub fn judge_plan_vehicles(
+    plan: &crate::compiler::plan::Plan,
+    world: &World,
+    ridden: usize,
+) -> (VehicleBinding, Result<(), Failure>) {
+    // The region the party walks; a rider who leaves must get back to it by
+    // the reach graph.
+    let walk = if plan.vehicles.is_empty() {
+        BTreeSet::new()
+    } else {
+        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+    };
+    let (mut vb, verdict) = judge_vehicles(&plan.vehicles, world, &walk);
+    vb.critical_rides = ridden;
+    vb.declared = plan.declared_rides.len();
+    (vb, verdict)
+}
+
 /// **The proofs over the class** (spec-0135 §4): every resolved vehicle's seat
 /// is in its medium (`DW1097`), its mark inside its bounds and a boarding cell
 /// beside it (`DW1099`), and from every medium cell a leaving cell reaches

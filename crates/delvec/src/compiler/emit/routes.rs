@@ -804,17 +804,11 @@ pub(super) fn prove_world(
                 // the route's verdict so a vehicle out of its medium is named
                 // as that, not as the leg it could not carry.
                 {
-                    // The region the party walks; a rider who leaves must get
-                    // back to it by the reach graph (`judge_vehicles`).
-                    let walk = if plan.vehicles.is_empty() {
-                        BTreeSet::new()
-                    } else {
-                        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
-                    };
-                    let (mut vb, vehicle_verdict) =
-                        crate::compiler::nav::vehicle::judge_vehicles(&plan.vehicles, world, &walk);
-                    vb.critical_rides = route_binding.ridden;
-                    vb.declared = plan.declared_rides.len();
+                    let (vb, vehicle_verdict) = crate::compiler::nav::vehicle::judge_plan_vehicles(
+                        plan,
+                        world,
+                        route_binding.ridden,
+                    );
                     crate::note!("{}", vb.line());
                     for (k, s) in plan.critical_path.iter().enumerate() {
                         let crate::compiler::plan::Step::Ride {

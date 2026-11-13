@@ -807,7 +807,23 @@ fn check_batch_invariants(
                 return Err(ctx(f));
             }
         }
-        crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
+        // `DW0311`, with the proofs over the vehicle class judged before the
+        // route's verdict, here as in `emit::build`: a vehicle out of its
+        // medium is the cause, and the leg it could not carry — judged as the
+        // walk it is not — the consequence. Printed only when this pass
+        // refuses, as the loop binding is.
+        let (route_binding, route_verdict) =
+            crate::compiler::nav::check_critical_path_bound(plan, &with_fixtures);
+        let (vb, vehicle_verdict) = crate::compiler::nav::vehicle::judge_plan_vehicles(
+            plan,
+            &with_fixtures,
+            route_binding.ridden,
+        );
+        if vehicle_verdict.is_err() {
+            eprintln!("{}", vb.line());
+        }
+        vehicle_verdict.map_err(ctx)?;
+        route_verdict.map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }
     // `DW0318` BEFORE the boundary proof, and the order is load-bearing rather
