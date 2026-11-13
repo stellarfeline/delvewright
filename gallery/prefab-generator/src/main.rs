@@ -1031,7 +1031,8 @@ const ANCHORS: &[Anchor] = &[
 /// the cabin and the brewing stand at the long gallery's far end are filled by
 /// `loot` — the stand is the gallery's container that is not a box, five slots
 /// with its own rules for each; the one container no declaration claims is the
-/// long hall's end chest, in a place of its own, which is the gallery's scenery.
+/// annex's corner chest, which a stage-7 batch lays in a place of its own: the
+/// gallery's scenery.
 const CONTAINERS: &[Anchor] = &[
     Anchor {
         name: "anchor/cabin-barrel",
@@ -4981,15 +4982,6 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
-        name: "anchor/long-hall-chest",
-        pos: [5, 2, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH - 1],
-        facing: None,
-        trigger_block: None,
-        note: "the top of the chest against the end room's far wall: what the end room holds, \
-               in front of the eye that arrives at the end",
-        role: None,
-    },
-    Anchor {
         name: "anchor/long-hall-cart",
         pos: [LONG_HALL_RAIL_X, 1, LONG_HALL_RAIL_FROM],
         facing: None,
@@ -5204,13 +5196,6 @@ fn build_long_hall() -> Structure {
         [rx, 1, r0 - 1],
         [rx, 1, r0 - 1],
         "minecraft:polished_deepslate",
-    );
-    // What the end room holds: a chest against its far wall, on the hall's
-    // axis, in front of the eye that arrives at the end.
-    fill(
-        [5, 1, room_end - 1],
-        [5, 1, room_end - 1],
-        "minecraft:chest[facing=north,type=single]",
     );
     let mut palette = Palette::new();
     let blocks = cells

@@ -18,5 +18,5 @@
     }
   ],
   "units": [],
-  "why": "The gallery with its `containers` object removed. The long hall's end chest is the one container no declaration claims, so the census still counts it as scenery, and now nothing tells the party what it holds: a player would open it to an empty grid. It declares no unit: `containers.decoration_notice` is bound in the primary, and what the engine refuses is a world with scenery and no notice. The zh-cn rows go with the notice they translate, so the sidecar stays exact and the refusal is the census's own."
+  "why": "The gallery with its `containers` object removed. The annex's corner chest is the one container no declaration claims, so the census still counts it as scenery, and now nothing tells the party what it holds: a player would open it to an empty grid. It declares no unit: `containers.decoration_notice` is bound in the primary, and what the engine refuses is a world with scenery and no notice. The zh-cn rows go with the notice they translate, so the sidecar stays exact and the refusal is the census's own."
 }
