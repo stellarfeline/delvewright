@@ -92,8 +92,8 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `place-camera <campaign-dir>` | writes one row of `design/cameras.json`: a pose placed by hand in the game, an estimate, or a deletion (spec-0069) | `--name <row>` (required), `--answers <design.json row>`, `--report <camera-report.json> --slot <n> --fov <deg>` \| `--candidates <file> --pick <camera>` \| `--delete`, `--sky <time>,<weather>` |
 | `viewer <nbt\|dir\|manifest>…` | ONE self-contained interactive page: a camera the reviewer drives, every block drawn from the pinned version's own model | `-o page.html` (required), `--title`, `--textures <jar>`, `--pack <resourcepack.zip>` (a delve's pack above the jar, spec-0084 §5.1) |
 | `palette <nbt\|dir>…` | the derived per-blockstate colour/shape table | `-o palette.json` (required), `--biome minecraft:plains`, `--build <build-dir> --place <place>` (the biome that place stands in, from the build's `validation/biome-map.json`), `--textures <jar>`, `--pack <resourcepack.zip>` |
-| `panorama <build-dir>` | an oblique exterior of the built place, fitted to a subject, drawn hq from the build's load world — the default release panorama | `-o <dir>` (required), `--bearing se\|sw\|ne\|nw\|n\|e\|s\|w`, `--pitch 45`, `--fov 40`, `--subject layout\|anchor/<a>,…`, `--spp 300`, `--width 1600`, `--height 900`, draw flags |
-| `cameras <build-dir>` | one frame per showcase camera the campaign states in `design/cameras.json`, each from the world it stands in — the storybook and front-page pictures | `--campaign <dir>` (required), `-o <dir>` (required), `--only <name>`…, `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=`, `--draft`, `--preview`, draw flags |
+| `panorama <build-dir>` | an oblique exterior of the built place, fitted to a subject, from the build's load world — the default release panorama: a quick frame (`<stem>_preview.png`) with no flag, path traced with `--hq` | `-o <dir>` (required), `--bearing se\|sw\|ne\|nw\|n\|e\|s\|w`, `--pitch 45`, `--fov 40`, `--subject layout\|anchor/<a>,…`, `--hq`, `--spp 300` (with `--hq` only), `--width 1600`, `--height 900`, draw flags |
+| `cameras <build-dir>` | one frame per showcase camera the campaign states in `design/cameras.json`, each from the world it stands in — the storybook and front-page pictures | `--campaign <dir>` (required), `-o <dir>` (required), `--only <name>`…, `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=`, `--draft` \| `--hq`, draw flags — quick at half size with no flag, the stated frames path traced with `--hq` |
 | `contact-sheet <dir>` | many candidates, ONE page, for the owner to curate | `-o sheet.png` (required), `--scores`, `--shot ext-se`, `--columns N`, `--thumb 256`, `--title` |
 
 The view arms share the `DW072x`/`DW079x` diagnostics and the texture-resolution
@@ -919,12 +919,12 @@ delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [
 delvec frames --campaign <dir> (--camera x,y,z,yaw,pitch[,fov] [--frame node/<place>] | --at <anchor>|node/<place>) [--program node/<place>] [-o frame.png]
                                              # one frame of a campaign's load world
 delvec panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw|n|e|s|w]
-                [--pitch 45] [--fov 40] [--subject layout|anchor/<a>,...] [--spp 300]
-                [--width 1600] [--height 900]
-                                             # an oblique exterior of the built place
+                [--pitch 45] [--fov 40] [--subject layout|anchor/<a>,...]
+                [--hq [--spp 300]] [--width 1600] [--height 900]
+                                             # an oblique exterior of the built place (quick; --hq path traces)
 delvec cameras <build-dir> --campaign <dir> -o <dir> [--only <name>]...
-                [--bracket yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3] [--draft | --preview]
-                                             # the showcase cameras design/cameras.json states
+                [--bracket yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3] [--draft | --hq]
+                                             # the showcase cameras design/cameras.json states (quick; --hq path traces)
 delvec written-world <campaign-dir> -o <world-dir>
                                              # the build's load world, alone (DW0955's written half)
 delvec contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
@@ -1431,10 +1431,10 @@ each run's first line naming its backend, against the pinned client jar
 | Set, backend | Frames | Wall | Peak resident | Per frame (median / max) | Ceiling |
 |---|---|---|---|---|---|
 | The Armoury's 24 review frames, CPU (10 threads) | 24 quick, 1024² | 9.43 s | 62.1 MB | 0.320 / 0.597 s | — |
-| The Armoury's panorama, CPU | 1 hq, 1600×900, 256 spp | 44.59 s | 52.0 MB | 44.48 s | — |
+| The Armoury's panorama (`--hq`), CPU | 1 hq, 1600×900, 256 spp | 44.59 s | 52.0 MB | 44.48 s | — |
 | **The Armoury's set (views + panorama), CPU** | 25 | **54.0 s** | **62.1 MB** | — | 60 s, 1 GiB, 2 s a quick frame |
 | The Armoury's 24 review frames, Metal (Apple M2 Pro) | 24 quick, 1024² | 4.40 s | 69.2 MB | 0.138 / 0.292 s | — |
-| The Armoury's panorama, Metal | 1 hq, 1600×900, 256 spp | 2.37 s | 116.6 MB | 2.29 s | — |
+| The Armoury's panorama (`--hq`), Metal | 1 hq, 1600×900, 256 spp | 2.37 s | 116.6 MB | 2.29 s | — |
 | **The Armoury's set (views + panorama), Metal** | 25 | **6.8 s** | **116.6 MB** | — | 60 s |
 | The gallery's review frames, CPU (10 threads) | 200 quick, 1024² | 67.82 s | 132.0 MB | 0.269 / 0.991 s | 120 s |
 | The gallery's review frames, Metal | 200 quick, 1024² | 39.58 s | 133.6 MB | 0.143 / 0.424 s | 120 s |
@@ -1496,7 +1496,7 @@ there is no second way to say where a showcase camera is.
       "pitch": 18.0,
       "pos": [37.5, 85.0, 33.0],
       "source": "estimated",
-      "spp": 4096,
+      "spp": 300,
       "width": 1600,
       "yaw": 300.0
     }
@@ -1512,7 +1512,7 @@ there is no second way to say where a showcase camera is.
 | `yaw`, `pitch` | Minecraft's own rotation, as the debug screen and `/tp x y z yaw pitch` speak it: yaw 0 south, 90 west, 180 north, 270 east, any value between; pitch positive looks down, −90..90 |
 | `fov` | vertical field of view, degrees (Minecraft's FOV setting is vertical too) |
 | `source` | `estimated` (a tool's or an agent's camera) or `hand` (placed by a person in the running game). A `hand` row is final: `place-camera` refuses an estimate over it |
-| `width`, `height`, `spp` | the frame and the sample target of the hq frame (doune: 1600×900; 300 in daylight; [`showcase-shots.md`](showcase-shots.md) §3.8) |
+| `width`, `height`, `spp` | the frame and the sample target of the `--hq` frame (doune: 1600×900; 300 in daylight, the record's budget, [`showcase-shots.md`](showcase-shots.md) §3.8; `place-camera` writes 300 for a new hand row). Spent only by `--hq`: a quick frame spends none |
 | `sky` | optional: `{"time": …, "weather": …}`, the sky the picture is taken under when it is **not** the sky of the row it answers. Absent, the camera is drawn under its row's `time` and `weather` — the game's own sky at that hour under that weather (`compiler.md` §4); stating the row's own sky is refused (`DW0721`) |
 | `after` | optional: `{"step": …, "path": …}`, the step the picture is taken **after** — an objective id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical path, or, with `path`, of the branch it names. Absent, the camera pictures the world at load. The engine writes the world one play of that path leaves once that step is played — every block written on the way (a door opened, a candle lit, a floor filled), the cast where the cast ledger stations it then, the sky the story set — and the frame is drawn from it; a step the path does not carry, carries twice, or after which no block, no member of the cast and no sky differs from load is refused (`DW0721`) |
 
@@ -1540,8 +1540,8 @@ generator water block (`frames::sea_plane_at`), which carries the sea to the
 horizon, and states none over any other horizon. **A body the renderer cannot
 draw refuses the picture**: a body in frame of a kind the renderer reports
 skipped for that frame (read from the renderer's statistics, never from a list
-the engine keeps) is named under `DW1100`, and its hq frame is not written
-(exit 5); a preview names it and is drawn. What a frame does not show — an item, a text display, the rain in
+the engine keeps) is named under `DW1100`, and its path-traced frame is not
+written (exit 5); a quick frame names it and is drawn. What a frame does not show — an item, a text display, the rain in
 the air, a `collapse`'s debris — is `compiler.md` §7, `delvec cameras`. The sky
 comes from the picture (the camera's `sky`, else its row's), never from the
 world's initial hour, and `delvec cameras` prints the sky each camera is drawn
@@ -1550,13 +1550,14 @@ sky at daytime <tick>: …` — and `skies: D derived, S stated, over C camera(s
 weathers emitted: {…}`. A record for another campaign than the build, two
 cameras of one name, a pitch past vertical, a zero frame or sample target, and an
 empty record are refused (`DW0721`) before any frame is drawn. **Every approved
-image is answered, or nothing is drawn**: `delvec cameras` draws no frame while a
-row of `design.json` has no camera (`DW0900`, exit 2), `--only` included, and
-`delvec build` refuses the same record (exit 3) before it seats a piece. `delvec
-cameras --preview`, `delvec cameras` and `delvec place-camera` each print
-`answers: K of N approved image(s) in design.json have a camera` and name the
-rest, so the count moves while the cameras are being placed; `--preview` is
-never refused by that rule, because it is the instrument that closes the hole. A
+image is answered, or nothing is path traced**: `delvec cameras --hq` (or
+`--draft`) draws no frame while a row of `design.json` has no camera (`DW0900`,
+exit 2), `--only` included, and `delvec build` refuses the same record (exit 3)
+before it seats a piece. `delvec cameras` and
+`delvec place-camera` each print `answers: K of N approved image(s) in
+design.json have a camera` and name the rest, so the count moves while the
+cameras are being placed; a quick run is never refused by that rule, because it
+is the instrument that closes the hole. A
 campaign that has placed no camera at all builds — its first build is what a
 camera is estimated against — and is refused at the staging gate instead.
 
@@ -1595,16 +1596,16 @@ never receives it, and Minecraft's FOV is vertical with *Normal* at 70
    camera-report.json` — `<out>` is the build the server runs.
 4. `delvec place-camera <campaign> --name <row> --report camera-report.json
    --slot <n> --fov <their number> [--answers <design.json row>]`.
-5. `delvec cameras <build> --campaign <campaign> -o <dir> --preview --only <row>`
-   and show them the frame; on a yes, rebuild, draw `--draft --only <row>`, then
-   the stated frame (`--only <row>`). A camera fired after the party has played a beat is written
+5. `delvec cameras <build> --campaign <campaign> -o <dir> --only <row>` (quick)
+   and show them the frame; on a yes, rebuild. The delivered picture of it is
+   `--only <row> --hq`, drawn with the storybook's. A camera fired after the party has played a beat is written
    with `--after <step>`, the step the agent names: the overlay cannot read the
    quest state.
 
 Finding a camera, cheapest first ([`showcase-shots.md`](showcase-shots.md) is the craft
 it applies):
 
-- **`--preview`** draws each camera quick, at half its frame, as
+- **No flag** draws each camera quick, at half its frame, as
   `<stem>_preview.png` with its manifest, from the world its camera stands in —
   seconds for a whole record. The preview of a record camera is byte-identical
   on the CPU backend to `delvec frames --campaign --camera` with the same numbers
@@ -1621,10 +1622,16 @@ it applies):
   `candidates.json` in the record format. `delvec contact-sheet` lays them on
   one page; the pick is copied into the record verbatim. A candidate past the
   legal range is not drawn.
-- **`--draft`** draws each frame hq at a quarter of its width and height and 128
-  samples as `<stem>_draft.png`.
-- Then the stated frame: `delvec cameras <build> --campaign <campaign> -o <dir>
-  --only <name>`, hq at the record's frame and samples.
+- **`--draft`** path traces each frame at a quarter of its width and height and
+  at most 128 samples as `<stem>_draft.png`: a cheap look at the light, never
+  the delivered picture.
+- **`--hq`** — the delivery mode, drawn once for the pictures that ship (the
+  storybook, a release): each frame path traced at the record's frame and
+  samples as `<stem>.png`. The run prints, before it draws, `cameras: hq, the
+  delivery mode: <n> frame(s) path traced at <spp> spp each, <samples> samples
+  in all` (the panorama's line says `panorama:`); `--draft` prints the same line
+  as a draft. Minutes a frame at a high `spp` is the cost of this pass and of no
+  other.
 
 `--camera` with a negative first number needs `=`: `--camera
 -40,160,320,221,21,48` is parsed as an unknown flag and exits 2;
@@ -1708,7 +1715,7 @@ A session runs one of these only to reproduce a red check locally.
 | `tools/ci/gallery-prefabs.py` | CI + agent | `python3 tools/ci/gallery-prefabs.py --out <dir> [--skins gallery/skins] [--delvec …]` — **the gallery's prefab directory, by the two committed acts that make it**: the generator (`gallery/prefab-generator`) for the hand-built pieces, the skins and the texture images (`gallery/textures/`, spec-0084), then `delvec detail --all` over the materialised site-plan point for the program-detailed place (spec-0058). It asserts that the row the verb writes equals the row `gallery/overlays/site-plan/detail-plan.json` commits — a committed row is what the program produces, never a hand edit — and states pieces generated, places detailed and rows compared; zero on any is a red. Every gallery tool's `--prefabs` is what this produces. Job `gallery pieces (generator output)`, which packs what it wrote with `tools/ci/gallery-pieces.py` and hands it to the other gallery jobs |
 | `tools/ci/gallery-pieces.py` | CI | `python3 tools/ci/gallery-pieces.py --out <archive.tar> [--repo DIR]` — **the gallery's pieces, handed down whole.** Packs every file in the checkout that git does not track — on a fresh runner after `gallery-prefabs.py`, exactly what generation wrote: `gallery-prefabs/` and the generated files inside `gallery/` — so no typed list of roots can go stale. Skips and counts build caches (any `target/` or `__pycache__/` segment); refuses a tracked file the generation modified and an archive of zero files. Job `gallery pieces (generator output)`, whose step hashes the archive into the job's `sha256` output; `.github/actions/gallery-pieces` refuses a download that does not hash to it and unpacks it for the coverage, views and baseline jobs. |
 | `tools/ci/check-gallery-render.py` | CI + agent | `python3 tools/ci/check-gallery-render.py --prefabs <generated> --build-out <tree> --frames <dir> [--write] [--delvec <bin>]` — **every declared view of the gallery is produced, and shows something** (spec-0039 §7). The gallery commits the view set it declares (`gallery/render-plan.json`, regenerated with `--write`); a view that vanishes from the build, or one the build emits that the set does not declare, reds by name. One `delvec frames <build>` draws every shot on the CPU backend at 256 px (the manifests are judged, not the pixels) and every frame's manifest is read: a featureless frame, a frame drawn at a camera the build's `render-plan.json` does not state (the manifest's `pos`, `yaw`, `pitch` and `fov` against the ones the plan states, within 0.002), and a frame binding zero targets are findings, since a camera that framed nothing declared checks nothing by having been taken. **No pixel is committed or compared.** States views declared, produced, refused and judged, and how many frames were drawn at the build's camera; zero of either is a red |
-| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. The population is the horizon bases `delvec schema --stage all` declares; each needs a gallery point declaring it, and a base with none reds by name. Per point: `delvec build`, `delvec panorama` (CPU, 160×90, 1 spp) and, where the point carries `design/cameras.json`, `delvec cameras --preview` (CPU), each judged from its frame manifest — the panorama's subject box projected through its Minecraft camera by a projection of the gate's own (every corner inside the frame, at least a third of it covered, the manifest's own `subject.span.fill` within 0.02 of that projection), the landform's chunks loaded, nothing featureless, every stated camera's pose, world and weather the record's, and every weather drawn over the domain. Every count is printed; zero panoramas or zero cameras is a red |
+| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. The population is the horizon bases `delvec schema --stage all` declares; each needs a gallery point declaring it, and a base with none reds by name. Per point: `delvec build`, `delvec panorama --hq` (CPU, 160×90, 1 spp) and, where the point carries `design/cameras.json`, `delvec cameras` (quick, CPU), each judged from its frame manifest — the panorama's subject box projected through its Minecraft camera by a projection of the gate's own (every corner inside the frame, at least a third of it covered, the manifest's own `subject.span.fill` within 0.02 of that projection), the landform's chunks loaded, nothing featureless, every stated camera's pose, world and weather the record's, and every weather drawn over the domain. Every count is printed; zero panoramas or zero cameras is a red |
 | `tools/ci/check-gallery-post-beat.py` | CI (gallery views job) + agent | `python3 tools/ci/check-gallery-post-beat.py --delvec <bin> --prefabs <generated> --build-out <gallery build> --work <dir>` — **the gallery's showcase cameras stand where its record says** (spec-0089 §9). Runs `delvec cameras` over the gallery's own build — a cargo test cannot build the gallery — and asserts from the binding lines and the written worlds: exactly two worlds, `at-load` and `after-obj-clear-the-muster`, with `east-bay-after-the-muster` standing in the second at a positive `cells moved from load`; removing that camera's `after` (on a scratch copy of the gallery) moves its scene to `at-load` and the count to 0; moving it to `obj/take-the-bone` moves the world's hash and the count. Prints every run's `configurations:` line and each world's cells and sha-256 |
 | `tools/ci/check-gallery-review-frames.py` | CI (gallery views job) + agent | `python3 tools/ci/check-gallery-review-frames.py [--delvec <bin>] --prefabs <generated> --build-out <gallery build> --work <dir>` — **the gallery's review frames show what its scene holds** (spec-0112 §15), bound by perturbation: each case is the primary materialised on a scratch copy (`tools/ci/gallery_domain.py`) with one declared edit, built, and compared with the unperturbed build on the review record (`validation/review-frames.json`) and the plan state. The cases: the muster's `fill-region` moves the world sha256 after that step; the curator's `offset` moved one cell moves her body's cell in every frame that shows her; one lantern of the hall's template made a chain moves the load world's light sha256; the muster's cutscene with its ninth shot deleted builds a plan one `cutscene/…` view short and `tools/ci/check-gallery-render.py` reds on the committed set; a `set-time` to sunrise added to the muster's bundle moves the sky of the POV shots after it. A perturbation whose build moves nothing it is declared to move reds; every case prints what it compared with its denominator |
 | `tools/ci/check-written-world.py` | CI (tier 2 over the gallery primary; gallery bot over the site-plan point) + agent (**mandatory** at step 10, its record handed to the staging gate) | `python3 tools/ci/check-written-world.py <build-dir> <written-world> <server-save> [--record <file>]` — **the world the engine writes is the world the pinned server builds** (spec-0089 §5.4, `DW0955`). Reads the written load world (`delvec written-world <campaign> -o <dir>`, from the campaign and `--prefabs` alone with no camera record; the same world `delvec cameras` writes as `<out>/worlds/at-load`) and a `validation/world-save.sh` save of the same build through `tools/lib/anvil.py`, compares every cell inside `render-plan.json`'s `layout_aabb`, and prints the box, both worlds' non-air counts, the cells compared and every differing cell by state pair in its class — gravity, fluid, re-derived (a connection, stair shape or leaves distance the server re-derived), clock (a gate region a clock owns, `clocked` in `validation/gate-seal.json`) — each a measured count — plus random-tick (grass block or mycelium against dirt, turned by the server's random tick; and copper the server weathered — the same registry family, unwaxed as written, one or more stages further on, every property equal; a waxed block that changed or a stage going backwards is a finding; and a sugar cane or a cactus differing only in `age`, which its own random tick advances). Reds `DW0955` on any differing cell in no class. It also reads every item entity in the save (`minecraft:item`, anywhere — `anvil.item_entities`) and counts them against the `summon minecraft:item` lines of the load's own functions (`setup`, the ground and world-build steps, `place_all`, `setup_finish`): a block the load wrote and the server did not keep lies on the ground as one and moves no cell, so an item entity beyond the declared ones reds `DW0955` with its item and position. `--record <file>` (outside the build tree) also writes the verdict as JSON — `verdict`, `manifest_sha256` of the build, the box, the compared count, each class's count, up to twelve model cells, and `item_entities` (entities, items, declared, by item, a sample) — on a red as on a green; it is what `tools/creator/staging-gate.py --written-world` admits on. Its perturbations live in `crates/delvec/tests/it/post_beat_camera.rs` (one cell moved reds; a settled gravel lands in the gravity class; a `structure_void` the server holds over the model's air reds, and its record says so) |
