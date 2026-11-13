@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, drivePoints, vehicleTag } from "../src/executor/ride.ts";
+import { arrivedAt, drivePoints, holdLooksForced, vehicleTag } from "../src/executor/ride.ts";
 import { methods } from "../src/executor/ride.ts";
 import type { RideStep, Vec3Tuple } from "../src/critical-path.ts";
 
@@ -43,6 +43,8 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[], aboardAt?: { v
   const self = {
     rides: [] as unknown[],
     aboard: aboardAt as { vehicle: string; y: number; at: Vec3Tuple } | undefined,
+    releaseSeatLooks: undefined as (() => void) | undefined,
+    leaveSeat: methods.leaveSeat,
     requireBot: () => ({
       inventory: { items: () => [{ name: "carrot_on_a_stick" }] },
       equip: async () => {},
@@ -235,4 +237,18 @@ test("a ride on from aboard boards nothing and needs the bot seated", async () =
   assert.equal(seated.self.aboard, undefined);
   const elsewhere = mock([{ riding: true, pos: [6.5, 3.11, 3.5] }], { vehicle: "vehicle/tern", y: 3.52, at: [6.5, 3.11, 3.5] });
   await assert.rejects(() => methods.ride.call(elsewhere.self as never, on), /sits in vehicle\/tern/);
+});
+
+test("a seat holds every look forced, and leaving it lets go", () => {
+  const forced: (boolean | undefined)[] = [];
+  const bot = {
+    lookAt: async (_p: never, force?: boolean) => {
+      forced.push(force);
+    },
+  };
+  const release = holdLooksForced(bot);
+  void bot.lookAt(undefined as never, false);
+  release();
+  void bot.lookAt(undefined as never, false);
+  assert.deepEqual(forced, [true, false]);
 });

@@ -144,6 +144,8 @@ export class MineflayerExecutor implements StepExecutor {
    * sits in, and the height its ride was reported at. The next act is done
    * from the seat; the next ride on it goes on without boarding. */
   aboard: Aboard | undefined = undefined;
+  /** Undoes the forced looks a seat holds ({@link holdLooksForced}). */
+  releaseSeatLooks: (() => void) | undefined = undefined;
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();

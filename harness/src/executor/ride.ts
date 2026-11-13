@@ -51,6 +51,22 @@ export interface Aboard {
   readonly at: Vec3Tuple;
 }
 
+/**
+ * Make every look the bot takes a forced one, until the returned release is
+ * called. mineflayer stops its physics at a mount, and an unforced `lookAt`
+ * waits for the physics tick that sends the look — so `activateBlock` and
+ * `openContainer`, which look before they use, never return for a rider. A
+ * forced look turns the body at once; the use packet carries its own cursor,
+ * and the server judges the use from the rider's eye (the vanilla record §15).
+ */
+export function holdLooksForced(bot: { lookAt: (point: never, force?: boolean) => Promise<void> }): () => void {
+  const original = bot.lookAt;
+  bot.lookAt = (point: never) => original.call(bot, point, true);
+  return () => {
+    bot.lookAt = original;
+  };
+}
+
 /** What the server says of the bot and a vehicle. */
 export interface RideReading {
   /** The bot's root vehicle is the vehicle. */
@@ -192,6 +208,13 @@ export const methods = {
    * must already seat the bot on the vehicle. A ride that stays ends aboard:
    * the bot is not unseated, and the next step's act is done from the seat.
    */
+  /** Clear the seat a ride that stayed left the bot in, and its forced looks. */
+  leaveSeat(this: MineflayerExecutor): void {
+    this.aboard = undefined;
+    this.releaseSeatLooks?.();
+    this.releaseSeatLooks = undefined;
+  },
+
   async ride(this: MineflayerExecutor, step: RideStep): Promise<void> {
     const bot = this.requireBot();
     const tag = vehicleTag(step.vehicle);
@@ -211,7 +234,7 @@ export const methods = {
       throw new Error(`ride ${step.vehicle} (${step.kind}): ${why}`);
     };
     const wasAboard = this.aboard;
-    this.aboard = undefined;
+    this.leaveSeat();
     let reading: RideReading;
     if (!step.boards) {
       if (wasAboard?.vehicle !== step.vehicle) {
@@ -339,6 +362,7 @@ export const methods = {
       // client's own body stands where the server holds the rider, so the act
       // aims from the eye the server judges it by.
       this.aboard = { vehicle: step.vehicle, y: ridY, at: arrived };
+      this.releaseSeatLooks = holdLooksForced(bot as never);
       bot.entity.position.set(arrived[0], arrived[1], arrived[2]);
       record({ reported, serverSeen, seat: arrived, left: false, passed: true });
       process.stderr.write(
