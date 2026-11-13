@@ -1577,3 +1577,52 @@ fn two_crates_are_opened_without_leaving_the_boat() {
         );
     }
 }
+
+/// A ride step is a path act: its arrival takes what precedes the objective
+/// it carries the party toward, as a trigger step's does, never the world as
+/// it loaded. Without it every proof that sweeps arrivals — the recovery
+/// stake's way home (`DW0525`) among them — read a ride's arrival as a world
+/// where no beat had fired, every door the path opened shut again.
+#[test]
+fn a_ride_arrives_after_what_precedes_its_objective() {
+    let (dir, lib) = write(
+        "ride-ancestors",
+        Bay {
+            ride: Some("vehicle/gull"),
+            ..Bay::default()
+        },
+        &boat("gull", "dock", [8, 3, 4]),
+        "",
+    );
+    let c = campaign(&dir);
+    let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mut s = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                s.insert(
+                    t.structure_file.clone(),
+                    std::fs::read(lib.join(&t.structure_file)).unwrap(),
+                );
+            }
+        }
+    }
+    let world = delvec::compiler::nav::World::from_plan(&plan, &s);
+    let linked = delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world)
+        .expect("the route proof takes its ride")
+        .expect("a ride is spliced");
+    let steps = &linked.critical_path;
+    let at = |f: &dyn Fn(&delvec::compiler::plan::Step) -> bool| {
+        steps.iter().position(f).expect("the step is on the path")
+    };
+    let talk = at(&|s| s.objective() == Some("obj/talk"));
+    let ride = at(&|s| matches!(s, delvec::compiler::plan::Step::Ride { .. }));
+    let exit = at(&|s| s.objective() == Some("obj/exit"));
+    assert!(talk < ride && ride < exit, "{talk} < {ride} < {exit}");
+    assert!(
+        linked.gate_fired_before(talk, ride),
+        "the talk (step {talk}) precedes the ride (step {ride}) toward the exit"
+    );
+    assert!(linked.gate_fired_before(talk, exit));
+}

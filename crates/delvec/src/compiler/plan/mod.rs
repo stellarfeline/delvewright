@@ -1222,6 +1222,7 @@ impl<'a> Plan<'a> {
             campaign,
             &objective_steps,
             &trigger_steps,
+            &path::ride_steps(&cp.steps),
             cp.steps.len(),
         );
         // ---- loops (spec-0086) ----

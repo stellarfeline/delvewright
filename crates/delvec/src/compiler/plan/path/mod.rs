@@ -378,6 +378,18 @@ impl Step {
     }
 }
 
+/// The indices of the `ride` steps of `steps` (spec-0135 §4): path acts whose
+/// arrival takes what precedes the objective each carries the party toward
+/// ([`compute_strict_ancestor_steps`]).
+pub(in crate::compiler::plan) fn ride_steps(steps: &[Step]) -> Vec<usize> {
+    steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s, Step::Ride { .. }))
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// The `ride` step a ride the route proof took splices into the path
 /// (spec-0135 §4, §6).
 fn ride_step(
@@ -589,6 +601,7 @@ impl<'a> Plan<'a> {
             self.campaign,
             &cp.firing.obj_step,
             &cp.firing.trigger_step,
+            &ride_steps(&cp.steps),
             cp.steps.len(),
         );
         (
