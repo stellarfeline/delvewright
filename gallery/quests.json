@@ -4363,7 +4363,7 @@
               "text": "the party comes alongside the floating crate and opens it from the boat",
               "verb": "gains"
             },
-            "hint": "A crate floats in the basin's far corner; open it from the boat.",
+            "hint": "A crate floats in the basin's far corner; take the catch from it, still in the boat.",
             "holder": "anchor/long-hall-crate",
             "id": "obj/open-the-crate",
             "item": "minecraft:cod",
