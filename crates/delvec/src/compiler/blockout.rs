@@ -3000,7 +3000,9 @@ fn stairwell_of(
 /// safe.
 ///
 /// 1. **Inside the declared play space, the plane is the LOWEST level a body can
-///    stand at.** That is what a floor is: treads, plinths and whatever else the
+///    stand at** — on a floor, or afloat on water whose surface lies one cell
+///    under that level, its head in it (a sea a body crosses afloat floors the
+///    place as a block flush with its surface would). That is what a floor is: treads, plinths and whatever else the
 ///    massing puts in a room stand above it, never below.
 /// 2. **Only when the declared space offers no footing at all** does the search
 ///    look below it, and then it takes the standable level NEAREST the declared
@@ -3027,7 +3029,18 @@ fn built_plane(
     world: &crate::compiler::nav::World,
 ) -> Option<i64> {
     let (lo, hi) = b.space();
-    let standable = |c: [i64; 3]| !owned_by_other(boxes, b, c) && world.is_standable(narrow(c));
+    // A body's feet are at `c` where it stands there, or where it floats on
+    // water whose surface lies one cell under `c`, its head in `c` — the
+    // reach graph's afloat rest state ([`crate::compiler::nav::World::rest_kind`]), as the
+    // seam profile (`DW0877`) reads a front of open water. Water whose surface
+    // lies a cell under a place's floor is that place's floor, as a block
+    // flush with it would be.
+    let standable = |c: [i64; 3]| {
+        !owned_by_other(boxes, b, c)
+            && (world.is_standable(narrow(c))
+                || world.rest_kind(narrow([c[0], c[1] - 1, c[2]]))
+                    == Some(crate::compiler::nav::RestKind::Afloat))
+    };
     if let Some(y) = cells_of(lo, hi)
         .filter(|c| standable(*c))
         .map(|c| c[1])
@@ -5032,6 +5045,38 @@ mod contact_profile_tests {
             }
         }
         World::from_solid_cells(solid)
+    }
+
+    /// A place floored at y 63 over `x0..=x1`, z 4..=16, four courses high.
+    fn place(name: &str, x0: i64, x1: i64) -> PlacedBox {
+        PlacedBox {
+            node: delvewright_dsl::NodeId(name.to_string()),
+            slope: Default::default(),
+            foot: [x0, x1, 4, 16],
+            floor: 63,
+            clearance: 4,
+            open: true,
+            base: delvewright_dsl::siteplan::Base::Ground,
+            roof: None,
+            sides: Default::default(),
+        }
+    }
+
+    /// `DW0836`'s climb reads a place's feet where the reach graph rests a
+    /// body: open water whose surface lies one cell under the floor is
+    /// floored at the floor, as dry ground with its top course there is — a
+    /// rise of 0 between the two, as the plan puts them. Red on a plane read
+    /// from standing cells alone: the sea had none, and the climb was not
+    /// measured at all.
+    #[test]
+    fn open_water_floors_its_place_where_a_body_floats() {
+        let sea_box = place("node/sea", -3, 8);
+        assert_eq!(
+            built_plane(&sea_box, &[sea_box.clone()], &sea(false)),
+            Some(63)
+        );
+        let dry = place("node/cove", -3, 8);
+        assert_eq!(built_plane(&dry, &[dry.clone()], &ground()), Some(63));
     }
 
     /// `DW0877` asks the reach graph where a body crosses: a front of open
