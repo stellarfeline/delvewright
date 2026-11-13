@@ -5159,11 +5159,14 @@ mod contact_profile_tests {
     fn open_water_floors_its_place_where_a_body_floats() {
         let sea_box = place("node/sea", -3, 8);
         assert_eq!(
-            built_plane(&sea_box, &[sea_box.clone()], &sea(false)),
+            built_plane(&sea_box, std::slice::from_ref(&sea_box), &sea(false)),
             Some(63)
         );
         let dry = place("node/cove", -3, 8);
-        assert_eq!(built_plane(&dry, &[dry.clone()], &ground()), Some(63));
+        assert_eq!(
+            built_plane(&dry, std::slice::from_ref(&dry), &ground()),
+            Some(63)
+        );
     }
 
     /// `DW0838` deletes a contact across open water through the water under
