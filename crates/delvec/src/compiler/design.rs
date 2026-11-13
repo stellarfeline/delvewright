@@ -83,8 +83,8 @@ delvewright_dsl::dw_code! {
     /// Build tier (exit 3), and `delvec cameras` raises the same code at its own
     /// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
     /// It refuses at the build rather than at validation because every view command
-    /// validates first, so a validation-tier refusal would refuse `cameras
-    /// --preview`, the instrument that completes the record (spec-0070 §3).
+    /// validates first, so a validation-tier refusal would refuse the quick
+    /// frames of `delvec cameras`, the instrument that completes the record (spec-0070 §3).
     pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
 }
 
@@ -665,7 +665,7 @@ fn camera_record(files: &DesignFiles, rows: &[Reference]) -> CameraRecord {
 /// answers is `DW0900`. Both are build tier (exit 3), and both are raised
 /// **before anything is placed** — the caller runs this after analysis and
 /// before `Plan::build`, so the creator's previous build tree is still on disk
-/// for `delvec cameras --preview` to draw against.
+/// for `delvec cameras` to draw its quick frames against.
 ///
 /// An **absent** camera record raises nothing: the first build of every
 /// campaign is the build a camera is written against, so refusing it here would
@@ -808,7 +808,7 @@ pub fn unanswered_message(
          answering {answering}. An approved picture nobody has pointed a camera at is a picture \
          the build is never held beside. Either (1) AUTHOR a camera for each: estimate the view \
          from the picture (`showcase-shots.md` §4) and draw it with `delvec cameras <last build> \
-         --campaign <dir> -o <dir> --preview`, then write the row (`source: estimated`), or place \
+         --campaign <dir> -o <dir>` (a quick frame), then write the row (`source: estimated`), or place \
          it by hand in the running game and write it with `delvec place-camera --report`; or (2) \
          DELETE the picture and its row from `design.json`, which is re-opening the design gate \
          for that scene, and is said to the user in those words. Never re-aim an existing camera \

@@ -196,7 +196,7 @@ fn midnight_is_darker_than_noon() {
             .arg(&camp)
             .arg("-o")
             .arg(&out)
-            .args(["--preview", "--backend", "cpu"])
+            .args(["--backend", "cpu"])
             .output()
             .unwrap();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));

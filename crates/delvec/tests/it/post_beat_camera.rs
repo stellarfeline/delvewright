@@ -714,7 +714,7 @@ fn cameras_print_where_every_camera_stands() {
     let camp = hello("c8-plain", &[("hero", None)]);
     let out = built("c8-plain", &camp);
     let scenes = tmp("c8-plain-scenes");
-    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    let (code, log) = cameras(&out, &camp, &scenes, &["--hq"]);
     assert_eq!(code, 0, "{log}");
     assert!(log.contains("after: hero at load"), "{log}");
     assert!(
@@ -741,7 +741,7 @@ fn cameras_print_where_every_camera_stands() {
         .position(|s| s["objective"] == "obj/talk")
         .unwrap();
     let scenes = tmp("c8-door-scenes");
-    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    let (code, log) = cameras(&out, &camp, &scenes, &["--hq"]);
     assert_eq!(code, 0, "{log}");
     let want = format!(
         "after: door after obj/talk (step {} of {steps} on the critical path): 6 cells moved from load, 0 of the cast moved, sky as at load, 0 unforced write(s) not laid, 0 block entit(ies) omitted; biomes: at load; clock: as the picture",
@@ -786,7 +786,7 @@ fn a_camera_frame_is_the_same_bytes_twice() {
     let mut runs = Vec::new();
     for r in ["a", "b"] {
         let scenes = tmp(&format!("c7-{r}"));
-        let (code, log) = cameras(&out, &camp, &scenes, &[]);
+        let (code, log) = cameras(&out, &camp, &scenes, &["--hq"]);
         assert_eq!(code, 0, "{log}");
         runs.push((
             std::fs::read(scenes.join("hello-world_camera_hero.png")).unwrap(),
@@ -960,12 +960,17 @@ fn the_load_world_is_written_without_a_camera_record() {
     let scenes = tmp("ww-same-scenes");
     // A record whose every camera stands after a step: `cameras` writes no
     // load world of its own, and `written-world` still does.
-    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    let (code, log) = cameras(&out, &camp, &scenes, &["--hq"]);
     assert_eq!(code, 0, "{log}");
     assert!(!scenes.join("worlds/at-load").exists(), "{log}");
     let camp_hero = hello("ww-hero", &[("hero", None)]);
     let scenes = tmp("ww-hero-scenes");
-    let (code, log) = cameras(&built("ww-hero", &camp_hero), &camp_hero, &scenes, &[]);
+    let (code, log) = cameras(
+        &built("ww-hero", &camp_hero),
+        &camp_hero,
+        &scenes,
+        &["--hq"],
+    );
     assert_eq!(code, 0, "{log}");
     let direct = tmp("ww-hero-world");
     let (code, log) = written_world(&camp_hero, &direct);
@@ -1477,7 +1482,7 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
     });
     let out = built("c-repaint", &camp);
     let scenes = tmp("c-repaint-scenes");
-    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    let (code, log) = cameras(&out, &camp, &scenes, &["--hq"]);
     assert_eq!(code, 0, "{log}");
     let line = log
         .lines()

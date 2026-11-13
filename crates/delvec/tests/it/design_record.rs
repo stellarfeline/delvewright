@@ -661,7 +661,7 @@ fn a_picture_with_no_camera_refuses_the_build_and_the_second_camera_builds_it() 
     cameras(&camp, eye, &[("shore", "concept/shore-far")]);
 
     // A tree this campaign already built into, before the second picture was
-    // approved: what `--preview` draws against, and what the refusal must leave
+    // approved: what a quick frame draws against, and what the refusal must leave
     // alone.
     let before_camp = campaign("answered-before", "noon");
     image(&before_camp, "concept/shore-far.png");

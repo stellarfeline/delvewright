@@ -242,7 +242,7 @@ fn a_moment_holds_the_cast_the_ledger_stations_and_a_watcher_faces_the_lens() {
     let lib = common::prefabs_dir();
     let out = built("cast", &camp, &lib);
     let scenes = tmp("cast-scenes");
-    let (code, log) = cameras(&out, &camp, &lib, &scenes, &["--preview"]);
+    let (code, log) = cameras(&out, &camp, &lib, &scenes, &[]);
     assert_eq!(code, 0, "{log}");
     assert!(
         log.contains("after: aside after obj/look")
@@ -316,7 +316,7 @@ fn a_moment_lays_every_write_its_path_fired_and_counts_what_it_wrote() {
     );
     let out = built("order", &camp, &lib);
     let scenes = tmp("order-scenes");
-    let (code, log) = cameras(&out, &camp, &lib, &scenes, &["--preview"]);
+    let (code, log) = cameras(&out, &camp, &lib, &scenes, &[]);
     assert_eq!(code, 0, "{log}");
     let worlds = scenes.join("worlds");
     let read = |k: &str| -> BTreeMap<String, String> {
@@ -368,7 +368,7 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
     });
     let out = built("undrawn", &camp, &lib);
     let scenes = tmp("undrawn-scenes");
-    let (code, log) = cameras(&out, &camp, &lib, &scenes, &[]);
+    let (code, log) = cameras(&out, &camp, &lib, &scenes, &["--hq"]);
     assert_eq!(code, 5, "{log}");
     assert!(
         log.contains("DW1100") && log.contains("minecraft:bat dw_npc_keeper at [5.5, 65.0, 4.5]"),
@@ -378,7 +378,7 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
         !scenes.join("hello-world_camera_hero.png").exists(),
         "the refused picture is not written"
     );
-    let (code, log) = cameras(&out, &camp, &lib, &tmp("undrawn-preview"), &["--preview"]);
+    let (code, log) = cameras(&out, &camp, &lib, &tmp("undrawn-preview"), &[]);
     assert_eq!(code, 0, "{log}");
     assert!(
         log.contains("DW1100: camera `hero` frames a body")
@@ -392,7 +392,7 @@ fn a_frame_of_a_body_the_renderer_cannot_draw_is_refused() {
         c["cameras"][0]["yaw"] = serde_json::json!(0.0)
     });
     let out = built("drawn", &camp, &lib);
-    let (code, log) = cameras(&out, &camp, &lib, &tmp("drawn-scenes"), &[]);
+    let (code, log) = cameras(&out, &camp, &lib, &tmp("drawn-scenes"), &["--hq"]);
     assert_eq!(code, 0, "{log}");
     assert!(
         log.contains("undrawn: 0 of 1 frame(s) frame a body the renderer draws nothing of"),

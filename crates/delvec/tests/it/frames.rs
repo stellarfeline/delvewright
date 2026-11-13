@@ -567,7 +567,7 @@ fn the_renderer_holds_no_network_client() {
     }
 }
 
-/// `delvec cameras --preview` draws a stated camera as `delvec frames
+/// `delvec cameras` (quick, the default) draws a stated camera as `delvec frames
 /// --campaign --camera` draws the same numbers: the preview of a record
 /// camera is byte for byte the campaign frame of the same camera at half the
 /// stated frame, in the same world.
@@ -632,7 +632,6 @@ fn a_camera_preview_is_the_campaign_frame_of_the_same_camera() {
             .arg(&campaign)
             .arg("-o")
             .arg(&previews)
-            .arg("--preview")
             .arg("--backend")
             .arg("cpu")
             .output()

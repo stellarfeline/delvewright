@@ -57,7 +57,7 @@ It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json`
 
 ## What the set costs
 
-**Seconds to minutes for a whole set.** Measured on a ten-core development machine: a 24-view demo level's set in 9 s on the CPU and 4 s on the GPU (Metal), its 1600 × 900 panorama in 45 s and 2 s, a 200-frame set in 68 s and 40 s. The frames' own binding lines state the set's wall time, peak memory and per-frame times on every run — read them rather than carrying a number off this page. Every shot is drawn, in route order in the index; a set you did not draw is reported as not drawn, per shot.
+**Seconds to minutes for a whole set.** Measured on a ten-core development machine: a 24-view demo level's set in 9 s on the CPU and 4 s on the GPU (Metal), its 1600 × 900 panorama drawn `--hq` in 45 s and 2 s, a 200-frame set in 68 s and 40 s. The frames' own binding lines state the set's wall time, peak memory and per-frame times on every run — read them rather than carrying a number off this page. Every shot is drawn, in route order in the index; a set you did not draw is reported as not drawn, per shot.
 
 Every camera in `render-plan.json` is proven to stand in open air in the world its frame stands in (`DW0724`); read `camera_eye_proof` for how many were examined, how many had to be pulled in off a stand-off that was inside geometry or behind a wall, and in how many worlds, and treat a shot carrying `camera.requested_pos` as a hint about the build — the room is tighter than the shot wanted, which is worth a look while you are there.
 

@@ -72,6 +72,66 @@ pub struct DrawArgs {
     pub textures: Option<String>,
 }
 
+/// **How a showcase verb draws** (`cameras`, `panorama`): every picture drawn
+/// while working is a quick frame, and a path-traced picture is asked for by
+/// name. These two are every verb that path traces; `frames` draws the mode its
+/// plan states, quick for every review kind
+/// ([`crate::compiler::render_plan::review_mode`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pass {
+    /// The vanilla client's look, in seconds: the default.
+    Quick,
+    /// Path traced small and cheap (`cameras --draft`): a look at the light.
+    Draft,
+    /// Path traced at the stated frame and samples (`--hq`): the delivered
+    /// pictures.
+    Hq,
+}
+
+impl Pass {
+    /// The pass a verb's flags name: `--hq`, `--draft`, or neither.
+    pub fn of(hq: bool, draft: bool) -> Pass {
+        match (hq, draft) {
+            (true, _) => Pass::Hq,
+            (false, true) => Pass::Draft,
+            (false, false) => Pass::Quick,
+        }
+    }
+
+    /// Whether the pass path traces.
+    pub fn traced(self) -> bool {
+        self != Pass::Quick
+    }
+}
+
+/// **The line a path-traced run prints before it draws**: which pass it is,
+/// how many frames, and the samples it will spend — each frame's `spp` and the
+/// samples over the whole run (pixels × spp, summed). `frames` is each frame's
+/// `(width, height, spp)` as it will be drawn. A quick run prints none.
+pub fn traced_line(verb: &str, pass: Pass, frames: &[(u32, u32, u32)]) -> Option<String> {
+    let what = match pass {
+        Pass::Quick => return None,
+        Pass::Hq => "hq, the delivery mode",
+        Pass::Draft => "draft, path traced small and cheap, never the delivered picture",
+    };
+    let lo = frames.iter().map(|f| f.2).min().unwrap_or(0);
+    let hi = frames.iter().map(|f| f.2).max().unwrap_or(0);
+    let spp = if lo == hi {
+        format!("{lo} spp each")
+    } else {
+        format!("{lo}..{hi} spp")
+    };
+    let samples: u64 = frames
+        .iter()
+        .map(|&(w, h, s)| u64::from(w) * u64::from(h) * u64::from(s))
+        .sum();
+    Some(format!(
+        "{verb}: {what}: {} frame(s) path traced at {spp}, {samples} samples in all. While \
+         working, draw without `--hq` or `--draft`: a quick frame in seconds",
+        frames.len()
+    ))
+}
+
 #[derive(Subcommand)]
 pub enum ViewCommand {
     /// Draw the review frames of a build — every shot of its `render-plan.json`
@@ -150,7 +210,8 @@ pub enum ViewCommand {
     /// `design/cameras.json` — a camera on the assembled world, estimated from
     /// the approved image it answers or placed by hand — each in the world the
     /// engine writes for the configuration the camera stands in (at load, or
-    /// after its `after` step), path traced at the camera's own samples.
+    /// after its `after` step). A quick frame by default; `--hq` path traces
+    /// the delivered pictures at each camera's own samples.
     Cameras {
         /// A `delvec build` output directory (containing `render-plan.json`).
         build_dir: PathBuf,
@@ -175,16 +236,20 @@ pub enum ViewCommand {
         #[arg(long, value_parser = Bracket::parse)]
         bracket: Option<Bracket>,
         // The numbers are the draft constants' own, so the help cannot drift from them.
-        #[arg(long, conflicts_with = "preview", help = format!(
-            "Draw each frame at 1/{DRAFT_DIVISOR} of its width and height and at most \
-             {DRAFT_SPP} samples, as `<stem>_draft.png`: for judging what is in frame."
+        #[arg(long, conflicts_with = "hq", help = format!(
+            "Path trace each frame at 1/{DRAFT_DIVISOR} of its width and height and at most \
+             {DRAFT_SPP} samples, as `<stem>_draft.png`: a cheap look at the light, never \
+             the delivered picture."
         ))]
         draft: bool,
-        /// Draw each camera (and candidate) in quick mode — the vanilla
-        /// client's look — at half its width and height, as `<stem>_preview.png`:
-        /// for placing a camera before light is judged.
+        /// The delivery mode: path trace each camera at its own frame and
+        /// samples (`spp`, 300 in daylight per `showcase-shots.md` §3.8), as
+        /// `<stem>.png` — the pictures a storybook or release ships. Without it
+        /// (and without `--draft`) every camera and candidate is a quick frame —
+        /// the vanilla client's look — at half its width and height, as
+        /// `<stem>_preview.png`, drawn in seconds: the frame to work in.
         #[arg(long)]
-        preview: bool,
+        hq: bool,
         #[command(flatten)]
         draw: DrawArgs,
     },
@@ -243,9 +308,10 @@ pub enum ViewCommand {
         delete: bool,
     },
     /// Draw an oblique exterior of the delve's built place — the storybook
-    /// shot — path traced from the world the build wrote at load. The camera
-    /// frames the subject (the placed areas unless `--subject` names anchors);
-    /// the ground a horizon built around them is loaded, not framed.
+    /// shot — from the world the build wrote at load: a quick frame by
+    /// default, path traced with `--hq`. The camera frames the subject (the
+    /// placed areas unless `--subject` names anchors); the ground a horizon
+    /// built around them is loaded, not framed.
     Panorama {
         /// A `delvec build` output directory (containing `render-plan.json` and
         /// `validation/worlds/at-load`).
@@ -275,8 +341,15 @@ pub enum ViewCommand {
         /// at the layout's full height.
         #[arg(long, default_value = "layout", value_parser = Subject::parse)]
         subject: Subject,
-        /// Path-tracing samples a pixel: ~64 for a draft, ~300 for release art.
-        #[arg(long, default_value_t = panorama::DEFAULT_SPP)]
+        /// The delivery mode: path trace the frame at `--spp` samples, as
+        /// `<stem>.png` — the picture a storybook or release ships. Without it
+        /// the frame is quick — the vanilla client's look, drawn in seconds — as
+        /// `<stem>_preview.png`: the frame to work in.
+        #[arg(long)]
+        hq: bool,
+        /// Path-tracing samples a pixel of the `--hq` frame: the showcase
+        /// budget in daylight (`showcase-shots.md` §3.8) by default.
+        #[arg(long, requires = "hq", default_value_t = panorama::DEFAULT_SPP)]
         spp: u32,
         /// Frame width, in pixels.
         #[arg(long, default_value_t = panorama::DEFAULT_WIDTH,
@@ -426,6 +499,7 @@ impl ViewCommand {
                 pitch,
                 fov,
                 subject,
+                hq,
                 spp,
                 width,
                 height,
@@ -434,6 +508,7 @@ impl ViewCommand {
                 build_dir,
                 out,
                 json,
+                if *hq { Pass::Hq } else { Pass::Quick },
                 PanoramaOptions {
                     width: *width,
                     height: *height,
@@ -589,6 +664,7 @@ fn run_panorama(
     build_dir: &Path,
     out: &Path,
     json: bool,
+    pass: Pass,
     opts: PanoramaOptions,
     draw: &DrawArgs,
 ) -> ExitCode {
@@ -631,6 +707,27 @@ fn run_panorama(
         Err(d) => return fail(d, json, exit::RENDER),
     };
     let packs = frameset::build_packs(build_dir);
+    // Quick while working; path traced only by name, and then said so with
+    // what it will spend before anything is drawn.
+    let (mode, stem) = match pass {
+        Pass::Quick => (
+            crate::compiler::view::frames::Mode::Quick,
+            format!("{}_preview", pano.stem),
+        ),
+        Pass::Draft | Pass::Hq => (
+            crate::compiler::view::frames::Mode::Hq {
+                spp: pano.frame.spp,
+            },
+            pano.stem.clone(),
+        ),
+    };
+    if let Some(line) = traced_line(
+        "panorama",
+        pass,
+        &[(pano.frame.width, pano.frame.height, pano.frame.spp)],
+    ) {
+        eprintln!("{line}");
+    }
     let drawn = match frameset::draw_frame(
         &crate::compiler::view::frames::FrameRequest {
             world: &world,
@@ -643,9 +740,7 @@ fn run_panorama(
                 daytime_ticks: pano.sky.daytime_ticks,
                 weather: pano.sky.weather,
             },
-            mode: crate::compiler::view::frames::Mode::Hq {
-                spp: pano.frame.spp,
-            },
+            mode,
             backend: draw.backend,
             width: pano.frame.width,
             height: pano.frame.height,
@@ -659,7 +754,7 @@ fn run_panorama(
         Err(d) => return fail(d, json, exit::RENDER),
     };
     eprintln!("{}", frameset::renderer_line(&drawn, draw.backend));
-    let png = out.join(format!("{}.png", pano.stem));
+    let png = out.join(format!("{stem}.png"));
     if let Err(d) = frameset::write_png(&png, &drawn) {
         return fail(d, json, exit::OUTPUT);
     }
@@ -674,7 +769,7 @@ fn run_panorama(
         "backend": drawn.backend_name(),
         "kind": "panorama",
         "image": {
-            "path": format!("{}.png", pano.stem),
+            "path": format!("{stem}.png"),
             "width": drawn.width,
             "height": drawn.height,
         },
@@ -693,8 +788,11 @@ fn run_panorama(
             "daytime_ticks": pano.sky.daytime_ticks,
             "weather": pano.sky.weather.keyword(),
         },
-        "mode": "hq",
-        "spp": pano.frame.spp,
+        "mode": mode.keyword(),
+        "spp": match mode {
+            crate::compiler::view::frames::Mode::Hq { spp } => serde_json::json!(spp),
+            crate::compiler::view::frames::Mode::Quick => serde_json::Value::Null,
+        },
         "subject": {
             "box": { "min": smin, "max": smax },
             "span": {
@@ -716,7 +814,7 @@ fn run_panorama(
     });
     let mut mbytes = serde_json::to_vec_pretty(&manifest).expect("a manifest serializes");
     mbytes.push(b'\n');
-    let mpath = out.join(format!("{}.manifest.json", pano.stem));
+    let mpath = out.join(format!("{stem}.manifest.json"));
     if let Err(e) = std::fs::write(&mpath, mbytes) {
         return fail(
             Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", mpath.display())),
@@ -725,11 +823,14 @@ fn run_panorama(
         );
     }
     eprintln!(
-        "drew panorama {} ({}x{}, {} spp, hq) in {:.2} s -> {}",
-        pano.stem,
+        "drew panorama {stem} ({}x{}, {}) in {:.2} s -> {}",
         pano.frame.width,
         pano.frame.height,
-        pano.frame.spp,
+        match mode {
+            crate::compiler::view::frames::Mode::Hq { spp } => format!("{spp} spp, hq"),
+            crate::compiler::view::frames::Mode::Quick =>
+                "quick; `--hq` draws the delivered picture".to_string(),
+        },
         drawn.seconds(),
         png.display()
     );
@@ -1109,8 +1210,10 @@ pub fn write_world(
 /// `delvec cameras`: draw one frame per camera the run frames, each in the
 /// world the engine writes for the configuration it stands in (spec-0089
 /// §5.3). `ask` is the caller's assembly of the campaign; it is consulted after
-/// every rule of the record that needs no world has held. `preview` draws each
-/// in quick mode at [`camera::PREVIEW_DIVISOR`] of its size.
+/// every rule of the record that needs no world has held. `pass` is how the
+/// frames are drawn: [`Pass::Quick`] (the default) in quick mode at
+/// [`camera::PREVIEW_DIVISOR`] of each camera's size; [`Pass::Draft`] and
+/// [`Pass::Hq`] path traced, and `opts.draft` is set exactly for the draft.
 #[allow(clippy::too_many_arguments)]
 pub fn run_cameras(
     build_dir: &Path,
@@ -1118,10 +1221,12 @@ pub fn run_cameras(
     out: &Path,
     json: bool,
     opts: EmitOptions,
-    preview: bool,
+    pass: Pass,
     draw: &DrawArgs,
     ask: &mut StandAsker<'_>,
 ) -> ExitCode {
+    debug_assert_eq!(opts.draft, pass == Pass::Draft);
+    let preview = pass == Pass::Quick;
     let read = |path: PathBuf| {
         std::fs::read(&path)
             .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
@@ -1142,7 +1247,7 @@ pub fn run_cameras(
     // **Every approved picture is answered** (`DW0900`, spec-0070). Read where
     // the record is read FRESH, so a record edited after the build cannot draw
     // a set with a hole in it; `--only` selects which frames are drawn and
-    // exempts nothing, because the record is what is judged. `--preview` is
+    // exempts nothing, because the record is what is judged. A quick frame is
     // the instrument that closes the hole, so it reports the count and never
     // refuses on it (spec-0070 §3).
     let answers = camera::tally(
@@ -1348,6 +1453,16 @@ pub fn run_cameras(
         stood.watchers.len()
     );
     let packs = frameset::build_packs(build_dir);
+    if let Some(line) = traced_line(
+        "cameras",
+        pass,
+        &frames
+            .iter()
+            .map(|f| (f.frame.width, f.frame.height, f.frame.spp))
+            .collect::<Vec<_>>(),
+    ) {
+        eprintln!("{line}");
+    }
     if let Err(e) = std::fs::create_dir_all(out) {
         return fail(
             Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
@@ -1591,17 +1706,14 @@ pub fn run_cameras(
         frames.len(),
         sheet.cameras.len(),
         out.display(),
-        if preview {
-            "previews, quick"
-        } else if opts.draft {
-            "drafts, hq"
-        } else {
-            "hq"
+        match pass {
+            Pass::Quick => "previews, quick",
+            Pass::Draft => "drafts, hq",
+            Pass::Hq => "hq",
         },
-        if preview {
-            ""
-        } else {
-            " at each camera's samples"
+        match pass {
+            Pass::Quick => "",
+            Pass::Draft | Pass::Hq => " at each camera's samples",
         },
         if opts.bracket.is_some() {
             format!(
@@ -1612,6 +1724,12 @@ pub fn run_cameras(
             String::new()
         }
     );
+    if preview {
+        eprintln!(
+            "quick: the frames to work in; `--hq` path traces the delivered pictures at each \
+             camera's samples"
+        );
+    }
     eprintln!(
         "lens: {} of {} camera(s) clear of every block by {} block, {obstructed} flagged",
         frames.len() - obstructed,
@@ -2165,4 +2283,37 @@ fn run_palette(
         );
     }
     ExitCode::from(exit::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A quick run says nothing of samples; a traced run names its pass, its
+    /// frame count, each frame's samples and the samples over the run.
+    #[test]
+    fn a_traced_run_says_what_it_spends_and_a_quick_one_says_nothing() {
+        assert_eq!(Pass::of(false, false), Pass::Quick);
+        assert_eq!(Pass::of(false, true), Pass::Draft);
+        assert_eq!(Pass::of(true, false), Pass::Hq);
+        assert!(!Pass::Quick.traced() && Pass::Draft.traced() && Pass::Hq.traced());
+        assert_eq!(
+            traced_line("cameras", Pass::Quick, &[(1600, 900, 300)]),
+            None
+        );
+        let hq = traced_line("cameras", Pass::Hq, &[(1600, 900, 300), (1600, 900, 4096)]).unwrap();
+        assert!(
+            hq.starts_with(
+                "cameras: hq, the delivery mode: 2 frame(s) path traced at 300..4096 spp, \
+                 6330240000 samples in all."
+            ),
+            "{hq}"
+        );
+        let draft = traced_line("panorama", Pass::Draft, &[(400, 225, 128)]).unwrap();
+        assert!(
+            draft.starts_with("panorama: draft, path traced small and cheap")
+                && draft.contains("1 frame(s) path traced at 128 spp each, 11520000 samples"),
+            "{draft}"
+        );
+    }
 }

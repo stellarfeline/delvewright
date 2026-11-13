@@ -490,7 +490,7 @@ fn a_camera_that_answers_no_row_is_refused_by_the_build() {
 
 /// **The placing instruments are not refused** (spec-0070 criterion 3): on a
 /// record that answers one of two approved images, `delvec validate` exits 0
-/// and `delvec cameras --preview` draws the one camera against the last built
+/// and `delvec cameras` (quick) draws the one camera against the last built
 /// tree and prints the count. The build of that same campaign is refused
 /// (`DW0900`), and the tree it was refused over is unchanged.
 #[test]
@@ -524,7 +524,7 @@ fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
     .unwrap();
 
     // The last built tree: the same campaign before the second picture was
-    // approved builds, and that tree is what `--preview` draws against.
+    // approved builds, and that tree is what a quick frame draws against.
     let built = tmp("partial-built");
     let r = delvec(&[
         "build",
@@ -562,7 +562,7 @@ fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
         log(&r)
     );
 
-    // `--preview` draws the one camera and prints the count.
+    // A quick frame (the default) draws the one camera and prints the count.
     let shots = tmp("partial-preview");
     let r = delvec(&[
         "cameras",
@@ -571,7 +571,6 @@ fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
         camp.to_str().unwrap(),
         "-o",
         shots.to_str().unwrap(),
-        "--preview",
         "--prefabs",
         common::prefabs_dir().to_str().unwrap(),
     ]);

@@ -58,7 +58,7 @@ def run(delvec: Path, prefabs: Path, build: Path, campaign: Path, out: Path) -> 
         shutil.rmtree(out)
     r = subprocess.run(
         [str(delvec), "--prefabs", str(prefabs), "cameras", str(build), "--campaign", str(campaign), "-o", str(out),
-         "--preview", "--backend", "cpu"],
+         "--backend", "cpu"],
         capture_output=True,
         text=True,
     )

@@ -389,7 +389,7 @@ Not a proposal — an inventory.
    sequence a whole subject needs is a workflow step with its anchor and its
    per-view frame written down — but it needs a human iterating on the prompt,
    and it composes nothing.
-3. **Storybook art is a two-pass flow the agent drives** — `delvec cameras --preview` to judge layout, then `delvec cameras` and `delvec panorama` for the shipped frames, drawn by `delvec` itself (`docs/reference/tools.md` §4a); choosing the frame is still a person's judgement, and nothing composes the page.
+3. **Storybook art is a two-pass flow the agent drives** — `delvec cameras` and `delvec panorama` with no flag (quick) to judge layout, then `--hq` on each for the shipped frames, drawn by `delvec` itself (`docs/reference/tools.md` §4a); choosing the frame is still a person's judgement, and nothing composes the page.
 3a. **Whether the script review runs is the creator's judgement**, read off the
    prompt against the plan by the rule on `references/script-review.md`, and
    recorded in `GENERATION.md` as one line; nothing reads the prompt to check

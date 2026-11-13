@@ -6851,7 +6851,9 @@ the mode, and returns the pixels with the renderer's own statistics.
 - **Modes.** `quick` — the lightmap the client draws, from the block and sky
   light the written world carries — is every review frame's mode; `hq` — a
   path-traced frame at `frames::REVIEW_HQ_SPP` (256) samples, or the camera's
-  own `spp` — is the showcase cameras' and the panorama's. A shot states its
+  own `spp` — is the showcase cameras' and the panorama's, drawn only when the
+  run names `--hq` (or `cameras --draft`); with no flag both draw quick
+  (`view::cli::Pass`), so every frame drawn while working is quick. A shot states its
   mode in the plan (`render_plan::review_mode`); light-question shots (a
   declared `lighting` or a `dark` stamp, a sky a step set, a weather that is not
   clear) are counted on the binding line as drawn quick until the hq light
@@ -7134,7 +7136,7 @@ whole campaign's four slices, including the nav model and critical-path routing.
 ```
 delvec cameras <build-dir> --campaign <campaign-dir> -o <dir> [--prefabs <dir>]
     [--only <name>]... [--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=]
-    [--draft | --preview]
+    [--draft | --hq]
 ```
 
 `<campaign-dir>/design/cameras.json` is the one record of a campaign's showcase
@@ -7290,13 +7292,19 @@ beat shows the ceiling standing; and a gated trap's trigger re-armed by a later
 beat (it is drawn as at load). A camera frame is of its picture's sky, not of
 the configuration's clock (`clock: as the picture` on its `after:` line).
 
-`delvec cameras` draws one frame per camera — hq at the camera's frame and
-samples as `<stem>.png`, `--draft` a quarter of the frame at no more than 128 samples as
-`<stem>_draft.png`, `--preview` quick at half the frame as
-`<stem>_preview.png` — each with its manifest, from the world its camera stands
-in, under the camera's sky. `delvec panorama` draws the solved whole-map camera
-hq from the build's load world through the same call and prints its camera as a
-record line. Refusals are `DW0721` (exit 2), before any frame: a record that
+`delvec cameras` draws one frame per camera — with no flag quick at half the
+frame as `<stem>_preview.png`, `--draft` path traced at a quarter of the frame
+at no more than 128 samples as `<stem>_draft.png`, `--hq` (the delivery mode)
+path traced at the camera's frame and samples as `<stem>.png` — each with its
+manifest, from the world its camera stands in, under the camera's sky.
+`delvec panorama` draws the solved whole-map camera from the build's load world
+through the same call — quick as `<stem>_preview.png` (manifest `spp: null`)
+with no flag, path traced at `--spp` (default `panorama::DEFAULT_SPP`, the
+record's 300) as `<stem>.png` with `--hq`; `--spp` requires `--hq` — and prints
+its camera as a record line. A path-traced run prints, before it draws,
+`<verb>: hq, the delivery mode: <n> frame(s) path traced at <spp>, <samples>
+samples in all` (`draft, …` for `--draft`; `view::cli::traced_line`); a quick
+run prints none. Refusals are `DW0721` (exit 2), before any frame: a record that
 does not parse or carries an unknown key, an illegal name, two cameras of one
 name, an empty `answers` or one naming no row, a pitch outside −90..90, a field
 of view outside (0, 180), a zero frame or sample target, an empty record, a
@@ -7306,7 +7314,7 @@ equal to the answered row's** (the remedy is to remove the field), an `after`
 its rules refuse (above), and a plan whose `sky` states no `weather`. A
 campaign that does not plan is refused with its own build code (exit 3).
 **Drawing is held to `DW0900`** (exit 2): a record leaving any approved image
-unanswered draws no frame, `--only` included; `--preview` is exempt — it is the
+unanswered draws no path-traced frame, `--only` included; a quick run is exempt — it is the
 instrument that closes the hole, and prints the count it is closing. Every run
 prints how many approved images have a camera and names the rest.
 
@@ -7320,8 +7328,8 @@ prints how many approved images have a camera and names the rest.
 
 A camera with no `sky` is a frame of its picture, so it takes its row's hour and
 weather — `DW0890` holds every row's sky to a sky the party can be in. The
-record's sky rule (`camera::resolve_sky`) is asked by `delvec cameras` (and
-`--preview`), `delvec place-camera` and `delvec build` alike
+record's sky rule (`camera::resolve_sky`) is asked by `delvec cameras` (quick,
+draft or hq), `delvec place-camera` and `delvec build` alike
 (`compiler::design::answered`, exit 3). **Binding line**, printed by every
 `delvec cameras` run, refused or not: one line per camera — `sky: <name>
 <time>+<weather> <derived from <row> | stated> — <weather> sky at daytime
