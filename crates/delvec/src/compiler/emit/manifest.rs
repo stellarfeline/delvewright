@@ -491,7 +491,14 @@ pub(super) fn critical_path_json(
                             _ => None,
                         })
                         .collect();
-                    let stand = expire_stand(i, *pos, avoid, keep, *aggro, &bodies, routes);
+                    // A lapse waited out aboard, after an act from the seat
+                    // (spec-0135 §5), is waited where the party sits.
+                    let seated = i >= 2 && matches!(walked.get(i - 2), Some(plan::Step::Ride { stays: true, .. }));
+                    let stand = if seated {
+                        *pos
+                    } else {
+                        expire_stand(i, *pos, avoid, keep, *aggro, &bodies, routes)
+                    };
                     // `pos` is the critical position, where the path left the
                     // party and the proven leg into this step ends, as every
                     // positioned step names its leg; `stand` is the cell the

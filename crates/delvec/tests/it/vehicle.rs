@@ -1690,3 +1690,68 @@ fn a_batch_names_an_unseated_ride_by_its_vehicle_not_as_a_walk() {
     );
     assert_eq!(code, "DW1097", "{msg}");
 }
+
+/// Two crates, the second on a limit: in the story world that lets it lapse,
+/// the lapse comes right after the first crate is opened from the seat. A
+/// lapse walks nowhere (spec-0133 §8), so the party waits where it sits,
+/// aboard, and the walk on starts where a ride on leaves it — never a walk
+/// to the barrel the first crate's act named, which a rider acting from the
+/// seat never stood in. Red on a route proof that rode the party off the
+/// boat and walked it to the barrel for the wait.
+#[test]
+fn a_lapse_after_an_act_from_the_seat_is_waited_aboard() {
+    let bay = Bay {
+        wide: true,
+        second_crate: true,
+        objectives: Some(
+            r#",
+          { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
+            "anchor": "anchor/crate-alongside", "holder": "anchor/crate",
+            "after": ["obj/talk"], "ride": "vehicle/gull" },
+          { "type": "collect", "id": "obj/crate-two", "item": "minecraft:salmon", "count": 1,
+            "anchor": "anchor/crate-two-alongside", "holder": "anchor/crate-two",
+            "after": ["obj/crate"], "ride": "vehicle/gull", "limit": { "ticks": 2400 } },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/far-shore",
+            "radius": 1, "after": ["obj/crate-two"] }"#,
+        ),
+        ..Bay::default()
+    };
+    let out = build("lapse-aboard", bay, &skiff());
+    // The world that lets the second crate lapse is exported as a world path
+    // whose step for it is an `expire`.
+    let lapsed: Vec<serde_json::Value> = out
+        .iter()
+        .filter(|(k, _)| k.ends_with(".json"))
+        .filter_map(|(_, v)| serde_json::from_slice::<serde_json::Value>(v).ok())
+        .filter_map(|v| v["steps"].as_array().cloned())
+        .filter(|steps| steps.iter().any(|s| s["action"] == "expire"))
+        .collect();
+    assert!(
+        !lapsed.is_empty(),
+        "a world path lets the second crate lapse"
+    );
+    for steps in &lapsed {
+        let i = steps
+            .iter()
+            .position(|s| s["action"] == "expire")
+            .expect("the lapse");
+        let ride = &steps[i - 2];
+        assert_eq!(ride["action"], "ride", "{steps:#?}");
+        assert_eq!(ride["stays"], true, "{ride}");
+        let seat = cell(ride["medium"].as_array().unwrap().last().unwrap());
+        assert_eq!(
+            cell(&steps[i]["pos"]),
+            seat,
+            "waited where it sits: {}",
+            steps[i]
+        );
+        assert_eq!(cell(&steps[i]["stand"]), seat, "{}", steps[i]);
+        let on = &steps[i + 1];
+        assert_eq!(
+            on["action"], "ride",
+            "a ride on leaves the boat: {steps:#?}"
+        );
+        assert_eq!(on["boards"], false, "{on}");
+        assert_eq!(cell(&on["medium"].as_array().unwrap()[0]), seat, "{on}");
+    }
+}

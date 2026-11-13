@@ -572,7 +572,8 @@ pub struct LinkTakes {
     pub performed: BTreeMap<usize, (usize, [i32; 3])>,
     /// A `trigger` step the path already performs (unlinked step index) that is
     /// no link, performed from a cell the route proof chose outside every
-    /// completion volume the step keeps out of (`DW0311`): its `stand`.
+    /// completion volume the step keeps out of (`DW0311`): its `stand`; or an
+    /// `expire` step the party waits out aboard, where it sits: its `pos`.
     pub stood: BTreeMap<usize, [i32; 3]>,
     /// Leg end (unlinked step index) → the ride that carries that leg
     /// (spec-0135 §4): a `ride` step spliced directly in front of the leg's
