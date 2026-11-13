@@ -1,0 +1,80 @@
+{
+  "backend": "cpu",
+  "camera": {
+    "convention": "minecraft degrees: yaw 0 = south (+Z), 90 = west (-X); pitch positive looks down; fov is vertical",
+    "fov": 40.0,
+    "pitch": 45.0,
+    "pos": [
+      17.775058,
+      82.806773,
+      17.775058
+    ],
+    "yaw": 135.0
+  },
+  "chunks": {
+    "max": [
+      0,
+      0
+    ],
+    "min": [
+      0,
+      0
+    ]
+  },
+  "delvec": "<delvec>",
+  "frame": {
+    "featureless": null
+  },
+  "image": {
+    "height": 36,
+    "path": "hello-world_panorama_se_45.png",
+    "width": 64
+  },
+  "kind": "panorama",
+  "manifest_version": 3,
+  "mode": "hq",
+  "renderer": "lumenwright 0.4.0",
+  "renderer_stats": {
+    "block_entities": {
+      "glyphs": 0,
+      "rendered": {},
+      "skipped": {},
+      "text_lines": 0
+    },
+    "entities": {
+      "fallback_boxes": {},
+      "items_rendered": {},
+      "items_skipped": {},
+      "rendered": {
+        "villager": 1
+      },
+      "skipped": {}
+    }
+  },
+  "sky": {
+    "day": 0,
+    "daytime_ticks": 6000,
+    "weather": "clear"
+  },
+  "spp": 1,
+  "subject": {
+    "box": {
+      "max": [
+        10,
+        69,
+        10
+      ],
+      "min": [
+        0,
+        64,
+        0
+      ]
+    },
+    "span": {
+      "fill": 0.503,
+      "height": 0.893,
+      "width": 0.564
+    }
+  },
+  "world": "at-load"
+}
