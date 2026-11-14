@@ -48,7 +48,8 @@
 # The images are built ONCE, under `<project>`, and every world boots them
 # (`up --no-build`): one image per ladder, not one per world. Each world's
 # compose output goes to its own log, `<out>/branch-<slug>.log`, and its
-# verdict is printed in the plan's order once every world has landed.
+# verdict is printed in the plan's order once every world has landed. Worlds
+# start one at a time: the next once the last reads placed.
 #
 # Unset, N is the most worlds the Docker host fits at their worst case
 # (`dw_branch_jobs_fit`, validation/lib/branch-jobs.sh). A declared N is used as
@@ -280,8 +281,18 @@ while IFS= read -r branch; do
   while [ "$(jobs -rp | grep -c .)" -ge "$JOBS" ]; do
     sleep 5
   done
+  slug="$(printf '%s' "$branch" | tr '/' '-')"
+  rm -f "$RUN_OUT/$slug.rc" "$RUN_OUT/branch-$slug.log"
   echo "==> ${branch}: started (project $(world_project "$branch"))"
   run_world "$branch" &
+  # A world's first join places its whole map, the heaviest stretch it runs:
+  # eight placing at once held a server's tick past the 60 s watchdog, which
+  # shut it down under its bot. So the next world starts once this one reads
+  # placed (the bot's own `[placement]` line) or has ended.
+  until grep -qF "[placement] the world is placed" "$RUN_OUT/branch-$slug.log" 2>/dev/null ||
+    [ -f "$RUN_OUT/$slug.rc" ]; do
+    sleep 5
+  done
 done <<SELECTED
 $selected
 SELECTED
