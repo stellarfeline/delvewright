@@ -46,7 +46,9 @@ name and its readers; each row of `branches` is one story world: `id`
 (`index` and the flags each chosen alternative sets), `flags{set,unset}` (over
 every branch point's `forks_on` and every flag a final scene reads),
 `participation{performs[],skips[]}`, `inputs` (the class each scene input is
-left in), `endings`, `entry_choices`, `entry_deeds` (each elective act performed
+left in), `endings`, `entry_choices` (each dialogue option on the path — a
+`talk-to` step's, or a `choose` step's, `flow::StoryCtx::choices` — that sets a
+flag of the world's selection), `entry_deeds` (each elective act performed
 and the step it precedes), `path` (`world-path-<k>.json`, or `null` with
 `path_reason` — unreachable, or a witness whose act no harness step drives and
 no `mock` step can perform: a trap, a disarm, a shortcut, a purchase or a credited

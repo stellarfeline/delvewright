@@ -322,3 +322,4 @@ mod wave_count;
 mod wave_lethal;
 mod wave_machinery;
 mod world_difficulty;
+mod world_path_debts;

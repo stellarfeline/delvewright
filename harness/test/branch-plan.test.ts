@@ -198,6 +198,17 @@ test("a branch path that never takes the branching choice cannot pass as a branc
   ]);
 });
 
+test("a branch entered by a choice that completes no objective passes on its choose step", () => {
+  const plan = parseBranchPlan(planJson(), "/x");
+  const bolt = plan.branches[1]!;
+  const chosen = [
+    { action: "select-class", command: "/trigger dw.class set 1" },
+    { action: "choose", command: "/trigger dw.dlg_keeper set 3" },
+    { action: "reach" },
+  ];
+  assert.deepEqual(assertEntryChoicesOnPath(bolt, chosen), ["/trigger dw.dlg_keeper set 3"]);
+});
+
 // ---------------------------------------------------------------------------
 // spec-0108 §4.3 / §6.4 — story worlds
 // ---------------------------------------------------------------------------

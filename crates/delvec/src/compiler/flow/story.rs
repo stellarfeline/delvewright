@@ -153,6 +153,42 @@ pub struct StoryRun {
     /// Elective ambient acts the world performs whose gate never held before
     /// the path ended — named, never silently dropped.
     pub unperformed: Vec<String>,
+    /// What the path owes and no act this world can perform pays
+    /// ([`Flow::story_debts`]): each a sentence naming the step, or the
+    /// selection, and the flag. Non-empty is `DW0204` on the world's path.
+    pub unpaid: Vec<String>,
+}
+
+/// The most acts one owed flag is paid through, the payer's own gate's flags
+/// paid in turn: a trigger whose gate a dialogue choice opens is two.
+pub const MAX_DEBT_DEPTH: usize = 4;
+
+/// One act that pays a flag a story world's path owes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Payer {
+    /// An environment trigger, performed as a `trigger` step.
+    Trigger(String),
+    /// A dialogue option that completes no objective, taken as a `talk-to`.
+    Choice(PathChoice),
+    /// An elective ambient act with a bundle, performed as an entry deed.
+    Act(String),
+}
+
+/// What a story world's path owes, and the acts that pay it
+/// ([`Flow::story_debts`]).
+#[derive(Debug, Default)]
+struct Debts {
+    choices: Vec<(usize, PathChoice)>,
+    triggers: Vec<TriggerDebt>,
+    deeds: Vec<(usize, String)>,
+    unpaid: Vec<String>,
+}
+
+/// The state a debt walk holds: the replay state and the acts it has paid.
+#[derive(Clone)]
+struct Owing {
+    st: ReplayState,
+    paid: BTreeSet<String>,
 }
 
 /// One target of one scene under one selection (§4.2).
@@ -422,6 +458,328 @@ impl<'a> Flow<'a> {
             .collect()
     }
 
+    /// Whether the debt walk credits producer `g` (the guaranteed stance of a
+    /// story world): a trigger's once the path has performed it, a forced
+    /// ambient act's wherever its gate holds, and an elective act's never — a
+    /// performed elective act writes what its bundle fires when it is
+    /// performed ([`Self::perform_act`], every `when` read against the walk's
+    /// data), once.
+    fn debt_credit(&self, g: &GatedFlag, paid: &BTreeSet<String>) -> bool {
+        if let Some(t) = &g.trigger {
+            return paid.contains(t);
+        }
+        match &g.act {
+            Some(a) if self.acts().elective_ids.contains(a) => false,
+            Some(_) => true,
+            None => default_credit(g),
+        }
+    }
+
+    fn debt_saturate(&self, o: &mut Owing) {
+        let paid = &o.paid;
+        self.saturate_ambient_with(&mut o.st.flags, &|g| self.debt_credit(g, paid));
+    }
+
+    /// The acts that can pay `flag` in world `sel` performing `performs`, in
+    /// the order they are tried: triggers, then dialogue options, then the
+    /// other elective acts — each kind in declaration order.
+    fn payers(
+        &self,
+        flag: &str,
+        sel: &World,
+        performs: &BTreeSet<String>,
+        paid: &BTreeSet<String>,
+    ) -> Vec<Payer> {
+        let acts = self.acts();
+        let open =
+            |a: &str| !paid.contains(a) && (!acts.elective_ids.contains(a) || performs.contains(a));
+        let mut out: Vec<Payer> = Vec::new();
+        for g in self.ambient.iter().filter(|g| g.flag == flag) {
+            if let Some(t) = &g.trigger
+                && open(t)
+                && !out.contains(&Payer::Trigger(t.clone()))
+            {
+                out.push(Payer::Trigger(t.clone()));
+            }
+        }
+        for t in &self.trees {
+            for o in &t.options {
+                if o.sets.iter().any(|f| f == flag)
+                    && o.completes.is_empty()
+                    && self.selectable(&t.npc, o.n, sel)
+                {
+                    out.push(Payer::Choice(PathChoice {
+                        npc: t.npc.clone(),
+                        n: o.n,
+                        sets: o.sets.clone(),
+                    }));
+                }
+            }
+        }
+        for g in self
+            .ambient
+            .iter()
+            .filter(|g| g.flag == flag && g.trigger.is_none())
+        {
+            if let Some(a) = &g.act
+                && acts.elective_ids.contains(a)
+                && acts.bundles.contains_key(a)
+                && open(a)
+                && !out.contains(&Payer::Act(a.clone()))
+            {
+                out.push(Payer::Act(a.clone()));
+            }
+        }
+        out
+    }
+
+    /// The flags `p`'s own gate reads that `o` does not hold — what paying
+    /// through `p` owes first.
+    fn payer_missing(&self, p: &Payer, flag: &str, o: &Owing) -> Vec<String> {
+        let mut need: BTreeSet<String> = BTreeSet::new();
+        match p {
+            Payer::Trigger(id) | Payer::Act(id) => {
+                if let Some(b) = self.acts().bundles.get(id) {
+                    need.extend(b.requires.iter().cloned());
+                }
+                for g in self.ambient.iter().filter(|g| {
+                    g.flag == flag
+                        && (g.trigger.as_deref() == Some(id.as_str())
+                            || g.act.as_deref() == Some(id.as_str()))
+                }) {
+                    need.extend(g.requires.iter().cloned());
+                }
+            }
+            Payer::Choice(c) => {
+                if let Some(opt) = self
+                    .trees
+                    .iter()
+                    .find(|t| t.npc == c.npc)
+                    .and_then(|t| t.options.iter().find(|x| x.n == c.n))
+                {
+                    need.extend(opt.requires.iter().cloned());
+                }
+            }
+        }
+        need.into_iter()
+            .filter(|f| !o.st.flags.contains(f))
+            .collect()
+    }
+
+    /// Whether `p` can be performed at `o`: its gate's three axes for an act,
+    /// the option takeable from a root a body offers for a choice.
+    fn payer_enabled(&self, p: &Payer, sel: &World, o: &Owing) -> bool {
+        match p {
+            Payer::Trigger(id) | Payer::Act(id) => self.act_enabled(id, &o.st),
+            Payer::Choice(c) => {
+                self.selectable(&c.npc, c.n, sel) && self.option_takeable_now(&c.npc, c.n, &o.st)
+            }
+        }
+    }
+
+    fn apply_payer(&self, p: &Payer, o: &mut Owing, pos: usize) {
+        match p {
+            Payer::Trigger(id) => {
+                o.paid.insert(id.clone());
+            }
+            Payer::Act(id) => {
+                self.perform_act(&mut o.st, id, pos);
+                o.paid.insert(id.clone());
+            }
+            Payer::Choice(c) => o.st.flags.extend(c.sets.iter().cloned()),
+        }
+        self.debt_saturate(o);
+    }
+
+    /// Pay `flag` at `o`, in front of path step `at`: the first payer whose
+    /// gate holds, else the first whose gate's missing flags can themselves be
+    /// paid (to [`MAX_DEBT_DEPTH`]). The payments, innermost first, each with
+    /// the flag it pays.
+    fn pay(
+        &self,
+        o: &Owing,
+        flag: &str,
+        sel: &World,
+        performs: &BTreeSet<String>,
+        at: usize,
+        depth: usize,
+    ) -> Option<(Owing, Vec<(Payer, String)>)> {
+        if depth >= MAX_DEBT_DEPTH {
+            return None;
+        }
+        let payers = self.payers(flag, sel, performs, &o.paid);
+        for direct in [true, false] {
+            for p in &payers {
+                let missing = self.payer_missing(p, flag, o);
+                if direct != missing.is_empty() {
+                    continue;
+                }
+                let mut next = o.clone();
+                let mut pays: Vec<(Payer, String)> = Vec::new();
+                let mut ok = true;
+                for m in &missing {
+                    if next.st.flags.contains(m) {
+                        continue;
+                    }
+                    match self.pay(&next, m, sel, performs, at, depth + 1) {
+                        Some((n, more)) => {
+                            next = n;
+                            pays.extend(more);
+                        }
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !ok || !self.payer_enabled(p, sel, &next) {
+                    continue;
+                }
+                self.apply_payer(p, &mut next, at + 1);
+                if !next.st.flags.contains(flag) {
+                    continue;
+                }
+                pays.push((p.clone(), flag.to_string()));
+                return Some((next, pays));
+            }
+        }
+        None
+    }
+
+    /// **What story world `w`'s path owes, and the acts that pay it** — the
+    /// story world's half of the path-performs-what-it-reads rule
+    /// ([`Self::trigger_debts`] is today's worlds').
+    ///
+    /// The path is walked under the guaranteed stance: an on-path bundle and
+    /// the option a `talk-to` step takes are credited at their step, a forced
+    /// ambient act wherever its gate holds, and a trigger, an elective act or a
+    /// dialogue option that completes no objective only once the path performs
+    /// it. Two things are owed:
+    ///
+    /// * **the world's selection** — each chosen option that sets a flag the
+    ///   world's solve holds and that no `talk-to` step takes is taken, as a
+    ///   choice, in front of the first step at which it is offered;
+    /// * **every flag a step reads** ([`Self::step_reads`]) that the walk does
+    ///   not hold there, paid in front of that step by [`Self::pay`].
+    ///
+    /// `deeds` are the entry deeds already placed; they are performed where
+    /// they stand. A debt nothing pays is named in `unpaid`.
+    fn story_debts(
+        &self,
+        pt: &Playthrough,
+        w: &StoryWorld,
+        barred: &BTreeSet<String>,
+        solved: &BTreeSet<String>,
+        deeds: &[(usize, String)],
+    ) -> Debts {
+        let performs = &w.performs;
+        let sel = &self.worlds[w.selection];
+        let mut o = Owing {
+            st: self.story_initial(performs, barred),
+            paid: BTreeSet::new(),
+        };
+        o.st.flags.clear();
+        self.debt_saturate(&mut o);
+        // The selection's choices no step takes.
+        let mut owed: Vec<PathChoice> = Vec::new();
+        for (g, a) in sel.iter().enumerate() {
+            let Some(a) = *a else { continue };
+            let alt = &self.groups[g].alts[a];
+            if alt.flags.is_empty() || !alt.flags.iter().all(|f| solved.contains(f)) {
+                continue;
+            }
+            let Some(npc) = self
+                .opt_group
+                .iter()
+                .find(|((_, n), gi)| **gi == g && *n == alt.n)
+                .map(|((npc, _), _)| npc.clone())
+            else {
+                continue;
+            };
+            let Some(opt) = self
+                .trees
+                .iter()
+                .find(|t| t.npc == npc)
+                .and_then(|t| t.options.iter().find(|x| x.n == alt.n))
+            else {
+                continue;
+            };
+            if !opt.completes.is_empty() {
+                continue;
+            }
+            owed.push(PathChoice {
+                npc,
+                n: alt.n,
+                sets: opt.sets.clone(),
+            });
+        }
+        let mut out = Debts::default();
+        let mut complete_at: Option<(usize, String)> = None;
+        for (i, step) in pt.steps.iter().enumerate() {
+            for (_, act) in deeds.iter().filter(|(j, _)| *j == i) {
+                self.perform_act(&mut o.st, act, i + 1);
+                o.paid.insert(act.clone());
+            }
+            self.debt_saturate(&mut o);
+            let mut still: Vec<PathChoice> = Vec::new();
+            for c in owed {
+                let p = Payer::Choice(c.clone());
+                if self.payer_enabled(&p, sel, &o) {
+                    self.apply_payer(&p, &mut o, i + 1);
+                    out.choices.push((i, c));
+                } else {
+                    still.push(c);
+                }
+            }
+            owed = still;
+            for flag in self.step_reads(step) {
+                if o.st.flags.contains(&flag) {
+                    continue;
+                }
+                let Some((next, pays)) = self.pay(&o, &flag, sel, performs, i, 0) else {
+                    out.unpaid.push(format!(
+                        "step {} (`{}`) reads `{flag}`, and no act this world performs sets it \
+                         there — no trigger, no dialogue option and no elective act whose gate \
+                         holds or can be opened",
+                        i + 1,
+                        step.objective
+                    ));
+                    continue;
+                };
+                o = next;
+                for (p, f) in pays {
+                    match p {
+                        Payer::Trigger(t) => out.triggers.push(TriggerDebt {
+                            step: i,
+                            trigger: t,
+                            flag: f,
+                        }),
+                        Payer::Choice(c) => out.choices.push((i, c)),
+                        Payer::Act(a) => out.deeds.push((i, a)),
+                    }
+                }
+            }
+            let paid = &o.paid;
+            self.advance_with(&mut o.st, step, i + 1, &mut complete_at, &|g| {
+                self.debt_credit(g, paid)
+            });
+        }
+        for c in owed {
+            out.unpaid.push(format!(
+                "its selection takes option #{} of `{}` (setting {}), and no point of its path \
+                 offers that option",
+                c.n,
+                c.npc,
+                c.sets
+                    .iter()
+                    .map(|f| format!("`{f}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        out
+    }
+
     /// Solve, order and replay one story world.
     pub fn run_story(&self, w: &StoryWorld) -> StoryRun {
         let performs = &w.performs;
@@ -470,6 +828,30 @@ impl<'a> Flow<'a> {
                 }
             }
         }
+        // What the path owes beyond those deeds, and the acts that pay it.
+        let placed: Vec<(usize, String)> = pending
+            .iter()
+            .filter_map(|a| at.get(a).map(|i| (*i, a.clone())))
+            .collect();
+        let debts = self.story_debts(&pt, w, &barred, &flags, &placed);
+        // A deed a debt performs earlier is performed there, once.
+        for (i, a) in &debts.deeds {
+            if at.get(a).is_none_or(|j| j > i) {
+                at.insert(a.clone(), *i);
+            }
+        }
+        let owed: BTreeSet<&str> = debts.deeds.iter().map(|(_, a)| a.as_str()).collect();
+        let pending: Vec<String> = pending
+            .iter()
+            .cloned()
+            .chain(
+                debts
+                    .deeds
+                    .iter()
+                    .map(|(_, a)| a.clone())
+                    .filter(|a| !pending.contains(a)),
+            )
+            .collect();
         let mut unperformed: Vec<String> = pending
             .iter()
             .filter(|a| !at.contains_key(*a))
@@ -482,8 +864,14 @@ impl<'a> Flow<'a> {
         let mut undecided: BTreeSet<String> = BTreeSet::new();
         let mut incoherent: Option<String> = None;
         for (i, step) in pt.steps.iter().enumerate() {
+            for (_, c) in debts.choices.iter().filter(|(j, _)| *j == i) {
+                st.flags.extend(c.sets.iter().cloned());
+            }
             for act in pending.iter().filter(|a| at.get(*a) == Some(&i)) {
-                if !self.act_enabled(act, &st) {
+                // A deed a debt performs was proven performable there by the
+                // debt walk; the story stance credits its own flags from the
+                // start, which would read as its own gate shut.
+                if !owed.contains(act.as_str()) && !self.act_enabled(act, &st) {
                     // An earlier deed shut its gate: it is not performed.
                     unperformed.push(act.clone());
                     continue;
@@ -510,6 +898,8 @@ impl<'a> Flow<'a> {
         pt.story = Some(std::sync::Arc::new(StoryCtx {
             performs: performs.clone(),
             deeds,
+            choices: debts.choices,
+            triggers: debts.triggers,
         }));
         StoryRun {
             playthrough: pt,
@@ -521,6 +911,7 @@ impl<'a> Flow<'a> {
             flags,
             completed,
             unperformed,
+            unpaid: debts.unpaid,
         }
     }
 

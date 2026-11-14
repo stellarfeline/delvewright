@@ -458,7 +458,7 @@ export function resolveDrivenBranch(
  *
  * The one thing a branch run must not be able to do is pass while having walked
  * somebody else's storyline. Every entry choice's chat line has to appear as a
- * `talk-to` step's command on the path being walked; if one does not, the path and
+ * `talk-to` or `choose` step's command on the path being walked; if one does not, the path and
  * the plan disagree about what this branch is, and the run stops before it can
  * report coverage it does not have.
  *
@@ -469,14 +469,16 @@ export function assertEntryChoicesOnPath(
   steps: readonly { readonly action: string; readonly command?: string }[],
 ): string[] {
   const commands = new Set(
-    steps.flatMap((s) => (s.action === "talk-to" && s.command !== undefined ? [s.command] : [])),
+    steps.flatMap((s) =>
+      (s.action === "talk-to" || s.action === "choose") && s.command !== undefined ? [s.command] : [],
+    ),
   );
   const missing = branch.entryChoices.filter((c) => !commands.has(c.command));
   if (missing.length > 0) {
     throw new BranchTierError(
       `branch ${branch.id}: its exported path never takes the choice that enters it — ` +
         `${missing.map((c) => `${c.command} (option #${c.option} of ${c.npc})`).join(", ")} ` +
-        `is on no talk-to step. The plan and the path disagree about this branch; ` +
+        `is on no talk-to or choose step. The plan and the path disagree about this branch; ` +
         `rebuild with a current delvec.`,
     );
   }

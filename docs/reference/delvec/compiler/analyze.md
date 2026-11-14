@@ -198,7 +198,10 @@ and entry deeds — the sequence `validation/world-path-<k>.json`
 publishes) is replayed by the same rule, and its violation is `DW0204` naming the
 branch and the file: the branch runs walk that file as the bot ladder walks the
 critical path, and the harness fails a walk whose `campaign-complete` arrives
-while objective steps remain. A branch path orders every quest its world
+while objective steps remain. Every coherent story world's path must also pay what it
+reads (`Flow::story_debts`, [`flow`](flow.md)): a flag a step reads, or the
+option the world's selection chose, that no act the world performs can set
+there is `DW0204` naming the world and its `world-path-<k>.json`. A branch path orders every quest its world
 completes by `depends_on` (`flow::dag_order`); a quest that can end the delve
 (any `campaign-complete` in its effect lists, nested ones included) is held
 until no other quest is ready, so an optional strand that becomes ready beside
