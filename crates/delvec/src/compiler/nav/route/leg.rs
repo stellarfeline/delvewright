@@ -115,6 +115,35 @@ pub(in crate::compiler::nav) fn route_walked_legs(
 /// `, `, or the honest `(none — the volume set is empty)` when the counterfactual
 /// found a route that touches no declared volume, which would itself be a bug in
 /// this proof rather than in the campaign.
+/// What the keep-out volumes named by `ids` are, as a refusal says it: an
+/// armed objective's completion volume (due later; a body there completes it
+/// out of turn), and a walk-fired trigger's firing volume (its gate open and
+/// never performed by this world; a body there fires it). Each id once, in the
+/// order given; a trigger is told by its kind's `trigger/` prefix.
+fn keep_out_what(ids: &[&str]) -> String {
+    let mut seen = BTreeSet::new();
+    let ids: Vec<&str> = ids.iter().copied().filter(|i| seen.insert(*i)).collect();
+    let (triggers, objectives): (Vec<&str>, Vec<&str>) =
+        ids.iter().partition(|i| i.starts_with("trigger/"));
+    let mut parts = Vec::new();
+    if !objectives.is_empty() || triggers.is_empty() {
+        parts.push(format!(
+            "the completion volume of {}, armed while the party walks this leg and due only \
+             later on the path — a body there completes it out of turn",
+            names_of(&objectives)
+        ));
+    }
+    if !triggers.is_empty() {
+        parts.push(format!(
+            "the firing volume of {}, whose gate holds while the party walks this leg and which \
+             this story world never performs — a body there fires it, and the world played is \
+             not the one planned",
+            names_of(&triggers)
+        ));
+    }
+    parts.join("; and ")
+}
+
 fn names_of(ids: &[&str]) -> String {
     if ids.is_empty() {
         return "(none — the counterfactual route touches no declared volume; this is a \
@@ -793,11 +822,7 @@ fn ride_leg(
     {
         st.keep_out.push((
             objective_id.clone(),
-            crate::compiler::reach::KeepOut {
-                objective: objective_id.clone(),
-                completion: *completion,
-            }
-            .bounds(),
+            crate::compiler::reach::KeepOut::objective(objective_id.clone(), *completion).bounds(),
         ));
     }
     let owned;
@@ -1173,19 +1198,13 @@ fn keep_out_stance(
         None => Err(Failure {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
-                "critical path: trigger `{trigger_id}` at {pos:?} is performed beside the \
-                 completion volume of {names}, armed while the party performs it and due only \
-                 later on the path, and no cell the party can walk to performs it from outside \
-                 that volume — whoever presses it completes the armed objective out of turn, so \
+                "critical path: trigger `{trigger_id}` at {pos:?} is performed beside {what}, \
+                 and no cell the party can walk to performs it from outside that volume, so \
                  the path the proof walks is not the path the party plays. Move the trigger or \
-                 the armed objective's anchor apart, shrink the objective's `radius`, or arm it \
-                 after the trigger is performed; do NOT reorder the path to dodge the proof.",
-                names = names_of(
-                    &near
-                        .iter()
-                        .map(|k| k.objective.as_str())
-                        .collect::<Vec<_>>()
-                ),
+                 the other act's anchor apart, shrink the objective's `radius` or the trigger's \
+                 `range`, or arm it after the trigger is performed; do NOT reorder the path to \
+                 dodge the proof.",
+                what = keep_out_what(&near.iter().map(|k| k.act.as_str()).collect::<Vec<_>>()),
             ),
         }),
     }
@@ -1911,7 +1930,7 @@ fn judge_leg(
             None
         };
         let keep_out_failure = |cells: &[[i32; 3]], what: &str| -> Failure {
-            let names = names_of(
+            let inside = keep_out_what(
                 &leg_world
                     .keep_out_over(cells)
                     .iter()
@@ -1921,13 +1940,12 @@ fn judge_leg(
             Failure {
                 code: DW_CRITICAL_UNROUTABLE,
                 message: format!(
-                    "critical path: {what} lies inside the completion volume of {names}, armed \
-                     while the party walks this leg and due only later on the path — a body \
-                     there completes it out of turn, so the path the proof walks is not the \
-                     path the party plays. Move the anchor of this step or of the armed \
-                     objective so a body can get to this step without entering that volume, \
-                     arm the objective later, or shrink its `radius`; do NOT reorder the path \
-                     to dodge the proof."
+                    "critical path: {what} lies inside {inside}, so the path the proof walks is \
+                     not the path the party plays. Move the anchor of this step or of the other \
+                     act so a body can get to this step without entering that volume, arm the \
+                     objective later, shrink its `radius` or the trigger's `range`, or make the \
+                     act that opens the trigger's gate perform the trigger's effects itself; do \
+                     NOT reorder the path to dodge the proof."
                 ),
             }
         };

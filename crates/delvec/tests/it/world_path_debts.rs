@@ -18,6 +18,12 @@
 //!
 //! The fixed path takes the choice, then the trigger it opens, then the reach;
 //! or the purchase by mock, then the reach. A debt no act can pay is `DW0204`.
+//!
+//! The trigger stands at the latch, off the keeper's walk to the door. A world
+//! that is trusted and performs nothing leaves it open and never fires it, so
+//! that world's every walk after the choice keeps out of its firing volume —
+//! and where the trigger stands at the keeper (the town's Runa, whose fooling
+//! opens a trigger she stands inside), no walk can, and the world is `DW0311`.
 
 use crate::common;
 
@@ -56,7 +62,7 @@ fn fixture(tag: &str, patch: impl FnOnce(&mut Value, &mut Value)) -> PathBuf {
             "on_complete": [], "on_objective_complete": {}
         }));
         c["triggers"] = json!([{
-            "id": "trigger/key", "at": "anchor/keeper-stand", "on": {"on": "approach", "range": 3},
+            "id": "trigger/key", "at": "anchor/latch", "on": {"on": "approach", "range": 1},
             "requires_flags": ["flag/trusted"], "forbids_flags": ["flag/key"],
             "effects": [{"type": "set-flag", "flag": "flag/key"}]
         }]);
@@ -258,6 +264,134 @@ fn a_read_no_act_of_the_world_can_pay_is_dw0204() {
     assert!(
         log.lines().any(|l| l.starts_with("DW0204 [error]")
             && l.contains("reads `flag/key`, and no act this world performs sets it there")),
+        "{log}"
+    );
+}
+
+/// Every keep-out row of a world's path step, as `(act key, act, lo, hi)`.
+fn keep_out_rows(step: &Value) -> Vec<(String, String, [i64; 3], [i64; 3])> {
+    let v3 = |v: &Value| -> [i64; 3] {
+        let a = v.as_array().unwrap();
+        [
+            a[0].as_i64().unwrap(),
+            a[1].as_i64().unwrap(),
+            a[2].as_i64().unwrap(),
+        ]
+    };
+    step["keep_out"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|k| {
+            let (key, act) = ["objective", "trigger"]
+                .iter()
+                .find_map(|key| Some((*key, k[*key].as_str()?)))
+                .expect("a keep-out row names its act");
+            (key.to_string(), act.to_string(), v3(&k["lo"]), v3(&k["hi"]))
+        })
+        .collect()
+}
+
+#[test]
+fn a_world_that_leaves_a_trigger_open_and_never_fires_it_walks_round_it() {
+    let (code, log, out) = build(&fixture("open", |_, _| {}));
+    assert_eq!(code, 0, "{log}");
+    let plan = read(&out, "branch-plan.json");
+    // world/1: trusted, performs nothing — the trigger's gate is open after
+    // the choice and the world never fires it.
+    let row = plan["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| {
+            b["selection"]["alternatives"][0] == json!(["flag/trusted"])
+                && b["participation"]["performs"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+        })
+        .expect("the trusted world that performs nothing");
+    let path = read(&out, row["path"].as_str().unwrap());
+    let steps = path["steps"].as_array().unwrap();
+    let chose = steps
+        .iter()
+        .position(|s| s["action"] == "choose")
+        .expect("the world takes the choice");
+    let mut boxes = Vec::new();
+    for (i, s) in steps.iter().enumerate() {
+        let rows: Vec<_> = keep_out_rows(s)
+            .into_iter()
+            .filter(|(key, act, _, _)| key == "trigger" && act == "trigger/key")
+            .collect();
+        if i <= chose || s["pos"].is_null() {
+            // Before the choice the gate is shut; a step that stands nowhere
+            // walks nowhere.
+            assert!(rows.is_empty(), "step {i} keeps out of a shut trigger: {s}");
+        } else {
+            assert!(
+                !rows.is_empty(),
+                "step {i} walks beside the open trigger: {s}"
+            );
+            boxes.extend(rows);
+        }
+    }
+    // The binding: the latch's firing volume, kept out of by the walks after
+    // the choice.
+    assert!(!boxes.is_empty(), "{path:#}");
+    let way = read(
+        &out,
+        &row["path"]
+            .as_str()
+            .unwrap()
+            .replace("world-path-", "world-waypoints-"),
+    );
+    let inside = |c: &Value| {
+        boxes.iter().any(|(_, _, lo, hi)| {
+            (0..3).all(|a| lo[a] <= c[a].as_i64().unwrap() && c[a].as_i64().unwrap() <= hi[a])
+        })
+    };
+    let walked: Vec<&Value> = way["legs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .skip(1)
+        .flat_map(|l| l["waypoints"].as_array().unwrap())
+        .collect();
+    assert!(!walked.is_empty(), "{way:#}");
+    assert!(!walked.iter().any(|c| inside(c)), "{way:#}");
+    // The world that performs the trigger keeps out of none of it.
+    for b in plan["branches"].as_array().unwrap() {
+        let performs = b["participation"]["performs"].as_array().unwrap();
+        if !performs.iter().any(|a| a == "trigger/key") {
+            continue;
+        }
+        let p = read(&out, b["path"].as_str().unwrap());
+        for s in p["steps"].as_array().unwrap() {
+            assert!(
+                keep_out_rows(s)
+                    .iter()
+                    .all(|(key, _, _, _)| key != "trigger"),
+                "{} performs the trigger and keeps out of it: {s}",
+                b["id"]
+            );
+        }
+    }
+}
+
+#[test]
+fn a_world_whose_choice_opens_a_trigger_where_the_party_stands_is_dw0311() {
+    // The trigger stands at the keeper, inside reach of the choice that opens
+    // it: the trusted world that never fires it cannot be walked.
+    let (code, log, _) = build(&fixture("stood-in", |_, q| {
+        q["content"]["triggers"][0]["at"] = json!("anchor/keeper-stand");
+        q["content"]["triggers"][0]["on"] = json!({"on": "approach", "range": 3});
+    }));
+    assert_ne!(code, 0, "{log}");
+    assert!(
+        log.lines().any(|l| l.starts_with("DW0311 [error]")
+            && l.contains("world/1")
+            && l.contains("the firing volume of `trigger/key`")
+            && l.contains("never performs")),
         "{log}"
     );
 }

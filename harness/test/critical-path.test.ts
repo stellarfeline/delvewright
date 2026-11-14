@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CRITICAL_PATH_FORMAT_VERSION,
   CriticalPathParseError,
+  describeKeepOut,
   insideCompletion,
   landingCarrier,
   parseCriticalPath as parseStrict,
@@ -10,7 +11,7 @@ import {
   pursuersOf,
   reachGoal,
 } from "../src/critical-path.ts";
-import type { ReachCompletion } from "../src/critical-path.ts";
+import type { KeepOut, ReachCompletion } from "../src/critical-path.ts";
 
 /**
  * Every step a fixture here writes is walked beside nobody unless it says so:
@@ -987,8 +988,34 @@ test("a trigger beside an armed volume parses its keep-out and the stand outside
     block: "minecraft:bell[attachment=floor,facing=north]",
     pos: [5, 65, 8],
     stand: [4, 65, 4],
-    keepOut: [{ objective: "obj/walk-out", lo: [3, 63, 6], hi: [7, 67, 10] }],
+    keepOut: [{ act: "obj/walk-out", kind: "objective", lo: [3, 63, 6], hi: [7, 67, 10] }],
   });
+});
+
+test("a keep-out row may name a trigger the path never performs, and reads as one volume", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "reach",
+      objective: "obj/walk-out",
+      pos: [5, 65, 8],
+      completion: { kind: "cube", lo: [4, 64, 7], hi: [6, 66, 9] },
+      keep_out: [
+        { trigger: "trigger/runs", lo: [1, 60, 1], hi: [1, 62, 3] },
+        { trigger: "trigger/runs", lo: [2, 59, 0], hi: [2, 63, 4] },
+        { objective: "obj/later", lo: [9, 64, 9], hi: [10, 65, 10] },
+      ],
+    }),
+  ).steps[2] as { keepOut?: readonly KeepOut[] };
+  assert.deepEqual(step.keepOut, [
+    { act: "trigger/runs", kind: "trigger", lo: [1, 60, 1], hi: [1, 62, 3] },
+    { act: "trigger/runs", kind: "trigger", lo: [2, 59, 0], hi: [2, 63, 4] },
+    { act: "obj/later", kind: "objective", lo: [9, 64, 9], hi: [10, 65, 10] },
+  ]);
+  assert.equal(
+    describeKeepOut(step.keepOut!),
+    "2 volume(s) excluded — the firing volume of trigger/runs [1, 59, 0]..[2, 63, 4] (2 boxes within); " +
+      "the completion volume of obj/later [9, 64, 9]..[10, 65, 10]",
+  );
 });
 
 test("a keep-out row is a named objective over a well-formed box", () => {
@@ -998,6 +1025,9 @@ test("a keep-out row is a named objective over a well-formed box", () => {
     [[{ objective: "walk-out", lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0/objective"],
     [[{ objective: "obj/w", lo: [2, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0"],
     [[{ objective: "obj/w", lo: [0, 0, 0], hi: [1, 1, 1], radius: 2 }], "/steps/2/keep_out/0/radius"],
+    [[{ trigger: "runs", lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0/trigger"],
+    [[{ lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0"],
+    [[{ objective: "obj/w", trigger: "trigger/t", lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0"],
   ] as const) {
     assert.throws(
       () => parseCriticalPath(withStep({ ...base, keep_out: keep } as Record<string, unknown>)),

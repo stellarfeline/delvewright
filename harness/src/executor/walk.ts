@@ -5,7 +5,7 @@
 // walk so turns/branches in jigsaw layouts are walkable).
 import pathfinderPkg from "mineflayer-pathfinder";
 import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
-import { insideCompletion, reachGoal } from "../critical-path.ts";
+import { describeKeepOut, insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import {
@@ -607,10 +607,7 @@ export const methods = {
     if (this.stepKeepOut.length > 0) {
       const boxes = this.stepKeepOut.map((k) => ({ lo: k.lo, hi: k.hi }));
       movements.exclusionAreasStep.push((block): number => lethalStepCost(block, boxes));
-      process.stderr.write(
-        `[keep-out] ${label}: ${boxes.length} armed completion volume(s) excluded — ` +
-          `${this.stepKeepOut.map((k) => `${k.objective} [${k.lo.join(", ")}]..[${k.hi.join(", ")}]`).join("; ")}\n`,
-      );
+      process.stderr.write(`[keep-out] ${label}: ${describeKeepOut(this.stepKeepOut)}\n`);
     }
     // spec-0135 §6: the walk to a vehicle goes round its body, as the proof's
     // did — a body that walks into a vehicle shoves it off its mark.

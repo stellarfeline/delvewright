@@ -696,7 +696,7 @@ fn keep_out_of(region_events: &RegionEvents, step: usize) -> Vec<LethalRegion> {
     region_events
         .keep_out_at(step)
         .iter()
-        .map(|k| (k.objective.clone(), k.bounds()))
+        .map(|k| (k.act.clone(), k.bounds()))
         .collect()
 }
 

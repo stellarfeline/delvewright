@@ -1035,6 +1035,10 @@ pub(super) fn build_critical_path(
     let mut armed_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
     // The same, with a term on an undatable datum read as open (`DW0863`).
     let mut armed_open_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+    // The same for the environment triggers whose gate holds there
+    // ([`crate::compiler::flow::Walk::gate_open_triggers`]): what a trigger
+    // keep-out is read from, once the path's own triggers are known.
+    let mut triggers_open_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
     let mut guaranteed = flow.walk_for_performing(path);
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
@@ -1200,6 +1204,8 @@ pub(super) fn build_critical_path(
                 .armed_objectives_unless_shut()
                 .into_iter()
                 .collect();
+            let before_triggers: BTreeSet<String> =
+                guaranteed.gate_open_triggers().into_iter().collect();
             for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
                 guaranteed = guaranteed.performing(t);
             }
@@ -1209,6 +1215,10 @@ pub(super) fn build_critical_path(
                 ahead.armed_objectives_unless_shut().into_iter().collect();
             armed_at.push((before, taking));
             armed_open_at.push((before_open, taking_open));
+            triggers_open_at.push((
+                before_triggers,
+                ahead.gate_open_triggers().into_iter().collect(),
+            ));
             guaranteed.take(st);
         }
         let qid = st.quest.as_str();
@@ -1291,10 +1301,10 @@ pub(super) fn build_critical_path(
             let avoid = match obj {
                 Objective::ReachAnchor { anchor, radius, .. } => {
                     let at = point_of(anchors, area, anchor.as_str())?;
-                    vec![crate::compiler::reach::KeepOut {
-                        objective: st.objective.clone(),
-                        completion: reach_completion(at, *radius),
-                    }]
+                    vec![crate::compiler::reach::KeepOut::objective(
+                        st.objective.clone(),
+                        reach_completion(at, *radius),
+                    )]
                 }
                 _ => Vec::new(),
             };
@@ -1733,10 +1743,10 @@ pub(super) fn build_critical_path(
             .find(|q| q.id.as_str() == qid)
             .map(|q| q.area.as_str())?;
         let pos = point_of(anchors, area, anchor.as_str()).ok()?;
-        Some(crate::compiler::reach::KeepOut {
-            objective: obj.to_string(),
-            completion: reach_completion(pos, *radius),
-        })
+        Some(crate::compiler::reach::KeepOut::objective(
+            obj,
+            reach_completion(pos, *radius),
+        ))
     };
     // Per step, the armed set in front of it: `taking` at the step of the
     // objective the replay takes there, `before` at every other.
@@ -1763,9 +1773,30 @@ pub(super) fn build_critical_path(
             })
             .collect()
     };
+    // A walk-fired trigger's firing volume ([`crate::compiler::reach::trigger_keep_out`]),
+    // for every trigger whose gate holds in front of the step; the ones the
+    // path performs are dropped once its step list is final.
+    let trigger_volume = |id: &str| -> Vec<crate::compiler::reach::KeepOut> {
+        campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .find(|t| t.id.as_str() == id)
+            .and_then(|t| Some((t, anchors.point_any(t.at_anchor()?)?)))
+            .map(|(t, at)| crate::compiler::reach::trigger_keep_out(id, &t.on, at))
+            .unwrap_or_default()
+    };
     let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = per_step(&armed_at)
         .iter()
-        .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
+        .zip(per_step(&triggers_open_at))
+        .map(|(armed, open)| {
+            armed
+                .iter()
+                .filter_map(|o| reach_volume(o))
+                .chain(open.iter().flat_map(|t| trigger_volume(t)))
+                .collect()
+        })
         .collect();
     let mut armed_ids_by_step: Vec<BTreeSet<String>> = per_step(&armed_open_at);
 
@@ -2058,12 +2089,18 @@ pub(super) fn build_critical_path(
     // before it left the party on, a carry's landing, the spawn — is no volume
     // the step's walk can keep out of: whether it completes there was the
     // earlier step's, and the walk only leaves it.
+    //
+    // A trigger's volume is not dropped so: a body standing in it as its gate
+    // opens fires it on the next tick, so a world that never performs it
+    // cannot be walked from there, and the leg's proof says so.
     let mut at: Option<[i32; 3]> = start.map(|(_, p)| *p);
     for (k, s) in steps.iter().enumerate() {
         if let Some(cell) = at {
             armed_by_step[k].retain(|v| {
-                !v.completion
-                    .possibly_completes_from(cell, f64::from(cell[1]))
+                v.is_trigger()
+                    || !v
+                        .completion
+                        .possibly_completes_from(cell, f64::from(cell[1]))
             });
         }
         if let Some(p) = transport_by_step[k].or(s.stand()).or(s.pos()) {
@@ -2074,16 +2111,34 @@ pub(super) fn build_critical_path(
     // An armed volume that meets a reach's own completes WITH it on arrival,
     // in the same tick, and not before it: the party arriving is the beat both
     // were authored for, so it is not one the walk keeps out of.
+    //
+    // A trigger the path performs — a `trigger` step, a mock of it — is the
+    // path's to fire, and walked into where the path performs it: only the
+    // triggers the path never performs are kept out of, at every step their
+    // gate holds.
+    let performed: BTreeSet<&str> = steps
+        .iter()
+        .filter_map(|s| match s {
+            Step::Trigger { trigger_id, .. } => Some(trigger_id.as_str()),
+            Step::Mock { act, .. } => Some(act.as_str()),
+            _ => None,
+        })
+        .collect();
     let keep_out: Vec<Vec<crate::compiler::reach::KeepOut>> = steps
         .iter()
         .zip(armed_by_step)
         .map(|(s, armed)| {
             armed
                 .into_iter()
-                .filter(|v| Some(v.objective.as_str()) != s.objective())
-                .filter(|v| match s {
-                    Step::Reach { completion, .. } => !v.completion.meets(completion),
-                    _ => true,
+                .filter(|v| {
+                    if v.is_trigger() {
+                        return !performed.contains(v.act.as_str());
+                    }
+                    Some(v.act.as_str()) != s.objective()
+                        && match s {
+                            Step::Reach { completion, .. } => !v.completion.meets(completion),
+                            _ => true,
+                        }
                 })
                 .collect()
         })

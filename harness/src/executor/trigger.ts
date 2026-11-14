@@ -244,7 +244,7 @@ export const methods = {
           ? `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
               `[${step.transport.join(", ")}]\n`
           : `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}], outside ` +
-              `${(step.keepOut ?? []).map((k) => k.objective).join(", ")}, to perform it\n`,
+              `${[...new Set((step.keepOut ?? []).map((k) => k.act))].join(", ")}, to perform it\n`,
       );
     }
     if (step.on === "shot") {
