@@ -21,6 +21,12 @@ use std::sync::LazyLock;
 /// hello-world's quests stage with one `collect`, parameterised on the adoption
 /// fields the objective declares.
 fn quests_doc(fields: &str) -> String {
+    quests_doc_with(fields, "")
+}
+
+/// [`quests_doc`] with `extra` objectives (each led by a comma) declared after
+/// the collect.
+fn quests_doc_with(fields: &str, extra: &str) -> String {
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -34,7 +40,7 @@ fn quests_doc(fields: &str) -> String {
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
           {{ "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 3,
-             "anchor": "anchor/exit", "after": ["obj/talk"]{fields} }}
+             "anchor": "anchor/exit", "after": ["obj/talk"]{fields} }}{extra}
         ],
         "on_objective_complete": {{ "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ] }},
         "on_complete": [ {{ "type": "campaign-complete" }} ]
@@ -106,7 +112,14 @@ fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
 }
 
 fn try_build(fields: &str, edits: Option<&str>) -> Result<emit::BuildOutput, emit::BuildFailure> {
-    let c = parse_hw(&quests_doc(fields), edits);
+    try_build_doc(&quests_doc(fields), edits)
+}
+
+fn try_build_doc(
+    quests: &str,
+    edits: Option<&str>,
+) -> Result<emit::BuildOutput, emit::BuildFailure> {
+    let c = parse_hw(quests, edits);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -195,11 +208,15 @@ fn an_adopted_barrel_is_filled_in_place_named_and_padded() {
     for (n, line) in fills.iter().enumerate() {
         assert!(line.contains(&format!("container.{n} with")), "{line}");
         assert!(
-            line.contains("minecraft:bread[custom_name={\"italic\":false,\"text\":\"Cheese\"}] 3")
+            line.contains("minecraft:bread[custom_name={\"italic\":false,\"text\":\"Cheese\"},")
                 || line.contains(
-                    "minecraft:bread[custom_name={\"text\":\"Cheese\",\"italic\":false}] 3"
+                    "minecraft:bread[custom_name={\"text\":\"Cheese\",\"italic\":false},"
                 ),
             "every slot carries the named stack: {line}"
+        );
+        assert!(
+            line.ends_with(",custom_data={dw_collect:\"obj/cheese\"}] 3"),
+            "every slot carries the holder's mark (spec-0111 §4.2): {line}"
         );
     }
     // All three fills address ONE cell — the barrel — not three.
@@ -326,4 +343,93 @@ fn an_unadopted_campaign_emits_no_adoption_packtest() {
         !out.keys().any(|k| k.contains("collect_container")),
         "the adoption packtest must only appear when a collect adopts a container"
     );
+}
+
+/// spec-0111 §4.2: a holder's stack carries the placement's identity, and both
+/// completion paths — the `inventory_changed` advancement and the per-tick held
+/// check — match it, so a stack of the same item from anywhere else completes
+/// nothing.
+#[test]
+fn a_holders_collect_is_completed_only_by_the_stack_it_placed() {
+    let out = try_build(ADOPTED, Some(BARREL_EDITS.as_str())).expect("builds");
+    let mark = "{dw_collect:\"obj/cheese\"}";
+    let adv: serde_json::Value = serde_json::from_str(&text(
+        &out,
+        "datapack/data/hello-world/advancement/c_cheese.json",
+    ))
+    .unwrap();
+    let item = &adv["criteria"]["got"]["conditions"]["items"][0];
+    assert_eq!(item["items"], "minecraft:bread", "{adv}");
+    assert_eq!(item["predicates"]["minecraft:custom_data"], mark, "{adv}");
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    let held: Vec<&str> = tick
+        .lines()
+        .filter(|l| l.contains("dw.hold if items"))
+        .collect();
+    assert_eq!(held.len(), 1, "{tick}");
+    assert!(
+        held[0].ends_with(&format!("container.* minecraft:bread[custom_data~{mark}]")),
+        "the held check counts the marked stack only: {}",
+        held[0]
+    );
+    let pt = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/collect_container.mcfunction",
+    );
+    let lines: Vec<&str> = pt.lines().collect();
+    let plain = lines
+        .iter()
+        .position(|l| {
+            l.starts_with("item replace entity")
+                && l.contains("minecraft:bread[custom_name=")
+                && !l.contains("custom_data")
+        })
+        .unwrap_or_else(|| panic!("the unmarked stack is presented:\n{pt}"));
+    assert!(
+        lines[plain + 1].ends_with(":tick") && lines[plain + 2].ends_with("matches 0"),
+        "the unmarked stack completes nothing:\n{pt}"
+    );
+}
+
+/// A collect that adopts no holder is adjudicated on the item id alone, so
+/// any other stack of that item completes it.
+#[test]
+fn an_unadopted_collect_carries_no_mark() {
+    let out = try_build("", None).expect("builds");
+    let adv = text(&out, "datapack/data/hello-world/advancement/c_cheese.json");
+    assert!(!adv.contains("custom_data"), "{adv}");
+}
+
+/// A second collect of the same item, open beside the adopted one.
+fn second_bread(fields: &str) -> String {
+    format!(
+        r#", {{ "type": "collect", "id": "obj/more-bread", "item": "minecraft:bread", "count": 1,
+             "anchor": "anchor/exit"{fields} }}"#
+    )
+}
+
+/// `DW1110`: two collects of one item that can be open at once, one of which
+/// adopts no holder, cannot be told apart — the adopted one's stack completes
+/// the other. The message names both.
+#[test]
+fn two_open_collects_of_one_item_one_unadopted_is_dw1110() {
+    let doc = quests_doc_with(ADOPTED, &second_bread(r#", "after": ["obj/talk"]"#));
+    let err = try_build_doc(&doc, Some(BARREL_EDITS.as_str())).expect_err("DW1110");
+    match err {
+        emit::BuildFailure::Diagnostic { code, message } => {
+            assert_eq!(code, "DW1110", "{message}");
+            assert!(
+                message.contains("obj/cheese") && message.contains("obj/more-bread"),
+                "{message}"
+            );
+        }
+        other => panic!("expected DW1110, got {other:?}"),
+    }
+}
+
+/// The same pair ordered by `after` is never open at once: it builds.
+#[test]
+fn the_same_pair_in_sequence_is_not_dw1110() {
+    let doc = quests_doc_with(ADOPTED, &second_bread(r#", "after": ["obj/cheese"]"#));
+    try_build_doc(&doc, Some(BARREL_EDITS.as_str())).expect("an ordered pair builds");
 }

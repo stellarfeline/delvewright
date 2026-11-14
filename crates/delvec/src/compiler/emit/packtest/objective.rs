@@ -331,9 +331,20 @@ pub(super) fn emit_objective_activation_packtests(
         for o in &q.objectives {
             let oid = o.id().as_str();
             let cmds = activation_commands(plan, holders, area, o);
-            let Some(fixture) = activation_fixture(&cmds) else {
+            let Some(mut fixture) = activation_fixture(&cmds) else {
                 continue;
             };
+            // A collect's stack is read as its completion reads it — the
+            // holder's mark included (spec-0111 §4.2) — so a fill that lost the
+            // mark reads as no fill.
+            if let (
+                Some(p),
+                ActivationFixture::ContainerSlot { item, .. }
+                | ActivationFixture::EntitySlot { item, .. },
+            ) = (collect_predicate(o), &mut fixture)
+            {
+                *item = p;
+            }
             let safe = plan::safe_local(oid);
             let mut b = packtest_header(&format!(
                 "{title}: activating objective `{oid}` places its own affordance"
@@ -1082,9 +1093,7 @@ pub(super) fn emit_verb_packtests(
     // re-arming `inventory_changed` advancement), THEN activate and tick once with
     // no further pickup — the per-tick held check must complete the objective.
     if let Some((qid, o)) = first_collect
-        && let Objective::Collect {
-            id, item, count, ..
-        } = o
+        && let Objective::Collect { id, .. } = o
     {
         let (pin, sel) = pin_dummy("dw_t_cpre");
         let mut b = packtest_header(&format!(
@@ -1100,7 +1109,10 @@ pub(super) fn emit_verb_packtests(
             obj_score(id.as_str())
         ));
         // Take the item while the objective is INACTIVE (the pre-activation pickup).
-        b.push(format!("give {sel} {item} {count}"));
+        b.push(format!(
+            "give {sel} {}",
+            collect_stack(o).expect("a collect has a stack")
+        ));
         // Activate WITHOUT re-giving: `packtest_preamble` would re-give the item,
         // masking the bug by producing a fresh `inventory_changed`. Only the GIVE
         // is unwanted, so take the guard half whole (`packtest_guards`) rather
@@ -1134,9 +1146,7 @@ pub(super) fn emit_verb_packtests(
     if let Some((qid, o)) = first_collect_adopted
         && let Objective::Collect {
             id,
-            item,
             count,
-            item_name,
             fill_count,
             ..
         } = o
@@ -1148,10 +1158,8 @@ pub(super) fn emit_verb_packtests(
         let (pin, sel) = pin_dummy("dw_t_cadp");
         let cell = fill.cell;
         let party = plan::PARTY;
-        let stack = format!(
-            "{item}{} {count}",
-            item_component_tail(item, item_name.as_deref())
-        );
+        let stack = collect_stack(o).expect("a collect has a stack");
+        let item = collect_predicate(o).expect("a collect has a predicate");
         let mut b = packtest_header(&format!(
             "{}: collect `{id}` fills the adopted container and completes on the named stack",
             artifact_title(c)
@@ -1194,6 +1202,18 @@ pub(super) fn emit_verb_packtests(
             cell[0], cell[1], cell[2]
         ));
         b.push(format!("assert score #cadp dw.sys matches {total}"));
+        // The same item and name WITHOUT the holder's mark completes nothing
+        // (spec-0111 §4.2): the predicate matches the stamped stack only.
+        if let Some(plain) = unmarked_stack(o) {
+            b.push(format!(
+                "item replace entity {sel} inventory.0 with {plain}"
+            ));
+            b.push(format!("function {ns}:tick"));
+            b.push(format!(
+                "assert score {party} {} matches 0",
+                obj_score(id.as_str())
+            ));
+        }
         // The player takes the stack the container actually holds — components and
         // all, the same text the fill emitted — and the objective completes.
         b.push(format!(
@@ -1206,4 +1226,91 @@ pub(super) fn emit_verb_packtests(
         ));
         write("collect_container", b);
     }
+
+    // spec-0111 §4.2: two collects of one item, each from its own holder, open
+    // at once — one holder's stack completes its own collect and not the other.
+    if let Some(((qa, a), (qb, b_o))) = first_marked_pair(plan) {
+        let (pin, sel) = pin_dummy("dw_t_cown");
+        let party = plan::PARTY;
+        let (ia, ib) = (a.id().as_str(), b_o.id().as_str());
+        let mut b = packtest_header(&format!(
+            "{}: collect `{ia}` is completed by its own holder's stack and `{ib}`, of the same item, is not",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        for id in [ia, ib] {
+            b.push(format!(
+                "scoreboard players set {party} {} 0",
+                obj_score(id)
+            ));
+        }
+        b.extend(packtest_guards(plan, qa, a, true));
+        b.extend(packtest_guards(plan, qb, b_o, true));
+        b.push(format!("clear {sel}"));
+        b.push(format!(
+            "give {sel} {}",
+            collect_stack(a).expect("a collect has a stack")
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {} matches 1", obj_score(ia)));
+        b.push(format!("assert score {party} {} matches 0", obj_score(ib)));
+        write("collect_own_stack", b);
+    }
+}
+
+/// The collect's stack with its item and name but not its holder's mark —
+/// `None` for a collect that carries no mark.
+fn unmarked_stack(o: &Objective) -> Option<String> {
+    crate::compiler::holders::placement_mark(o)?;
+    let Objective::Collect {
+        item,
+        count,
+        item_name,
+        ..
+    } = o
+    else {
+        return None;
+    };
+    let mut s = delvewright_dsl::Stack::of(item);
+    s.name = item_name.clone();
+    Some(format!(
+        "{item}{} {count}",
+        super::super::stack::command_suffix(&s, vec![])
+    ))
+}
+
+/// An objective with the id of the quest that declares it.
+type Declared<'a> = (&'a str, &'a Objective);
+
+/// The first two `collect`s, in declared order, that take one item from two
+/// holders and can be open at once (`Flow::can_be_open_together`): the pair
+/// `collect_own_stack` proves apart.
+fn first_marked_pair<'a>(plan: &Plan<'a>) -> Option<(Declared<'a>, Declared<'a>)> {
+    let marked: Vec<Declared<'a>> = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter().map(move |o| (q.id.as_str(), o)))
+        .filter(|(_, o)| crate::compiler::holders::placement_mark(o).is_some())
+        .collect();
+    if marked.len() < 2 {
+        return None;
+    }
+    let item = |o: &Objective| match o {
+        Objective::Collect { item, .. } => item.clone(),
+        _ => String::new(),
+    };
+    let flow = crate::compiler::flow::Flow::new(plan.campaign);
+    marked.iter().enumerate().find_map(|(i, a)| {
+        marked[i + 1..]
+            .iter()
+            .find(|b| {
+                item(a.1) == item(b.1)
+                    && flow.can_be_open_together(a.1.id().as_str(), b.1.id().as_str())
+            })
+            .map(|b| (*a, *b))
+    })
 }

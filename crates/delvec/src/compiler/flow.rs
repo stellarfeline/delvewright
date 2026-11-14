@@ -2214,6 +2214,29 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// **Whether objectives `a` and `b` can both be pending at one moment**, as
+    /// far as the emitter shows it: both declared by one quest (one quest is
+    /// active as a whole), neither in the other's transitive `after` closure
+    /// ([`Self::completes_before_armed`]), and no flag one requires the other
+    /// forbids. Across quests it answers `false`: co-presence there needs a
+    /// quest-co-activation model this compiler does not have, and the
+    /// direction that withholds is the one that cannot invent a defect. The one
+    /// answer every proof that asks "open together" reads (`DW0878`, `DW1110`).
+    pub(crate) fn can_be_open_together(&self, a: &str, b: &str) -> bool {
+        let (Some(oa), Some(ob)) = (self.objective(a), self.objective(b)) else {
+            return false;
+        };
+        let (ga, gb) = (oa.gate(), ob.gate());
+        let exclusive = |r: &[delvewright_dsl::FlagId], f: &[delvewright_dsl::FlagId]| {
+            r.iter().any(|x| f.contains(x))
+        };
+        matches!((self.objective_quest(a), self.objective_quest(b)), (Some(qa), Some(qb)) if qa == qb)
+            && !exclusive(ga.requires_flags, gb.forbids_flags)
+            && !exclusive(gb.requires_flags, ga.forbids_flags)
+            && !self.completes_before_armed(a, b)
+            && !self.completes_before_armed(b, a)
+    }
+
     /// The transitive `after` closure of `id` — every beat the DSL declares must
     /// precede it.
     fn after_closure(&self, id: &str) -> BTreeSet<String> {

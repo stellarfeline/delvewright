@@ -300,6 +300,19 @@ pub(super) fn prove_declarations(
         }
     })?;
 
+    // …and every take a player makes counts for the collect it belongs to
+    // (DW1110): two collects of one item open at once are told apart only by
+    // the stack their holders placed, so each must adopt one.
+    let (collects, marked, judged) = crate::compiler::holders::check_collect_attribution(plan)
+        .map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    crate::note!(
+        "collect attribution: {collects} collect(s), {marked} carrying their holder's mark; \
+         {judged} same-item pair(s) open at once judged, 0 unattributable (DW1110)."
+    );
+
     // …and no two AFFORDANCES may stand on one cell either (DW0878). The three
     // proofs above each need one side of their pair to be something else — a
     // standing body for `DW0359`, a compiler-owned press set for `DW0422`, a cast

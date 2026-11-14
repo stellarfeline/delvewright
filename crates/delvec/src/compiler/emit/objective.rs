@@ -28,6 +28,65 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
         .any(|o| matches!(o, Objective::Collect { .. }))
 }
 
+/// **The stack a `collect`'s holder is filled with** (spec-0111 §4.2), as a
+/// command's item argument with its count: the item, its `custom_name` when
+/// the collect names it, and — when the collect adopts a holder — the
+/// placement's identity ([`crate::compiler::holders::placement_mark`]) as a
+/// `custom_data` component. The one spelling every site that places, hands
+/// over or restores the stack writes, so the stack a holder carries and the
+/// stack a PackTest presents are one item.
+pub(super) fn collect_stack(o: &Objective) -> Option<String> {
+    let Objective::Collect {
+        item,
+        count,
+        item_name,
+        ..
+    } = o
+    else {
+        return None;
+    };
+    let mut s = delvewright_dsl::Stack::of(item);
+    s.name = item_name.clone();
+    let site = crate::compiler::holders::placement_mark(o)
+        .map(|m| super::stack::Component::site("minecraft:custom_data", m))
+        .into_iter()
+        .collect();
+    Some(format!(
+        "{item}{} {count}",
+        super::stack::command_suffix(&s, site)
+    ))
+}
+
+/// **What completes a `collect`, as an item predicate** (spec-0111 §4.2): the
+/// item id, narrowed to the stack its holder placed when it adopts one
+/// (`<item>[custom_data~<mark>]`). The per-tick held check and every PackTest
+/// count read it; the completion advancement reads the same mark through
+/// [`collect_advancement_item`].
+pub(super) fn collect_predicate(o: &Objective) -> Option<String> {
+    let Objective::Collect { item, .. } = o else {
+        return None;
+    };
+    Some(match crate::compiler::holders::placement_mark(o) {
+        Some(m) => format!("{item}[custom_data~{m}]"),
+        None => item.clone(),
+    })
+}
+
+/// The `inventory_changed` item predicate of a `collect`'s completion
+/// advancement: the item, the count and — for a holder's stack — the
+/// placement's `custom_data`, the predicate [`collect_predicate`] writes in
+/// command syntax.
+pub(super) fn collect_advancement_item(o: &Objective) -> Option<Value> {
+    let Objective::Collect { item, count, .. } = o else {
+        return None;
+    };
+    let mut v = json!({ "items": item, "count": { "min": count } });
+    if let Some(m) = crate::compiler::holders::placement_mark(o) {
+        v["predicates"] = json!({ "minecraft:custom_data": m });
+    }
+    Some(v)
+}
+
 /// The world-placement commands run when an objective ACTIVATES (gap 13): a
 /// `collect` chest + item fill, or an `interact`'s window opening (its click
 /// box removed where the block acts on its own). Empty for
@@ -79,10 +138,7 @@ fn activation_lines(
     match o {
         Objective::Collect {
             id,
-            item,
-            count,
             anchor,
-            item_name,
             fill_count,
             dropped_by,
             ..
@@ -98,10 +154,7 @@ fn activation_lines(
             // the piece carries — is filled by `item replace entity` in its
             // first slot, a frame unfrozen to give it up; the engine summoned
             // the body at `setup_finish`.
-            let stack = format!(
-                "{item}{} {count}",
-                item_component_tail(item, item_name.as_deref())
-            );
+            let stack = collect_stack(o).expect("a collect has a stack");
             if let Some(lines) = collect_holder_activation(holders, id.as_str(), &stack) {
                 return lines;
             }

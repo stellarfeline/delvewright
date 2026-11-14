@@ -1368,9 +1368,10 @@ struct Holder {
 
 /// **The hall's item holders** (spec-0111 §7.1). The glow frame and the
 /// armour stand on the reliquary wall carry `loot`; the plain frame on the near
-/// hall's south wall is the one a `collect` on the critical path takes from;
-/// the second plain frame beside it is the gallery's empty holder, which the
-/// census prints as frozen and exempt.
+/// hall's south wall is the one a `collect` on the critical path takes from,
+/// and the frame two cells along holds the same item for a second `collect`
+/// open beside it; the plain frame on its other side is the gallery's empty
+/// holder, which the census prints as frozen and exempt.
 const HOLDERS: &[Holder] = &[
     Holder {
         name: "anchor/map-frame",
@@ -1394,6 +1395,14 @@ const HOLDERS: &[Holder] = &[
         facing: "south",
         note: "a frame on the near hall's south wall a `collect` takes the seal from, on the \
                critical path",
+    },
+    Holder {
+        name: "anchor/second-seal-frame",
+        kind: "minecraft:item_frame",
+        pos: [14, 2, 1],
+        facing: "south",
+        note: "a second frame on the same wall, holding the same seal: a second `collect` of \
+               the same item, open beside the first and completed only by its own frame's stack",
     },
     Holder {
         name: "anchor/bare-frame",
