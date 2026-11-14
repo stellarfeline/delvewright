@@ -2,9 +2,9 @@
 //! `world.view_distance`, the radius it serves, the far views judged against
 //! it (`DW0956`), and the cost the build states to the host.
 //!
-//! The showcase-camera shape is proven in `compiler::view::camera`'s own tests
-//! (`a_showcase_camera_whose_subject_is_past_the_served_radius_is_refused`);
-//! the cutscene shape is proven here through a real build.
+//! The cutscene shape is proven here through a real build, and so is what the
+//! served distance does not judge: a showcase camera, whose frame draws to its
+//! own distance.
 
 use crate::common;
 
@@ -432,7 +432,6 @@ fn the_cost_model_is_the_rigs() {
     let b = served::Binding {
         chunks: 24,
         declared: true,
-        showcase_cameras: 2,
         cutscene_shots: 3,
     };
     let line = b.line();
@@ -441,7 +440,7 @@ fn the_cost_model_is_the_rigs() {
         "{line}"
     );
     assert!(
-        line.contains("2 showcase camera(s) and 3 cutscene shot(s) judged"),
+        line.contains("serve 384 blocks in every direction; 3 cutscene shot(s) judged"),
         "{line}"
     );
     assert!(
@@ -449,4 +448,146 @@ fn the_cost_model_is_the_rigs() {
         "{line}"
     );
     assert!(line.contains("4 players × 2181 chunks each"), "{line}");
+}
+
+// ---------------------------------------------------------------------------
+// A showcase camera draws to its own distance (not judged by the served one)
+// ---------------------------------------------------------------------------
+
+const BIN: &str = env!("CARGO_BIN_EXE_delvec");
+
+fn run(args: &[&str]) -> (i32, String) {
+    let o = std::process::Command::new(BIN).args(args).output().unwrap();
+    (
+        o.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
+    )
+}
+
+fn fresh(tag: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("view-distance-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn build_bin(camp: &Path, out: &Path) -> (i32, String) {
+    run(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ])
+}
+
+/// Write `design.json` (one approved picture) and `design/cameras.json` (one
+/// camera answering it) into a campaign copy.
+fn one_camera(camp: &Path, pos: [f64; 3], yaw: f64, pitch: f64, fov: f64) {
+    std::fs::create_dir_all(camp.join("design/concept")).unwrap();
+    std::fs::write(camp.join("design/concept/keep.png"), b"not read").unwrap();
+    std::fs::write(
+        camp.join("design.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "dsl_version": delvewright_dsl::DSL_VERSION, "campaign_id": "hello-world",
+            "stage": "design",
+            "content": {"references": [
+                {"name": "concept/keep", "shows": "x", "time": "noon", "weather": "clear"}
+            ]}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        camp.join("design/cameras.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "campaign_id": "hello-world",
+            "cameras": [{
+                "answers": "concept/keep", "name": "far", "source": "estimated",
+                "pos": pos, "yaw": yaw, "pitch": pitch, "fov": fov,
+                "width": 320, "height": 180, "spp": 16
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+/// **A showcase picture is not a player's view.** A camera 250 blocks off the
+/// keep — past the 160 blocks the floor serves, the campaign declaring no
+/// `world.view_distance` — builds with no `DW0956`, and its frame draws the
+/// keep: the frame's draw distance is its own, every chunk the scene loads,
+/// not the server's.
+#[test]
+fn a_showcase_camera_past_the_served_radius_builds_and_its_frame_draws_its_subject() {
+    let camp = fresh("showcase-far-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    // Where the keep stands, read off a build with no camera.
+    let probe = fresh("showcase-far-probe");
+    let (code, log) = build_bin(&camp, &probe);
+    assert_eq!(code, 0, "{log}");
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(probe.join("render-plan.json")).unwrap()).unwrap();
+    let corner = |k: &str, a: usize| plan["layout_aabb"][k][a].as_f64().unwrap();
+    let mid = [
+        (corner("min", 0) + corner("max", 0) + 1.0) / 2.0,
+        (corner("min", 1) + corner("max", 1) + 1.0) / 2.0,
+        (corner("min", 2) + corner("max", 2) + 1.0) / 2.0,
+    ];
+    // 250 blocks south of the keep's south face, level with its middle,
+    // looking north at it through a narrow lens.
+    let pos = [mid[0], mid[1], corner("max", 2) + 1.0 + 250.0];
+    let subject = pos[2] - (corner("max", 2) + 1.0);
+    assert!(
+        subject > viewdistance::served_radius_blocks(FLOOR),
+        "{subject}"
+    );
+    one_camera(&camp, pos, 180.0, 0.0, 6.0);
+    assert!(
+        campaign(&camp).world.content.view_distance.is_none(),
+        "the served distance stays the floor"
+    );
+    let out = fresh("showcase-far-out");
+    let (code, log) = build_bin(&camp, &out);
+    assert_eq!(code, 0, "a far showcase camera builds at the floor: {log}");
+    assert!(!log.contains("DW0956"), "{log}");
+    assert!(
+        log.contains("view distance binding: 10 chunk(s) (the engine's floor, undeclared)"),
+        "{log}"
+    );
+    // The frame: drawn quick on the CPU backend, the keep in its middle.
+    let frames = fresh("showcase-far-frames");
+    let (code, log) = run(&[
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+        "cameras",
+        out.to_str().unwrap(),
+        "--campaign",
+        camp.to_str().unwrap(),
+        "-o",
+        frames.to_str().unwrap(),
+        "--backend",
+        "cpu",
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let png = std::fs::read(frames.join(delvec::compiler::view::camera::preview_file(
+        "hello-world",
+        "far",
+    )))
+    .unwrap();
+    let img = image::load_from_memory(&png).unwrap().to_rgba8();
+    let (w, h) = img.dimensions();
+    let centre = img.get_pixel(w / 2, h / 2).0;
+    let edge = img.get_pixel(0, h / 2).0;
+    let apart: u32 = (0..3).map(|i| u32::from(centre[i].abs_diff(edge[i]))).sum();
+    assert!(
+        apart > 60,
+        "the frame's middle {centre:?} is the sky at its edge {edge:?}: the keep {subject} \
+         blocks off is not drawn"
+    );
 }
