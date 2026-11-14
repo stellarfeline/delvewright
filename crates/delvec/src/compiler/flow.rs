@@ -590,8 +590,16 @@ impl Walk<'_, '_> {
             // A story world credits what it performs (spec-0108 §4.1): an
             // elective act's producer only when the act is in its participation,
             // a forced one wherever its gate holds, as today.
+            // A deed's producers are credited from the step it is performed
+            // at, never before (`Flow::run_story`).
             Some(ctx) => match &self.performed {
-                None => self.flow.story_credit(g, &ctx.performs),
+                None => {
+                    self.flow.story_credit(g, &ctx.performs)
+                        && !g.act.as_ref().is_some_and(|a| {
+                            ctx.deeds.iter().any(|(_, d)| d == a)
+                                && !ctx.deeds.iter().any(|(j, d)| d == a && *j <= self.taken)
+                        })
+                }
                 Some(_) => stance,
             },
         }

@@ -749,11 +749,21 @@ impl<'a> Flow<'a> {
                 o = next;
                 for (p, f) in pays {
                     match p {
-                        Payer::Trigger(t) => out.triggers.push(TriggerDebt {
-                            step: i,
-                            trigger: t,
-                            flag: f,
-                        }),
+                        Payer::Trigger(t) => {
+                            // An elective trigger the world performs is one
+                            // of its entry deeds as well: its bundle fires
+                            // where the path performs it.
+                            if self.acts().elective_ids.contains(&t)
+                                && !out.deeds.iter().any(|(_, a)| *a == t)
+                            {
+                                out.deeds.push((i, t.clone()));
+                            }
+                            out.triggers.push(TriggerDebt {
+                                step: i,
+                                trigger: t,
+                                flag: f,
+                            });
+                        }
                         Payer::Choice(c) => out.choices.push((i, c)),
                         Payer::Act(a) => out.deeds.push((i, a)),
                     }
@@ -813,7 +823,14 @@ impl<'a> Flow<'a> {
         // path with no deed performed.
         let mut at: BTreeMap<String, usize> = BTreeMap::new();
         {
+            // An act to be placed writes nothing before it is performed: its
+            // own flags, credited from the start, would read as its own gate
+            // shut (a purchase that `forbids` what it buys).
+            let dry_credit =
+                |g: &GatedFlag| credit(g) && !g.act.as_ref().is_some_and(|a| pending.contains(a));
             let mut dry = self.story_initial(performs, &barred);
+            dry.flags.clear();
+            self.saturate_ambient_with(&mut dry.flags, &dry_credit);
             let mut dry_complete: Option<(usize, String)> = None;
             for (i, step) in pt.steps.iter().enumerate() {
                 for act in &pending {
@@ -821,8 +838,8 @@ impl<'a> Flow<'a> {
                         at.insert(act.clone(), i);
                     }
                 }
-                self.saturate_ambient_with(&mut dry.flags, &credit);
-                self.advance_with(&mut dry, step, i + 1, &mut dry_complete, &credit);
+                self.saturate_ambient_with(&mut dry.flags, &dry_credit);
+                self.advance_with(&mut dry, step, i + 1, &mut dry_complete, &dry_credit);
                 if !dry.scene_at.is_empty() {
                     break;
                 }
@@ -863,6 +880,18 @@ impl<'a> Flow<'a> {
         let mut fired_in_order: Vec<(usize, String)> = Vec::new();
         let mut undecided: BTreeSet<String> = BTreeSet::new();
         let mut incoherent: Option<String> = None;
+        // A placed deed writes at its step, once (spec-0108 §4.1): its
+        // producers are credited from the step it is performed at, never
+        // before.
+        let credit_at = |g: &GatedFlag, i: usize| {
+            credit(g)
+                && !g
+                    .act
+                    .as_ref()
+                    .is_some_and(|a| at.get(a).is_some_and(|j| *j > i))
+        };
+        st.flags.clear();
+        self.saturate_ambient_with(&mut st.flags, &|g| credit_at(g, 0));
         for (i, step) in pt.steps.iter().enumerate() {
             for (_, c) in debts.choices.iter().filter(|(j, _)| *j == i) {
                 st.flags.extend(c.sets.iter().cloned());
@@ -884,13 +913,13 @@ impl<'a> Flow<'a> {
                 undecided.extend(st.undecided.iter().cloned());
                 deeds.push((i, act.clone()));
             }
-            self.saturate_ambient_with(&mut st.flags, &credit);
+            self.saturate_ambient_with(&mut st.flags, &|g| credit_at(g, i));
             if incoherent.is_none()
                 && let Some(why) = self.step_blocked(&st, step)
             {
                 incoherent = Some(format!("step {} (`{}`): {why}", i + 1, step.objective));
             }
-            self.advance_with(&mut st, step, i + 1, &mut complete_at, &credit);
+            self.advance_with(&mut st, step, i + 1, &mut complete_at, &|g| credit_at(g, i));
             fired.extend(st.fired.iter().cloned());
             fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
             undecided.extend(st.undecided.iter().cloned());
