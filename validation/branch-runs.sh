@@ -38,6 +38,24 @@
 # branch-run loops on one host are independent, with no mutex and no queueing. An
 # invocation without an id fails here rather than landing in compose's default
 # project (`validation`), a shared name by another route.
+#
+# ## Concurrency
+#
+# The worlds are independent, so they run side by side: `--jobs N` (or
+# `DELVEWRIGHT_BRANCH_JOBS`) at most at once. Each world is its own compose
+# project, `<project>-<world slug>` — its own server, bot, network and world
+# volume, no host port — torn down to verified-clean before and after it runs.
+# The images are built ONCE, under `<project>`, and every world boots them
+# (`up --no-build`): one image per ladder, not one per world. Each world's
+# compose output goes to its own log, `<out>/branch-<slug>.log`, and its
+# verdict is printed in the plan's order once every world has landed.
+#
+# Unset, N is the most worlds the Docker host fits at their worst case
+# (`dw_branch_jobs_fit`, validation/lib/branch-jobs.sh). A declared N is used as
+# given and printed beside that fit. A world's server that falls behind the
+# clock — the vanilla `Can't keep up!` warning — is named on its verdict line:
+# a run under load is a run whose verdict a boat ride or a timed window may owe
+# to the load, so N is chosen below where that line appears.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -46,22 +64,26 @@ here="validation"
 usage() {
   cat >&2 <<'USAGE'
 usage: EULA=TRUE validation/branch-runs.sh --project <compose-project>
-                                           [--out <dir>]
+                                           [--out <dir>] [--jobs <n>]
 
   --project  REQUIRED (or DW_COMPOSE_PROJECT). The compose project this ladder
              owns; distinct per concurrent ladder, no default.
   --out      Where merged + per-branch reports are filed (default
              validation/run-out/<project>; DW_RUN_OUT does the same).
+  --jobs     How many worlds run at once (or DELVEWRIGHT_BRANCH_JOBS); unset,
+             the most the Docker host fits at their worst case.
 USAGE
   exit 2
 }
 
 PROJECT="${DW_COMPOSE_PROJECT:-}"
 RUN_OUT="${DW_RUN_OUT:-}"
+JOBS="${DELVEWRIGHT_BRANCH_JOBS:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --project|-p) [ $# -ge 2 ] || usage; PROJECT="$2"; shift 2 ;;
     --out)        [ $# -ge 2 ] || usage; RUN_OUT="$2"; shift 2 ;;
+    --jobs|-j)    [ $# -ge 2 ] || usage; JOBS="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "branch-runs: unknown argument '$1'" >&2; usage ;;
   esac
@@ -128,6 +150,9 @@ dw_export_delve_image "$PROJECT"
 # The OOM rule every server this engine starts shares (tools/lib/server-heap.sh).
 # shellcheck source=tools/lib/server-heap.sh
 . "$here/../tools/lib/server-heap.sh"
+# How many worlds the Docker host fits at once (validation/lib/branch-jobs.sh).
+# shellcheck source=validation/lib/branch-jobs.sh
+. "$here/lib/branch-jobs.sh"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
 COMPOSE=(docker compose -p "$PROJECT" -f "$here/compose.yaml" --profile validate)
@@ -150,10 +175,117 @@ mkdir -p "$RUN_OUT" "$BOT_OUT"
 MERGED="$RUN_OUT/branch-runs.json"
 rm -f "$MERGED" "$BOT_OUT/run-report.json"
 
+n_selected="$(printf '%s\n' "$selected" | grep -c .)"
+fit="$(dw_branch_jobs_fit "$OUT")"
+why="$(dw_branch_jobs_why "$OUT")"
+if [ -z "$JOBS" ]; then
+  JOBS="$fit"
+  echo "==> jobs: $JOBS world(s) at once, the Docker host's worst-case fit ($why)"
+else
+  case "$JOBS" in
+    ''|*[!0-9]*|0) echo "branch-runs: --jobs must be a positive integer, got '$JOBS'" >&2; exit 2 ;;
+  esac
+  echo "==> jobs: $JOBS world(s) at once, as declared; the worst-case fit is $fit ($why)"
+fi
+[ "$JOBS" -le "$n_selected" ] || JOBS="$n_selected"
+
+# Every world's own project, `<project>-<slug>`.
+world_project() {
+  printf '%s-%s\n' "$PROJECT" "$(printf '%s' "$1" | tr '/' '-')"
+}
+# The teardown on exit reaches every world's project and the ladder's own,
+# which holds the images.
 cleanup() {
+  local b
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    "$here/fresh-volumes.sh" --project "$(world_project "$b")" >/dev/null 2>&1 || true
+  done <<SELECTED
+$selected
+SELECTED
   "$here/fresh-volumes.sh" --project "$PROJECT" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+stop_worlds() {
+  local p
+  for p in $(jobs -p); do kill "$p" 2>/dev/null || true; done
+  wait 2>/dev/null || true
+  cleanup
+}
+trap stop_worlds EXIT
+
+# The images, once: the delve under `DELVE_IMAGE`, the bot under
+# `DELVE_BOT_IMAGE`, both named for this ladder's project
+# (`dw_export_delve_image`) and booted by every world.
+echo "==> images: built once for $n_selected world(s)"
+"$here/fresh-volumes.sh" --project "$PROJECT"
+"${COMPOSE[@]}" build server bot
+
+# One world, start to verdict, in its own project. Leaves `<slug>.rc` (the
+# compose exit code), `<slug>.infra` (why no report was written, when none
+# was) and `<slug>.lag` (the server's `Can't keep up!` lines) in $RUN_OUT, and
+# files the bot's report as `run-report-<slug>.json`.
+run_world() {
+  local branch="$1" slug wp bot_rel bot_dir report log rc server_log oom t0
+  slug="$(printf '%s' "$branch" | tr '/' '-')"
+  wp="$(world_project "$branch")"
+  bot_rel="./run-out/$PROJECT/branch-bot/$slug"
+  bot_dir="$here/${bot_rel#./}"
+  report="$RUN_OUT/run-report-$slug.json"
+  log="$RUN_OUT/branch-$slug.log"
+  rm -f "$report" "$bot_dir/run-report.json" "$RUN_OUT/$slug.rc" "$RUN_OUT/$slug.infra" "$RUN_OUT/$slug.lag"
+  mkdir -p "$bot_dir"
+  t0="$(date +%s)"
+  echo "==> ${branch}: fresh world (project $wp)" >"$log"
+  if ! "$here/fresh-volumes.sh" --project "$wp" >>"$log" 2>&1; then
+    echo "$branch=1, its project could not be made fresh" >"$RUN_OUT/$slug.infra"
+    echo 1 >"$RUN_OUT/$slug.rc"
+    return 0
+  fi
+  echo "==> ${branch}: run" >>"$log"
+  set +e
+  DW_BOT_OUT="$bot_rel" DELVEWRIGHT_BRANCH="$branch" DELVEWRIGHT_BRANCHES="$TIER" \
+    docker compose -p "$wp" -f "$here/compose.yaml" --profile validate \
+    up --no-build --abort-on-container-exit --exit-code-from bot >>"$log" 2>&1
+  rc=$?
+  # An OOM'd server takes the bot down before spawn, and the bot's exit says
+  # nothing about why; the server's own log does, read before the teardown
+  # removes it. The same log says whether the server fell behind the clock.
+  server_log="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate logs --no-color server 2>&1)"
+  set -e
+  printf '%s\n' "$server_log" | grep -F "Can't keep up!" >"$RUN_OUT/$slug.lag" || true
+  oom=0
+  if dw_server_log_shows_oom "$server_log"; then
+    oom=1
+    echo "::error:: branch $branch: $(dw_server_oom_advice)" >>"$log"
+    [ "$rc" -ne 0 ] || rc=1
+  fi
+  # The bot writes into its world's mounted directory; file its copy under
+  # the world's name in $RUN_OUT so the merge can read them all back.
+  if [ -f "$bot_dir/run-report.json" ]; then
+    mv "$bot_dir/run-report.json" "$report"
+  elif [ "$oom" = 1 ]; then
+    echo "$branch=$rc, and the server log shows $DW_SERVER_OOM_MARKER (out of Java heap)" >"$RUN_OUT/$slug.infra"
+  else
+    echo "$branch=$rc" >"$RUN_OUT/$slug.infra"
+  fi
+  "$here/fresh-volumes.sh" --project "$wp" >>"$log" 2>&1 || true
+  echo "==> ${branch}: exit $rc after $(( $(date +%s) - t0 ))s" >>"$log"
+  echo "$rc" >"$RUN_OUT/$slug.rc"
+}
+
+t_all="$(date +%s)"
+while IFS= read -r branch; do
+  [ -n "$branch" ] || continue
+  # bash 3.2 has no `wait -n`: the running worlds are counted until one ends.
+  while [ "$(jobs -rp | grep -c .)" -ge "$JOBS" ]; do
+    sleep 5
+  done
+  echo "==> ${branch}: started (project $(world_project "$branch"))"
+  run_world "$branch" &
+done <<SELECTED
+$selected
+SELECTED
+wait
 
 status=0
 reports=()
@@ -162,53 +294,28 @@ reports=()
 # different fact from a red run and from a tier skip, and must render as one.
 # Entries are `branch=exit-code`.
 infra=()
+# Every verdict, in the plan's order.
 while IFS= read -r branch; do
   [ -n "$branch" ] || continue
   slug="$(printf '%s' "$branch" | tr '/' '-')"
   report="$RUN_OUT/run-report-$slug.json"
-  rm -f "$report" "$BOT_OUT/run-report.json"
-
-  echo
-  echo "==> ${branch}: fresh world"
-  "$here/fresh-volumes.sh" --project "$PROJECT"
-
-  echo "==> ${branch}: run"
-  set +e
-  DELVEWRIGHT_BRANCH="$branch" DELVEWRIGHT_BRANCHES="$TIER" \
-    "${COMPOSE[@]}" up --build --abort-on-container-exit --exit-code-from bot
-  rc=$?
-  # An OOM'd server takes the bot down before spawn, and the bot's exit says
-  # nothing about why; the server's own log does, read before the next
-  # branch's teardown removes it.
-  server_log="$("${COMPOSE[@]}" logs --no-color server 2>&1)"
-  set -e
-  oom=0
-  if dw_server_log_shows_oom "$server_log"; then
-    oom=1
-    echo "::error:: branch $branch: $(dw_server_oom_advice)" >&2
-    [ "$rc" -ne 0 ] || rc=1
-  fi
-
-  # The bot writes into the compose-mounted $BOT_OUT; file this branch's copy
-  # under its own name in $RUN_OUT so the merge can read them all back.
-  if [ -f "$BOT_OUT/run-report.json" ]; then
-    mv "$BOT_OUT/run-report.json" "$report"
-    reports+=("$report")
-  elif [ "$oom" = 1 ]; then
-    infra+=("$branch=$rc, and the server log shows $DW_SERVER_OOM_MARKER (out of Java heap)")
-  else
-    infra+=("$branch=$rc")
-  fi
-
+  rc="$(cat "$RUN_OUT/$slug.rc" 2>/dev/null || echo 1)"
+  if [ -f "$report" ]; then reports+=("$report"); fi
+  if [ -f "$RUN_OUT/$slug.infra" ]; then infra+=("$(cat "$RUN_OUT/$slug.infra")"); fi
+  lag="$(grep -c . "$RUN_OUT/$slug.lag" 2>/dev/null || true)"
+  lag_note=""
+  [ "${lag:-0}" = 0 ] || lag_note=", and its server fell behind the clock ${lag} time(s)"
   if [ "$rc" -ne 0 ]; then
-    echo "::error:: branch $branch FAILED (exit $rc)"
+    echo "::error:: branch $branch FAILED (exit $rc)$lag_note — $RUN_OUT/branch-$slug.log"
+    tail -n 40 "$RUN_OUT/branch-$slug.log" 2>/dev/null | sed 's/^/    /' || true
     status=1
   else
-    echo "==> ${branch}: PASSED"
+    echo "==> ${branch}: PASSED$lag_note"
   fi
-done <<EOF
+done <<SELECTED
 $selected
-EOF
+SELECTED
+echo "==> $n_selected world(s), $JOBS at once, in $(( $(date +%s) - t_all ))s"
 
 echo
 echo "==> merging per-branch reports into $MERGED"

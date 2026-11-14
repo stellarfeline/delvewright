@@ -38,9 +38,20 @@ dw_delve_image() {
   printf 'delvewright/delve:%s\n' "${1:?dw_delve_image needs the compose project}"
 }
 
+# dw_bot_image <compose-project> -> the bot image tag that project owns. The
+# bot is built from `harness/`, which a ladder's own checkout decides, so it
+# is scoped the same way; named rather than left to compose's
+# `<project>-bot` so that `branch-runs.sh` can build it once under the
+# ladder's project and boot it in every world's project.
+dw_bot_image() {
+  printf 'delvewright/bot:%s\n' "${1:?dw_bot_image needs the compose project}"
+}
+
 # dw_export_delve_image <compose-project>
-# Export DELVE_IMAGE so `docker compose` tags this ladder's build with it.
+# Export DELVE_IMAGE and DELVE_BOT_IMAGE so `docker compose` tags this
+# ladder's builds with them.
 dw_export_delve_image() {
   DELVE_IMAGE="$(dw_delve_image "${1:?dw_export_delve_image needs the compose project}")"
-  export DELVE_IMAGE
+  DELVE_BOT_IMAGE="$(dw_bot_image "$1")"
+  export DELVE_IMAGE DELVE_BOT_IMAGE
 }
