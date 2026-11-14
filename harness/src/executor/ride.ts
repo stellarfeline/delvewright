@@ -309,6 +309,10 @@ export const methods = {
       let prev = cellCentre(seat, yOf(seat));
       for (const p of drivePoints(step.medium, step.rate, yOf)) {
         bot._client.write("vehicle_move", { x: p.at[0], y: p.at[1], z: p.at[2], yaw: p.yaw, pitch: 0, onGround: true });
+        // The client does not move a rider it steers itself: keep its own
+        // position with the seat, so what is read of where the bot stands
+        // during the ride (a cue that plays at the rider) is where it is.
+        bot.entity.position.set(p.at[0], p.at[1], p.at[2]);
         reported += dist(prev, p.at);
         prev = p.at;
         await delay(1000 / TICKS_PER_SECOND);

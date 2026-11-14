@@ -396,6 +396,12 @@ export async function loadRecordsLedgerForCriticalPath(
   return parseRecordsLedger(JSON.parse(text) as unknown);
 }
 
+/** The path file a session walks: a branch run's own `world-path-<k>.json`
+ * when it drives one, the critical path it was handed otherwise. */
+export function walkedPathFile(criticalPathFile: string, branchPathFile: string | undefined): string {
+  return branchPathFile ?? criticalPathFile;
+}
+
 /** The world a path file walks: `world-path-<k>.json` is `world/<k>`; the critical path is the mainline. */
 export function worldOfPath(file: string, ledger: RecordsLedger): string | null {
   const base = path.basename(file);
