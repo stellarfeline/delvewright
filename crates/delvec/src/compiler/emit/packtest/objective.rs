@@ -1280,11 +1280,14 @@ fn unmarked_stack(o: &Objective) -> Option<String> {
     ))
 }
 
+/// An objective with the id of the quest that declares it.
+type Declared<'a> = (&'a str, &'a Objective);
+
 /// The first two `collect`s, in declared order, that take one item from two
 /// holders and can be open at once (`Flow::can_be_open_together`): the pair
 /// `collect_own_stack` proves apart.
-fn first_marked_pair(plan: &Plan) -> Option<((&str, &Objective), (&str, &Objective))> {
-    let marked: Vec<(&str, &Objective)> = plan
+fn first_marked_pair<'a>(plan: &Plan<'a>) -> Option<(Declared<'a>, Declared<'a>)> {
+    let marked: Vec<Declared<'a>> = plan
         .campaign
         .quests
         .content
