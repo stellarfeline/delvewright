@@ -24,6 +24,32 @@ export const RESYNC_GRACE_MS = 3000;
 /** How far (blocks) a vehicle's body may stand from the seat and still be the one boarded. */
 export const VEHICLE_NEAR = 3;
 
+/**
+ * How many blocks a driven ride reports before it asks the server where it
+ * holds the rider. Under ten: the server refuses whole a reported move more
+ * than ten blocks from where the vehicle stood when the tick began (the
+ * vanilla record §5, T16), so a drive that ran on unread past a refusal could
+ * never be taken again.
+ */
+export const DRIVE_STRETCH_BLOCKS = 4;
+
+/** How far (blocks, horizontally) the rider may stand from the end of a stretch the server took. */
+export const DRIVE_TAKEN_NEAR = 1;
+
+/** How long (ms) a held drive waits before it reports on from where the server holds it. */
+export const DRIVE_HELD_BACKOFF_MS = 500;
+
+/**
+ * How long (ms) a driven ride may stand held, summed over the ride, before it
+ * fails by name: a body in the water ahead holds a boat (T16), and the body is
+ * one that moves — a drowned of a wave — so the drive waits it out, then names
+ * it.
+ */
+export const DRIVE_HELD_BUDGET_MS = 20000;
+
+/** How far (blocks) from the held rider a body is named as what holds it. */
+const HOLDER_NEAR = 3;
+
 /** One ride, for the run report (spec-0135 §6). */
 export interface RideRecord {
   readonly vehicle: string;
@@ -112,6 +138,36 @@ export function drivePoints(
     }
   }
   return out;
+}
+
+/**
+ * Where a held drive goes on from: the index of the drive point, among
+ * `points[from..=to]` — the stretch just reported — nearest (horizontally) to
+ * where the server holds the rider. The next point reported is the one after
+ * it. Pure, for its unit test.
+ */
+export function resumeIndex(
+  points: readonly { readonly at: Vec3Tuple }[],
+  held: Vec3Tuple,
+  from: number,
+  to: number,
+): number {
+  let best = from;
+  let bestD = Infinity;
+  for (let k = Math.max(0, from); k <= Math.min(to, points.length - 1); k++) {
+    const p = points[k]!.at;
+    const d = Math.hypot(p[0] - held[0], p[2] - held[2]);
+    if (d < bestD) {
+      bestD = d;
+      best = k;
+    }
+  }
+  return best;
+}
+
+/** Whether the server took a stretch: the rider stands within reach of its last point. */
+export function stretchTaken(held: Vec3Tuple, end: Vec3Tuple): boolean {
+  return Math.hypot(held[0] - end[0], held[2] - end[2]) <= DRIVE_TAKEN_NEAR;
 }
 
 /** Whether a server position is at `cell` within the landing tolerance. */
@@ -306,19 +362,65 @@ export const methods = {
       );
       const yOf =
         step.kind === "boat" ? (): number => y0 : (c: Vec3Tuple): number => c[1];
+      // The drive is closed on the server: a stretch reported, then the
+      // server asked where it holds the rider. A stretch it did not take —
+      // a body in the water ahead holds a boat (the vanilla record §5, T16)
+      // — is reported again from where it holds it, after a pause, until it
+      // is taken or the held time runs past the budget.
+      const points = drivePoints(step.medium, step.rate, yOf);
+      const perStretch = Math.max(1, Math.ceil((DRIVE_STRETCH_BLOCKS * TICKS_PER_SECOND) / step.rate));
       let prev = cellCentre(seat, yOf(seat));
-      for (const p of drivePoints(step.medium, step.rate, yOf)) {
-        bot._client.write("vehicle_move", { x: p.at[0], y: p.at[1], z: p.at[2], yaw: p.yaw, pitch: 0, onGround: true });
-        // The client does not move a rider it steers itself: keep its own
-        // position with the seat, so what is read of where the bot stands
-        // during the ride (a cue that plays at the rider) is where it is.
-        bot.entity.position.set(p.at[0], p.at[1], p.at[2]);
-        reported += dist(prev, p.at);
-        prev = p.at;
-        await delay(1000 / TICKS_PER_SECOND);
+      let heldMs = 0;
+      let holds = 0;
+      let i = 0;
+      while (i < points.length) {
+        const end = Math.min(points.length, i + perStretch);
+        for (let k = i; k < end; k++) {
+          const p = points[k]!;
+          bot._client.write("vehicle_move", { x: p.at[0], y: p.at[1], z: p.at[2], yaw: p.yaw, pitch: 0, onGround: true });
+          // The client does not move a rider it steers itself: keep its own
+          // position with the seat, so what is read of where the bot stands
+          // during the ride (a cue that plays at the rider) is where it is.
+          bot.entity.position.set(p.at[0], p.at[1], p.at[2]);
+          reported += dist(prev, p.at);
+          prev = p.at;
+          await delay(1000 / TICKS_PER_SECOND);
+        }
+        if (end === points.length) await delay(700);
+        reading = await this.readRide(tag);
+        if (!reading.riding) break;
+        const last = points[end - 1]!.at;
+        if (stretchTaken(reading.pos, last)) {
+          i = end;
+          continue;
+        }
+        holds += 1;
+        if (heldMs >= (this.driveHeldBudgetMs ?? DRIVE_HELD_BUDGET_MS)) {
+          const bodies = Object.values((bot as unknown as { entities?: Record<string, Entity> }).entities ?? {})
+            .filter((e) => e !== bot.entity && e.type !== "player" && e.name !== step.kind && !String(e.name ?? "").endsWith("boat"))
+            .filter((e) => Math.hypot(e.position.x - reading.pos[0], e.position.z - reading.pos[2]) <= HOLDER_NEAR)
+            .map((e) => `${e.name ?? e.type} at [${[e.position.x, e.position.y, e.position.z].map((v) => v.toFixed(1)).join(", ")}]`);
+          failRide(
+            `the server held the rider at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))} for ` +
+              `${heldMs}ms over ${holds} stretch(es), short of ${JSON.stringify(last.map((v) => Number(v.toFixed(2))))} — ` +
+              `the server did not take the ride; ` +
+              (bodies.length > 0 ? `within ${HOLDER_NEAR} blocks: ${bodies.join(", ")}` : `no body within ${HOLDER_NEAR} blocks of it`),
+            { reported, serverSeen: dist(start, reading.pos), seat: reading.pos },
+          );
+        }
+        process.stderr.write(
+          `[ride] ${step.vehicle}: held at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}, short of ` +
+            `${JSON.stringify(last.map((v) => Number(v.toFixed(2))))}; reporting on from there in ${DRIVE_HELD_BACKOFF_MS}ms\n`,
+        );
+        await delay(DRIVE_HELD_BACKOFF_MS);
+        heldMs += DRIVE_HELD_BACKOFF_MS;
+        i = resumeIndex(points, reading.pos, i === 0 ? 0 : i - 1, end - 1) + 1;
+        prev = reading.pos;
+        bot.entity.position.set(reading.pos[0], reading.pos[1], reading.pos[2]);
       }
-      await delay(700);
-      reading = await this.readRide(tag);
+      if (holds > 0) {
+        process.stderr.write(`[ride] ${step.vehicle}: held ${holds} time(s), ${heldMs}ms in all, and taken\n`);
+      }
     }
     const serverSeen = dist(start, reading.pos);
     if (!reading.riding) {

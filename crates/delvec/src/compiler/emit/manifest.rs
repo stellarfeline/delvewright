@@ -489,7 +489,7 @@ pub(super) fn critical_path_json(
                 }
                 // spec-0133 §8: a lapse — walk to `stand`, do nothing, pass on
                 // the expiry marker. `stand` is a cell of the proven route.
-                Step::Expire { objective_id, wait_ticks, pos, avoid, aggro } => {
+                Step::Expire { objective_id, wait_ticks, pos, avoid, aggro, aboard } => {
                     let keep: &[crate::compiler::reach::KeepOut] =
                         keep_out.get(i).map_or(&[], Vec::as_slice);
                     // A body stands on every cell a `talk-to` walks to; the
@@ -502,9 +502,9 @@ pub(super) fn critical_path_json(
                         })
                         .collect();
                     // A lapse waited out aboard, after an act from the seat
-                    // (spec-0135 §5), is waited where the party sits.
-                    let seated = i >= 2 && matches!(walked.get(i - 2), Some(plan::Step::Ride { stays: true, .. }));
-                    let stand = if seated {
+                    // (spec-0135 §5), is waited where the party sits, in the
+                    // vehicle the route proof seated it in.
+                    let stand = if aboard.is_some() {
                         *pos
                     } else {
                         expire_stand(i, *pos, avoid, keep, *aggro, &bodies, routes)
@@ -513,10 +513,14 @@ pub(super) fn critical_path_json(
                     // party and the proven leg into this step ends, as every
                     // positioned step names its leg; `stand` is the cell the
                     // party waits on.
-                    json!({
+                    let mut v = json!({
                         "action": "expire", "objective": objective_id,
                         "wait_ticks": wait_ticks, "stand": stand, "pos": pos
-                    })
+                    });
+                    if let (Some(vehicle), Some(obj)) = (aboard, v.as_object_mut()) {
+                        obj.insert("aboard".to_string(), json!(vehicle));
+                    }
+                    v
                 }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({

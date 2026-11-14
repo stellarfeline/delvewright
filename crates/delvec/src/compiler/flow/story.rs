@@ -437,6 +437,96 @@ impl<'a> Flow<'a> {
         st
     }
 
+    /// **A lapse waits out every clock running beside it** (spec-0133 §8):
+    /// the party passes an `expire` step only once the objective's window
+    /// has run out, and the clock of every other limited objective started
+    /// by then runs on through the wait. A limited objective this world
+    /// completes after the lapse, whose clock is already running when the
+    /// lapse is reached, may run out during it — the town's crates, six
+    /// windows of one length started by one talk: crate 1 let lapse first
+    /// leaves crates 2 to 6 closed to the barrels the path opens next. So
+    /// each lapse is moved past the last such objective, and again for any
+    /// clock the steps it passed start, as long as the move leaves the
+    /// replay's verdict — the first step it blocks, the step that ends the
+    /// delve, what each final scene reads — what it was. A move that would
+    /// change it is not made, and the order stands as it was.
+    fn place_lapses(
+        &self,
+        steps: &mut Vec<PathStep>,
+        performs: &BTreeSet<String>,
+        barred: &BTreeSet<String>,
+        expired: &BTreeSet<String>,
+    ) {
+        if expired.is_empty() {
+            return;
+        }
+        let verdict = self.order_verdict(steps, performs, barred);
+        // Last lapse first, so a lapse never lands behind one it was in
+        // front of.
+        let lapses: Vec<String> = steps
+            .iter()
+            .rev()
+            .filter(|s| expired.contains(&s.objective))
+            .map(|s| s.objective.clone())
+            .collect();
+        for x in lapses {
+            while let Some(px) = steps.iter().position(|s| s.objective == x) {
+                let at: BTreeMap<&str, usize> = steps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (s.objective.as_str(), i))
+                    .collect();
+                let running = |j: usize| -> bool {
+                    let y = &steps[j].objective;
+                    if expired.contains(y) {
+                        return false;
+                    }
+                    let Some(q) = self.quest(&steps[j].quest) else {
+                        return false;
+                    };
+                    let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == y) else {
+                        return false;
+                    };
+                    let Some(l) = o.limit() else { return false };
+                    crate::compiler::nav::clock_start_step(self.c, &at, q, o, &l.from) < px
+                };
+                let Some(last) = (px + 1..steps.len()).rev().find(|&j| running(j)) else {
+                    break;
+                };
+                let mut moved = steps.clone();
+                let step = moved.remove(px);
+                moved.insert(last, step);
+                if self.order_verdict(&moved, performs, barred) != verdict {
+                    break;
+                }
+                *steps = moved;
+            }
+        }
+    }
+
+    /// What the story stance's replay of `steps` says (spec-0133 §8's
+    /// [`Self::place_lapses`]): the first step it blocks, the objective whose
+    /// step ends the delve, and what each final scene read when it fired.
+    fn order_verdict(
+        &self,
+        steps: &[PathStep],
+        performs: &BTreeSet<String>,
+        barred: &BTreeSet<String>,
+    ) -> (Option<String>, Option<String>, BTreeMap<String, SceneState>) {
+        let credit = |g: &GatedFlag| self.story_credit(g, performs);
+        let mut st = self.story_initial(performs, barred);
+        let mut complete_at: Option<(usize, String)> = None;
+        let mut blocked = None;
+        for (i, step) in steps.iter().enumerate() {
+            self.saturate_ambient_with(&mut st.flags, &credit);
+            if blocked.is_none() && self.step_blocked(&st, step).is_some() {
+                blocked = Some(step.objective.clone());
+            }
+            self.advance_with(&mut st, step, i + 1, &mut complete_at, &credit);
+        }
+        (blocked, complete_at.map(|(_, o)| o), st.scene_at)
+    }
+
     /// The limited objectives a participation expires (spec-0133 §5).
     fn expired_in(&self, performs: &BTreeSet<String>) -> BTreeSet<String> {
         performs
@@ -807,6 +897,7 @@ impl<'a> Flow<'a> {
         let flags = sol.flags.clone();
         let completed = sol.completed.clone();
         let mut pt = self.playthrough_from(Some(sol), true);
+        self.place_lapses(&mut pt.steps, performs, &barred, &expired);
         let mut st = self.story_initial(performs, &barred);
         // The ambient electives this world performs that write what an ending
         // reads — its entry deeds — in act-id order.

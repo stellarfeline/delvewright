@@ -257,6 +257,72 @@ fn an_act_from_the_seat_and_a_ride_on_from_aboard_are_carries() {
     );
 }
 
+/// spec-0135 §5 × spec-0133 §8: lapses waited after an act from the seat —
+/// two in a row, as the town's world that lets three crates lapse waits them
+/// after the last crate opened from the boat — are each waited where the party
+/// sits, a carry like the act. Red on an enumeration that carried only the
+/// first: the second was a leg from the seat to the seat, judged as a walk
+/// between two water cells (`DW0311`, no standable floor).
+#[test]
+fn every_lapse_after_an_act_from_the_seat_is_a_carry_at_the_seat() {
+    let lapse = |o: &str| Step::Expire {
+        objective_id: o.into(),
+        wait_ticks: 100,
+        pos: [4, 66, 2],
+        avoid: Vec::new(),
+        aggro: None,
+        aboard: Some("vehicle/b".into()),
+    };
+    let steps = vec![
+        Step::Ride {
+            vehicle_id: "vehicle/b".into(),
+            kind: "boat",
+            pos: [2, 67, 2],
+            medium: vec![[3, 66, 2], [4, 66, 2]],
+            rate: 5.0,
+            transport: [4, 66, 2],
+            steering_item: None,
+            body: vec![[3, 66, 2], [3, 67, 2]],
+            boards: true,
+            stays: true,
+        },
+        Step::Collect {
+            objective_id: "obj/crate".into(),
+            item: "minecraft:cod".into(),
+            count: 1,
+            pos: [5, 67, 2],
+            dropped: None,
+        },
+        lapse("obj/one"),
+        lapse("obj/two"),
+        Step::Reach {
+            objective_id: "obj/end".into(),
+            anchor_id: "anchor/end".into(),
+            pos: [9, 67, 3],
+            radius: 1,
+            completion: crate::compiler::reach::reach_completion([9, 67, 3], 1),
+        },
+    ];
+    let transports = vec![None; 5];
+    let got: Vec<([i32; 3], bool, usize)> =
+        positions_of(Some([1, 67, 2]), &steps, &transports, None)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
+    assert_eq!(
+        got,
+        vec![
+            ([1, 67, 2], false, 0),
+            ([2, 67, 2], false, 0),
+            ([4, 66, 2], true, 0),
+            ([4, 66, 2], true, 1),
+            ([4, 66, 2], true, 2),
+            ([4, 66, 2], true, 3),
+            ([9, 67, 3], true, 4),
+        ]
+    );
+}
+
 fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
     VisitedPos {
         pos,

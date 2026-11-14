@@ -449,7 +449,27 @@ pub(in crate::compiler::nav) fn positions_of(
     let mut transport_pending = false;
     // The party sits in a vehicle after a ride that `stays` (spec-0135 §5).
     let mut seated = false;
+    // ... and still sits there through every lapse waited after the act from
+    // the seat: each is waited where the party sits, a carry like the act.
+    let mut lapse_aboard = false;
     for (i, step) in steps.iter().enumerate() {
+        if lapse_aboard && matches!(step, Step::Expire { .. }) {
+            if let Some(at) = out.last().map(|p: &VisitedPos| p.pos) {
+                out.push(VisitedPos {
+                    pos: at,
+                    transport_before: true,
+                    talk_to: false,
+                    src_step: i,
+                    by_link: false,
+                    by_loop: true,
+                });
+            }
+            transport_pending = true;
+            continue;
+        }
+        if step.pos().is_some() {
+            lapse_aboard = false;
+        }
         // An act done from the seat: the party is where the ride left it, and
         // the move into the act is the ride's — a carry like a landing.
         if seated && !matches!(step, Step::Ride { .. }) && step.pos().is_some() {
@@ -464,6 +484,7 @@ pub(in crate::compiler::nav) fn positions_of(
                 });
             }
             seated = false;
+            lapse_aboard = true;
             // Whatever the party does next starts aboard: a ride on, which
             // is a carry too.
             transport_pending = true;

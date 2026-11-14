@@ -8,6 +8,7 @@ import { GameTimeStoppedError, STOPPED_CLOCK_MS } from "../src/game-time.ts";
 import { LOOP_BARREN_TRIPS, LOOP_MOVE_TICKS, LoopNotMovedError, LoopWalkBarrenError } from "../src/loop-cross.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
+import { aboardWaitFault } from "../src/executor/expire.ts";
 import type { AssertCompleteStep, ExpireStep } from "../src/critical-path.ts";
 import {
   SUPPORTED_DEATH_PLAN_FORMAT,
@@ -6404,6 +6405,45 @@ test("an expire step consumes its leg unwalked, and its walk to the stand names 
   assert.equal(executor.legCursor, 1, "the lapse's own leg is consumed; the next step's is next");
   assert.deepEqual(log, ["walk 3,65,2"]);
   assert.deepEqual(named, [null], "the walk to the stand is matched against no leg");
+});
+
+// spec-0135 §5: a lapse after an act from the seat is waited aboard. The town's
+// cargo worlds: the barrel of crate 1 opened from the boat, crate 2 let lapse,
+// and the bot — seated — refused the wait as a walk with no ride off in front.
+test("an expire step the path waits aboard is waited in the seat, with no walk", async () => {
+  const log: string[] = [];
+  const bot = lapseBot(log);
+  const executor = lapseExecutor(bot, log);
+  executor.aboard = { vehicle: "vehicle/boat-1", y: 62.52, at: [4.5, 65.11, 4.5] };
+  const run = executor.expire({ ...lapse, aboard: "vehicle/boat-1" });
+  setTimeout(() => bot.emit("messagestr", "[dw:expired hello-world obj/exit]"), 50);
+  await within("the expiry wait", run);
+  assert.deepEqual(log, [], "no walk: the bot waits where it sits");
+  assert.equal(executor.expireWaits[0]!.passed, true);
+  assert.equal(executor.aboard?.vehicle, "vehicle/boat-1", "the seat is kept for the ride on");
+});
+
+test("an expire step waited aboard fails by name when the bot sits elsewhere or nowhere", () => {
+  const step: ExpireStep = { ...lapse, aboard: "vehicle/boat-1" };
+  assert.match(aboardWaitFault(step, undefined) ?? "", /aboard vehicle\/boat-1, and the bot sits in nothing/);
+  assert.match(
+    aboardWaitFault(step, { vehicle: "vehicle/boat-2", y: 62.52, at: [4.5, 65.11, 4.5] }) ?? "",
+    /sits in vehicle\/boat-2/,
+  );
+  assert.match(
+    aboardWaitFault(step, { vehicle: "vehicle/boat-1", y: 62.52, at: [14.5, 65.11, 4.5] }) ?? "",
+    /the seat and the path disagree/,
+  );
+  assert.equal(aboardWaitFault(step, { vehicle: "vehicle/boat-1", y: 62.52, at: [4.5, 65.11, 4.5] }), undefined);
+  assert.equal(aboardWaitFault(lapse, undefined), undefined, "a wait on foot is the walk's to judge");
+});
+
+test("an expire step on foot, with the bot seated, is still refused as a walk", async () => {
+  const bot = lapseBot([]);
+  const executor = attach(bot);
+  executor.campaignId = "hello-world";
+  executor.aboard = { vehicle: "vehicle/boat-1", y: 62.52, at: [4.5, 65.11, 4.5] };
+  await assert.rejects(within("the expiry wait", executor.expire(lapse)), /the path has no ride off the vehicle in front of it/);
 });
 
 test("an expiry marker for another campaign or another objective is not this step's", async () => {

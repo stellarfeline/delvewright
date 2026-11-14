@@ -34,6 +34,11 @@
 //       by a click, does `started_riding` fire, does its reward's `NoAI:0b` give
 //       it back to the rider, does it hold its yaw while it waits; a pig and a
 //       tame horse.
+//   T16 a boat driven by reported moves into a body in the water ahead: a
+//       drowned held still. Where the server holds the boat, what it answers a
+//       refused move with, and — the body gone — whether moves reported on from
+//       where the client thinks it is are taken, against moves resumed from
+//       where the server holds it.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1167,6 +1172,69 @@ async function t15(bot) {
   }
 }
 
+// ---- T16: a boat against a body in the water ---------------------------------------
+async function t16(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.probe('kill @e[type=minecraft:drowned]')
+  await rcon.run(`gamemode survival ${BOT}`)
+  begin('T16-boat-blocked', 'the T5 basin; an oak boat on its north rim; a drowned, NoAI and invulnerable, standing in the water 6 blocks south on the boat\'s line')
+  const B = { x1: H.x - 20, z1: H.z + 25, x2: H.x + 20, z2: H.z + 55 }
+  await rcon.run(`fill ${B.x1} ${FLOOR_Y} ${B.z1} ${B.x2} ${FLOOR_Y} ${B.z2} minecraft:water`)
+  await rcon.run(`fill ${B.x1 - 1} ${FLOOR_Y - 1} ${B.z1 - 1} ${B.x2 + 1} ${FLOOR_Y - 1} ${B.z2 + 1} minecraft:stone`)
+  await home(bot, { x: H.x + 0.5, y: H.y, z: B.z1 - 0.5 })
+  await rcon.run(`summon minecraft:oak_boat ${H.x + 0.5} ${FLOOR_Y + 1} ${B.z1 + 1.5} {Tags:["dw_boat"]}`)
+  await sleep(1000)
+  await hold(bot, null)
+  row('mount', await mountByClick(bot, 'oak_boat'))
+  const { v: s0 } = await readVehicle(bot, 'dw_boat')
+  await rcon.run(`summon minecraft:drowned ${H.x + 0.5} ${FLOOR_Y} ${(s0?.[2] ?? B.z1 + 1.5) + 6} {NoAI:1b,Invulnerable:1b,PersistenceRequired:1b,Silent:1b,Tags:["dw_t16_body"]}`)
+  await sleep(800)
+  row(`boatPos=${s0?.map(f2)}`, `bodyPos=${parsePos(await entityGet('@e[tag=dw_t16_body,limit=1]', 'Pos'))?.map(f2)}`)
+  // Every answer the server sends about the vehicle: a refused move is answered
+  // by the vehicle's own position.
+  const answers = []
+  const onAnswer = (p) => answers.push([p.x, p.y, p.z])
+  bot._client.on('vehicle_move', onAnswer)
+  const x = s0[0]
+  const y = s0[1]
+  let z = s0[2]
+  const drive = async (label, ms) => {
+    const n0 = answers.length
+    const { v: a } = await readVehicle(bot, 'dw_boat')
+    const t = now()
+    let moves = 0
+    while (now() - t < ms) {
+      z += 0.25
+      moves += 1
+      bot._client.write('vehicle_move', { x, y, z, yaw: 0, pitch: 0, onGround: true })
+      await sleep(50)
+    }
+    await sleep(700)
+    const { v: b } = await readVehicle(bot, 'dw_boat')
+    const last = answers[answers.length - 1]
+    row(label, `reported=${moves} moves of 0.25 to z=${f2(z)}`, `boatPos=${b?.map(f2)}`,
+      `serverMoved=${a && b ? f2(dist2(a, b)) : '-'}`, `offset=${b ? f2(z - b[2]) : '-'}`,
+      `answers=${answers.length - n0}`, `lastAnswer=${last ? last.map(f2) : '-'}`)
+    return b
+  }
+  await drive('intoTheBody (3 s at 5 b/s)', 3000)
+  await rcon.run('kill @e[tag=dw_t16_body]')
+  await sleep(500)
+  row('bodyRemoved', `bodies=${await countOf('@e[tag=dw_t16_body]')}`)
+  // Open loop: report on from where the client thinks it is.
+  await drive('bodyGone, reported on from the client\'s own position (1 s)', 1000)
+  // Closed loop: report on from where the server holds the boat.
+  const { v: held } = await readVehicle(bot, 'dw_boat')
+  z = held[2]
+  await drive('bodyGone, resumed from the server\'s position (1 s)', 1000)
+  bot._client.removeListener('vehicle_move', onAnswer)
+  await rcon.probe(`ride ${BOT} dismount`)
+  await sleep(500)
+  await rcon.probe('kill @e[tag=dw_boat]')
+  await rcon.probe(`fill ${B.x1} ${FLOOR_Y} ${B.z1} ${B.x2} ${FLOOR_Y} ${B.z2} minecraft:stone`)
+}
+
 async function teardown(bot) {
   try {
     await clearBodies()
@@ -1207,6 +1275,7 @@ try {
   if (wants('T13')) await t13(bot)
   if (wants('T14')) await t14(bot)
   if (wants('T15')) await t15(bot)
+  if (wants('T16')) await t16(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)

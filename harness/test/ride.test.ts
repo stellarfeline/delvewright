@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, drivePoints, holdLooksForced, vehicleTag } from "../src/executor/ride.ts";
+import { arrivedAt, drivePoints, holdLooksForced, resumeIndex, stretchTaken, vehicleTag } from "../src/executor/ride.ts";
 import { methods } from "../src/executor/ride.ts";
 import type { RideStep, Vec3Tuple } from "../src/critical-path.ts";
 
@@ -42,6 +42,7 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[], aboardAt?: { v
   let mounted = serverReads.length > 0 && aboardAt !== undefined;
   const self = {
     rides: [] as unknown[],
+    driveHeldBudgetMs: 1000,
     aboard: aboardAt as { vehicle: string; y: number; at: Vec3Tuple } | undefined,
     releaseSeatLooks: undefined as (() => void) | undefined,
     leaveSeat: methods.leaveSeat,
@@ -251,4 +252,54 @@ test("a seat holds every look forced, and leaving it lets go", () => {
   release();
   void bot.lookAt(undefined as never, false);
   assert.deepEqual(forced, [true, false]);
+});
+
+// The town's shoals, eight worlds at once: a drowned in the water ahead held
+// the boat; the server refused every move after (the vanilla record §5, T16),
+// and the drive ran on unread until the report was ten blocks ahead and no
+// move could be taken again.
+test("a held stretch is found where the server holds the rider, and taken is within a block", () => {
+  const pts = drivePoints([[0, 3, 0], [4, 3, 0]], 5, () => 3.5);
+  assert.equal(resumeIndex(pts, [2.5, 3.11, 0.5], 0, 15), 7);
+  assert.equal(resumeIndex(pts, [-3, 3.11, 0.5], 4, 15), 4, "never behind the stretch it searches");
+  assert.ok(stretchTaken([4.2, 3.11, 0.6], [4.5, 3.5, 0.5]));
+  assert.ok(!stretchTaken([2.5, 3.11, 0.5], [4.5, 3.5, 0.5]));
+});
+
+const longBoat: RideStep = {
+  ...boatOut,
+  medium: Array.from({ length: 9 }, (_, i) => [i, 3, 0] as Vec3Tuple),
+  leave: [8, 3, 0],
+};
+
+test("a boat held short of a stretch reports on from where the server holds it, and is taken", async () => {
+  const { self, sent } = mock([
+    { riding: true, pos: [0.5, 3.11, 0.5] },
+    { riding: true, pos: [2.5, 3.11, 0.5] },
+    { riding: true, pos: [6.5, 3.11, 0.5] },
+    { riding: true, pos: [8.5, 3.11, 0.5] },
+  ]);
+  await methods.ride.call(self as never, longBoat);
+  const moves = sent.filter((s) => s.name === "vehicle_move").map((s) => s.data as { x: number });
+  assert.equal(moves.length, 40, "16 to the first stretch's end, 16 from where it was held, 8 to the last cell");
+  assert.equal(moves[15]!.x, 4.5);
+  assert.equal(moves[16]!.x, 2.75, "the move after the hold is the next point past where the server holds it");
+  assert.ok((self.rides[0] as { passed: boolean }).passed);
+});
+
+test("a boat the server holds past the budget fails by name, the body beside it named", async () => {
+  const { self } = mock([
+    { riding: true, pos: [0.5, 3.11, 0.5] },
+    { riding: true, pos: [2.5, 3.11, 0.5] },
+  ]);
+  const bot = (self.requireBot as () => Record<string, unknown>)();
+  self.requireBot = () => ({
+    ...bot,
+    entities: { 7: { type: "hostile", name: "drowned", position: { x: 3.4, y: 2.0, z: 0.5 } } },
+  }) as never;
+  await assert.rejects(
+    () => methods.ride.call(self as never, longBoat),
+    /held the rider at \[2\.5,3\.11,0\.5\] for 1000ms .*did not take the ride; within 3 blocks: drowned at \[3\.4, 2\.0, 0\.5\]/,
+  );
+  assert.equal((self.rides[0] as { passed: boolean }).passed, false);
 });

@@ -218,6 +218,10 @@ pub enum Step {
         /// For a `kill`: the wave's anchor and the range its bodies notice a
         /// player from, which the wait stands outside.
         aggro: Option<([i32; 3], f64)>,
+        /// The `vehicle/<id>` the party sits in while it waits — a lapse
+        /// after an act from the seat (spec-0135 §5), as the route proof
+        /// found it ([`LinkTakes::aboard`]); `None` for a wait on foot.
+        aboard: Option<String>,
     },
     /// **Ride a vehicle on a leg its objective declares ridden** (spec-0135 §4, §6):
     /// walk to `pos` (the boarding cell), mount the vehicle, be carried along
@@ -608,9 +612,17 @@ fn choices_before(
 ///   walked to as a `talk-to` and passed on the flags it sets. A format change
 ///   for `7`'s reason: an older bot handed one would refuse the kind.
 ///
+/// * `11` — two additions, one format: a `keep_out` row may name the
+///   `trigger` whose volume it is, a trigger a story world leaves open and
+///   never fires; and an `expire` step waited out aboard, after an act from
+///   the seat, carries `aboard`, the vehicle the party sits in, and its
+///   `stand` is that seat (spec-0135 §5). A format change for `4`'s reason: a
+///   format-10 bot would refuse the key, and one that ignored `aboard` would
+///   walk from a seat no walk starts from.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 10;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 11;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1320,6 +1332,7 @@ pub(super) fn build_critical_path(
                 pos,
                 avoid,
                 aggro,
+                aboard: None,
             });
             obj_areas.push((st.objective.clone(), area.to_string(), steps.len() - 1));
         } else {
@@ -2011,6 +2024,13 @@ pub(super) fn build_critical_path(
             // party sits, as the route proof found it.
             Some(Step::Expire { pos, .. }) => *pos = cell,
             _ => {}
+        }
+    }
+    // A lapse waited out aboard names the vehicle the route proof seated the
+    // party in (spec-0135 §5).
+    for (&k, &vi) in &takes.aboard {
+        if let (Some(Step::Expire { aboard, .. }), Some(v)) = (steps.get_mut(k), vehicles.get(vi)) {
+            *aboard = Some(v.id.clone());
         }
     }
     for (&k, &(li, stand)) in &takes.performed {

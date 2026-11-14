@@ -3156,9 +3156,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, `10`
+  version**; `format_version` is the **contract's own** version, `11`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
-  about proving the path changes, independently of the DSL. **A step may be
+  about proving the path changes, independently of the DSL. **A `keep_out` row
+  may name its `trigger`, and an `expire` step may carry `aboard`** (format
+  11). **A step may be
   `choose`** (format 10): `{npc, pos, command, sets}` — a story world's dialogue
   option that completes no objective, which the world's path takes because its
   selection chose it or because a flag a later step reads comes from it
@@ -3174,6 +3176,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `board` (= `pos`), clicks the vehicle's body, and passes only when the server's
   `execute on vehicle` names it; drives a boat or a mount by `vehicle_move`
   reports along `medium` at `rate` blocks a second (the steering item in hand),
+  in stretches of `DRIVE_STRETCH_BLOCKS` (4), asking the server where it holds
+  the rider after each, and reporting a stretch the server did not take again
+  from there — a body in the water holds a boat, and a report run more than
+  ten blocks ahead is never taken (`vehicles-animals-and-targets.md` §5, T16) —
+  failing the ride by name, the bodies beside the rider named, once it has stood
+  held `DRIVE_HELD_BUDGET_MS` (20 s) over the ride;
   or waits for the rails to carry a cart the engine pushed at boarding; passes the ride when the server's rider
   stands within the landing tolerance of the last medium cell; leaves by the
   sneak input, passes when the server no longer seats it, and walks to `leave`.
@@ -3181,9 +3189,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   distance reported and the distance the server saw, the arrival and the leave.
   `rate` is 5 for a boat, 10.4 for a cart (the record §6), and
   `movement_speed × 43.17` for a mount. **A step may be
-  `expire`** (format 7, spec-0133 §8): `{objective, wait_ticks, stand, pos}` in a
+  `expire`** (format 7, spec-0133 §8): `{objective, wait_ticks, stand, pos, aboard?}` in a
   story world that expires a limited objective, standing where the all world's step
-  for it stands. The harness walks to `stand`, performs nothing, and passes on the
+  for it stands — or, where a limited objective the world completes later has its
+  clock running by then, after the last of them (`flow::story`'s `place_lapses`,
+  reading where each clock starts through `nav::clock_start_step`, the reading
+  `DW1084` takes), so the wait does not run another window out; a move the
+  story stance's replay would judge differently is not made. A lapse after an act
+  from the seat is waited aboard: `aboard` names the vehicle the route proof seated
+  the party in (`LinkTakes::aboard`), `stand` and `pos` are that seat, and the
+  harness waits there with no walk, failing by name if the bot sits elsewhere.
+  Otherwise the harness walks to `stand`, performs nothing, and passes on the
   objective's `[dw:expired …]` marker within `wait_ticks` (the window, a ceiling)
   and the ordinary grace; a `[dw:complete …]` for it arriving first fails the step
   by name. `pos` is the critical position the path left the party on, where the

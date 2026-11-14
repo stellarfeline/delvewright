@@ -1463,6 +1463,22 @@ test("format 7: an expire step's pos is its critical position, which may differ 
   assert.deepEqual(step.stand, [4, 65, 4]);
 });
 
+test("format 11: an expire step waited aboard names its vehicle, and one on foot names none", () => {
+  const seated = parseCriticalPath(withStep({ ...lapse, aboard: "vehicle/boat-1" })).steps[2]!;
+  if (seated.action !== "expire") throw new Error(seated.action);
+  assert.equal(seated.aboard, "vehicle/boat-1");
+  const afoot = parseCriticalPath(withStep(lapse)).steps[2]!;
+  if (afoot.action !== "expire") throw new Error(afoot.action);
+  assert.equal("aboard" in afoot, false);
+  for (const bad of ["boat-1", "", 3]) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...lapse, aboard: bad })),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/aboard",
+      String(bad),
+    );
+  }
+});
+
 test("a kill step carries the compiler's seat date when one is exported, and nothing when not", () => {
   const kill = {
     action: "kill",
@@ -1486,10 +1502,10 @@ test("a kill step carries the compiler's seat date when one is exported, and not
   }
 });
 
-test("format 10: the constant moved, and a format-9 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 10);
+test("format 11: the constant moved, and a format-10 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 11);
   const raw = validRaw();
-  raw["format_version"] = 9;
+  raw["format_version"] = 10;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

@@ -130,16 +130,41 @@ fn obj_steps<'a>(plan: &'a Plan<'_>) -> std::collections::BTreeMap<&'a str, usiz
         .collect()
 }
 
+/// **The step whose completion starts `o`'s clock** (spec-0133 §3, §6), in an
+/// order that completes each objective at the index `steps` maps it to: for
+/// `activation`, the objective's own activation; for `quest-start`, the step
+/// that opens its quest; for a named objective, that objective's activation.
+/// `0` (the spawn) where none of these is on the order. The one reading of
+/// where a clock starts — the window's walk (`DW1084`) and the placement of a
+/// lapse in a story world's order (`flow::story`) both ask it.
+pub fn clock_start_step(
+    campaign: &delvewright_dsl::Campaign,
+    steps: &std::collections::BTreeMap<&str, usize>,
+    q: &delvewright_dsl::Quest,
+    o: &Objective,
+    from: &LimitFrom,
+) -> usize {
+    match from {
+        LimitFrom::Activation => activation_step(campaign, steps, q, o),
+        LimitFrom::QuestStart => quest_start_step(campaign, steps, q),
+        LimitFrom::Objective(x) => q
+            .objectives
+            .iter()
+            .find(|y| y.id() == x)
+            .map_or(0, |y| activation_step(campaign, steps, q, y)),
+    }
+}
+
 /// The step at which `o` (in quest `q`) activates on the path: after its last
 /// `after` prerequisite and after the step that opens its quest; `0` (the
 /// spawn) when neither is on the path.
 fn activation_step(
-    plan: &Plan,
+    campaign: &delvewright_dsl::Campaign,
     steps: &std::collections::BTreeMap<&str, usize>,
     q: &delvewright_dsl::Quest,
     o: &Objective,
 ) -> usize {
-    let mut at = quest_start_step(plan, steps, q);
+    let mut at = quest_start_step(campaign, steps, q);
     // Every member a path performs: a lapsed one has no step.
     for a in o.after_edges() {
         if let Some(&s) = steps.get(a.as_str()) {
@@ -152,14 +177,13 @@ fn activation_step(
 /// The step whose completion opens quest `q`: the last step of the quest its
 /// trigger names, `0` for a campaign-start quest.
 fn quest_start_step(
-    plan: &Plan,
+    campaign: &delvewright_dsl::Campaign,
     steps: &std::collections::BTreeMap<&str, usize>,
     q: &delvewright_dsl::Quest,
 ) -> usize {
     match &q.trigger {
         Trigger::CampaignStart => 0,
-        Trigger::QuestComplete { quest } => plan
-            .campaign
+        Trigger::QuestComplete { quest } => campaign
             .quests
             .content
             .quests
@@ -197,15 +221,7 @@ pub fn judge_limits(
                 walk: None,
             };
             if let Some(&t) = steps.get(oid) {
-                let s = match &l.from {
-                    LimitFrom::Activation => activation_step(plan, &steps, q, o),
-                    LimitFrom::QuestStart => quest_start_step(plan, &steps, q),
-                    LimitFrom::Objective(x) => q
-                        .objectives
-                        .iter()
-                        .find(|y| y.id() == x)
-                        .map_or(0, |y| activation_step(plan, &steps, q, y)),
-                };
+                let s = clock_start_step(plan.campaign, &steps, q, o, &l.from);
                 let legs: Vec<&LegRoute> = routes
                     .iter()
                     .filter(|r| r.to_step > s && r.to_step <= t)

@@ -97,9 +97,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   `talk-to` does, chat `command`, and pass when every `sets` term holds. A
  *   format-9 bot would refuse the kind.
  *
+ * * `11` — a `keep_out` row may name its `trigger`; an `expire` step waited
+ *   out aboard, after an act from the seat, carries `aboard`, the vehicle the
+ *   party sits in, and its `stand` is that seat (spec-0135 §5). A format-10
+ *   bot would refuse the key, or walk from the seat.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 10;
+export const CRITICAL_PATH_FORMAT_VERSION = 11;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -645,6 +650,10 @@ export interface ExpireStep extends PresentationMarkers, Pursued {
    * into this step ends — as every positioned step names its leg. The walk
    * to {@link stand} is not that leg, so the step consumes it unwalked. */
   readonly pos: Vec3Tuple;
+  /** The `vehicle/<id>` the party sits in while it waits — a lapse after an
+   * act from the seat (spec-0135 §5); {@link stand} is then that seat, and
+   * the bot waits aboard. Absent for a wait on foot. */
+  readonly aboard?: string;
 }
 
 /** The kinds of vehicle a ride step names (spec-0135 §1). */
@@ -1727,7 +1736,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "expire": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wait_ticks", "stand", "pos", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "objective", "wait_ticks", "stand", "pos", "aboard", "keep_out", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       const wait = obj["wait_ticks"];
@@ -1736,12 +1745,20 @@ function parseStepBody(value: unknown, pointer: string): Step {
       }
       const stand = requireVec3(obj, "stand", pointer);
       const pos = requirePos(obj, pointer);
+      let aboard: string | undefined;
+      if (obj["aboard"] !== undefined) {
+        aboard = requireString(obj, "aboard", pointer);
+        if (!/^vehicle\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(aboard)) {
+          fail(`${pointer}/aboard`, `must be a \`vehicle/<kebab>\` id, got ${JSON.stringify(aboard)}`);
+        }
+      }
       return {
         action: "expire",
         objective: requireObjectiveId(obj, pointer),
         waitTicks: wait as number,
         stand,
         pos,
+        ...(aboard !== undefined ? { aboard } : {}),
         ...presentationFields(obj, pointer),
       };
     }

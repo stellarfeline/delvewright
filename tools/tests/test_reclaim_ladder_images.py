@@ -86,10 +86,23 @@ elif argv[:2] == ["image", "inspect"]:
     fmt = argv[argv.index("--format") + 1]
     ids = [a for a in argv[2:] if a.startswith("sha256:")]
     by_id = {i["id"]: i for i in state["images"]}
+    shape = state.get("shape", "typed")
+    # The docker CLI's two shapes (`validation/lib/ladder-images.sh`): a
+    # template naming a field the typed struct lacks (`.Id`) is run over the raw
+    # API document, where `join` refuses the tag list and a size is a float.
+    if shape == "raw" and "join .RepoTags" in fmt:
+        sys.stderr.write('template parsing error: template: :1:15: executing "" at <.RepoTags>: '
+                         "wrong type for value; expected []string; got []interface {}\n")
+        sys.exit(1)
     for the_id in ids:
         i = by_id[the_id]
         if "com.docker.compose.project" in fmt and "{{.Id}}" not in fmt:
             print(i["project"])
+        elif shape == "broken":
+            print("map[Id:%s]" % i["id"])
+        elif shape == "raw":
+            print("\t".join([i["id"], "%g" % float(i["size"]), i.get("service") or "<no value>",
+                             ",".join(i.get("tags", []))]))
         else:
             print("\t".join([i["id"], str(i["size"]), i.get("service", ""), ",".join(i.get("tags", []))]))
 elif argv[:1] == ["ps"]:
@@ -122,6 +135,8 @@ else:
     sys.exit(2)
 """
 
+# Ids are digests: hex, as the daemon's are, because the image table refuses a
+# line whose id is not one.
 FIXTURE = {
     "images": [
         # A finished project: one compose-named bot image and the untagged
@@ -135,7 +150,7 @@ FIXTURE = {
          "tags": ["delvewright/delve:local"]},
         # One image, two names: this project's own and a foreign one. The
         # project's name goes; the foreign one stays and keeps the image alive.
-        {"id": "sha256:kkk", "project": "dw-both", "service": "server", "size": 800_000_000,
+        {"id": "sha256:abcabc", "project": "dw-both", "service": "server", "size": 800_000_000,
          "tags": ["delvewright/delve:dw-both", "someone-else/keepme:v1"]},
         # This project's own name, and finished — but a container of ANOTHER
         # project is holding the image, which is the rung's whole point.
@@ -149,18 +164,18 @@ FIXTURE = {
         {"id": "sha256:fff", "project": "dw-m5", "service": "bot", "size": 900_000_000,
          "tags": ["dw-m5-final-bot:latest"]},
         # Compose's default project — where the owner's play session lands.
-        {"id": "sha256:ggg", "project": "validation", "service": "bot", "size": 900_000_000,
+        {"id": "sha256:a0a0a0", "project": "validation", "service": "bot", "size": 900_000_000,
          "tags": ["validation-bot:latest"]},
         # Another program's compose project on the same daemon. Its service is
         # not one this repository's compose file declares.
-        {"id": "sha256:iii", "project": "mimicat", "service": "app", "size": 300_000_000,
+        {"id": "sha256:b1b1b1", "project": "mimicat", "service": "app", "size": 300_000_000,
          "tags": ["mimicat-app:latest"]},
         # A project named like a ladder, but built from a service this repository
         # does not declare — the second key catching what the first would miss.
-        {"id": "sha256:jjj", "project": "dw-imposter", "service": "app", "size": 300_000_000,
+        {"id": "sha256:c2c2c2", "project": "dw-imposter", "service": "app", "size": 300_000_000,
          "tags": ["dw-imposter-app:latest"]},
         # Pulled, so no compose label: must never be selected at all.
-        {"id": "sha256:hhh", "project": "", "service": "", "size": 900_000_000,
+        {"id": "sha256:d3d3d3", "project": "", "service": "", "size": 900_000_000,
          "tags": ["itzg/minecraft-server:java21"]},
     ],
     "containers": [
@@ -391,3 +406,64 @@ def test_the_shared_delve_tag_the_header_names_is_still_compose_s_default():
     text = COMPOSE.read_text()
     assert "${DELVE_IMAGE:-delvewright/delve:local}" in text
     assert "delvewright/delve:local" in LIB.read_text()
+
+
+FRESH = REPO / "validation" / "fresh-volumes.sh"
+
+
+def _run_in_shape(tmp_path, shape, script, *args):
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    docker = shim_dir / "docker"
+    docker.write_text(SHIM)
+    docker.chmod(0o755)
+    state = json.loads(json.dumps(FIXTURE))
+    state["shape"] = shape
+    fixture = tmp_path / "fixture.json"
+    fixture.write_text(json.dumps(state))
+    log = tmp_path / "rmi.log"
+    log.write_text("")
+    env = dict(os.environ)
+    env["PATH"] = f"{shim_dir}:{env['PATH']}"
+    env["DW_FIXTURE"] = str(fixture)
+    env["DW_RMI_LOG"] = str(log)
+    proc = subprocess.run(["bash", str(script), *args], capture_output=True, text=True, env=env)
+    return proc, [line for line in log.read_text().splitlines() if line]
+
+
+def test_the_raw_inspect_shape_is_read_as_the_typed_one(tmp_path):
+    """The remote's docker CLI ran the table's template over the raw API
+    document (`.Id` is no field of the typed struct): `join` refused the tag
+    list, the error went to /dev/null, and the teardown removed nothing while
+    reporting clean. Both shapes now give one table."""
+    proc, removed = _run_in_shape(tmp_path, "raw", SWEEP, "--apply")
+    assert proc.returncode == 0, proc.stderr
+    assert sorted(removed) == [
+        "delvewright/delve:dw-both",
+        "dw-alpha-bot:latest",
+        "sha256:bbb",
+    ], proc.stdout
+    assert "1.80 GB" in proc.stdout, "the float sizes are read whole: " + proc.stdout
+
+
+def test_the_teardown_removes_in_the_raw_shape_and_says_how_much(tmp_path):
+    proc, removed = _run_in_shape(tmp_path, "raw", FRESH, "--project", "dw-alpha")
+    assert proc.returncode == 0, proc.stderr
+    assert sorted(removed) == ["dw-alpha-bot:latest", "sha256:bbb"], proc.stdout + proc.stderr
+    assert "2 examined, 2 removed" in proc.stdout, proc.stdout
+
+
+def test_an_inspect_shape_nobody_reads_fails_loudly(tmp_path):
+    """Neither shape: the teardown says so and fails, never "verified clean"
+    over zero images examined."""
+    proc, removed = _run_in_shape(tmp_path, "broken", FRESH, "--project", "dw-alpha")
+    assert proc.returncode != 0, proc.stdout
+    assert "shape" in proc.stderr and "does not read" in proc.stderr, proc.stderr
+    assert "verified clean" not in proc.stdout
+    assert removed == []
+    sweep_dir = tmp_path / "sweep"
+    sweep_dir.mkdir()
+    proc, removed = _run_in_shape(sweep_dir, "broken", SWEEP, "--apply")
+    assert proc.returncode != 0, proc.stdout
+    assert "does not read" in proc.stderr, proc.stderr
+    assert removed == []

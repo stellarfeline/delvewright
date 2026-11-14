@@ -58,7 +58,7 @@ import { methods as loopMethods } from "./executor/loop.ts";
 import { methods as mockMethods } from "./executor/mock.ts";
 import { methods as censusMethods } from "./executor/census.ts";
 import { methods as expireMethods } from "./executor/expire.ts";
-import { methods as rideMethods, type Aboard, type RideRecord } from "./executor/ride.ts";
+import { DRIVE_HELD_BUDGET_MS, methods as rideMethods, type Aboard, type RideRecord } from "./executor/ride.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as pulseMethods } from "./executor/pulse.ts";
@@ -146,6 +146,9 @@ export class MineflayerExecutor implements StepExecutor {
   aboard: Aboard | undefined = undefined;
   /** Undoes the forced looks a seat holds ({@link holdLooksForced}). */
   releaseSeatLooks: (() => void) | undefined = undefined;
+  /** How long (ms) a driven ride may stand held by the server, summed over
+   * the ride, before it fails by name ({@link DRIVE_HELD_BUDGET_MS}). */
+  driveHeldBudgetMs = DRIVE_HELD_BUDGET_MS;
   /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
    * on the bot and warden spawns, from connect. */
   readonly sculk = new SculkEar();
