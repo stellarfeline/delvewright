@@ -470,10 +470,7 @@ impl<'a> Flow<'a> {
             .map(|s| s.objective.clone())
             .collect();
         for x in lapses {
-            loop {
-                let Some(px) = steps.iter().position(|s| s.objective == x) else {
-                    break;
-                };
+            while let Some(px) = steps.iter().position(|s| s.objective == x) {
                 let at: BTreeMap<&str, usize> = steps
                     .iter()
                     .enumerate()
