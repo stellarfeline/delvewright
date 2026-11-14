@@ -1100,20 +1100,23 @@ impl World {
             .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
     }
 
-    /// The armed objectives whose completion volumes a body standing on any of
-    /// `cells` would meet — who to name for a leg that routes only when the
-    /// keep-out is lifted. In the order the leg holds them.
+    /// The acts whose keep-out volumes a body standing on any of `cells` would
+    /// meet — who to name for a leg that routes only when the keep-out is
+    /// lifted. In the order the leg holds them, each once (a trigger's volume
+    /// is several boxes under one id).
     pub(in crate::compiler::nav) fn keep_out_over(&self, cells: &[[i32; 3]]) -> Vec<String> {
         let fp = Footprint::player();
-        self.keep_out
-            .iter()
-            .filter(|(_, (lo, hi))| {
-                cells
+        let mut out: Vec<String> = Vec::new();
+        for (id, (lo, hi)) in &self.keep_out {
+            if !out.contains(id)
+                && cells
                     .iter()
                     .any(|c| self.body_can_meet_volume(*c, &fp, *lo, *hi))
-            })
-            .map(|(id, _)| id.clone())
-            .collect()
+            {
+                out.push(id.clone());
+            }
+        }
+        out
     }
 
     /// Whether this leg keeps out of any completion volume at all.

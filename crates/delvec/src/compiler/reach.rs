@@ -152,20 +152,47 @@ pub fn reach_completion(pos: [i32; 3], radius: u32) -> ReachCompletion {
     }
 }
 
-/// **A completion volume a step must keep out of**: a `reach` objective armed
-/// while the party performs some other step, and not yet due. A body that
-/// enters it completes the objective there and then — out of the order the path
-/// walks it in — so every leg into that step is routed outside it, and every
-/// stance the step is performed from stands outside it (`DW0311`).
+/// **A volume a step must keep out of**: a box a body entering sets off
+/// something out of the order the path plays it in, so every leg into that step
+/// is routed outside it, and every stance the step is performed from stands
+/// outside it (`DW0311`). Two acts own one:
+///
+/// * a `reach` objective armed while the party performs some other step, and
+///   not yet due — a body inside completes it there and then;
+/// * a walk-fired trigger (`approach`, `step`) whose gate holds while the party
+///   performs the step and which the path never performs — a body inside fires
+///   it, and the world played is no longer the one planned. Its firing volume
+///   is carried as the boxes [`trigger_keep_out`] covers it with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeepOut {
-    /// The armed objective whose volume this is.
-    pub objective: String,
-    /// The volume the datapack completes it in ([`reach_completion`]).
+    /// The act whose volume this is: an objective id or a trigger id.
+    pub act: String,
+    /// Which kind of act [`Self::act`] names.
+    pub by: KeepOutBy,
+    /// The box: the volume the datapack completes the objective in
+    /// ([`reach_completion`]), or one box of a trigger's firing volume.
     pub completion: ReachCompletion,
 }
 
+/// Which kind of act a [`KeepOut`] belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeepOutBy {
+    /// An armed `reach` objective, due later.
+    Objective,
+    /// A walk-fired trigger the path never performs, its gate open.
+    Trigger,
+}
+
 impl KeepOut {
+    /// An armed objective's completion volume.
+    pub fn objective(id: impl Into<String>, completion: ReachCompletion) -> Self {
+        KeepOut {
+            act: id.into(),
+            by: KeepOutBy::Objective,
+            completion,
+        }
+    }
+
     /// The volume's inclusive corners.
     pub fn bounds(&self) -> ([i32; 3], [i32; 3]) {
         match self.completion {
@@ -173,13 +200,96 @@ impl KeepOut {
         }
     }
 
+    /// Whether this is a trigger's firing volume.
+    pub fn is_trigger(&self) -> bool {
+        self.by == KeepOutBy::Trigger
+    }
+
     /// The step-level `keep_out` entry `critical-path.json` hands the harness:
-    /// the objective and the volume, which the bot excludes from every walk the
-    /// step makes by the selector's own hitbox rule.
+    /// the act — under `objective` or `trigger` — and the box, which the bot
+    /// excludes from every walk the step makes by the selector's own hitbox
+    /// rule.
     pub fn to_json(&self) -> serde_json::Value {
         let (lo, hi) = self.bounds();
-        serde_json::json!({ "objective": self.objective, "lo": lo, "hi": hi })
+        let key = match self.by {
+            KeepOutBy::Objective => "objective",
+            KeepOutBy::Trigger => "trigger",
+        };
+        serde_json::json!({ key: self.act, "lo": lo, "hi": hi })
     }
+}
+
+/// **The boxes a walk-fired trigger's firing volume is kept out of by** — the
+/// one place a trigger's volume becomes a keep-out.
+///
+/// * `step` fires on a player whose hitbox is in the anchor's cell
+///   (`emit::trigger::step_trigger_poll`): the one cell, which the route model
+///   and the bot already meet by the hitbox rule.
+/// * `approach` fires on `positioned X Y Z if entity @a[distance=..range]`
+///   (`emit::trigger::env_trigger_tick`). `positioned` centres an integer x and
+///   z on the block (`x + 0.5`, `z + 0.5`, the y as written — the reading
+///   `nav::threshold` proves the same trigger by), and `distance` is measured
+///   from the body's feet. A cell is in the volume when some feet position a
+///   body standing in it can hold is within `range`: anywhere across the
+///   cell's column, from one block below its floor (a partial support drops
+///   the feet) to a jump's rise above it. Cells are gathered per column and a
+///   run of columns along z with the same height span is one box, so the
+///   sphere is carried cell-exact rather than as its bounding cube. Every
+///   other event is a hand's act or a count, never a place walked through:
+///   empty.
+pub fn trigger_keep_out(id: &str, on: &delvewright_dsl::TriggerOn, at: [i32; 3]) -> Vec<KeepOut> {
+    use delvewright_dsl::TriggerOn;
+    let boxed = |lo: [i32; 3], hi: [i32; 3]| KeepOut {
+        act: id.to_string(),
+        by: KeepOutBy::Trigger,
+        completion: ReachCompletion::Cube { lo, hi },
+    };
+    let range = match on {
+        TriggerOn::Step => return vec![boxed(at, at)],
+        TriggerOn::Approach { range } => f64::from(*range),
+        _ => return Vec::new(),
+    };
+    let rise = delvewright_dsl::metrics::MAX_JUMP_RISE_16 as f64
+        / delvewright_dsl::metrics::FULL_16 as f64;
+    let (px, py, pz) = (
+        f64::from(at[0]) + 0.5,
+        f64::from(at[1]),
+        f64::from(at[2]) + 0.5,
+    );
+    // The gap from `p` to the closed interval `[a, b]`.
+    let gap = |a: f64, b: f64, p: f64| (a - p).max(0.0).max(p - b);
+    let r = range.ceil() as i32 + 2;
+    let mut out = Vec::new();
+    for x in at[0] - r..=at[0] + r {
+        let dx = gap(f64::from(x), f64::from(x + 1), px);
+        // Per column along z: the span of cells whose feet can come within
+        // range, then runs of equal spans folded into one box.
+        let mut run: Option<(i32, i32, i32, i32)> = None; // (z0, z1, ylo, yhi)
+        for z in at[2] - r..=at[2] + r + 1 {
+            let dz = gap(f64::from(z), f64::from(z + 1), pz);
+            let span = (dx * dx + dz * dz <= range * range).then(|| {
+                let ys: Vec<i32> = (at[1] - r..=at[1] + r)
+                    .filter(|&y| {
+                        let dy = gap(f64::from(y) - 1.0, f64::from(y) + rise, py);
+                        dx * dx + dy * dy + dz * dz <= range * range
+                    })
+                    .collect();
+                (ys[0], ys[ys.len() - 1])
+            });
+            match (run, span) {
+                (Some((z0, _, lo, hi)), Some((l, h))) if (l, h) == (lo, hi) => {
+                    run = Some((z0, z, lo, hi));
+                }
+                (prev, next) => {
+                    if let Some((z0, z1, lo, hi)) = prev {
+                        out.push(boxed([x, lo, z0], [x, hi, z1]));
+                    }
+                    run = next.map(|(l, h)| (z, z, l, h));
+                }
+            }
+        }
+    }
+    out
 }
 
 impl ReachCompletion {
@@ -981,5 +1091,63 @@ mod landing_tests {
         assert!(!c.completes_on_landing([12, 67, 10], false));
         // Two courses under: out of reach either way.
         assert!(!c.completes_on_landing([10, 64, 10], true));
+    }
+
+    /// An `approach` trigger's keep-out is the cells a body's feet can bring
+    /// within `range` of the centred anchor, cell-exact: brute force over every
+    /// cell near the anchor agrees with the boxes on each, and the bounding
+    /// cube's corners — far outside the sphere — are not kept out of.
+    #[test]
+    fn an_approach_trigger_is_kept_out_of_by_its_sphere_not_its_cube() {
+        let at = [85, 84, 242];
+        let on = delvewright_dsl::TriggerOn::Approach { range: 8 };
+        let boxes = trigger_keep_out("trigger/runs", &on, at);
+        assert!(
+            boxes
+                .iter()
+                .all(|k| k.is_trigger() && k.act == "trigger/runs")
+        );
+        let kept = |c: [i32; 3]| boxes.iter().any(|k| k.completion.contains_cell(c));
+        let gap = |a: f64, b: f64, p: f64| (a - p).max(0.0).max(p - b);
+        let mut inside = 0;
+        for x in at[0] - 12..=at[0] + 12 {
+            for y in at[1] - 12..=at[1] + 12 {
+                for z in at[2] - 12..=at[2] + 12 {
+                    let dx = gap(f64::from(x), f64::from(x + 1), 85.5);
+                    let dy = gap(f64::from(y) - 1.0, f64::from(y) + 1.25, 84.0);
+                    let dz = gap(f64::from(z), f64::from(z + 1), 242.5);
+                    let near = dx * dx + dy * dy + dz * dz <= 64.0;
+                    assert_eq!(kept([x, y, z]), near, "cell {:?}", [x, y, z]);
+                    inside += usize::from(near);
+                }
+            }
+        }
+        assert!(inside > 0);
+        // Eight columns east is in (its west face is 7.5 away), nine is not.
+        assert!(kept([93, 84, 242]));
+        assert!(!kept([94, 84, 242]));
+        // The cube's corner is not the sphere's.
+        assert!(!kept([92, 90, 249]));
+        // Folded: fewer boxes than columns.
+        assert!(
+            boxes.len() < inside / 4,
+            "{} boxes for {inside} cells",
+            boxes.len()
+        );
+    }
+
+    /// A `step` trigger is kept out of by its one cell; an act of the hand is
+    /// no volume walked through.
+    #[test]
+    fn a_step_trigger_is_its_cell_and_a_hand_trigger_none() {
+        let at = [3, 64, 5];
+        let step = trigger_keep_out("trigger/plate", &delvewright_dsl::TriggerOn::Step, at);
+        assert_eq!(step.len(), 1);
+        assert_eq!(step[0].bounds(), (at, at));
+        assert!(trigger_keep_out("trigger/lever", &delvewright_dsl::TriggerOn::Use, at).is_empty());
+        assert_eq!(
+            step[0].to_json(),
+            serde_json::json!({"trigger": "trigger/plate", "lo": at, "hi": at})
+        );
     }
 }

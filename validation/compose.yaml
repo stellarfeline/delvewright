@@ -210,6 +210,9 @@ services:
   bot:
     profiles: ["validate"]
     build: ../harness
+    # Scoped per ladder like the delve's (`dw_export_delve_image`), and named so
+    # one build can be booted by many projects (`branch-runs.sh`'s worlds).
+    image: ${DELVE_BOT_IMAGE:-delvewright/bot:local}
     depends_on:
       server:
         condition: service_healthy   # itzg base ships a healthcheck

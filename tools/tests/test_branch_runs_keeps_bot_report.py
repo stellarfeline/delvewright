@@ -28,6 +28,7 @@ COPIED = (
     "validation/fresh-volumes.sh",
     "validation/compose.yaml",
     "validation/lib/delve-image.sh",
+    "validation/lib/branch-jobs.sh",
     "validation/lib/ladder-images.sh",
     "tools/lib/server-heap.sh",
 )

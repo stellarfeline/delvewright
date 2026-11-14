@@ -816,15 +816,60 @@ impl Walk<'_, '_> {
             .iter()
             .flat_map(|q| q.objectives.iter())
             .filter(|o| self.flow.objective_armed(o.id().as_str(), &self.st))
-            .filter(|o| {
-                o.requires_state()
-                    .iter()
-                    .all(|c| match self.st.state.get(c.state.as_str()) {
-                        Some(Datum::Known(v)) => i32::try_from(*v).is_ok_and(|v| c.holds(v)),
-                        _ => undated_open,
-                    })
-            })
+            .filter(|o| self.state_terms_hold(o.requires_state(), undated_open))
             .map(|o| o.id().as_str().to_string())
+            .collect()
+    }
+
+    /// Whether every numeric term holds against the value this walk knows; a
+    /// term on a datum the walk cannot date reads as `undated_open`.
+    fn state_terms_hold(&self, terms: &[StateCompare], undated_open: bool) -> bool {
+        terms
+            .iter()
+            .all(|c| match self.st.state.get(c.state.as_str()) {
+                Some(Datum::Known(v)) => i32::try_from(*v).is_ok_and(|v| c.holds(v)),
+                _ => undated_open,
+            })
+    }
+
+    /// **Every environment trigger whose gate holds now** — the ones the
+    /// datapack's poll would fire this instant for a body that did what the
+    /// event asks, had it not fired yet: its flag gate holding
+    /// (`requires_flags` held, no `forbids_flags` held), every numeric term
+    /// holding against the value this walk knows (a term on a datum the walk
+    /// cannot date reads as SHUT, as in [`Self::armed_objectives`]), and the
+    /// objective it `serves` still open — its quest running and the objective
+    /// not done (`emit::trigger::trigger_poll_guards`). A trigger that serves a
+    /// gate reads as open. Whether it has already fired is not read: the caller
+    /// asks about the triggers its path never performs. In declaration order.
+    pub fn gate_open_triggers(&self) -> Vec<String> {
+        self.flow
+            .c
+            .quests
+            .content
+            .triggers
+            .iter()
+            .filter(|t| {
+                t.requires_flags
+                    .iter()
+                    .all(|f| self.st.flags.contains(f.as_str()))
+                    && !t
+                        .forbids_flags
+                        .iter()
+                        .any(|f| self.st.flags.contains(f.as_str()))
+                    && self.state_terms_hold(&t.requires_state, false)
+                    && match &t.serves {
+                        Some(delvewright_dsl::Serves::Objective(o)) => {
+                            !self.st.done_obj.contains(o.as_str())
+                                && self
+                                    .flow
+                                    .objective_quest(o.as_str())
+                                    .is_some_and(|q| self.st.active.contains(q))
+                        }
+                        _ => true,
+                    }
+            })
+            .map(|t| t.id.as_str().to_string())
             .collect()
     }
 

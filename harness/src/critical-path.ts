@@ -218,20 +218,54 @@ export interface PresentationMarkers {
   readonly cutsceneSeconds?: number;
   readonly enRouteCutsceneSeconds?: number;
   /**
-   * The completion volumes this step's walks keep out of (`keep_out`): every
-   * `reach` objective the compiler reads as armed while the step is performed
-   * and not the step's own. A body inside one completes it out of turn, so the
-   * bot's pathfinder prices every cell such a volume's selector reaches as it
-   * prices a lethal one. Absent when the step keeps out of none.
+   * The volumes this step's walks keep out of (`keep_out`): every `reach`
+   * objective the compiler reads as armed while the step is performed and not
+   * the step's own, and every walk-fired trigger whose gate holds then and
+   * which the path never performs. A body inside one completes the objective
+   * out of turn, or fires the trigger and plays another world, so the bot's
+   * pathfinder prices every cell such a box's selector reaches as it prices a
+   * lethal one. Absent when the step keeps out of none.
    */
   readonly keepOut?: readonly KeepOut[];
 }
 
-/** One completion volume a step keeps out of: the armed objective, and its box. */
+/**
+ * One box a step keeps out of: the act it belongs to — an armed objective
+ * (`objective`) or a trigger the path never performs (`trigger`, whose firing
+ * volume may be several boxes under one id) — and the box.
+ */
 export interface KeepOut {
-  readonly objective: string;
+  readonly act: string;
+  readonly kind: "objective" | "trigger";
   readonly lo: Vec3Tuple;
   readonly hi: Vec3Tuple;
+}
+
+/**
+ * The one line a walk states its keep-out by: per act, in the order the step
+ * names them, what kind it is, how many boxes it is kept out of by and their
+ * bounding box — so a trigger's many-box firing volume reads as one volume.
+ */
+export function describeKeepOut(keepOut: readonly KeepOut[]): string {
+  const acts = new Map<string, { kind: KeepOut["kind"]; n: number; lo: number[]; hi: number[] }>();
+  for (const k of keepOut) {
+    const a = acts.get(k.act);
+    if (a === undefined) {
+      acts.set(k.act, { kind: k.kind, n: 1, lo: [...k.lo], hi: [...k.hi] });
+    } else {
+      a.n += 1;
+      for (let i = 0; i < 3; i++) {
+        a.lo[i] = Math.min(a.lo[i]!, k.lo[i]!);
+        a.hi[i] = Math.max(a.hi[i]!, k.hi[i]!);
+      }
+    }
+  }
+  const parts = [...acts].map(([act, a]) => {
+    const what = a.kind === "trigger" ? `the firing volume of ${act}` : `the completion volume of ${act}`;
+    const boxes = a.n === 1 ? "" : ` (${a.n} boxes within)`;
+    return `${what} [${a.lo.join(", ")}]..[${a.hi.join(", ")}]${boxes}`;
+  });
+  return `${acts.size} volume(s) excluded — ${parts.join("; ")}`;
 }
 
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
@@ -988,14 +1022,28 @@ function presentationFields(
         fail(at, `must be an object, got ${describe(k)}`);
       }
       const row = k as Record<string, unknown>;
-      rejectUnknownKeys(row, ["objective", "lo", "hi"], at);
-      const objective = requireObjectiveId(row, at);
+      rejectUnknownKeys(row, ["objective", "trigger", "lo", "hi"], at);
+      if ((row["objective"] === undefined) === (row["trigger"] === undefined)) {
+        fail(at, "must name exactly one of `objective` and `trigger`");
+      }
+      let act: string;
+      let kind: KeepOut["kind"];
+      if (row["trigger"] !== undefined) {
+        act = requireString(row, "trigger", at);
+        if (!/^trigger\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(act)) {
+          fail(`${at}/trigger`, `must be a \`trigger/<kebab>\` trigger id, got ${JSON.stringify(act)}`);
+        }
+        kind = "trigger";
+      } else {
+        act = requireObjectiveId(row, at);
+        kind = "objective";
+      }
       const lo = requireVec3(row, "lo", at);
       const hi = requireVec3(row, "hi", at);
       if (lo.some((v, a) => v > hi[a]!)) {
         fail(at, `lo [${lo.join(", ")}] must not exceed hi [${hi.join(", ")}] on any axis`);
       }
-      return { objective, lo, hi };
+      return { act, kind, lo, hi };
     });
   }
   return out;
