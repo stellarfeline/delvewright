@@ -3291,8 +3291,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   whose gate holds in front of the step (`Walk::gate_open_triggers`: its
   `requires_flags` held, no `forbids_flags` held, every numeric term holding on
   the value the walk knows — one on an undatable datum reads shut — and the
-  objective it `serves` still open) and which no `trigger` or `mock` step of the
-  path performs. A body inside fires it, and the world played is no longer the
+  objective it `serves` still open), whose bundle at any depth writes a flag or
+  a datum or records an outcome (what a story world is told apart by and judged
+  on; a trigger that only presents — a cutscene, a line, a sound — fires on any
+  walk past it and leaves the world the one planned), and which no `trigger` or
+  `mock` step of the path performs. A body inside fires it, and the world played is no longer the
   one the path was built for. `reach::trigger_keep_out` is the one place the
   volume becomes boxes: a `step` is its cell; an `approach` is every cell from
   which a body's feet can come within `range` of the anchor as `positioned`
@@ -3302,7 +3305,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   trigger's volume is kept even where the party already stands in it as the step
   begins: a body there fires it on the next tick, so a world whose choice or deed
   opens a trigger around the party, and never fires it, is refused under
-  `DW0311` naming the world and the trigger's firing volume.
+  `DW0311` naming the world (a story world's path) and the trigger's firing volume.
 
   **`mock` — an act no step kind drives** (spec-0108 §6.5).
   `{act, kind, function, before[], after[]}`: an entry deed of a story world that

@@ -395,3 +395,40 @@ fn a_world_whose_choice_opens_a_trigger_where_the_party_stands_is_dw0311() {
         "{log}"
     );
 }
+
+#[test]
+fn a_trigger_that_only_presents_is_walked_past_where_one_that_writes_is_refused() {
+    // A second trigger at the keeper, opened by the same choice and never
+    // performed — but its bundle only narrates, so firing it leaves the world
+    // the one planned: no walk keeps out of it, and the build stands.
+    let (code, log, out) = build(&fixture("presents", |_, q| {
+        q["content"]["triggers"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "id": "trigger/murmur", "at": "anchor/keeper-stand",
+                "on": {"on": "approach", "range": 3},
+                "requires_flags": ["flag/trusted"],
+                "effects": [{"type": "narrate", "style": "chat", "text": "The keeper murmurs."}]
+            }));
+    }));
+    assert_eq!(code, 0, "{log}");
+    let plan = read(&out, "branch-plan.json");
+    let mut walked = 0;
+    for b in plan["branches"].as_array().unwrap() {
+        let Some(p) = b["path"].as_str() else {
+            continue;
+        };
+        for s in read(&out, p)["steps"].as_array().unwrap() {
+            walked += 1;
+            assert!(
+                keep_out_rows(s)
+                    .iter()
+                    .all(|(_, act, _, _)| act != "trigger/murmur"),
+                "{} keeps out of a trigger that only presents: {s}",
+                b["id"]
+            );
+        }
+    }
+    assert!(walked > 0, "{plan:#}");
+}

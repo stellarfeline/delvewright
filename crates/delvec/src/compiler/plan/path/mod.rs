@@ -1774,8 +1774,28 @@ pub(super) fn build_critical_path(
             .collect()
     };
     // A walk-fired trigger's firing volume ([`crate::compiler::reach::trigger_keep_out`]),
-    // for every trigger whose gate holds in front of the step; the ones the
-    // path performs are dropped once its step list is final.
+    // for every trigger whose gate holds in front of the step and whose firing
+    // would change what the world is: its bundle, at any depth, writes a flag
+    // or a datum or records an outcome — what a story world is told apart by
+    // and judged on. A trigger that only presents (a cutscene, a line, a
+    // sound) fires on any walk past it and leaves the world the one planned.
+    // The ones the path performs are dropped once its step list is final.
+    let writes_the_world = |t: &delvewright_dsl::EnvTrigger| {
+        let mut writes = false;
+        for e in &t.effects {
+            e.visit_deep(&mut |x| {
+                writes |= matches!(
+                    x.verb,
+                    delvewright_dsl::Verb::SetFlag { .. }
+                        | delvewright_dsl::Verb::SetState { .. }
+                        | delvewright_dsl::Verb::AddState { .. }
+                        | delvewright_dsl::Verb::ClearState { .. }
+                        | delvewright_dsl::Verb::RecordOutcome { .. }
+                );
+            });
+        }
+        writes
+    };
     let trigger_volume = |id: &str| -> Vec<crate::compiler::reach::KeepOut> {
         campaign
             .quests
@@ -1783,6 +1803,7 @@ pub(super) fn build_critical_path(
             .triggers
             .iter()
             .find(|t| t.id.as_str() == id)
+            .filter(|t| writes_the_world(t))
             .and_then(|t| {
                 Some((
                     t,

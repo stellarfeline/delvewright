@@ -136,7 +136,7 @@ fn keep_out_what(ids: &[&str]) -> String {
     if !triggers.is_empty() {
         parts.push(format!(
             "the firing volume of {}, whose gate holds while the party walks this leg and which \
-             this story world never performs — a body there fires it, and the world played is \
+             this path never performs — a body there fires it, and the world played is \
              not the one planned",
             names_of(&triggers)
         ));

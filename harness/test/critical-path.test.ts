@@ -997,7 +997,9 @@ test("a keep-out row may name a trigger the path never performs, and reads as on
     withStep({
       action: "reach",
       objective: "obj/walk-out",
+      anchor: "anchor/exit",
       pos: [5, 65, 8],
+      radius: 1,
       completion: { kind: "cube", lo: [4, 64, 7], hi: [6, 66, 9] },
       keep_out: [
         { trigger: "trigger/runs", lo: [1, 60, 1], hi: [1, 62, 3] },
