@@ -1783,7 +1783,12 @@ pub(super) fn build_critical_path(
             .triggers
             .iter()
             .find(|t| t.id.as_str() == id)
-            .and_then(|t| Some((t, anchors.point_any(t.at_anchor()?)?)))
+            .and_then(|t| {
+                Some((
+                    t,
+                    crate::compiler::plan::anchors::point_any_in(anchors, t.at_anchor()?)?,
+                ))
+            })
             .map(|(t, at)| crate::compiler::reach::trigger_keep_out(id, &t.on, at))
             .unwrap_or_default()
     };
