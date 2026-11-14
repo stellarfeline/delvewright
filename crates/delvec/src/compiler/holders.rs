@@ -69,6 +69,106 @@ delvewright_dsl::dw_code! {
     pub const DW_HOLDER_EDITED: DwCode = DwCode::new("DW1038", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// (spec-0111 §6.5) Two `collect` objectives of one item that can be open
+    /// at once, at least one of which adopts no `holder`: its completion reads
+    /// the item id alone, so the other's stack completes it, and which of the
+    /// two a player's take counts for is not decidable from the campaign.
+    pub const DW_COLLECT_UNATTRIBUTED: DwCode = DwCode::new("DW1110", ExitTier::Build);
+}
+
+/// The `custom_data` key a holder-placed `collect` stack carries
+/// (spec-0111 §4.2), its value the objective's id.
+pub const PLACEMENT_KEY: &str = "dw_collect";
+
+/// **The identity of a holder-placed stack** (spec-0111 §4.2), as the SNBT of
+/// its `custom_data` component: `{dw_collect:"<objective id>"}` for a
+/// `collect` that adopts a holder, `None` for every other objective and for a
+/// collect that adopts none (the compiler's own chest, a wave's drop), whose
+/// completion reads the item id alone. Derived from the objective, never
+/// typed: one holder fill belongs to one collect, so the objective's id names
+/// the placement. The one answer the fill, the completion advancement, the
+/// per-tick held check, the PackTests and `DW1110` read.
+pub fn placement_mark(o: &Objective) -> Option<String> {
+    match o {
+        Objective::Collect {
+            id,
+            holder: Some(_),
+            ..
+        } => Some(format!("{{{PLACEMENT_KEY}:\"{id}\"}}")),
+        _ => None,
+    }
+}
+
+/// **`DW1110`** (spec-0111 §6.5): every pair of `collect` objectives of one
+/// item that [`crate::compiler::flow::Flow::can_be_open_together`] holds open
+/// at once is attributable — both carry a [`placement_mark`]. Returns
+/// `(collects, marked, pairs judged)`: the binding the build's note states.
+pub fn check_collect_attribution(plan: &Plan) -> Result<(usize, usize, usize), Failure> {
+    let collects: Vec<&Objective> = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter(|o| matches!(o, Objective::Collect { .. }))
+        .collect();
+    let marked = collects
+        .iter()
+        .filter(|o| placement_mark(o).is_some())
+        .count();
+    let item = |o: &Objective| match o {
+        Objective::Collect { item, .. } if item.contains(':') => item.clone(),
+        Objective::Collect { item, .. } => format!("minecraft:{item}"),
+        _ => unreachable!("filtered to collects"),
+    };
+    let flow = std::cell::OnceCell::new();
+    let order = || flow.get_or_init(|| crate::compiler::flow::Flow::new(plan.campaign));
+    let mut judged = 0usize;
+    for (i, a) in collects.iter().enumerate() {
+        for b in &collects[i + 1..] {
+            if item(a) != item(b) || !order().can_be_open_together(a.id().as_str(), b.id().as_str())
+            {
+                continue;
+            }
+            judged += 1;
+            let unmarked: Vec<&str> = [a, b]
+                .iter()
+                .filter(|o| placement_mark(o).is_none())
+                .map(|o| o.id().as_str())
+                .collect();
+            if unmarked.is_empty() {
+                continue;
+            }
+            return Err(Failure {
+                code: DW_COLLECT_UNATTRIBUTED,
+                message: format!(
+                    "collect objectives `{}` and `{}` both take `{}` and can be open at once \
+                     (one quest, neither `after` the other, no flag one requires and the other \
+                     forbids), and {} adopt{} no `holder`. A collect that adopts a holder is \
+                     completed only by the stack that holder placed; one that adopts none is \
+                     completed by any `{}`, so the other's stack completes it too, and a \
+                     player's one take counts for both. Prescription: have each take from its \
+                     own holder (`holder` on both), order them with `after`, gate them apart \
+                     with flags, or give them different items.",
+                    a.id(),
+                    b.id(),
+                    item(a),
+                    unmarked
+                        .iter()
+                        .map(|u| format!("`{u}`"))
+                        .collect::<Vec<_>>()
+                        .join(" and "),
+                    if unmarked.len() == 1 { "s" } else { "" },
+                    item(a),
+                ),
+            });
+        }
+    }
+    Ok((collects.len(), marked, judged))
+}
+
 /// The neighbourhood name of a cell that lies in no place.
 pub const OUTSIDE_EVERY_PLACE: &str = "(outside every place)";
 

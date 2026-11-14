@@ -263,15 +263,9 @@ pub(crate) enum Arming {
     /// under `emit::pending_guard` — its quest active, its `after` set complete,
     /// its own gate open — and `emit::completion_cleanup` kills the moment the
     /// objective completes. Carries the declaring quest and the objective's own
-    /// flag gate.
-    Objective {
-        /// Index of the declaring quest in `quests[]`.
-        quest: usize,
-        /// The objective's `requires_flags`.
-        requires: BTreeSet<String>,
-        /// The objective's `forbids_flags`.
-        forbids: BTreeSet<String>,
-    },
+    /// flag gate, which [`crate::compiler::flow::Flow::can_be_open_together`]
+    /// reads off the objective the box's `id` names.
+    Objective,
 }
 
 /// An axis-aligned interval `[lo, hi)`.
@@ -482,7 +476,6 @@ fn outline_size(block: &str) -> (f64, f64) {
 /// affordance stands, and two fixtures shipped a brazier behind an NPC's body.
 pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     use crate::compiler::pressable::{Form, Owner, State};
-    let c = plan.campaign;
     let mut out = Vec::new();
     // spec-0117: every interaction point is a real block, and a block contests
     // nothing a ray picks among entities. Its click box, where it has one, is
@@ -511,16 +504,8 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
         // objective is not pending; every other box is held to the persistent
         // reading, the conservative direction for a contest.
         let arming = match &p.owner {
-            Owner::Interact {
-                quest, objective, ..
-            } if p.form == Form::ActsOnOwn && !p.boxed_in(State::Open) => {
-                let o = &c.quests.content.quests[*quest].objectives[*objective];
-                let gate = o.gate();
-                Arming::Objective {
-                    quest: *quest,
-                    requires: gate.requires_flags.iter().map(|f| f.to_string()).collect(),
-                    forbids: gate.forbids_flags.iter().map(|f| f.to_string()).collect(),
-                }
+            Owner::Interact { .. } if p.form == Form::ActsOnOwn && !p.boxed_in(State::Open) => {
+                Arming::Objective
             }
             _ => Arming::Persistent,
         };
@@ -700,8 +685,8 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
 /// already compiled and could be walked.
 pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
     let affordances = affordances(plan);
-    // The campaign's own order model, built only when a same-quest pair of
-    // objective boxes on one cell needs it — every other campaign never pays for it.
+    // The campaign's own order model, built only when a pair of objective
+    // boxes on one cell needs it — every other campaign never pays for it.
     let flow = std::cell::OnceCell::new();
     let order = || flow.get_or_init(|| crate::compiler::flow::Flow::new(plan.campaign));
     for (i, a) in affordances.iter().enumerate() {
@@ -779,24 +764,7 @@ fn can_share_a_moment<'f>(
 ) -> bool {
     match (&a.arming, &b.arming) {
         (Arming::Persistent, _) | (_, Arming::Persistent) => true,
-        (
-            Arming::Objective {
-                quest: qa,
-                requires: ra,
-                forbids: fa,
-            },
-            Arming::Objective {
-                quest: qb,
-                requires: rb,
-                forbids: fb,
-            },
-        ) => {
-            qa == qb
-                && ra.intersection(fb).next().is_none()
-                && rb.intersection(fa).next().is_none()
-                && !order().completes_before_armed(&a.id, &b.id)
-                && !order().completes_before_armed(&b.id, &a.id)
-        }
+        (Arming::Objective, Arming::Objective) => order().can_be_open_together(&a.id, &b.id),
     }
 }
 

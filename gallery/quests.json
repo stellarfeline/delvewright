@@ -1184,6 +1184,35 @@
             "stealth": false,
             "title": "Take the seal",
             "type": "collect"
+          },
+          {
+            "after": [
+              "obj/take-the-emeralds"
+            ],
+            "anchor": "anchor/pedestal",
+            "count": 1,
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/second-seal-frame",
+              "text": "They knock the second seal out of its frame.",
+              "verb": "gains"
+            },
+            "highlight": {
+              "within": 6
+            },
+            "hint": "The same seal hangs a second time, two frames along the wall.",
+            "holder": "anchor/second-seal-frame",
+            "id": "obj/take-the-second-seal",
+            "item": "minecraft:paper",
+            "item_name": "Hall Seal",
+            "requires_flags": [
+              "flag/mark-struck"
+            ],
+            "stealth": false,
+            "title": "Take the second seal",
+            "type": "collect"
           }
         ],
         "on_complete": [

@@ -78,12 +78,7 @@ pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders:
                             .iter()
                             .flat_map(|q| &q.objectives)
                             .find(|x| x.id().as_str() == obj)
-                            .and_then(|x| match x {
-                                delvewright_dsl::Objective::Collect { item, .. } => {
-                                    Some(item.clone())
-                                }
-                                _ => None,
-                            })
+                            .and_then(super::super::collect_stack)
                     })
                 })
                 .unwrap_or_else(|| "minecraft:air".to_string());

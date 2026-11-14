@@ -86,15 +86,6 @@ fn block_fill_lines(l: &crate::compiler::plan::LootPlan) -> Vec<String> {
     out
 }
 
-/// The component suffix a v0.8 `collect` stack carries: its `item_name`, or `""`
-/// when the objective declares none — a collect stack is a stack, written by
-/// the one stack writer ([`super::stack::command_suffix`]).
-pub(super) fn item_component_tail(item: &str, name: Option<&str>) -> String {
-    let mut s = delvewright_dsl::Stack::of(item);
-    s.name = name.map(str::to_string);
-    super::stack::command_suffix(&s, vec![])
-}
-
 #[cfg(test)]
 mod loot_emit_tests {
     use super::*;

@@ -748,8 +748,13 @@ fn packtest_preamble(
 ) -> Vec<String> {
     let mut p = packtest_guards(plan, quest_id, o, with_flags);
     match o {
-        Objective::Collect { item, count, .. } => {
-            p.push(format!("give {sel} {item} {count}"));
+        Objective::Collect { .. } => {
+            // The stack its holder places (spec-0111 §4.2): a holder's collect
+            // is completed by nothing else.
+            p.push(format!(
+                "give {sel} {}",
+                collect_stack(o).expect("a collect has a stack")
+            ));
         }
         Objective::Interact {
             requires_item: Some(it),
