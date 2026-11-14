@@ -3265,7 +3265,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   **`keep_out[]` — the armed volumes a step stays out of.** Every
   walking step carries, when non-empty, `{objective, lo, hi}` per `reach`
   objective the path walks later that the replay proves armed while the party
-  performs it — the emitter's pending guard read over the guaranteed stance
+  performs it, and `{trigger, lo, hi}` per box of each walk-fired trigger whose
+  gate holds then and which the path never performs (below) — the emitter's pending guard read over the guaranteed stance
   (`Flow::walk_for_performing`, `Walk::armed_objectives`): its quest running, every
   `after` complete, its flag gate holding on what the path has performed, every
   numeric term holding on the value the walk knows (one on an undatable datum
@@ -3286,6 +3287,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   shorter walk, then cell order); the bot walks to it as a block goal. A leg, or
   such a trigger, with no way outside is refused under `DW0311`, naming the armed
   objective.
+  A **trigger** is kept out of the same way: an `approach` or `step` trigger
+  whose gate holds in front of the step (`Walk::gate_open_triggers`: its
+  `requires_flags` held, no `forbids_flags` held, every numeric term holding on
+  the value the walk knows — one on an undatable datum reads shut — and the
+  objective it `serves` still open) and which no `trigger` or `mock` step of the
+  path performs. A body inside fires it, and the world played is no longer the
+  one the path was built for. `reach::trigger_keep_out` is the one place the
+  volume becomes boxes: a `step` is its cell; an `approach` is every cell from
+  which a body's feet can come within `range` of the anchor as `positioned`
+  centres it (`x + 0.5`, `y`, `z + 0.5`) — across the cell's column, from one
+  block below its floor to a jump's rise above it — one box per run of columns
+  along z with the same height span, so the sphere is carried cell-exact. A
+  trigger's volume is kept even where the party already stands in it as the step
+  begins: a body there fires it on the next tick, so a world whose choice or deed
+  opens a trigger around the party, and never fires it, is refused under
+  `DW0311` naming the world and the trigger's firing volume.
 
   **`mock` — an act no step kind drives** (spec-0108 §6.5).
   `{act, kind, function, before[], after[]}`: an entry deed of a story world that
