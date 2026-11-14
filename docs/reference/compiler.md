@@ -2459,6 +2459,7 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   them — and then has the LAST member, never the one who cleared the first arm,
   complete the successor. n = the join's arm count, raised to `world.min_players`
   and capped at 4 (the party maximum); arms are handed out round-robin.
+  The template owns every score its guard reads: the join's and each arm's done score, plus the expired and settled scores a limited objective or quorum member owns, are written to their fresh-delve value before the first probe, so a sibling template's leftover settlement never decides the verdict.
 - **One carrier, two players.** `give @a` and `give @s` are one command to a party of one, so a `carrier: "one"` give is judged by a `party_carrier_<obj>` template per objective whose completion bundle hands one at its top level with no `when`/`in`: it spawns a second member, has `@s` run the real `complete_<obj>`, counts each member's copies with `clear <who> <item> 0`, and asserts the completing player holds every copy and the other none. A carrier give anywhere else is counted in `party-division.json` as not judged.
 - **`assert` does not abort the template, and the log names the LAST failing
   line.** Measured while proving a seal by mutation: a

@@ -105,10 +105,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
         // Its `after` arms are deliberately NOT set — they are what the party
         // is about to earn.
         push_obj_baseline(&mut baseline, qid, join);
-        baseline.push(format!(
-            "scoreboard players set {party} {} 0",
-            obj_score(jid)
-        ));
+        baseline.extend(objective_state_clear(plan, join));
         // Each arm: its own prerequisites satisfied, its own score cleared.
         for arm in &arms {
             let Some((aq, ao)) =
@@ -118,10 +115,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
             };
             push_obj_baseline(&mut baseline, aq, ao);
             baseline.extend(super::super::quorum::after_drive(c, ao));
-            baseline.push(format!(
-                "scoreboard players set {party} {} 0",
-                obj_score(arm)
-            ));
+            baseline.extend(objective_state_clear(plan, ao));
         }
         // Order-preserving dedup: sibling arms share a quest, so their
         // quest-active baselines coincide.
