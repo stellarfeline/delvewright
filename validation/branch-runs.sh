@@ -54,7 +54,8 @@
 # Unset, N is the most worlds the Docker host fits at their worst case
 # (`dw_branch_jobs_fit`, validation/lib/branch-jobs.sh). A declared N is used as
 # given and printed beside that fit. A world's server that falls behind the
-# clock — the vanilla `Can't keep up!` warning — is named on its verdict line:
+# clock after its world is placed — the vanilla `Can't keep up!` warning — is
+# named on its verdict line:
 # a run under load is a run whose verdict a boat ride or a timed window may owe
 # to the load, so N is chosen below where that line appears.
 set -euo pipefail
@@ -253,7 +254,10 @@ run_world() {
   # removes it. The same log says whether the server fell behind the clock.
   server_log="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate logs --no-color server 2>&1)"
   set -e
-  printf '%s\n' "$server_log" | grep -F "Can't keep up!" >"$RUN_OUT/$slug.lag" || true
+  # Only after the world reads placed: the first-join placement itself falls
+  # behind on every world, alone or not (two lines, about 6 s and 16 s, on
+  # each sequential world of the town), and is not the load this asks about.
+  awk '/\[placement\] the world is placed/{p=1} p && /Can.t keep up!/' "$log" >"$RUN_OUT/$slug.lag" || true
   oom=0
   if dw_server_log_shows_oom "$server_log"; then
     oom=1
