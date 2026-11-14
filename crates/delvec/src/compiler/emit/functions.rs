@@ -1197,9 +1197,7 @@ pub(super) fn emit_functions(
                         "execute as @a[scores={{{trigger}=1..}}] run scoreboard players reset @s {trigger}"
                     ));
                 }
-                Objective::Collect {
-                    id, item, count, ..
-                } => {
+                Objective::Collect { id, count, .. } => {
                     // Complete for a player already holding the item (gap 13): a
                     // `collect` normally completes via an `inventory_changed`
                     // advancement whose reward revokes-to-re-arm, and that will NOT
@@ -1209,7 +1207,9 @@ pub(super) fn emit_functions(
                     // complete once the guards hold and the player carries >= the
                     // required count — whether the item was taken before or after
                     // activation. `store result … if items` captures the total
-                    // matching item count across the inventory.
+                    // matching item count across the inventory — of the stack its
+                    // holder placed, when it adopts one (spec-0111 §4.2).
+                    let item = collect_predicate(o).expect("a collect has a predicate");
                     tick.push(format!(
                         "execute as @a{} store result score @s {COLLECT_HOLD} if items entity @s container.* {item}",
                         pending_guard(plan, o, &qa)

@@ -259,9 +259,7 @@ pub(super) fn emit_advancements(
                         }),
                     ));
                 }
-                Objective::Collect {
-                    id, item, count, ..
-                } => {
+                Objective::Collect { id, .. } => {
                     advs.push((
                         format!("c_{}", plan::safe_local(id.as_str())),
                         json!({
@@ -269,7 +267,7 @@ pub(super) fn emit_advancements(
                                 "got": {
                                     "trigger": "minecraft:inventory_changed",
                                     "conditions": {
-                                        "items": [ { "items": item, "count": { "min": count } } ]
+                                        "items": [ collect_advancement_item(o) ]
                                     }
                                 }
                             },
