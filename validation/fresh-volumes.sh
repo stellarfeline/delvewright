@@ -232,6 +232,13 @@ fi
 
 # The image proof. A survivor is NAMED with its reason and does not red the
 # ladder (see the header): a stale image is disk, not a poisoned world.
+if [ "$DW_IMG_UNREAD" = 1 ]; then
+  echo "fresh-volumes: FAILED — project '$project': the daemon's image table came back in a" >&2
+  echo "  shape validation/lib/ladder-images.sh does not read (said above), so no image was" >&2
+  echo "  examined or removed. Containers, volumes and networks are clean; the images are" >&2
+  echo "  unproven, and this is not 'nothing to remove'." >&2
+  exit 1
+fi
 if [ "$DW_IMG_UNJUDGED" = 1 ]; then
   echo "fresh-volumes: project '$project' — the image class was NOT JUDGED: the services of" >&2
   echo "  $DW_IMG_COMPOSE could not be read, so no image was examined. This is not" >&2

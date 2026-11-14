@@ -184,6 +184,11 @@ while IFS= read -r project; do
   fi
 
   dw_reclaim_project_images "$project" "$dry"
+  if [ "$DW_IMG_UNREAD" = 1 ]; then
+    echo "reclaim-ladder-images: FAILED — the image table of '$project' came back in a shape" >&2
+    echo "  validation/lib/ladder-images.sh does not read (said above); nothing was judged." >&2
+    exit 1
+  fi
   [ "$DW_IMG_EXAMINED" -gt 0 ] || continue
   swept_projects=$((swept_projects + 1))
   total_removed=$((total_removed + DW_IMG_REMOVED))

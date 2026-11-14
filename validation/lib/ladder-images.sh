@@ -181,14 +181,46 @@ dw_image_projects() {
 
 # id \t size(bytes) \t service \t comma-joined tags, one line per image.
 # One batched inspect rather than one call per image: the sweep reads hundreds.
+#
+# The template reads both shapes the docker CLI hands a format. A field the
+# typed inspect struct lacks (`.Id`; its field is `.ID`) sends the CLI to the
+# raw API document, where a list is `[]interface {}` and a number a float:
+# `join` refuses the list ("wrong type for value; expected []string"), and the
+# size prints as `3.41e+08`. So the tags are joined by `range`, which takes
+# either list; the size is printed whole by awk; a label the image lacks reads
+# `<no value>` in the raw shape and is read as none. Anything else — the CLI
+# refusing the template, a line that is not four fields, an id that is no
+# digest, a size that is no number — is a shape this rule does not read: it is
+# printed to stderr and the function returns 2, never an empty table, because
+# an empty table is "this project has no images" and the teardown would report
+# clean having removed nothing.
+DW_IMG_TABLE_FORMAT="{{.Id}}	{{.Size}}	{{index .Config.Labels \"$DW_IMG_SERVICE_KEY\"}}	{{range \$i, \$t := .RepoTags}}{{if \$i}},{{end}}{{\$t}}{{end}}"
 dw_project_image_table() {
-  local ids
+  local ids raw rc
   ids="$(dw_project_image_ids "$1")"
   [ -n "$ids" ] || return 0
+  # stderr joins stdout: a warning beside a good table is a line the shape
+  # check below refuses, never a line silently dropped.
   # shellcheck disable=SC2086  # deliberate word splitting: one id per argument
-  docker image inspect $ids \
-    --format "{{.Id}}	{{.Size}}	{{index .Config.Labels \"$DW_IMG_SERVICE_KEY\"}}	{{join .RepoTags \",\"}}" \
-    2>/dev/null || true
+  raw="$(docker image inspect $ids --format "$DW_IMG_TABLE_FORMAT" 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "ladder-images: docker image inspect refused the image table (exit $rc):" >&2
+    printf '%s\n' "$raw" | sed 's/^/  /' >&2
+    return 2
+  fi
+  printf '%s\n' "$raw" | awk -F '\t' '
+    $0 == "" { next }
+    NF != 4 || $1 !~ /^sha256:[0-9a-f]+$/ || $2 !~ /^[0-9]+(\.[0-9]+)?([eE][+]?[0-9]+)?$/ {
+      print "ladder-images: an image line in a shape this rule does not read: " $0 > "/dev/stderr"
+      bad = 1
+      next
+    }
+    {
+      svc = ($3 == "<no value>") ? "" : $3
+      printf "%s\t%.0f\t%s\t%s\n", $1, $2, svc, $4
+    }
+    END { exit bad ? 2 : 0 }
+  '
 }
 
 # The image id every container on this daemon references — of ANY project,
@@ -252,6 +284,10 @@ dw_tag_is_project_owned() {
 #                        judged. Not the same as "nothing to remove", and the
 #                        caller must say which — a tool that reclaims nothing
 #                        while reporting clean is the vacuity this file is against
+#   DW_IMG_UNREAD        1 when the daemon's image table came back in a shape
+#                        `dw_project_image_table` does not read: nothing was
+#                        examined, and the caller FAILS — a teardown that cannot
+#                        read what it owns has not proved it gone
 #   DW_IMG_REMOVED_LINES / DW_IMG_KEPT_LINES   one `  <name>  <why>` line each
 dw_reclaim_project_images() {
   local project="$1" dry="${2:-}"
@@ -263,6 +299,7 @@ dw_reclaim_project_images() {
   DW_IMG_REMOVED_LINES=""
   DW_IMG_KEPT_LINES=""
   DW_IMG_UNJUDGED=0
+  DW_IMG_UNREAD=0
 
   # Resolve the service set ONCE, up front. Asking per image would let a
   # transient failure read as "every image is foreign", i.e. reclaim nothing and
@@ -274,7 +311,10 @@ dw_reclaim_project_images() {
 
   held="$(dw_container_image_ids)"
   local table
-  table="$(dw_project_image_table "$project")"
+  if ! table="$(dw_project_image_table "$project")"; then
+    DW_IMG_UNREAD=1
+    return 0
+  fi
   [ -n "$table" ] || return 0
 
   # A heredoc, not a pipe: a `while … | read` loop runs in a subshell and every
@@ -371,7 +411,10 @@ EOF
 # this project's to remove.
 dw_project_images_remaining() {
   local project="$1" id size service tags tag table
-  table="$(dw_project_image_table "$project")"
+  if ! table="$(dw_project_image_table "$project")"; then
+    printf '%s\n' "<the image table could not be read — nothing proved gone>"
+    return 0
+  fi
   [ -n "$table" ] || return 0
   while IFS=$'\t' read -r id size service tags; do
     [ -n "$id" ] || continue
