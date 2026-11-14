@@ -15,11 +15,14 @@
 # the machine the worlds actually run on — a VM's, on a laptop, not the
 # laptop's.
 #
-# The two per-world constants are measurements, not choices: the town's 40
-# branch worlds on the remote build machine (16 CPUs, 30 GiB), sampled by
-# `docker stats` every 30 s with eight worlds running — the record is the
-# commit that set them. A world above them is the measurement failing, and the
-# constant moves with a new one.
+# The two per-world constants bound what was measured: the town's 40 branch
+# worlds on the remote build machine (16 CPUs, 30.5 GiB), eight at once,
+# `docker stats` every 30 s — a server at most 2.73 GiB resident under a 4G
+# heap ceiling, a bot about 0.3 GiB, a walking server under one CPU and a
+# placing one about three. The fit charges the heap ceiling, not the
+# measured residency, so it is a floor: that host fits 4 by it and ran 8 with
+# no server falling behind once its bot walked. A world above the overhead is
+# the measurement failing, and the constant moves with a new one.
 
 # MiB a world holds beside the server's heap: JVM non-heap (metaspace, code
 # cache, thread stacks, direct buffers) plus the bot container.
