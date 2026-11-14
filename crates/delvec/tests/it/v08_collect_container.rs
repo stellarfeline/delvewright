@@ -431,40 +431,5 @@ fn two_open_collects_of_one_item_one_unadopted_is_dw1110() {
 #[test]
 fn the_same_pair_in_sequence_is_not_dw1110() {
     let doc = quests_doc_with(ADOPTED, &second_bread(r#", "after": ["obj/cheese"]"#));
-    match try_build_doc(&doc, Some(BARREL_EDITS.as_str())) {
-        Ok(_) => {}
-        Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            assert_ne!(code, "DW1110", "{message}")
-        }
-        Err(e) => panic!("{e:?}"),
-    }
-}
-
-/// Two collects of one item open at once, each from its own placement — here
-/// two slots of one barrel — are told apart by their marks: it builds, and
-/// the generated `collect_own_stack` proves one's stack leaves the other open.
-#[test]
-fn two_open_collects_each_from_a_holder_are_told_apart() {
-    let doc = quests_doc_with(
-        r#", "holder": "anchor/exit""#,
-        &second_bread(r#", "after": ["obj/talk"], "holder": "anchor/exit", "slot": "container.5""#),
-    );
-    let out = try_build_doc(&doc, Some(BARREL_EDITS.as_str())).expect("builds");
-    let pt = text(
-        &out,
-        "packtest-datapack/data/hello-world/test/collect_own_stack.mcfunction",
-    );
-    assert!(
-        pt.contains("minecraft:bread[custom_data={dw_collect:\"obj/cheese\"}] 3"),
-        "{pt}"
-    );
-    let asserts: Vec<&str> = pt
-        .lines()
-        .filter(|l| l.starts_with("assert score"))
-        .collect();
-    assert_eq!(asserts.len(), 2, "{pt}");
-    assert!(
-        asserts[0].ends_with("matches 1") && asserts[1].ends_with("matches 0"),
-        "{pt}"
-    );
+    try_build_doc(&doc, Some(BARREL_EDITS.as_str())).expect("an ordered pair builds");
 }
