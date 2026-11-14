@@ -4,6 +4,16 @@
 
 这里的每一座 delve 都由 Delvewright 做成，在任何玩家进去之前，机器人已经把它从头玩到了结局。点开标题，按游戏内顺序走一遍（含剧透）。想自己开服，就运行它下面那行命令：`EULA=TRUE` 表示你同意 [Minecraft 最终用户许可协议](https://aka.ms/MinecraftEULA)，玩家用 Minecraft Java 1.21.11 连你这台机器的地址就能进。[回到首页](../../README.zh-CN.md)。
 
+## [凯尔德比大幕拉开（Curtain Up in Kelderby）](curtain-up-in-kelderby/README.zh-CN.md)
+
+[![凯尔德比：清晨从海上望去的一座港口小镇，近处是沙洲和碧绿的浅滩，码头上立着红白条纹的灯塔，主街一路爬坡到大教堂，山顶上还有一座城堡](curtain-up-in-kelderby/01-hero-town-from-the-sea.jpg)](curtain-up-in-kelderby/README.zh-CN.md)
+
+开开心心过一天，一到四位玩家，大约两个半小时，没有战斗。城堡山下的山坡上，有一座石头和木头搭起来的海港小镇：一条主街从大教堂广场一级级往下，通到码头；小巷里是住家和工坊，港口的防波堤上立着灯塔，一条长长的山路尽头，是山顶的城堡。四种职业可选。
+
+```sh
+docker run -e EULA=TRUE -p 25565:25565 ghcr.io/stellarfeline/delve-foot-of-the-mountain:latest
+```
+
 ## [维斯珀堡（Vesperhold）](vesperhold/README.md)
 
 [![维斯珀堡：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](vesperhold/01-hero-whole-map-southwest.jpg)](vesperhold/README.md)

@@ -4,15 +4,15 @@
 
 **Delvewright 是一个 AI Minecraft 冒险地图生成器：它把一个创意提示变成一座供一到四位朋友游玩的、由故事驱动的 RPG 地牢——一个带任务与 NPC 的原版数据包——并在交付之前由机器证明它能被通关。**
 
-![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
+![Delvewright 建成的凯尔德比：清晨从海上望去的一座港口小镇，近处是沙洲和碧绿的浅滩，码头上立着红白条纹的灯塔，主街一路爬坡到大教堂，山顶上还有一座城堡](docs/media/curtain-up-in-kelderby/01-hero-town-from-the-sea.jpg)
 
 这些图是 [Lumenwright](https://github.com/stellarfeline/lumenwright) 用 Minecraft 自己的贴图画出的建成世界；在游戏里，它就是原版 Minecraft 的样子，除非你自己另装了光影或资源包。
 
-**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。**[更多战役](docs/media/README.zh-CN.md)**：树屋营地、杜恩城堡。
+**[走进凯尔德比](docs/media/curtain-up-in-kelderby/README.zh-CN.md)** —— 从海上、从城堡、从正上方看小镇，傍晚的港口，还有夜里的广场。**[更多战役](docs/media/README.zh-CN.md)**：Vesperhold、树屋营地、杜恩城堡。
 
 Delvewright 自动化的是繁琐的劳动和验证，而不是设计：它会停下来等你认可设计，最后把完成的 delve 交到你手里去玩；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
-**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
+**现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 [Vesperhold](docs/media/vesperhold/README.md)，一座立在峭岩上的城堡。
 
 ## 开始使用
 
@@ -46,7 +46,7 @@ flowchart TD
 
 ## 为什么可以信任它
 
-下面每一级都在 **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**——图中这座城堡——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799)中跑过（`delvec` 1.7.1，引擎修订 `90433f2`，Minecraft 1.21.11）。每一级打印的内容原样引用。
+下面每一级都在 **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**——[这里有它的图](docs/media/vesperhold/README.md)——的 [release 运行](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799)中跑过（`delvec` 1.7.1，引擎修订 `90433f2`，Minecraft 1.21.11）。每一级打印的内容原样引用。
 
 - **静态分析。** 在 `delvec build` 内部、写出任何字节之前：每份文档都按其 schema 校验，每条任务与对话路径都被走一遍，失败即拒绝，并给出具名的 `DW` 代码。Vesperhold：构建以 0 退出，走过了 5 条状态路径、共 185 步，检查了 37 个目标，有五条提示——三条 `DW0351`，某个角色出现或离开时没有被看到移动；`DW0781`，拼接检查无可判定，因为整座城堡是一个 piece；以及 `DW0810`，生成的 PackTest 套件只驱动了一组对象中的一个成员，没有驱动它的同组成员。
 - **每条命令都被检查。** 每一行生成的 `.mcfunction` 都在同一次构建中按固定版本 1.21.11 的命令树解析。它不打印计数。
@@ -59,7 +59,7 @@ flowchart TD
 
 ## 地图
 
-每张地图都是一份 site plan，先整体后局部：先是 geometry brief，再是 layout graph，然后是每个地点的包围盒、基准面和接缝，以及地点之间的地面由什么填充；在任何地点细化之前，先作为 blockout 走一遍。之后每个地点就是一个 piece，在规划交给它的框里画出自己的墙、屋顶和地面，由 box-split 语法根据规则程序写出；只有一栋建筑的地图，就是只有一个包围盒的规划。上图的城堡 Vesperhold 就是单独一个语法 piece，装下整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都从构建写出的世界里画出来，并对照它所回应的概念图进行审查。
+每张地图都是一份 site plan，先整体后局部：先是 geometry brief，再是 layout graph，然后是每个地点的包围盒、基准面和接缝，以及地点之间的地面由什么填充；在任何地点细化之前，先作为 blockout 走一遍。之后每个地点就是一个 piece，在规划交给它的框里画出自己的墙、屋顶和地面，由 box-split 语法根据规则程序写出；只有一栋建筑的地图，就是只有一个包围盒的规划。城堡 Vesperhold（[这里有它的图](docs/media/vesperhold/README.md)）就是单独一个语法 piece，装下整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都从构建写出的世界里画出来，并对照它所回应的概念图进行审查。
 
 延伸阅读：[摆放地图](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [唯一的地图路线](docs/adr/0032-one-map-route.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 

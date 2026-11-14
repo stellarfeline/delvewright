@@ -4,15 +4,15 @@ English · [简体中文](README.zh-CN.md)
 
 **Delvewright is an AI Minecraft adventure map generator: it turns a creative prompt into a story-driven RPG dungeon for one to four friends — a vanilla datapack with quests and NPCs — and proves by machine that it can be finished before it is handed over.**
 
-![Vesperhold as Delvewright built it: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
+![Kelderby as Delvewright built it: a harbour town seen from the sea in the early morning, sandbars and turquoise shallows in front, a striped lighthouse on the quay, the main street climbing to the cathedral, and a castle on the mountain above](docs/media/curtain-up-in-kelderby/01-hero-town-from-the-sea.jpg)
 
 The pictures are frames of the built world drawn by [Lumenwright](https://github.com/stellarfeline/lumenwright) with Minecraft's own textures; in the game it looks like vanilla Minecraft unless you add a shader or a resource pack of your own.
 
-**[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall. **[More campaigns](docs/media/README.md)**: The Treehouse Camp and Doune Castle.
+**[Inside Kelderby](docs/media/curtain-up-in-kelderby/README.md)** — the town from the sea, from the castle and from straight above, the harbour toward evening, and the square at night. **[More campaigns](docs/media/README.md)**: Vesperhold, The Treehouse Camp and Doune Castle.
 
 Delvewright automates the tedium and the verification, not the design: it stops and waits for you to approve the design, hands you the finished delve to play, and when it refuses something it names what to change instead of changing it.
 
-**Play it now:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs Vesperhold, the castle in the picture.
+**Play it now:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs [Vesperhold](docs/media/vesperhold/README.md), a castle on a crag.
 
 ## Get started
 
@@ -46,7 +46,7 @@ The agent writes documents, never commands: every line of the datapack comes fro
 
 ## Why you can trust it
 
-Every rung below ran on **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**, the castle in the picture, in its [release run](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799) (`delvec` 1.7.1, engine revision `90433f2`, Minecraft 1.21.11). What each printed is quoted.
+Every rung below ran on **[Vesperhold v1.0.0](https://github.com/stellarfeline/delvewright-campaigns/releases/tag/release/vesperhold/v1.0.0)**, the castle [pictured here](docs/media/vesperhold/README.md), in its [release run](https://github.com/stellarfeline/delvewright-campaigns/actions/runs/36809299799) (`delvec` 1.7.1, engine revision `90433f2`, Minecraft 1.21.11). What each printed is quoted.
 
 - **Static analysis.** Inside `delvec build`, before a byte is written: every document validates against its schema, every quest and dialogue path is walked, and a failure is a refusal with a named `DW` code. Vesperhold: the build exited 0, having walked 5 state paths over 185 steps and examined 37 objectives, with five advisories — three `DW0351`, a character who appears or leaves without being seen to move; `DW0781`, the piece-mating check had nothing to judge, because the whole castle is one piece; and `DW0810`, the generated PackTest suite drives one member of a family of objects and not its siblings.
 - **Every command checked.** Every emitted `.mcfunction` line is parsed against the pinned 1.21.11 command tree inside the same build. It prints no count.
@@ -59,7 +59,7 @@ What each rung proves, and what it does not: [what each gate actually proves](do
 
 ## The map
 
-Every map is a site plan, designed whole-first — a geometry brief, a layout graph, then every place's box, datum and seams, and what fills the ground between them — and walked as a blockout before any place is detailed. Each place is then one piece that draws its own walls, roof and ground inside the frame the plan hands it, written by the box-split grammar from a rule program; a map that is one building is a plan of one box. Vesperhold, the castle above, is a single grammar piece holding the whole site, 172 × 104 × 292 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is drawn from the world the build writes and reviewed against the concept image it answers.
+Every map is a site plan, designed whole-first — a geometry brief, a layout graph, then every place's box, datum and seams, and what fills the ground between them — and walked as a blockout before any place is detailed. Each place is then one piece that draws its own walls, roof and ground inside the frame the plan hands it, written by the box-split grammar from a rule program; a map that is one building is a plan of one box. Vesperhold, the castle [pictured here](docs/media/vesperhold/README.md), is a single grammar piece holding the whole site, 172 × 104 × 292 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is drawn from the world the build writes and reviewed against the concept image it answers.
 
 Read on: [placing the map](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [one map route](docs/adr/0032-one-map-route.md) · [the map is planned before it is built](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [the grammar](docs/reference/grammar.md) · [admitting a piece](docs/reference/prefab-procedure.md) · [interior lighting](docs/reference/interior-lighting.md) · [visual review](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 

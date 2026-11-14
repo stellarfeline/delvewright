@@ -4,6 +4,16 @@ English · [简体中文](README.zh-CN.md)
 
 Every delve here was built with Delvewright, and a bot played each one to the end before any player did. Click a title to walk through it in the order you play it (spoilers). To host one, run the command under it: `EULA=TRUE` says you accept the [Minecraft EULA](https://aka.ms/MinecraftEULA), and players join your machine's address from Minecraft Java 1.21.11. [Back to the front page](../../README.md).
 
+## [Curtain Up in Kelderby](curtain-up-in-kelderby/README.md)
+
+[![Kelderby: a harbour town seen from the sea in the early morning, sandbars and turquoise shallows in front, a striped lighthouse on the quay, the main street climbing to the cathedral, and a castle on the mountain above](curtain-up-in-kelderby/01-hero-town-from-the-sea.jpg)](curtain-up-in-kelderby/README.md)
+
+A cheerful day out for one to four players, about two and a half hours, with no combat. A stone-and-timber harbour town on the slope below a castle mountain: one main street stepping down from the cathedral square to the quays, side streets of houses and workshops, a lighthouse on the harbour wall, and a castle at the top of a long road. Four classes to choose from.
+
+```sh
+docker run -e EULA=TRUE -p 25565:25565 ghcr.io/stellarfeline/delve-foot-of-the-mountain:latest
+```
+
 ## [Vesperhold](vesperhold/README.md)
 
 [![Vesperhold: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](vesperhold/01-hero-whole-map-southwest.jpg)](vesperhold/README.md)
