@@ -1760,3 +1760,65 @@ fn a_lapse_after_an_act_from_the_seat_is_waited_aboard() {
     }
 }
 
+/// Two crates on one clock — each a window of the same length from its own
+/// activation, both opened by the same talk — and the world that lets the
+/// first lapse. The lapse is waited until its window runs out, and the second
+/// crate's window, started at the same tick, runs out with it: waited in the
+/// first crate's place in the order, the lapse leaves the second barrel shut
+/// to the path that opens it next (the town's cargo worlds: crate 1 let lapse,
+/// then crate 2 never completed). The lapse goes after the second crate, and
+/// the exported path waits it there, aboard, after the act from the seat.
+/// Red on an order that kept the lapse where the all world's crate stands.
+#[test]
+fn a_lapse_waits_after_every_crate_whose_clock_runs_beside_it() {
+    let bay = Bay {
+        wide: true,
+        second_crate: true,
+        objectives: Some(
+            r#",
+          { "type": "collect", "id": "obj/crate", "item": "minecraft:cod", "count": 1,
+            "anchor": "anchor/crate-alongside", "holder": "anchor/crate",
+            "after": ["obj/talk"], "ride": "vehicle/gull", "limit": { "ticks": 2400 } },
+          { "type": "collect", "id": "obj/crate-two", "item": "minecraft:salmon", "count": 1,
+            "anchor": "anchor/crate-two-alongside", "holder": "anchor/crate-two",
+            "after": ["obj/talk"], "ride": "vehicle/gull", "limit": { "ticks": 2400 } },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/far-shore",
+            "radius": 1, "after": ["obj/crate", "obj/crate-two"] }"#,
+        ),
+        ..Bay::default()
+    };
+    let out = build("lapse-clock", bay, &skiff());
+    let worlds: Vec<Vec<serde_json::Value>> = out
+        .iter()
+        .filter(|(k, _)| k.ends_with(".json"))
+        .filter_map(|(_, v)| serde_json::from_slice::<serde_json::Value>(v).ok())
+        .filter_map(|v| v["steps"].as_array().cloned())
+        .filter(|steps| {
+            steps
+                .iter()
+                .any(|s| s["action"] == "expire" && s["objective"] == "obj/crate")
+        })
+        .collect();
+    assert!(
+        !worlds.is_empty(),
+        "a world path lets the first crate lapse"
+    );
+    for steps in &worlds {
+        let at = |action: &str, obj: &str| {
+            steps
+                .iter()
+                .position(|s| s["action"] == action && s["objective"] == obj)
+        };
+        let lapse = at("expire", "obj/crate").expect("the lapse");
+        let second = at("collect", "obj/crate-two").expect("the second crate");
+        assert!(
+            second < lapse,
+            "the second crate's clock runs through the lapse, so it is opened first: {steps:#?}"
+        );
+        assert_eq!(
+            steps[lapse]["aboard"], "vehicle/gull",
+            "waited aboard after the act from the seat: {}",
+            steps[lapse]
+        );
+    }
+}
