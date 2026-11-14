@@ -135,6 +135,8 @@ else:
     sys.exit(2)
 """
 
+# Ids are digests: hex, as the daemon's are, because the image table refuses a
+# line whose id is not one.
 FIXTURE = {
     "images": [
         # A finished project: one compose-named bot image and the untagged
@@ -148,7 +150,7 @@ FIXTURE = {
          "tags": ["delvewright/delve:local"]},
         # One image, two names: this project's own and a foreign one. The
         # project's name goes; the foreign one stays and keeps the image alive.
-        {"id": "sha256:kkk", "project": "dw-both", "service": "server", "size": 800_000_000,
+        {"id": "sha256:abcabc", "project": "dw-both", "service": "server", "size": 800_000_000,
          "tags": ["delvewright/delve:dw-both", "someone-else/keepme:v1"]},
         # This project's own name, and finished — but a container of ANOTHER
         # project is holding the image, which is the rung's whole point.
@@ -162,18 +164,18 @@ FIXTURE = {
         {"id": "sha256:fff", "project": "dw-m5", "service": "bot", "size": 900_000_000,
          "tags": ["dw-m5-final-bot:latest"]},
         # Compose's default project — where the owner's play session lands.
-        {"id": "sha256:ggg", "project": "validation", "service": "bot", "size": 900_000_000,
+        {"id": "sha256:a0a0a0", "project": "validation", "service": "bot", "size": 900_000_000,
          "tags": ["validation-bot:latest"]},
         # Another program's compose project on the same daemon. Its service is
         # not one this repository's compose file declares.
-        {"id": "sha256:iii", "project": "mimicat", "service": "app", "size": 300_000_000,
+        {"id": "sha256:b1b1b1", "project": "mimicat", "service": "app", "size": 300_000_000,
          "tags": ["mimicat-app:latest"]},
         # A project named like a ladder, but built from a service this repository
         # does not declare — the second key catching what the first would miss.
-        {"id": "sha256:jjj", "project": "dw-imposter", "service": "app", "size": 300_000_000,
+        {"id": "sha256:c2c2c2", "project": "dw-imposter", "service": "app", "size": 300_000_000,
          "tags": ["dw-imposter-app:latest"]},
         # Pulled, so no compose label: must never be selected at all.
-        {"id": "sha256:hhh", "project": "", "service": "", "size": 900_000_000,
+        {"id": "sha256:d3d3d3", "project": "", "service": "", "size": 900_000_000,
          "tags": ["itzg/minecraft-server:java21"]},
     ],
     "containers": [
