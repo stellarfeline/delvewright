@@ -129,6 +129,11 @@
       },
       {
         "node": "node/near-hall",
+        "objective": "obj/take-the-second-seal",
+        "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/near-hall",
         "objective": "obj/open-the-bay-door",
         "quest": "quest/the-reliquary"
       },
