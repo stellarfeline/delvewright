@@ -726,6 +726,36 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
     p
 }
 
+/// **Every per-objective state a guard reads, written to its fresh-delve value**:
+/// the done score, plus the expired and settled scores the objective owns (a
+/// limited one owns both, a quorum member its settled score). A template that
+/// zeroes an objective's done score zeroes these through here, so a sibling
+/// template's leftover settlement never decides its assertion.
+fn objective_state_clear(plan: &Plan, o: &Objective) -> Vec<String> {
+    let party = plan::PARTY;
+    let oid = o.id().as_str();
+    let mut p = vec![format!(
+        "scoreboard players set {party} {} 0",
+        obj_score(oid)
+    )];
+    if o.limit().is_some() {
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            expired_score(oid)
+        ));
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            settled_score(oid)
+        ));
+    } else if super::quorum::is_member(plan.campaign, oid) {
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            settled_score(oid)
+        ));
+    }
+    p
+}
+
 /// Lines that satisfy an objective's activation guard (quest active, all `after`
 /// prerequisites set, all `requires_flags` set, and any required item given to
 /// `sel`). With `with_flags: false` the flags are not merely omitted but actively

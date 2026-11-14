@@ -551,3 +551,48 @@ fn a_declared_join_or_carrier_without_its_template_is_unbound() {
     );
     assert_eq!(b.to_json()["unbound"], true);
 }
+
+/// **A join template owns every score its assertions read**: with the two arms
+/// limited, the join's guard reads each arm's *settled* score, which a sibling
+/// template (a limit's `done`/`expires` template) leaves at 1. The template
+/// clears it, with the arm's expired score, before its first probe — never
+/// leaving the verdict to the order the batch happens to run in.
+#[test]
+fn a_join_template_clears_the_settled_scores_its_guard_reads() {
+    let dir = std::env::temp_dir().join(format!("dw-party-settled-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&and_join_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |v| {
+        for q in v["content"]["quests"].as_array_mut().unwrap() {
+            for o in q["objectives"].as_array_mut().unwrap() {
+                if matches!(
+                    o["id"].as_str(),
+                    Some("obj/ward-north") | Some("obj/ward-south")
+                ) {
+                    o["limit"] = serde_json::json!({"ticks": 1200, "on_expire": []});
+                }
+            }
+        }
+    });
+    let out = build_dir(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    let t = text(
+        &out,
+        "packtest-datapack/data/and-join/test/party_join_shrine.mcfunction",
+    );
+    let first_probe = t
+        .find("assert score #pj_")
+        .expect("the template probes its guard");
+    for arm in ["ward_north", "ward_south"] {
+        for score in [format!("dw.os_{arm}"), format!("dw.x_{arm}")] {
+            let clear = format!("scoreboard players set #party {score} 0");
+            let at = t
+                .find(&clear)
+                .unwrap_or_else(|| panic!("the template never clears `{score}`:\n{t}"));
+            assert!(
+                at < first_probe,
+                "`{score}` is cleared after the first probe"
+            );
+        }
+    }
+}
