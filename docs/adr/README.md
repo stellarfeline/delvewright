@@ -41,6 +41,7 @@ edit. Template at the bottom.
 | [0036](0036-a-release-notes-are-a-summary-not-the-merged-list.md) | A Release's notes are a summary written before the release — a `RELEASE-NOTES.md` entry the workflows judge and publish — never the list of merged pull-request titles | Accepted |
 | [0037](0037-peak-memory-is-bounded-in-map-size.md) | Peak memory is bounded in map size: every whole-map stage runs over a chunked world store with a fixed working set, and the engine states a build's resource cost before it starts | Proposed |
 | [0038](0038-the-plugin-is-released-on-its-own-version.md) | The plugin is released on its own version: the marketplace serves the plugin root at the plugin's tag, the page pins the engine it is proven on, and a plugin release needs no engine release | Accepted |
+| [0039](0039-a-window-is-the-designers-call.md) | A timed window is the designer's call — the machine proves both endings of a clock and never judges its length | Proposed |
 
 ## Template
 
