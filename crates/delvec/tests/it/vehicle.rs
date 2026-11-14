@@ -1746,6 +1746,10 @@ fn a_lapse_after_an_act_from_the_seat_is_waited_aboard() {
             steps[i]
         );
         assert_eq!(cell(&steps[i]["stand"]), seat, "{}", steps[i]);
+        // The export names the seat (format 11), so the harness waits aboard
+        // rather than walk from a vehicle — red on an export that left the
+        // bot to guess, which refused the wait as a walk with no ride off.
+        assert_eq!(steps[i]["aboard"], "vehicle/gull", "{}", steps[i]);
         let on = &steps[i + 1];
         assert_eq!(
             on["action"], "ride",
@@ -1755,3 +1759,4 @@ fn a_lapse_after_an_act_from_the_seat_is_waited_aboard() {
         assert_eq!(cell(&on["medium"].as_array().unwrap()[0]), seat, "{on}");
     }
 }
+

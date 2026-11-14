@@ -6,6 +6,7 @@ import { nextLegWaypoints } from "../waypoints.ts";
 import { fmt } from "./connection.ts";
 import { EFFECT_SETTLE_MS, OBJECTIVE_TIMEOUT_MS } from "./objective.ts";
 import { SCORE_POLL_MS } from "./score.ts";
+import { arrivedAt, type Aboard } from "./ride.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** Minecraft server ticks per second. */
@@ -45,6 +46,30 @@ export function expireVerdict(
   return undefined;
 }
 
+/**
+ * Why the bot cannot wait `step` where it sits, or `undefined` when it can.
+ * A wait the path names aboard (spec-0135 §5) is waited in that vehicle, at
+ * its `stand`, the seat the last ride left the bot in; a wait on foot is
+ * walked to, and a seated bot has no walk under it. Pure, for its unit test.
+ */
+export function aboardWaitFault(step: ExpireStep, seated: Aboard | undefined): string | undefined {
+  if (step.aboard === undefined) return undefined;
+  if (seated?.vehicle !== step.aboard) {
+    return (
+      `the wait for ${step.objective}: the path waits it aboard ${step.aboard}, and the bot sits in ` +
+      `${seated?.vehicle ?? "nothing"} — the ride before it did not stay in this vehicle`
+    );
+  }
+  if (!arrivedAt(seated.at, step.stand)) {
+    return (
+      `the wait for ${step.objective}: the path waits it aboard ${step.aboard} at ` +
+      `${JSON.stringify(step.stand)}, and the server held the rider at ` +
+      `${JSON.stringify(seated.at.map((v) => Number(v.toFixed(2))))} — the seat and the path disagree`
+    );
+  }
+  return undefined;
+}
+
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
   /**
@@ -68,9 +93,17 @@ export const methods = {
         );
       }
     }
-    // The walk to the stand is no leg of the path's: it names none, so it
-    // can never take the next step's.
-    await this.walkTo(step.stand, 0, `the wait for ${step.objective}`, step.sneak, undefined, undefined, null);
+    if (step.aboard !== undefined) {
+      // A lapse after an act from the seat (spec-0135 §5) is waited where the
+      // bot sits: no walk, and the vehicle carries it nowhere.
+      const fault = aboardWaitFault(step, this.aboard);
+      if (fault !== undefined) throw new Error(fault);
+      process.stderr.write(`[expire] ${step.objective}: waited aboard ${step.aboard}, where the bot sits\n`);
+    } else {
+      // The walk to the stand is no leg of the path's: it names none, so it
+      // can never take the next step's.
+      await this.walkTo(step.stand, 0, `the wait for ${step.objective}`, step.sneak, undefined, undefined, null);
+    }
     await this.atStance();
     const campaign = this.campaignId ?? "?";
     const windowMs = expireWindowMs(step.waitTicks);

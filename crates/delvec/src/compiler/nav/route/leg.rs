@@ -1351,6 +1351,7 @@ pub(in crate::compiler::nav) fn route_with_links(
                 aboard = Some((vi, seated));
                 b.legs += 1;
                 b.ridden += 1;
+                takes.aboard.insert(next.src_step, vi);
                 if cur.pos != next.pos {
                     takes.stood.insert(next.src_step, cur.pos);
                 }

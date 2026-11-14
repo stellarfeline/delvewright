@@ -584,6 +584,11 @@ pub struct LinkTakes {
     /// step spliced first in front of the leg's end, before any link or ride
     /// the leg takes.
     pub leaves: BTreeMap<usize, crate::compiler::nav::vehicle::RideTake>,
+    /// An `expire` step (unlinked step index) the party waits out aboard,
+    /// after an act from the seat (spec-0135 §5) → the vehicle it sits in
+    /// (an index into the plan's vehicles): the route proof's own reading of
+    /// the seat, which the export names so the harness waits where it sits.
+    pub aboard: BTreeMap<usize, usize>,
 }
 
 impl LinkTakes {
@@ -595,6 +600,7 @@ impl LinkTakes {
             && self.stood.is_empty()
             && self.rides.is_empty()
             && self.leaves.is_empty()
+            && self.aboard.is_empty()
     }
 }
 
