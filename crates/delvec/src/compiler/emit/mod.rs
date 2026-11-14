@@ -1563,16 +1563,14 @@ fn emit_all(
         }
     }
     // spec-0091: the served view distance, what the build judged against it
-    // (every showcase camera and cutscene shot — a refusal stopped the build
-    // before here), and the cost stated to the host.
+    // (every cutscene shot — a refusal stopped the build before here; a
+    // showcase camera draws to its own distance and is not judged), and the
+    // cost stated to the host.
     crate::note!(
         "{}",
         crate::compiler::served::Binding {
             chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
             declared: plan.campaign.world.content.view_distance.is_some(),
-            showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
-                .as_u64()
-                .unwrap_or(0) as usize,
             cutscene_shots: cutscene_proof.judged,
         }
         .line()

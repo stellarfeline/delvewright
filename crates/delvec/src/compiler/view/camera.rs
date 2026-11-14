@@ -44,6 +44,13 @@
 //! - `fov` is the **vertical** field of view in degrees — Minecraft's FOV setting
 //!   and the renderer's are both vertical — so a narrower frame from further back
 //!   is a smaller number.
+//! - There is no draw distance: a showcase frame draws every chunk its scene
+//!   loads, the fog closing past the farthest of them
+//!   ([`crate::compiler::view::frames::draw_distance`]), so whatever the camera
+//!   is aimed at inside the scene is drawn however far off it stands. It is the
+//!   frame's own, derived by the engine, and never the server's view distance:
+//!   a showcase picture is not a player's view, and `world.view_distance`
+//!   (spec-0091) judges only what a player is promised.
 //! - There is no `exposure`: every frame is exposed at
 //!   [`crate::compiler::view::frames::HQ_EXPOSURE`], derived by the engine. A
 //!   record that states one is refused ([`DW_EXPOSURE_STATED`]); a room that
@@ -1409,8 +1416,6 @@ pub enum ShowcaseRefusal {
     /// A camera's eye cell holds a block, or its frame holds none of the loaded
     /// world (`DW0724`).
     Camera(String),
-    /// A camera's subject lies past the served view distance (`DW0956`).
-    Beyond(String),
 }
 
 /// **Every showcase camera photographs the scene** — the build's proof over
@@ -1428,18 +1433,15 @@ pub enum ShowcaseRefusal {
 ///    rectangle is cut from ([`scene::loaded_extent`], widened to whole blocks). A
 ///    camera looking away from everything the frame loads draws an empty sky.
 ///
-/// 3. **The subject is served** (spec-0091, `DW0956`): the thing the camera is
-///    aimed at — the first occupied cell on its central ray, else the point
-///    where that ray enters the loaded scene — lies within `served_radius`
-///    blocks of the lens, the radius a player standing at the lens is sent.
-///    A subject past it is never sent to the client, so the picture promises a
-///    view no player gets.
+/// How far the camera stands from what it is aimed at is never judged: the
+/// frame draws to its own distance, every chunk the scene loads (the module's
+/// *record* section), and the served view distance is a player's, which a
+/// showcase picture is not.
 ///
 /// A record for another campaign is refused as `delvec cameras` refuses it.
 pub(crate) fn prove_showcase(
     record: &[u8],
     plan: &RenderPlan,
-    served_radius: f64,
     occupied: impl Fn([i32; 3]) -> bool,
 ) -> Result<usize, ShowcaseRefusal> {
     let sheet = parse_sheet(record).map_err(ShowcaseRefusal::Record)?;
@@ -1487,61 +1489,12 @@ pub(crate) fn prove_showcase(
         }
         let (y, p) = (cam.yaw.to_radians(), cam.pitch.to_radians());
         let dir = [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()];
-        let Some((enter, exit)) = ray_meets_box(cam.pos, dir, lo, hi) else {
+        if ray_meets_box(cam.pos, dir, lo, hi).is_none() {
             return Err(ShowcaseRefusal::Camera(format!(
                 "{CAMERAS_FILE}: {who}: looking along yaw {} pitch {} from {:?}, the view meets \
                  nothing the scene loads — the framed extent is {lmin:?}..{lmax:?} — so the frame \
                  would be empty sky. {remedy}",
                 cam.yaw, cam.pitch, cam.pos
-            )));
-        };
-        // The subject: the first occupied cell on the central ray inside the
-        // loaded scene, else where the ray enters it. `dir` is a unit vector, so
-        // a ray parameter is a distance in blocks.
-        let far = [
-            cam.pos[0] + dir[0] * exit,
-            cam.pos[1] + dir[1] * exit,
-            cam.pos[2] + dir[2] * exit,
-        ];
-        let mut first: Option<[i32; 3]> = None;
-        crate::compiler::nav::walk_cells(cam.pos, far, |c| {
-            if occupied(c) {
-                first = Some(c);
-                return true;
-            }
-            false
-        });
-        let (subject, subject_distance) = match first {
-            Some(c) => {
-                let centre = [
-                    f64::from(c[0]) + 0.5,
-                    f64::from(c[1]) + 0.5,
-                    f64::from(c[2]) + 0.5,
-                ];
-                let d = [
-                    centre[0] - cam.pos[0],
-                    centre[1] - cam.pos[1],
-                    centre[2] - cam.pos[2],
-                ];
-                (
-                    format!("the first solid cell on its line of sight, {c:?}"),
-                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
-                )
-            }
-            None => (
-                "where its line of sight enters the loaded scene".to_string(),
-                enter,
-            ),
-        };
-        if subject_distance > served_radius {
-            let chunks = delvewright_dsl::viewdistance::chunks_for(subject_distance);
-            return Err(ShowcaseRefusal::Beyond(format!(
-                "{CAMERAS_FILE}: {who}: its subject — {subject} — is {subject_distance:.1} blocks \
-                 from the lens, and the served view distance reaches {served_radius:.0} blocks \
-                 ({} chunks): a player standing at the lens is never sent what this picture \
-                 shows. Declare `world.view_distance: {chunks}` (the fewest chunks that serve \
-                 it), or stand nearer.",
-                delvewright_dsl::viewdistance::chunks_for(served_radius)
             )));
         }
     }
@@ -2123,10 +2076,7 @@ mod tests {
         let mut down = cam("down");
         down.pos = mid;
         down.pitch = 60.0;
-        assert_eq!(
-            prove_showcase(&record(down.clone()), &plan, 1e9, nothing),
-            Ok(1)
-        );
+        assert_eq!(prove_showcase(&record(down.clone()), &plan, nothing), Ok(1));
         // The same camera with a block at its eye.
         let cell = [
             mid[0].floor() as i32,
@@ -2137,7 +2087,7 @@ mod tests {
             let mut c = down.clone();
             c.source = source;
             let Err(ShowcaseRefusal::Camera(why)) =
-                prove_showcase(&record(c), &plan, 1e9, |x| x == cell)
+                prove_showcase(&record(c), &plan, |x| x == cell)
             else {
                 panic!("{source:?}: an occupied eye is refused");
             };
@@ -2147,8 +2097,7 @@ mod tests {
         // Looking straight up from above the layout: empty sky.
         let mut up = down.clone();
         up.pitch = -60.0;
-        let Err(ShowcaseRefusal::Camera(why)) = prove_showcase(&record(up), &plan, 1e9, nothing)
-        else {
+        let Err(ShowcaseRefusal::Camera(why)) = prove_showcase(&record(up), &plan, nothing) else {
             panic!("a frame of empty sky is refused");
         };
         assert!(why.contains("framed extent"), "{why}");
@@ -2156,72 +2105,59 @@ mod tests {
         let mut high = down;
         high.pos[1] = 400.0;
         assert!(matches!(
-            prove_showcase(&record(high), &plan, 1e9, nothing),
+            prove_showcase(&record(high), &plan, nothing),
             Err(ShowcaseRefusal::Camera(_))
         ));
         // A record for another world, and a record that is not one.
         let other = serde_json::to_vec(&sheet("mini", vec![cam("a")])).unwrap();
         assert!(matches!(
-            prove_showcase(&other, &plan, 1e9, nothing),
+            prove_showcase(&other, &plan, nothing),
             Err(ShowcaseRefusal::Record(_))
         ));
         assert!(matches!(
-            prove_showcase(b"{}", &plan, 1e9, nothing),
+            prove_showcase(b"{}", &plan, nothing),
             Err(ShowcaseRefusal::Record(_))
         ));
     }
 
-    /// The third shape (spec-0091, `DW0956`): the subject must be within the
-    /// served radius of the lens — where the central ray enters the loaded
-    /// scene when nothing solid stands on it, else the first solid cell.
+    /// A showcase frame draws to its own distance, never the served view
+    /// distance: a camera far off the scene — its subject past what a player is
+    /// sent at any view distance — is proven like a near one, whether what it
+    /// is aimed at is where its ray enters the scene or a solid cell on the way.
     #[test]
-    fn a_showcase_camera_whose_subject_is_past_the_served_radius_is_refused() {
+    fn a_showcase_camera_far_off_its_subject_is_proven() {
         let plan = scene::parse_plan(OCEAN).unwrap();
         let (lmin, lmax) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
         let record = |c: Camera| serde_json::to_vec(&sheet("isle", vec![c])).unwrap();
-        let nothing = |_: [i32; 3]| false;
-        // 200 blocks south of the layout's middle, level, looking north at it.
+        // 600 blocks south of the layout's middle, level, looking north at it:
+        // past the 512 blocks the most a campaign can declare serves.
         let mut far = cam("far");
         far.pos = [
             f64::from(lmin[0] + lmax[0]) / 2.0,
             f64::from(lmax[1]) - 1.0,
-            f64::from(lmax[2]) + 200.0,
+            f64::from(lmax[2]) + 600.0,
         ];
         far.yaw = 180.0;
         far.pitch = 0.0;
-        let Err(ShowcaseRefusal::Beyond(why)) =
-            prove_showcase(&record(far.clone()), &plan, 160.0, nothing)
-        else {
-            panic!("a subject 200 blocks off at a 160-block radius is refused");
-        };
-        assert!(
-            why.contains("`far`") && why.contains("enters the loaded scene"),
-            "{why}"
-        );
-        assert!(why.contains("world.view_distance: 13"), "{why}");
-        // The remedy the message names reaches a different verdict.
         assert_eq!(
-            prove_showcase(&record(far.clone()), &plan, 13.0 * 16.0, nothing),
+            prove_showcase(&record(far.clone()), &plan, |_| false),
             Ok(1)
         );
-        // A solid cell 50 blocks along the ray is the subject instead, and is served.
         let solid = [
             far.pos[0].floor() as i32,
             far.pos[1].floor() as i32,
-            (far.pos[2] - 50.0).floor() as i32,
+            (far.pos[2] - 570.0).floor() as i32,
         ];
         assert_eq!(
-            prove_showcase(&record(far.clone()), &plan, 160.0, |c| c == solid),
+            prove_showcase(&record(far.clone()), &plan, |c| c == solid),
             Ok(1)
         );
-        // The same solid cell 170 blocks along the ray is named as the subject.
-        let solid = [solid[0], solid[1], (far.pos[2] - 170.0).floor() as i32];
-        let Err(ShowcaseRefusal::Beyond(why)) =
-            prove_showcase(&record(far), &plan, 160.0, |c| c == solid)
-        else {
-            panic!("a solid subject past the radius is refused");
-        };
-        assert!(why.contains("first solid cell"), "{why}");
+        // What the frame draws to reaches the scene it is aimed at.
+        let loaded = scene::chunk_rect(lmin, lmax);
+        let reach = f64::from(crate::compiler::view::frames::draw_distance(
+            far.pos, loaded,
+        ));
+        assert!(reach > far.pos[2] - f64::from(lmin[2]), "{reach}");
     }
 
     #[test]

@@ -148,7 +148,10 @@ one field to it.
 
 Whatever else Chunky needs — world path, sun, loaded chunks, water — the scene
 emitter derives from the plan and the build, and the record does not restate
-it.
+it. The distance the frame draws to is among them: every chunk the scene
+loads, the fog past the farthest of them. It is the picture's own and never
+the server's view distance (spec-0091), because a showcase picture is not a
+player's view; a camera framed from far off draws what it is aimed at.
 
 **`delvec place-camera` is the record's writer.** `--report` + `--slot` +
 `--fov` writes a harvested pose as `hand`; `--candidates` + `--pick` writes a
@@ -184,7 +187,8 @@ build` over the final assembled world, for every camera of the record:
    refuses in another form. It takes no code of its own (§7).
 
 Both run over estimated cameras too, so an estimate inside a block reds the
-same way with its own remedy. A record its reader refuses stops the build as
+same way with its own remedy. Neither asks how far the lens stands from what it
+is aimed at (§4.1: the frame draws to its own distance). A record its reader refuses stops the build as
 `DW0721`. `render-plan.json` states the count as `camera_eye_proof.showcase`.
 
 ### 4.3 The field of view

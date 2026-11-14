@@ -136,6 +136,22 @@
       "spp": 300,
       "width": 1600,
       "yaw": 225.0
+    },
+    {
+      "answers": "concept/noon-hall",
+      "fov": 30.0,
+      "height": 900,
+      "name": "far-off-the-hall",
+      "pitch": 2.0,
+      "pos": [
+        16.5,
+        80.0,
+        400.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 180.0
     }
   ],
   "campaign_id": "gallery"

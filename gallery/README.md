@@ -500,6 +500,14 @@ axis, one cell under the ceiling, on the tile's centre column, so a lantern hung
 there would be a camera inside a block; the generator also asserts those cells
 are clear on every run (`ANNEX_SEAM_EYE_CELLS`).
 
+**A showcase picture is taken from as far off as it needs.** The camera
+`far-off-the-hall` (`design/cameras.json`) stands out in the void about 370
+blocks south of the hall, well past the 192 blocks the campaign's
+`view_distance: 12` serves a player, and the build takes it: a showcase frame
+draws every chunk its scene loads, and the served view distance (`DW0956`)
+judges only what a player is promised — the plan's views, its sightlines and
+its cutscene shots.
+
 ## The broken flight, and what a way costs to declare
 
 The far half of the hall carries a **mezzanine**: a solid dais three courses
