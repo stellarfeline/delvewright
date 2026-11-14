@@ -223,7 +223,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, expire, ride, assert-complete/.test(err.message),
+      /select-class, talk-to, choose, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, expire, ride, assert-complete/.test(err.message),
   );
 });
 
@@ -1287,6 +1287,35 @@ test("a mock that asserts nothing, or asserts a different set before and after, 
   }
 });
 
+// --- contract format 10: a story world's choice — an option that completes no objective ---
+
+const trusted = {
+  action: "choose",
+  npc: "npc/keeper",
+  pos: [5, 65, 4],
+  command: "/trigger dw.dlg_keeper set 4",
+  sets: [{ objective: "dw.f_trusted", holder: "#party", min: 1, max: 1, negate: false }],
+};
+
+test("a choose step parses its speaker, its command and the flags it sets", () => {
+  const step = parseCriticalPath(withStep(trusted)).steps[2];
+  assert.deepEqual(step, trusted);
+});
+
+test("a choose step that sets nothing, or names an objective, is refused", () => {
+  for (const [bad, pointer] of [
+    [{ ...trusted, sets: [] }, "/steps/2/sets"],
+    [{ ...trusted, objective: "obj/talk" }, "/steps/2/objective"],
+    [{ ...trusted, command: undefined }, "/steps/2/command"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(bad),
+    );
+  }
+});
+
 // --- contract format 6: the pursuers each step is walked beside (spec-0132 §5.3) ---
 
 /** `validRaw()` with every step's `pursuers` written out, the reach pursued. */
@@ -1425,10 +1454,10 @@ test("a kill step carries the compiler's seat date when one is exported, and not
   }
 });
 
-test("format 9: the constant moved, and a format-7 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 9);
+test("format 10: the constant moved, and a format-9 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 10);
   const raw = validRaw();
-  raw["format_version"] = 7;
+  raw["format_version"] = 9;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

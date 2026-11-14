@@ -232,6 +232,15 @@ pub fn check(
                 continue;
             };
             bind.talks += 1;
+            // A story world's choice (no objective of its own) is named by
+            // its command, the option it takes.
+            let objective_id = match objective_id {
+                Some(o) => o.clone(),
+                None => match step {
+                    Step::TalkTo { command, .. } => format!("the choice `{command}`"),
+                    _ => String::new(),
+                },
+            };
             if holds_its_facing(plan, npc_id) {
                 bind.held += 1;
                 continue;

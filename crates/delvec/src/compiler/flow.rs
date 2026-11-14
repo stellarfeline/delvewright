@@ -293,6 +293,26 @@ pub struct StoryCtx {
     /// Each elective ambient act the run performs, with the index of the step
     /// it is performed in front of — the world's **entry deeds**.
     pub deeds: Vec<(usize, String)>,
+    /// Each dialogue option the path takes that completes no objective, with
+    /// the index of the step it is taken in front of: the option the world's
+    /// selection chose, and an option a step's flag is owed to
+    /// ([`Flow::story_debts`]).
+    pub choices: Vec<(usize, PathChoice)>,
+    /// Each environment trigger the path performs to pay a flag a step reads,
+    /// in path order — what [`Flow::trigger_debts`] answers for this world.
+    pub triggers: Vec<TriggerDebt>,
+}
+
+/// A dialogue option a story world's path takes that completes no objective
+/// (a `talk-to` step with no objective of its own).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PathChoice {
+    /// The NPC whose tree holds the option.
+    pub npc: String,
+    /// The option's flat 1-based index across that NPC's tree.
+    pub n: usize,
+    /// The flags the option sets.
+    pub sets: Vec<String>,
 }
 
 /// The evolving state of one playthrough replay: which flags are set, which
@@ -570,8 +590,16 @@ impl Walk<'_, '_> {
             // A story world credits what it performs (spec-0108 §4.1): an
             // elective act's producer only when the act is in its participation,
             // a forced one wherever its gate holds, as today.
+            // A deed's producers are credited from the step it is performed
+            // at, never before (`Flow::run_story`).
             Some(ctx) => match &self.performed {
-                None => self.flow.story_credit(g, &ctx.performs),
+                None => {
+                    self.flow.story_credit(g, &ctx.performs)
+                        && !g.act.as_ref().is_some_and(|a| {
+                            ctx.deeds.iter().any(|(_, d)| d == a)
+                                && !ctx.deeds.iter().any(|(j, d)| d == a && *j <= self.taken)
+                        })
+                }
                 Some(_) => stance,
             },
         }
@@ -591,12 +619,33 @@ impl Walk<'_, '_> {
         self.st.flags = flags;
     }
 
-    /// Why `step` cannot be completed now, the entry deeds due in front of it
-    /// performed first (on a clone) — the replay's own per-step test.
+    /// The dialogue options the path takes in front of the next step
+    /// ([`StoryCtx::choices`]): their flags set, then every producer this walk
+    /// credits saturated.
+    fn take_choices(&mut self, ctx: &StoryCtx) {
+        let mut any = false;
+        for (_, c) in ctx.choices.iter().filter(|(i, _)| *i == self.taken) {
+            self.st.flags.extend(c.sets.iter().cloned());
+            any = true;
+        }
+        if any {
+            let mut flags = std::mem::take(&mut self.st.flags);
+            self.flow
+                .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+            self.st.flags = flags;
+        }
+    }
+
+    /// Why `step` cannot be completed now, the choices and entry deeds due in
+    /// front of it performed first (on a clone) — the replay's own per-step test.
     fn blocked_after_deeds(&self, step: &PathStep) -> Option<String> {
         match &self.story {
-            Some(ctx) if ctx.deeds.iter().any(|(i, _)| *i == self.taken) => {
+            Some(ctx)
+                if ctx.deeds.iter().any(|(i, _)| *i == self.taken)
+                    || ctx.choices.iter().any(|(i, _)| *i == self.taken) =>
+            {
                 let mut ahead = self.clone();
+                ahead.take_choices(ctx);
                 for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
                     self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
                 }
@@ -624,6 +673,7 @@ impl Walk<'_, '_> {
         // §4.1): each elective ambient act it performs, fired once, here.
         let mut deeds: Vec<(String, Vec<String>)> = Vec::new();
         if let Some(ctx) = self.story.clone() {
+            self.take_choices(&ctx);
             for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
                 let from = self.st.fired.len();
                 self.flow.perform_act(&mut self.st, act, self.taken + 1);
@@ -784,6 +834,7 @@ impl Walk<'_, '_> {
     pub fn with_due_deeds(&self) -> Self {
         let mut ahead = self.clone();
         if let Some(ctx) = &self.story {
+            ahead.take_choices(ctx);
             for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
                 ahead = ahead.performing(act);
             }
@@ -1291,30 +1342,22 @@ impl<'a> Flow<'a> {
     /// replay (`DW0204`) owns every flag nothing produces.
     ///
     /// Returned in path order; `step` indexes `p.steps`.
+    ///
+    /// A story world's playthrough carries its own answer: the triggers its
+    /// debt walk performs ([`Self::story_debts`]), which also takes the
+    /// world's dialogue choices and entry deeds, so the trigger a flag is owed
+    /// to may be one whose gate only a choice opens.
     pub fn trigger_debts(&self, p: &Playthrough) -> Vec<TriggerDebt> {
+        if let Some(ctx) = &p.story {
+            return ctx.triggers.clone();
+        }
         let mut performed: BTreeSet<String> = BTreeSet::new();
         let mut complete_at: Option<(usize, String)> = None;
         let mut st =
             self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none() && default_credit(g));
         let mut out: Vec<TriggerDebt> = Vec::new();
         for (i, step) in p.steps.iter().enumerate() {
-            let mut reads: Vec<String> = self
-                .objective(&step.objective)
-                .map(|o| {
-                    o.requires_flags()
-                        .iter()
-                        .map(|f| f.as_str().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            if let (Some(n), Some(Objective::TalkTo { npc, .. })) =
-                (step.talk_option, self.objective(&step.objective))
-                && let Some(t) = self.trees.iter().find(|t| t.npc == npc.as_str())
-                && let Some(o) = t.options.iter().find(|o| o.n == n)
-            {
-                reads.extend(o.requires.iter().cloned());
-            }
-            for flag in reads {
+            for flag in self.step_reads(step) {
                 if st.flags.contains(&flag) {
                     continue;
                 }
@@ -1343,6 +1386,30 @@ impl<'a> Flow<'a> {
             });
         }
         out
+    }
+
+    /// **The flags taking `step` reads**: its objective's `requires_flags`,
+    /// and for a `talk-to` the taken option's own `requires` — the reads a path
+    /// owes an act for when nothing on it sets them ([`Self::trigger_debts`],
+    /// [`Self::story_debts`]).
+    fn step_reads(&self, step: &PathStep) -> Vec<String> {
+        let mut reads: Vec<String> = self
+            .objective(&step.objective)
+            .map(|o| {
+                o.requires_flags()
+                    .iter()
+                    .map(|f| f.as_str().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let (Some(n), Some(Objective::TalkTo { npc, .. })) =
+            (step.talk_option, self.objective(&step.objective))
+            && let Some(t) = self.trees.iter().find(|t| t.npc == npc.as_str())
+            && let Some(o) = t.options.iter().find(|o| o.n == n)
+        {
+            reads.extend(o.requires.iter().cloned());
+        }
+        reads
     }
 
     /// Replay `p`'s step sequence through the flag/objective/quest state machine.

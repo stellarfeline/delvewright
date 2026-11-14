@@ -1,6 +1,7 @@
 // MineflayerExecutor: a talk-to step.
 
-import type { TalkToStep } from "../critical-path.ts";
+import type { ChooseStep, TalkToStep } from "../critical-path.ts";
+import { termText } from "../death-loop.ts";
 import { delay } from "./connection.ts";
 import { EFFECT_SETTLE_MS } from "./objective.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -39,5 +40,32 @@ export const methods = {
     // objective this step stands for. Wait for that objective's own marker.
     await this.requireObjective(step.objective, `talk-to ${step.npc}`);
     await delay(EFFECT_SETTLE_MS);
+  },
+
+  /**
+   * Format 10: a story world's choice — an option that completes no objective.
+   * Walked to and proven reachable exactly as a talk-to is; it passes when every
+   * flag the option sets is held on the server, asked as a mock's terms are.
+   */
+  async choose(this: MineflayerExecutor, step: ChooseStep): Promise<void> {
+    const label = `choose ${step.command} of ${step.npc}`;
+    if (this.aboard === undefined) {
+      await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak);
+      await this.atStance();
+    } else {
+      process.stderr.write(`[seat] ${label}: from ${this.aboard.vehicle}'s seat\n`);
+    }
+    this.requireCrosshair(step.pos, label, TALK_RANGE);
+    this.chatTrigger(step.command);
+    await delay(EFFECT_SETTLE_MS);
+    const unheld: string[] = [];
+    for (const t of step.sets) {
+      const held = await this.askTerm(t);
+      if (held !== true) unheld.push(`${termText(t)} ${held === undefined ? "unread" : "does not hold"}`);
+    }
+    if (unheld.length > 0) {
+      throw new Error(`${label}: the option was taken and its flags are not set — ${unheld.join("; ")}`);
+    }
+    process.stderr.write(`[choose] ${label}: ${step.sets.length} flag(s) set\n`);
   },
 };

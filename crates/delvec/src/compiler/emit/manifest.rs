@@ -350,9 +350,19 @@ pub(super) fn critical_path_json(
                 Step::SelectClass { class_id, command } => json!({
                     "action": "select-class", "class": class_id, "command": command
                 }),
-                Step::TalkTo { objective_id, npc_id, pos, command } => json!({
+                Step::TalkTo { objective_id: Some(objective_id), npc_id, pos, command, .. } => json!({
                     "action": "talk-to", "objective": objective_id, "npc": npc_id,
                     "pos": pos, "command": command
+                }),
+                // A story world's choice (format 10): an option that completes
+                // no objective, passed on the flags it sets (`sets`), read as
+                // the mock step reads its terms.
+                Step::TalkTo { objective_id: None, npc_id, pos, command, sets } => json!({
+                    "action": "choose", "npc": npc_id, "pos": pos, "command": command,
+                    "sets": sets.iter().map(|t| json!({
+                        "objective": t.objective, "holder": t.holder(),
+                        "min": t.min, "max": t.max, "negate": t.negate,
+                    })).collect::<Vec<_>>(),
                 }),
                 // `completion` is the volume the server adjudicates in, not a
                 // second description of it: it comes off the same

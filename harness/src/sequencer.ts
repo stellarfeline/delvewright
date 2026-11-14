@@ -16,6 +16,7 @@ import type {
   SelectClassStep,
   Step,
   TalkToStep,
+  ChooseStep,
   TriggerStep,
   MockStep,
   ExpireStep,
@@ -32,6 +33,11 @@ import { BotDeathError } from "./death.ts";
 export interface StepExecutor {
   selectClass(step: SelectClassStep): Promise<void>;
   talkTo(step: TalkToStep): Promise<void>;
+  /** Take a dialogue option that completes no objective (format 10), passing
+   * on the flags it sets. Optional so existing fakes keep compiling; a path
+   * carrying a `choose` step against an executor without it is a hard failure,
+   * never a silent skip. */
+  choose?(step: ChooseStep): Promise<void>;
   reach(step: ReachStep): Promise<void>;
   kill(step: KillStep): Promise<void>;
   collect(step: CollectStep): Promise<void>;
@@ -230,6 +236,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
       return executor.selectClass(step);
     case "talk-to":
       return executor.talkTo(step);
+    case "choose":
+      if (!executor.choose) {
+        throw new Error(
+          `critical path takes ${step.command} of ${step.npc} but this executor cannot take a ` +
+            `choice — the world would walk on without the option that makes it this world`,
+        );
+      }
+      return executor.choose(step);
     case "reach":
       return executor.reach(step);
     case "kill":
@@ -323,6 +337,7 @@ export async function runSequence(
         action !== "witness-strike" &&
         action !== "loop" &&
         action !== "mock" &&
+        action !== "choose" &&
         action !== "ride"
       ) {
         return i;

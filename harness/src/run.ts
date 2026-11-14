@@ -19,6 +19,7 @@ import {
   recordsBindingLine,
   recordsFailures,
   worldOfPath,
+  walkedPathFile,
 } from "./journal.ts";
 import {
   ShotSubjectObserver,
@@ -701,7 +702,9 @@ async function main(): Promise<number> {
     // walk is over.
     const recordsLedger = await loadRecordsLedgerForCriticalPath(pathArg);
     if (recordsLedger && pathFailure === undefined) {
-      const world = worldOfPath(pathArg, recordsLedger);
+      // The world this session walked: a branch run's own path file, never the
+      // critical path it was handed (which names the mainline).
+      const world = worldOfPath(walkedPathFile(pathArg, branchPathFile), recordsLedger);
       const verdicts = world === null ? [] : await executor.judgeJournalRecords(recordsLedger, world);
       const b = recordsBinding(verdicts);
       process.stderr.write(`${recordsBindingLine(world, b)}\n`);

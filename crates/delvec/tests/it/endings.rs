@@ -987,13 +987,20 @@ fn a_world_chronicle_dates_the_deed_it_performs_and_omits_the_one_it_skips() {
     }
 }
 
-/// An elective act a world performs with no entry deed (its flag is credited,
-/// nothing it writes is read by an ending) has no position: it stays an
+/// An elective act a world performs with no entry deed (nothing it writes is
+/// read by an ending or by a step of the path) has no position: it stays an
 /// ambient beat in the world that performs it, and the world that skips it does
-/// not list it.
+/// not list it. The fixture's `obj/count` reads the bell's flag, which makes the
+/// bell a deed of the path that walks it (`Flow::story_debts`); here it reads
+/// nothing.
 #[test]
 fn an_undated_elective_beat_is_listed_only_where_the_world_performs_it() {
-    for (row, md, performs) in chronicles("chronicle-ambient", |_| {}) {
+    for (row, md, performs) in chronicles("chronicle-ambient", |q| {
+        q["content"]["quests"][1]["objectives"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("requires_flags");
+    }) {
         assert_eq!(
             md.contains("## Ambient beats") && md.contains("The bell rings."),
             performs,

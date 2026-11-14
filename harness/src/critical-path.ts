@@ -92,9 +92,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   `medium` at `rate`, leave and stand at `leave`. A format-7 bot would refuse
  *   the kind.
  *
+ * * `10` — a step may be `choose`: `{npc, pos, command, sets}` — a story
+ *   world's dialogue option that completes no objective. Walk to the NPC as a
+ *   `talk-to` does, chat `command`, and pass when every `sets` term holds. A
+ *   format-9 bot would refuse the kind.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 9;
+export const CRITICAL_PATH_FORMAT_VERSION = 10;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -157,6 +162,7 @@ export function pursuersOf(step: Step): readonly PursuerRow[] {
 export const STEP_ACTIONS = [
   "select-class",
   "talk-to",
+  "choose",
   "reach",
   "kill",
   "collect",
@@ -239,6 +245,23 @@ export interface TalkToStep extends PresentationMarkers, Pursued {
   readonly command: string;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
+}
+
+/**
+ * Take a dialogue option that completes no objective — the choice a story
+ * world's selection makes, or the option a flag a later step reads is owed to.
+ * Walk to the NPC as {@link TalkToStep} does and chat `command`; the step passes
+ * when every `sets` term holds, read on the server as a mock step's terms are.
+ */
+export interface ChooseStep extends PresentationMarkers, Pursued {
+  readonly action: "choose";
+  readonly npc: string;
+  readonly pos: Vec3Tuple;
+  /** The exact chat command the bot sends. */
+  readonly command: string;
+  /** The flags the option sets, each a term that must hold once it is taken;
+   * never empty. */
+  readonly sets: readonly GateTerm[];
 }
 
 /**
@@ -635,6 +658,7 @@ export interface RideStep extends PresentationMarkers, Pursued {
 export type Step =
   | SelectClassStep
   | TalkToStep
+  | ChooseStep
   | ReachStep
   | KillStep
   | CollectStep
@@ -1201,6 +1225,27 @@ function parseStepBody(value: unknown, pointer: string): Step {
         npc: requireString(obj, "npc", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
+        ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
+      };
+    }
+    case "choose": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "npc", "pos", "command", "sets", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        pointer,
+      );
+      const raw = obj["sets"];
+      if (!Array.isArray(raw)) fail(`${pointer}/sets`, `must be an array, got ${describe(raw)}`);
+      if (raw.length === 0) {
+        fail(`${pointer}/sets`, "a choice that sets nothing proves nothing — the compiler exports none");
+      }
+      return {
+        action: "choose",
+        npc: requireString(obj, "npc", pointer),
+        pos: requirePos(obj, pointer),
+        command: requireString(obj, "command", pointer),
+        sets: raw.map((t, i) => requireTerm(t, `${pointer}/sets/${i}`)),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };

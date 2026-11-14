@@ -298,7 +298,8 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
 }
 
 /// The dialogue choices that ENTER this branch: every `talk-to` option on the
-/// path that sets one of the branch's pinned-set flags.
+/// path that sets one of the branch's pinned-set flags — an objective's talk,
+/// or a story world's choice.
 ///
 /// The option index is 1-based **across one NPC's tree**, so it is resolved
 /// against the tree of the NPC the step's own `talk-to` objective names — not
@@ -347,6 +348,21 @@ fn entry_choices(
                     });
                 }
             }
+        }
+    }
+    // A story world's choices (`flow::StoryCtx::choices`): an option that
+    // completes no objective, taken by its own `talk-to` step.
+    for (_, ch) in pt.story.iter().flat_map(|ctx| ctx.choices.iter()) {
+        if ch.sets.iter().any(|f| set.contains(f)) {
+            out.push(EntryChoice {
+                npc: ch.npc.clone(),
+                option: ch.n,
+                command: format!(
+                    "/trigger {} set {}",
+                    crate::compiler::plan::dlg_trigger(&ch.npc),
+                    ch.n
+                ),
+            });
         }
     }
     out.sort();

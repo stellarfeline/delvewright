@@ -41,16 +41,22 @@ pub enum Step {
         /// The chat command the bot sends.
         command: String,
     },
-    /// Talk to an NPC; `command` fires the objective-completing option.
+    /// Talk to an NPC; `command` fires the option the step takes — the one
+    /// completing `objective_id`, or, for a story world's **choice**
+    /// (`flow::StoryCtx::choices`), an option that completes no objective and
+    /// is proven by the flags it sets.
     TalkTo {
-        /// The `obj/<id>` this step proves complete.
-        objective_id: String,
+        /// The `obj/<id>` this step proves complete; `None` for a choice.
+        objective_id: Option<String>,
         /// NPC id.
         npc_id: String,
         /// Absolute NPC position.
         pos: [i32; 3],
         /// The chat command the bot sends.
         command: String,
+        /// A choice's proof: the scoreboard terms of the flags its option sets,
+        /// each held once it is taken. Empty for an objective's talk.
+        sets: Vec<GateTerm>,
     },
     /// Walk into the objective's completion volume at `pos`.
     Reach {
@@ -261,8 +267,8 @@ impl Step {
     /// which prove no objective of their own.
     pub fn objective(&self) -> Option<&str> {
         match self {
-            Step::TalkTo { objective_id, .. }
-            | Step::Reach { objective_id, .. }
+            Step::TalkTo { objective_id, .. } => objective_id.as_deref(),
+            Step::Reach { objective_id, .. }
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
             | Step::Interact { objective_id, .. }
@@ -439,6 +445,98 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
     completion.completes_on_landing(*landing, exact)
 }
 
+/// **The choices a story world's path takes in front of path step `si`**
+/// (`flow::StoryCtx::choices`): one `talk-to` per option, with no objective,
+/// standing where the cast ledger stations the NPC for this beat, read with the
+/// flags held before the choice is made — a choice may move its speaker.
+#[allow(clippy::too_many_arguments)]
+fn choices_before(
+    campaign: &Campaign,
+    anchors: &AnchorTable,
+    npcs: &[NpcPlan],
+    path: &crate::compiler::flow::Playthrough,
+    si: usize,
+    area: &str,
+    begun: &BTreeSet<String>,
+    journal: &[crate::compiler::flow::JournalStep],
+) -> Result<Vec<Step>, PlanError> {
+    let Some(ctx) = &path.story else {
+        return Ok(Vec::new());
+    };
+    let due: Vec<&crate::compiler::flow::PathChoice> = ctx
+        .choices
+        .iter()
+        .filter(|(i, _)| *i == si)
+        .map(|(_, c)| c)
+        .collect();
+    if due.is_empty() {
+        return Ok(Vec::new());
+    }
+    let held: BTreeSet<String> = match si.checked_sub(1).and_then(|p| journal.get(p)) {
+        Some(prev) => prev.flags_after.clone(),
+        None => {
+            let mut f = journal
+                .get(si)
+                .map(|j| j.flags_before.clone())
+                .unwrap_or_default();
+            for c in &due {
+                for x in &c.sets {
+                    f.remove(x);
+                }
+            }
+            f
+        }
+    };
+    let qid = path.steps[si].quest.as_str();
+    let mut out = Vec::new();
+    for c in due {
+        let trigger = npcs
+            .iter()
+            .find(|n| n.npc_id == c.npc)
+            .map(|n| n.trigger_objective.clone())
+            .ok_or_else(|| {
+                PlanError::new(
+                    DW_BUILD,
+                    format!(
+                        "internal invariant violation: a story world's choice speaks to npc \
+                         `{}` with no build-time plan. This is a compiler bug; stop and escalate",
+                        c.npc
+                    ),
+                )
+            })?;
+        let Some((_, pos)) =
+            triggers::npc_beat_cell(campaign, anchors, &c.npc, qid, area, begun, &held)
+        else {
+            return Err(PlanError::new(
+                crate::compiler::flow::DW_PATH_INCOHERENT,
+                format!(
+                    "a story world's path takes option #{} of `{}` in front of its step for \
+                     `{}`, and the cast ledger stations no body for `{}` there to take it from",
+                    c.n, c.npc, path.steps[si].objective, c.npc
+                ),
+            ));
+        };
+        out.push(Step::TalkTo {
+            objective_id: None,
+            npc_id: c.npc.clone(),
+            pos,
+            command: format!("/trigger {trigger} set {}", c.n),
+            sets: c
+                .sets
+                .iter()
+                .map(|f| GateTerm {
+                    objective: flag_score(f),
+                    party: true,
+                    min: Some(1),
+                    max: Some(1),
+                    negate: false,
+                })
+                .collect(),
+        });
+    }
+    Ok(out)
+}
+
 /// Version of the `critical-path.json` **contract** (its `format_version` field),
 /// independent of the campaign's DSL version: the DSL describes the delve, this
 /// describes what the harness is told about proving it.
@@ -505,9 +603,14 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   step's act is done from the seat (spec-0135 §5). A format change for
 ///   `7`'s reason: an older bot handed one would refuse the kind.
 ///
+/// * `10` — a step may be `choose`: `{npc, pos, command, sets}` — a story
+///   world's dialogue option that completes no objective (`flow::StoryCtx::choices`),
+///   walked to as a `talk-to` and passed on the flags it sets. A format change
+///   for `7`'s reason: an older bot handed one would refuse the kind.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 9;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 10;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -998,11 +1101,8 @@ pub(super) fn build_critical_path(
     // NPC's cast row — the same journal `crate::compiler::branch`'s `DW0483` reads, so the
     // placement the ladder walks to and the placement the proofs check are chosen
     // by ONE model (see [`crate::compiler::cast::station`]).
-    let flags_at: Vec<BTreeSet<String>> = flow
-        .journal(path)
-        .into_iter()
-        .map(|s| s.flags_before)
-        .collect();
+    let journal = flow.journal(path);
+    let flags_at: Vec<BTreeSet<String>> = journal.iter().map(|s| s.flags_before.clone()).collect();
     let begun: BTreeSet<String> = path.quests.iter().cloned().collect();
 
     // Which objective needs each flag-paying trigger: the first reader of the
@@ -1129,6 +1229,21 @@ pub(super) fn build_critical_path(
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         };
+        // A story world's choices due here (`flow::StoryCtx::choices`): each
+        // option taken as a `talk-to` with no objective, before the triggers
+        // due here, whose gates a choice may be what opens.
+        for step in choices_before(campaign, anchors, npcs, path, si, area, &begun, &journal)? {
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                loops.before(&mut steps, &mut trigger_step, pos, area, entry, anchors);
+            }
+            steps.push(step.clone());
+            loops.record();
+            if let Some(pos) = step.pos() {
+                loops.stand(area, pos);
+            }
+        }
         for step in due.get(&si).into_iter().flatten() {
             if let Some(pos) = step.pos()
                 && !loops.is_empty()
@@ -1429,10 +1544,11 @@ pub(super) fn build_critical_path(
                         }
                     };
                     steps.push(Step::TalkTo {
-                        objective_id: id.as_str().to_string(),
+                        objective_id: Some(id.as_str().to_string()),
                         npc_id: npc.as_str().to_string(),
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
+                        sets: Vec::new(),
                     });
                     obj_areas.push((id.as_str().to_string(), npc_area, steps.len() - 1));
                 }

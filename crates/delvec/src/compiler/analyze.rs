@@ -225,6 +225,31 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 ));
             }
         }
+        // ... and every story world's path performs what it reads: a flag a
+        // step reads, or the option its selection chose, that no act the world
+        // performs can pay on its path (`Flow::story_debts`) is a walk nobody
+        // can make, whichever world exports it.
+        let story = flow.story();
+        for (k, run) in story.runs.iter().enumerate() {
+            if run.incoherent.is_some() {
+                continue;
+            }
+            for why in &run.unpaid {
+                diags.push(Diagnostic::error(
+                    codes::PATH_INCOHERENT,
+                    "quests",
+                    "/content/quests".to_string(),
+                    format!(
+                        "world/{k}'s exported path (`validation/world-path-{k}.json`) is not a \
+                         playthrough any player can walk: {why}. A story world's path performs \
+                         every act the flags it reads come from — the trigger, the dialogue \
+                         option, the purchase — so each must be performable on it before the \
+                         step that reads it: give the act a producer of its own gate on the \
+                         path, or move the reading behind one"
+                    ),
+                ));
+            }
+        }
     }
 
     // DW0210 belongs to the assembled-world light model (`crate::compiler::light`,

@@ -3156,9 +3156,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, `9`
+  version**; `format_version` is the **contract's own** version, `10`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. **A step may be
+  `choose`** (format 10): `{npc, pos, command, sets}` — a story world's dialogue
+  option that completes no objective, which the world's path takes because its
+  selection chose it or because a flag a later step reads comes from it
+  (`flow::Flow::story_debts`). The harness walks to the NPC and proves the body
+  reachable as for a `talk-to`, chats `command`, and passes when every `sets`
+  term (the option's flags, `dw.f_<flag>` at 1 on the party) holds on the server.
+  `pos` is where the cast ledger stations the NPC for that beat, read with the
+  flags held before the choice. **A step may be
   `ride`** (format 9, spec-0135 §6): `{vehicle, kind, board, pos, medium, rate,
   leave, body, steering_item?}`, spliced in front of the step whose objective declares
   its leg ridden (`ride`), which the route proof carries on that vehicle
@@ -3683,7 +3691,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   world skips has no line, and every other trigger or trap beat is listed after
   the dated account as ambient) and, per world with a path, one **executable path** in the ordinary
   `critical-path.json` contract, which is what the harness's world runs walk. An
-  entry deed no step kind drives is a `mock` step on that path; a world whose deed
+  entry deed no step kind drives is a `mock` step on that path, and a dialogue
+  option the path takes that completes no objective is a `choose` step
+  (`flow::Flow::story_debts`: the path performs every act the flags it reads,
+  and its selection's choice, come from); a world whose deed
   has no bundle function to mock it by, or changes nothing the replay can name,
   and a world whose run is incoherent or fires no ending, carries `path: null` and
   its `path_reason`; a

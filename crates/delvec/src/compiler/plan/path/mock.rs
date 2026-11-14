@@ -117,9 +117,8 @@ pub(super) fn change_terms(
 ///
 /// The terms are read off the world WITHOUT the act — its participation and its
 /// deed removed, walked up to `si` — against that state once the act's own
-/// bundle has fired there ([`crate::compiler::flow::Walk::performed_alone`]). The
-/// world's own walk credits a performed act's flags from the start (spec-0108
-/// §4.1), so it holds no state in front of the act to tell the change by.
+/// bundle has fired there ([`crate::compiler::flow::Walk::performed_alone`]):
+/// the change the act alone makes, whatever the world credits around it.
 pub(super) fn mocks_before(
     campaign: &Campaign,
     flow: &crate::compiler::flow::Flow<'_>,
@@ -170,6 +169,8 @@ pub(super) fn mocks_before(
                 .filter(|(_, a)| a != act)
                 .cloned()
                 .collect(),
+            choices: ctx.choices.clone(),
+            triggers: ctx.triggers.clone(),
         }));
         let mut walk = flow.walk_for(&without);
         for st in &path.steps[..si] {

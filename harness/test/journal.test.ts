@@ -123,6 +123,7 @@ import {
   recordsBinding,
   recordsBindingLine,
   worldOfPath,
+  walkedPathFile,
 } from "../src/journal.ts";
 
 const records = parseRecordsLedger({
@@ -184,6 +185,13 @@ test("a row the build cannot order is counted, never judged", () => {
 test("the world a path walks is named by its file", () => {
   assert.equal(worldOfPath("/b/validation/world-path-3.json", records), "world/3");
   assert.equal(worldOfPath("/b/critical-path.json", records), "world/0");
+});
+
+test("a branch run's records are judged in the world its own path walks, not the mainline", () => {
+  // run.ts is handed critical-path.json and walks the driven world's file.
+  const walked = walkedPathFile("/b/critical-path.json", "/b/validation/world-path-3.json");
+  assert.equal(worldOfPath(walked, records), "world/3");
+  assert.equal(worldOfPath(walkedPathFile("/b/critical-path.json", undefined), records), "world/0");
 });
 
 // The client cuts a chat line at 4096 characters (prismarine-chat's

@@ -393,7 +393,7 @@ pub(super) fn opens_a_way(e: &QuestEffect) -> bool {
 /// without its refusals: those belong to the `talk-to` that owns the beat, and a
 /// `strike-npc` trigger aimed at a body the ledger cannot place simply has no
 /// target, so the path does not perform it.
-fn npc_beat_cell(
+pub(super) fn npc_beat_cell(
     campaign: &Campaign,
     anchors: &AnchorTable,
     npc: &str,
