@@ -769,7 +769,7 @@ pub fn judge_vehicles(
                         "vehicle `{}` is seated at {:?}, outside its own `bounds` {:?}..{:?} — the \
                          re-seat would return it to a mark it is already outside of, every 100 \
                          ticks. Move the mark inside `bounds`, or grow `bounds` to hold it.",
-                        v.id, v.seat, v.bounds.0, v.bounds.1
+                        row.id, v.seat, v.bounds.0, v.bounds.1
                     ),
                 );
             }
@@ -799,7 +799,7 @@ pub fn judge_vehicles(
                          assembled world — a boat on a floor, a cart off a rail, a mount in water \
                          or in a wall is a vehicle nothing can ride. Move the mark into the \
                          medium, or build the medium under it.",
-                        v.id,
+                        row.id,
                         v.entity,
                         v.kind.token(),
                         v.seat
