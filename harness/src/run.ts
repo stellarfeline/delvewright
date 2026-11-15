@@ -69,6 +69,8 @@ import { runHatchStand } from "./hatch-stand.ts";
 import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 import { unreportedWindows } from "./load-window.ts";
 import { judgeResourcePack } from "./resource-pack.ts";
+import { placementTimeoutFromEnv } from "./placement.ts";
+import { budgetFromEnv, describeBudget, runBudget } from "./run-budget.ts";
 import {
   assertEntryChoicesOnPath,
   assertEntryDeedsOnPath,
@@ -101,25 +103,6 @@ function isBotDeath(err: unknown): boolean {
 function retryOnDeathFromEnv(env = process.env): boolean {
   const raw = env["DELVEWRIGHT_RETRY_ON_DEATH"];
   return raw === "1" || raw === "true";
-}
-
-/**
- * Hard wall-clock budget for the whole run (spec-0003: 20 min for M1).
- * Override with DELVEWRIGHT_RUN_TIMEOUT_MS. A run exceeding this fails red — a
- * hung bot must not hang CI.
- */
-function runTimeoutMs(env = process.env): number {
-  const raw = env["DELVEWRIGHT_RUN_TIMEOUT_MS"];
-  if (raw === undefined || raw.length === 0) {
-    return 20 * 60 * 1000;
-  }
-  const ms = Number.parseInt(raw, 10);
-  if (!Number.isInteger(ms) || ms <= 0) {
-    throw new Error(
-      `DELVEWRIGHT_RUN_TIMEOUT_MS must be a positive integer, got ${JSON.stringify(raw)}`,
-    );
-  }
-  return ms;
 }
 
 /**
@@ -300,10 +283,9 @@ async function main(): Promise<number> {
   );
 
   const config = botConfigFromEnv();
-  const budgetMs = runTimeoutMs();
   process.stderr.write(
     `connecting to ${config.host}:${config.port} as ${config.username} ` +
-      `(mc ${config.version}, auth ${config.auth}, budget ${budgetMs}ms)\n`,
+      `(mc ${config.version}, auth ${config.auth})\n`,
   );
 
   const executor = new MineflayerExecutor(config);
@@ -480,6 +462,21 @@ async function main(): Promise<number> {
       );
     }
   }
+
+  // The run's wall-clock budget, derived from the path being walked and the
+  // stages this build turns on; an explicit DELVEWRIGHT_RUN_TIMEOUT_MS
+  // overrides it, said so.
+  const derivedBudget = runBudget({
+    steps: criticalPath.steps,
+    legs: waypoints?.legs,
+    placementMs: placementTimeoutFromEnv(process.env),
+    dieRetryEncounters: dieRetry ? combatPlan!.encounters.length : 0,
+    lethalVolumes: deathLoop ? deathPlan!.volumes.length : 0,
+    crushGates: crush ? deathPlan!.crushGates.length : 0,
+  });
+  const budget = budgetFromEnv(derivedBudget);
+  const budgetMs = budget.ms;
+  process.stderr.write(`${describeBudget(derivedBudget, budget)}\n`);
 
   try {
     let failure: unknown;

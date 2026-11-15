@@ -129,8 +129,10 @@ the same delve image CI and prod use.
 - Multi-player: Carpet fake players fill seats for 2–4-player scenarios *(open, M3)*;
   the mineflayer bot remains the actor. The marker is `@a` so a seat-filling bot in a
   future multiplayer delve still observes it.
-- Budget & flake policy *(built)*: hard wall-clock timeout per run (default 20 min,
-  `DELVEWRIGHT_RUN_TIMEOUT_MS`); a hung bot fails red. One automatic retry
+- Budget & flake policy *(built)*: hard wall-clock timeout per run, derived from the
+  build the run walks (its steps, proven legs, declared waits, fights and scripted
+  deaths, with a stated margin; `DELVEWRIGHT_RUN_TIMEOUT_MS` overrides it, printed as
+  an override); a hung bot fails red. One automatic retry
   *(open — CI currently runs once)*; second failure = red.
 
 ### Compose profiles (`validation/`) *(built)*
