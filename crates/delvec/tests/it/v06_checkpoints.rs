@@ -28,6 +28,12 @@ fn fixture_dir() -> std::path::PathBuf {
 /// also proves the DW0315 (no-stranding), DW0316 (placement) and DW0327
 /// (stealth-zone) obligations pass on the fixture.
 fn build_fixture() -> BuildOutput {
+    with_fixture(|_, _, out| out)
+}
+
+/// Build the fixture and hand the campaign, its plan (seats fixed by the build)
+/// and the output to `f`.
+fn with_fixture<R>(f: impl FnOnce(&delvewright_dsl::Campaign, &Plan, BuildOutput) -> R) -> R {
     let dir = fixture_dir();
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("v06-checkpoints parses");
@@ -60,7 +66,7 @@ fn build_fixture() -> BuildOutput {
         }
     }
     let tree = CommandTree::v1_21_11();
-    emit::build(
+    let out = emit::build(
         &plan,
         &loaded.inputs,
         &structures,
@@ -69,7 +75,8 @@ fn build_fixture() -> BuildOutput {
         None,
         &skins,
     )
-    .expect("every emitted command validates (DW0315/DW0316/DW0327 proofs pass)")
+    .expect("every emitted command validates (DW0315/DW0316/DW0327 proofs pass)");
+    f(&campaign, &plan, out)
 }
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
@@ -616,11 +623,10 @@ fn a_campaign_without_a_bonfire_carries_no_party_wipe_latch() {
 /// teleport is the author's own `teleport` effect, declared where they want one.
 #[test]
 fn a_checkpoint_moves_nobody() {
-    let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v06-checkpoints parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    with_fixture(|campaign, plan, _| checkpoint_moves_nobody(campaign, plan));
+}
+
+fn checkpoint_moves_nobody(campaign: &delvewright_dsl::Campaign, plan: &Plan) {
     let mut checkpoints = 0;
     let mut lines = 0;
     for list in campaign
@@ -636,7 +642,7 @@ fn a_checkpoint_moves_nobody() {
             }
             checkpoints += 1;
             for solo in [false, true] {
-                let cmds = emit::effect_commands(&plan, eff, solo);
+                let cmds = emit::effect_commands(plan, eff, solo);
                 assert!(!cmds.is_empty(), "the checkpoint emits: {eff:?}");
                 for c in &cmds {
                     lines += 1;
