@@ -450,7 +450,9 @@ def test_a_void_the_fixed_ground_stands_in_is_surveyed_as_that_ground(monkeypatc
         return {"standable": stand, "reached": stand, "sealed": [], "joined": [], "unsupported": [],
                 "refused": [{"block": b, "route": None} for b in sorted({b for *_, b in request["blocks"]})
                             if b == "minecraft:podzol"],
-                "containers": [], "malformed": []}
+                "containers": [],
+                "malformed": [{"block": b, "why": "leaves out a property"}
+                              for b in sorted({b for *_, b in request["blocks"]}) if b == "minecraft:podzol"]}
 
     def build(place):
         m = st.Model(place)

@@ -1668,12 +1668,13 @@ class Plot(Place):
             "palette": palette,
         }
         answer = ask_engine(type(self).DELVEC, request)
-        # The blocks the program writes, by id: what a refusal is the program's for.
-        own = {c[3].split("[")[0] for c in blocks if (c[0], c[1], c[2]) not in ground_cells}
-        own |= {b.split("[")[0] for b in palette}
+        # The states the program writes, and their blocks: what a refusal is
+        # the program's for.
+        own_states = {c[3] for c in blocks if (c[0], c[1], c[2]) not in ground_cells} | set(palette)
+        own = {b.split("[")[0] for b in own_states}
         problems = []
         for b in answer["malformed"]:
-            if b["block"].split("[")[0] in own:
+            if b["block"] in own_states:
                 problems.append(f"  {b['block']}: {b['why']}")
         for u in answer["unsupported"]:
             if tuple(u["cell"]) not in ground_cells:
