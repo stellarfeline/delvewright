@@ -264,9 +264,31 @@ const STAGES: [&str; 13] = [
     "unless",
 ];
 
-/// One call's quota, read off the files the server loads: the call, then per
-/// line its `execute` stages, its command and, for a call, the callee's quota.
-/// No same-tick cycle is expected in this fixture's pack.
+/// The most players a delve is made for: every source a player selector forks
+/// into is counted this many times.
+const PARTY: u64 = 4;
+
+/// How many sources the entity argument `sel` forks into at a full party.
+fn fan(sel: &str) -> u64 {
+    let limit = sel
+        .split(['[', ',', ']'])
+        .find_map(|t| t.strip_prefix("limit="))
+        .map(|n| n.parse::<u64>().unwrap());
+    let player = sel.contains("type=minecraft:player") || sel.contains("type=player,");
+    match &sel[..2.min(sel.len())] {
+        "@s" | "@n" => limit.unwrap_or(1),
+        "@p" | "@r" => limit.unwrap_or(1).min(PARTY),
+        "@a" => limit.map_or(PARTY, |l| l.min(PARTY)),
+        "@e" if player => limit.map_or(PARTY, |l| l.min(PARTY)),
+        "@e" => limit.unwrap_or_else(|| panic!("an unbounded fork in the fixture: {sel}")),
+        _ => 1,
+    }
+}
+
+/// One call's quota at a full party, read off the files the server loads: the
+/// call, then per line its `execute` stages once, and its command or, for a
+/// call, the callee's quota once per source the line's forks leave. No
+/// same-tick cycle is expected in this fixture's pack.
 fn quota(
     fns: &std::collections::BTreeMap<String, String>,
     f: &str,
@@ -282,15 +304,30 @@ fn quota(
     for l in commands(body) {
         let t: Vec<&str> = l.trim_start_matches('$').split_whitespace().collect();
         let run = t.iter().rposition(|w| *w == "run");
-        let head = run.map_or(&t[..0], |r| &t[..r]);
-        if t.first() == Some(&"execute") && run.is_none() {
-            q += t.iter().filter(|w| STAGES.contains(w)).count().max(1) as u64;
+        let terminal = t.first() == Some(&"execute") && run.is_none();
+        let head = run.map_or(if terminal { &t[..] } else { &t[..0] }, |r| &t[..r]);
+        let sources: u64 = (0..head.len().saturating_sub(1))
+            .filter(|&i| {
+                matches!(head[i], "as" | "at") || (head[i] == "entity" && i > 0 && head[i - 1] == "facing")
+            })
+            .map(|i| fan(head[i + 1]))
+            .product();
+        assert!(
+            !head.windows(2).any(|w| w == ["on", "passengers"]),
+            "an unbounded fork in the fixture: {l}"
+        );
+        if terminal {
+            // Its last stage is the command itself, once per source.
+            q += (t.iter().filter(|w| STAGES.contains(w)).count() as u64).saturating_sub(1)
+                + sources;
             continue;
         }
-        q += head.iter().filter(|w| STAGES.contains(w)).count() as u64 + 1;
+        q += head.iter().filter(|w| STAGES.contains(w)).count() as u64;
         let tail = run.map_or(&t[..], |r| &t[r + 1..]);
         if tail.first() == Some(&"function") && tail.get(1).is_some_and(|c| *c != f) {
-            q += quota(fns, tail[1], memo) - 1;
+            q += sources * quota(fns, tail[1], memo);
+        } else {
+            q += sources;
         }
     }
     memo.insert(f.to_string(), q);

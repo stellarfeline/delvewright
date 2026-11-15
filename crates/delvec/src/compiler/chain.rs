@@ -20,15 +20,17 @@
 //!
 //! [`measure`] reads the shipped tree and states, for every function, its
 //! **chain**: one for the call, plus every line's cost, where a line costs its
-//! `execute` stages (every `execute` sub-command keyword before `run`, as the
-//! pinned command tree names them — an upper bound, since a keyword can also be
-//! an argument's literal), one for its final command, and a called function's
-//! chain. It is a count **per executing source**: a line that forks over
-//! several entities (`execute as @a run …`) runs its tail once per entity, a
-//! factor no reading of the bytes can bound. A function whose chain exceeds the
-//! limit — or that reaches a call cycle no count bounds — refuses the build
-//! ([`check`]); since a caller's chain contains its callee's, refusing every
-//! function refuses every root.
+//! `execute` stages once (every `execute` sub-command keyword before `run`, as
+//! the pinned command tree names them — an upper bound, since a keyword can
+//! also be an argument's literal), and its final command, or a called
+//! function's chain, once per source its forks leave. The chain is measured at
+//! a full party ([`PARTY`]): a fork over the players (`execute as @a …`) runs
+//! its tail once per player, a fork over other entities once per entity its
+//! selector's `limit` admits, and a fork nothing bounds (`@e` with no `limit`,
+//! `on passengers`) leaves the chain unbounded. A function whose chain exceeds
+//! the limit — or that reaches a call cycle no count bounds, or a fork nothing
+//! bounds — refuses the build ([`check`]); since a caller's chain contains its
+//! callee's, refusing every function refuses every root.
 //!
 //! One cycle has a bound the bytes state: a **counted loop**, a function that
 //! calls itself only under `if score <h> <o> matches ..<n>`, adds one to that
