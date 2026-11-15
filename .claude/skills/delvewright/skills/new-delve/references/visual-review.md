@@ -53,7 +53,7 @@ What the machine cannot say, and this review can: **the place is that place with
 delvec --prefabs "$DELVEWRIGHT_PREFABS" frames "$DELVE_OUTPUT"
 ```
 
-It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json` under `"$DELVE_OUTPUT"/frames/`. **Quote its first line in the review**: `renderer: lumenwright <version>, backend <name> …` says what the frames came off, and whether a GPU drew them or the CPU did (`auto: fell back to cpu` with the reason). A shot naming a world the build directory does not hold is refused by name with the remedy, a rebuild, before anything is drawn; so is a plan an older engine wrote. `--shot <id>` draws one shot (repeatable), `--labels` stamps every target's outline and name on the frame, `--backend cpu` names the CPU. No server boot, no install, no other program: a frame is never drawn from a world the build did not write.
+It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json` under `"$DELVE_OUTPUT"/frames/`. **Quote its first line in the review**: `renderer: lumenwright <version>, backend <name> …` says what the frames came off — the CPU, a wgpu GPU (Metal, Vulkan, DX12, GL) or CUDA — and, under `auto`, each backend it passed over with the reason (`auto: passed over …`). A shot naming a world the build directory does not hold is refused by name with the remedy, a rebuild, before anything is drawn; so is a plan an older engine wrote. `--shot <id>` draws one shot (repeatable), `--labels` stamps every target's outline and name on the frame, `--backend cpu` names the CPU. No server boot, no install, no other program: a frame is never drawn from a world the build did not write.
 
 ## What the set costs
 

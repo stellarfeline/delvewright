@@ -80,7 +80,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `codes` | every DW code this binary declares, one JSON object per line — `code`, `tier` (`Analysis`, `Build`, or null for a code of a verb with its own exit table), `subject`, `name`, `module` — sorted by code; the registry every `dw_code!` declaration writes itself into | — |
 | `l10n-inventory <dir>` | l10n key inventory as JSON, each row with its kind, speaker, situation and staleness, and an art title's row with the `glyphs` its font draws (transcreation input) | `--lang` |
 | `l10n-apply <dir> --table <f>` | write the `--lang` sidecar from a table of canonical English → translation (spec-0071 §4) — **the verb a translating agent has instead of addressing positional keys**. Every inventory row whose English the table carries is written with its `source`; a row already translated from unchanged English is kept; a row translated with no `source` is kept and counted apart, since nothing can say whether it still matches. The sidecar is exactly the inventory, so an orphan row is impossible and an inserted effect renumbers the `fx.` keys under the tool rather than under the translator. Prints `N of M rows translated`, every English still missing, every table entry that matched no row, and every English two keys share — the one thing a table keyed by English cannot say, so the sidecar stays directly editable for those. Exit 1 when anything is missing or unmatched, the signal `fmt --check` gives; the bytes are written either way, in canonical form | `--lang`, `--table <file\|->` |
-| `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|metal\|vulkan\|dx12`, `--threads N`, `--textures <jar>` |
+| `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|metal\|vulkan\|dx12\|gl\|cuda`, `--threads N`, `--textures <jar>` |
 | `frames --campaign <dir>` | one quick frame of a campaign's load world, assembled in-process, for placing things (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]` (yaw 0 south, 90 west, 180 north, 270 east; positive pitch looks down) `[--frame node/<place>]` (x,y,z read in that place's piece-local frame, its low corner `allocation`'s `world_min`; the world position printed; a place with no box exit 1) \| `--at <anchor>\|node/<place> [--orbit <deg>] [--dist <n>]` (the bearing 0 due south of the subject, turning clockwise seen from above; an anchor's eye pulled into open air toward it; a place's box framed whole from outside at the fit distance, never pulled), `--program node/<place>` (that place drawn from its program as it stands — expanded as `detail` expands it, committed or not, its gates passing or not, each refusal printed — in place of its committed piece; nothing written to the campaign or the library), `--labels`, `--served` (draw only what the client draws from the camera at the served view distance), `--size 1024`, `-o frame.png`, draw flags; the validation's binding notes are counted in one line naming the `delvec validate` that prints them, as `detail --check` counts them |
 | `blocking-chart <dir>` | per-elevation cutaway floor plans (spec-0015); the corridor tint is the build's proven critical-path route, stated in the index | `-o blocking-chart`, `--timing` |
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
@@ -914,7 +914,7 @@ that read them rather than globally, so `delvec build --help` does not grow a
 flag it has no use for:
 
 ```
-delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [--backend auto|cpu|metal|vulkan|dx12]
+delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [--backend auto|cpu|metal|vulkan|dx12|gl|cuda]
                                              # every review frame of a build, from the worlds it wrote (§4a)
 delvec frames --campaign <dir> (--camera x,y,z,yaw,pitch[,fov] [--frame node/<place>] | --at <anchor>|node/<place>) [--program node/<place>] [-o frame.png]
                                              # one frame of a campaign's load world
@@ -1375,8 +1375,8 @@ install step. Attribution: [`../ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md).
 
 **The dependency and its pin.** `crates/delvec/Cargo.toml` takes `lumenwright`
 from crates.io by exact version (`version = "=<x.y.z>"`) with
-`default-features = false, features = ["gpu"]`, as ADR-0023 §5 takes
-Nucleation; `versions.toml [render] lumenwright_version` holds the same version,
+`default-features = false, features = ["gpu", "cuda"]` — every backend it has,
+since no capability is gated (ADR-0023) — as ADR-0023 §5 takes Nucleation; `versions.toml [render] lumenwright_version` holds the same version,
 `frames::RENDERER_VERSION` states it on every frame, and
 `validation/check-versions.sh` reds when any of the three differ or the
 dependency is named by `git` or `path`. Its `glam` is reached
@@ -1386,11 +1386,19 @@ rectangle, jar, the build's resource pack, camera, sky, mode, backend, size,
 the sea level an hq frame carries to the horizon)
 in, RGBA pixels and the renderer's own statistics out.
 
-**Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
-macOS, Vulkan or DX12 elsewhere — and falls back to the CPU when there is
-none, saying so on the first line (`renderer: lumenwright <version>, backend cpu
-(…) (auto: fell back to cpu: <why>)`). `--backend cpu`, `metal`, `vulkan` or `dx12`
-names one, and a named backend that is not available is `DW0723`. `--threads` sizes the
+**Backends.** Every backend Lumenwright has is in the binary: the CPU; Metal,
+Vulkan, DX12 and GL through wgpu; and CUDA, whose kernel PTX is packaged in the
+crate and whose driver library (`libcuda`) is loaded at run time, so a machine
+without it still runs. `--backend auto` (default) takes the first that opens for
+the frame's mode — an hq frame tries CUDA, then the best hardware wgpu adapter
+(discrete before integrated; Metal, Vulkan, DX12, then GL), then the CPU; a
+quick frame tries the best wgpu adapter, then the CPU, CUDA having no
+rasterizer — and the first line names the backend that drew and each one it
+passed over, with the renderer's reason (`renderer: lumenwright <version>,
+backend <name> (auto: passed over cuda: <why>; gpu: <why>)`). A software wgpu
+adapter (llvmpipe, lavapipe, WARP) is never taken. `--backend cpu`, `metal`,
+`vulkan`, `dx12`, `gl` or `cuda` names one, and a named backend that is not
+available is `DW0723`. `--threads` sizes the
 CPU backend's pool (default every core); the CPU backend's pixels are the same
 at any count. A GPU frame is not byte-stable across drivers, so nothing
 compares one; every gate draws on the CPU.
@@ -1440,6 +1448,22 @@ each run's first line naming its backend, against the pinned client jar
 | The gallery's review frames, Metal | 200 quick, 1024² | 39.58 s | 133.6 MB | 0.143 / 0.424 s | 120 s |
 | One gallery showcase camera (`hall-exterior`), CPU | 1 hq, 1600×900, 300 spp | 26.99 s | 127.5 MB | 25.83 s | 10 min (at 256 spp) |
 | One gallery showcase camera (`hall-exterior`), Metal | 1 hq, 1600×900, 300 spp | 2.92 s | 194.3 MB | 1.65 s | 60 s (at 256 spp) |
+
+On the remote build machine (an RTX 4070 Ti SUPER beside a Ryzen 7 7800X3D, 16
+threads, under WSL2, other jobs sharing the CPU), the instrument `delvec` built
+`--release` from `1b69f53bc474a5f1d1eb1efe4bab1ecedc932ec1` with Lumenwright at
+`424f870f15e01df8e2c1050d0faf4af57c042cfc` (the branch carrying the CUDA backend), wall and peak resident set
+read by GNU `/usr/bin/time -v` (its kibibytes as MB of 10^6 bytes), the frame's own time from the `drew` line,
+driver library `/usr/lib/wsl/lib` (see Lumenwright's backends page on WSL):
+
+| Set, backend | Frames | Wall | Peak resident | Per frame | Ceiling |
+|---|---|---|---|---|---|
+| One gallery showcase camera (`hall-exterior`), CPU (16 threads) | 1 hq, 1600×900, 300 spp | 35.49 s | 789.5 MB | 25.16 s | 10 min (at 256 spp) |
+| One gallery showcase camera (`hall-exterior`), CUDA, named | 1 hq, 1600×900, 300 spp | 20.87 s | 932.6 MB | 2.24 s | 60 s (at 256 spp) |
+| One gallery showcase camera (`hall-exterior`), CUDA, by `auto` | 1 hq, 1600×900, 300 spp | 34.10 s, 41.70 s | 927.7 MB, 961.7 MB | 4.18 s, 2.75 s | 60 s (at 256 spp) |
+
+The CUDA frame differs from the CPU's in 62 of its 1 440 000 pixels, each by
+1/255; the three CUDA frames are byte-identical to one another.
 
 The Armoury is content `demo/the-armoury` at `7ee698e9a19204f5c2deff290931dc7eb156e949`,
 whose documents declare `dsl_version` 0.49.0, newer than the instrument's:

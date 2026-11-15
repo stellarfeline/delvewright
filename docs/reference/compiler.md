@@ -6919,9 +6919,11 @@ the mode, and returns the pixels with the renderer's own statistics.
   declared `lighting` or a `dark` stamp, a sky a step set, a weather that is not
   clear) are counted on the binding line as drawn quick until the hq light
   frames land (spec-0112 phase 2).
-- **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal,
-  Vulkan, DX12 — and falls back to the CPU, saying so on the first line;
-  `--backend cpu|metal|vulkan|dx12` names one, and a named backend that is not available is
+- **Backends.** `--backend auto` (default) takes the first backend that opens
+  for the frame's mode — hq: CUDA, then the best hardware wgpu adapter (Metal,
+  Vulkan, DX12, GL), then the CPU; quick: the best wgpu adapter, then the CPU —
+  and names on the first line each backend it passed over and why;
+  `--backend cpu|metal|vulkan|dx12|gl|cuda` names one, and a named backend that is not available is
   refused (`DW0723`). The CPU backend's pixels are a function of the inputs
   alone at any `--threads` (`tests/it/frames.rs` draws one build at 1 and at 10
   threads and compares every byte); a GPU frame is not byte-stable across
@@ -6937,7 +6939,7 @@ the mode, and returns the pixels with the renderer's own statistics.
 
 ```
 delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
-    [--backend auto|cpu|metal|vulkan|dx12] [--threads N] [--textures <jar>]
+    [--backend auto|cpu|metal|vulkan|dx12|gl|cuda] [--threads N] [--textures <jar>]
 delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] [--frame node/<place>] | --at <anchor>
     [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--served] [--size 1024] [draw flags]
 ```
@@ -6955,7 +6957,7 @@ shots listed). **What a frame shows** is read off the build's review record
 (`validation/review-frames.json`, below), which `framing::resolve_targets` —
 the one sight rule — wrote over the shot's own world: the index and the
 manifests never re-derive it. The binding lines: first `renderer: lumenwright
-<rev>, backend <name> (<auto | auto: fell back to cpu — why | named>)`, then `frames: <m>
+<rev>, backend <name> (<auto | auto: passed over <backend>: <why>; … | named>)`, then `frames: <m>
 of <m> shot(s) rendered over <k> world(s) in <s> s, peak <MiB> MiB; per frame
 <min> / <median> / <max> s (min / median / max) -> <index>` and `shows: <t> object(s) in frame over <m>
 frame(s), <u> not drawn by the renderer (DW1039) in <f> frame(s); skies: <j> at

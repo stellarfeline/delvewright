@@ -229,10 +229,11 @@ PY
   else
     fail "crates/delvec/Cargo.toml requires lumenwright '$LW_REQ', not render.lumenwright_version '=$LUMENWRIGHT_VERSION'"
   fi
-  if [ "$LW_DEFAULTS" = "False" ] && [ "$LW_FEATURES" = "gpu" ]; then
-    pass "lumenwright is taken with default-features = false, features = [\"gpu\"]"
+  # Every backend Lumenwright has (ADR-0023: no capability is gated): wgpu's and CUDA's.
+  if [ "$LW_DEFAULTS" = "False" ] && [ "$LW_FEATURES" = "gpu,cuda" ]; then
+    pass "lumenwright is taken with default-features = false, features = [\"gpu\", \"cuda\"]"
   else
-    fail "crates/delvec/Cargo.toml takes lumenwright with default-features '$LW_DEFAULTS' and features '$LW_FEATURES', not false and [\"gpu\"]"
+    fail "crates/delvec/Cargo.toml takes lumenwright with default-features '$LW_DEFAULTS' and features '$LW_FEATURES', not false and [\"gpu\", \"cuda\"]: every backend Lumenwright has is in the binary"
   fi
 else
   fail "crates/delvec/Cargo.toml missing (cannot verify the lumenwright pin)"
