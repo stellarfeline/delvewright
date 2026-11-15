@@ -258,12 +258,14 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
                 "scoreboard players set @s dw.hop {}",
                 hop_arc(Some(1.0)).len()
             ),
-            "scoreboard players set @s dw.hop_arc 1".to_string()
+            "scoreboard players set @s dw.hop_arc 1".to_string(),
+            "execute store result score @s dw.hop_y run data get entity @s Pos[1] 1024".to_string(),
         ]
     );
     assert!(
         fns["load"].contains(&"scoreboard objectives add dw.hop dummy".to_string())
             && fns["load"].contains(&"scoreboard objectives add dw.hop_arc dummy".to_string())
+            && fns["load"].contains(&"scoreboard objectives add dw.hop_y dummy".to_string())
     );
     assert!(fns["tick"].contains(&"function souls-bonfire:hop_tick".to_string()));
     assert_eq!(
@@ -285,15 +287,23 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
     );
 
     // The arc: one relative teleport per remaining-tick value, counting down
-    // from the arc's length to 1, whose steps are the arc's own differences
-    // and sum to exactly zero.
+    // from the arc's length to 2, whose steps are the arc's own differences;
+    // and on the last tick the body is put back on the height it took off
+    // from, whatever moved it on the way.
     for (i, height) in [(1usize, Some(1.0)), (2, Some(0.5))] {
         let arc = hop_arc(height);
         let body = &fns[&format!("hop_arc_{i}")];
+        let (landing, steps) = body.split_last().expect("an arc has lines");
+        assert_eq!(
+            landing,
+            "execute if score @s dw.hop matches 1 store result entity @s Pos[1] double \
+             0.0009765625 run scoreboard players get @s dw.hop_y",
+            "the landing is the takeoff height, not a relative step"
+        );
         let mut y = 0.0_f64;
         let mut expect_remaining = arc.len();
         let mut seen = 0usize;
-        for l in body {
+        for l in steps {
             let rest = l
                 .strip_prefix("execute if score @s dw.hop matches ")
                 .unwrap_or_else(|| panic!("an arc line is a guarded step: {l}"));
@@ -313,8 +323,12 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
             );
             seen += 1;
         }
-        assert!(seen >= arc.len() - 2, "every tick that moves has its step");
-        assert_eq!(y, 0.0, "the steps of arc {i} sum to exactly zero");
+        assert!(seen >= arc.len() - 3, "every tick that moves has its step");
+        assert_eq!(
+            y * 1024.0,
+            f64::from(arc[arc.len() - 2]),
+            "the steps of arc {i} reach its last height before the landing"
+        );
     }
 
     // Never released: no line the build emits for these bodies writes
@@ -328,10 +342,10 @@ fn a_hop_never_releases_the_body_and_ends_where_it_began() {
     assert!(
         fns.iter()
             .filter(|(n, _)| n.starts_with("hop_"))
-            .all(|(_, b)| b
-                .iter()
-                .all(|l| !l.contains("Motion") && !l.contains("data "))),
-        "the hop is teleports and scores, nothing else"
+            .all(|(_, b)| b.iter().all(|l| !l.contains("Motion")
+                && (!l.contains("data ")
+                    || l == "execute store result score @s dw.hop_y run data get entity @s Pos[1] 1024"))),
+        "the hop is teleports and scores, its takeoff height read once and written once"
     );
 }
 
@@ -583,6 +597,35 @@ fn dw1101_a_move_its_body_cannot_make() {
     let hit = with(&d, "DW1101");
     assert_eq!(hit.len(), 1, "{d:#?}");
     assert!(hit[0].message.contains("watches nobody"));
+}
+
+/// A body the story walks goes at most twice a player's sprint
+/// (`delvewright_dsl::metrics::story_pace_cap_blocks_per_tick`, 0.5612 blocks
+/// a tick): the town's festival walks were declared at 1.0 and its fox at 1.3.
+#[test]
+fn dw1113_a_body_the_story_moves_faster_than_twice_a_sprint() {
+    let cap = delvewright_dsl::metrics::story_pace_cap_blocks_per_tick();
+    let walks = |npc: f64, actor: f64| {
+        campaign(vec![
+            json!({"type": "move-npc", "npc": "npc/keeper", "to": {"anchor": "anchor/gate"},
+                   "speed": npc}),
+            json!({"type": "move-actor", "actor": "actor/herald",
+                   "to": {"anchor": "anchor/gate"}, "speed": actor}),
+        ])
+        .0
+    };
+    let d = diags(&walks(1.0, 1.3));
+    let hit = with(&d, "DW1113");
+    assert_eq!(hit.len(), 2, "{d:#?}");
+    assert!(hit.iter().all(|h| h.path.ends_with("/speed")), "{hit:#?}");
+    assert!(
+        hit[0].message.contains("move-npc") && hit[1].message.contains("move-actor"),
+        "{hit:#?}"
+    );
+    // Perturbation: at the cap and under it, nothing.
+    assert!(with(&diags(&walks(cap, 0.15)), "DW1113").is_empty());
+    // Just over it, the refusal.
+    assert_eq!(with(&diags(&walks(cap + 0.001, 0.15)), "DW1113").len(), 1);
 }
 
 #[test]

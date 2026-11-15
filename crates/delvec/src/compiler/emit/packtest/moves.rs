@@ -19,7 +19,8 @@ use delvewright_dsl::{BodyKey, HOP_UNIT, hop_arc, hop_decimal};
 /// * on the arc's peak tick, the body stands the arc's peak above where it
 ///   stood — it moved, by the declared height;
 /// * after the last tick, it stands on the height it left, and counts 0 — it
-///   came back.
+///   came back — and, for a skinned body, it came back although it crouched
+///   and stood again at the peak, which the game answers by moving the feet.
 ///
 /// A hop that never fires — a start line that selects nobody, a driver that
 /// steps nobody — fails the first or the second reading. The template is one
@@ -110,6 +111,16 @@ pub(super) fn emit_hop_packtests(plan: &Plan, out: &mut BuildOutput) {
             "scoreboard players operation {now} dw.sys -= {base} dw.sys"
         ));
         b.push(format!("assert score {now} dw.sys matches {peak}"));
+        // A skinned body grows its box in the air — a crouch and a stand at
+        // the peak — and the game re-centres the larger box, moving the feet
+        // (`docs/reference/npc-moves.md` §9). The landing must not keep that.
+        let skinned = key
+            .resolve(c)
+            .is_some_and(|b| b.worn_entity() == "minecraft:mannequin");
+        if skinned {
+            b.push(format!("data merge entity {body} {{pose:\"crouching\"}}"));
+            b.push(format!("data merge entity {body} {{pose:\"standing\"}}"));
+        }
 
         // Down: the rest of the arc.
         for _ in peak_tick..arc.len() {

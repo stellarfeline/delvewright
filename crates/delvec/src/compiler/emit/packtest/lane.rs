@@ -17,7 +17,9 @@ use super::*;
 ///   ahead (the lane is walked, not teleported through).
 /// * `souls_td_lane_release` — routing hands over to native AI at aggro range:
 ///   with no player inside `aggro_radius` the whole squad is re-asserted onto
-///   the lane; with a player inside it, every mob is `Patrolling:0b`.
+///   the lane; the leader hurt by a player from beyond the radius is released
+///   alone, with a `follow_range` no narrower than the radius; with a player
+///   inside it, every mob is `Patrolling:0b`.
 /// * `souls_td_aggro_edge` — a `summon: aggro-edge` wave really materializes on
 ///   its perception ring around the defended anchor: full authored count, every
 ///   mob at its own `follow_range` from the defended point, measured from the
@@ -139,6 +141,29 @@ pub(super) fn emit_td_lane_packtests(
             "execute store result score #d_tdrel dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
         ));
         b.push(format!("assert score #d_tdrel dw.sys matches {total}"));
+        // A mob hurt by a player from beyond the radius answers: the next cycle
+        // releases it, with its perception widened past the radius, and leaves
+        // the rest of the squad on the lane.
+        b.push(format!(
+            "damage @e[tag={lead},limit=1] 1 minecraft:player_attack by {sel}"
+        ));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #h_tdrel dw.sys if entity @e[tag={lead},nbt={{Patrolling:0b}}]"
+        ));
+        b.push("assert score #h_tdrel dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #r_tdrel dw.sys run attribute @e[tag={lead},limit=1] \
+             minecraft:follow_range base get"
+        ));
+        b.push(format!("assert score #r_tdrel dw.sys matches {r}.."));
+        b.push(format!(
+            "execute store result score #k_tdrel dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!(
+            "assert score #k_tdrel dw.sys matches {}",
+            total.saturating_sub(1)
+        ));
         // Bring the squad onto the pinned dummy rather than moving the player:
         // the test's own dummy stays exactly where the batch put it, so nothing
         // it leaves behind can perturb a sibling. `{r}` blocks is the release
@@ -201,7 +226,6 @@ pub(super) fn emit_td_lane_packtests(
         b.push(format!("kill @e[tag={tag}]"));
         b.push(format!("tag {sel} remove dw_pt_tdrst"));
         write("souls_td_lane_reseat", b);
-        let _ = r;
     }
 
     if let Some((w, centre)) = waves.iter().find_map(|w| {

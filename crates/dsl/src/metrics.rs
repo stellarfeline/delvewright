@@ -324,6 +324,40 @@ pub const SPRINT_SPEED_BLOCKS_PER_SECOND: f64 = 5.612;
 /// The wiki page [`SPRINT_SPEED_BLOCKS_PER_SECOND`] is read from.
 pub const SPRINT_SPEED_PAGE: &str = "Sprinting";
 
+/// **A player's sprint on the flat, in blocks per tick**, from the pinned
+/// jar's own rules: the engine's body simulator ([`body::Rules::Game`],
+/// `docs/reference/body-movement.md` §2–§3: `movement_speed` `0.1`, the sprint
+/// modifier `+0.3` `ADD_MULTIPLIED_TOTAL`, the ground acceleration
+/// `speed · 0.21600002 / f³` and the drag `f · 0.91` on default ground) run
+/// holding forward and sprint until the pace stops changing. `0.2806`; the
+/// wiki's [`SPRINT_SPEED_BLOCKS_PER_SECOND`] is the cross-check.
+#[must_use]
+pub fn sprint_blocks_per_tick() -> f64 {
+    let input = body::Input {
+        sprint: true,
+        ..body::Input::forward(0.0)
+    };
+    body::saturated_pace(
+        &body::Attributes::PLAYER,
+        body::Rules::Game,
+        body::Material::Plain,
+        &input,
+    )
+}
+
+/// How many of a player's sprints the fastest body the story moves may go
+/// (`DW1113`).
+pub const STORY_PACE_SPRINTS: f64 = 2.0;
+
+/// **The fastest a body the story moves may go, in blocks per tick**:
+/// [`STORY_PACE_SPRINTS`] times [`sprint_blocks_per_tick`]. A `move-npc` or
+/// `move-actor` `speed` above it is `DW1113`; the walk speed the engine picks
+/// when none is declared is under it.
+#[must_use]
+pub fn story_pace_cap_blocks_per_tick() -> f64 {
+    STORY_PACE_SPRINTS * sprint_blocks_per_tick()
+}
+
 /// Server ticks per second.
 pub const TICKS_PER_SECOND: f64 = 20.0;
 
@@ -1714,6 +1748,21 @@ pub fn export(metrics: &Metrics) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sprint pace is the jar's rules run through the simulator; the
+    /// wiki's figure, which shares nothing with it, agrees to the millimetre a
+    /// second, and the story's pace cap is twice it.
+    #[test]
+    fn the_sprint_pace_is_the_simulators_and_the_wiki_agrees() {
+        let pace = sprint_blocks_per_tick();
+        assert!(
+            (pace * TICKS_PER_SECOND - SPRINT_SPEED_BLOCKS_PER_SECOND).abs() < 0.001,
+            "simulated sprint {} blocks/s vs the wiki's {SPRINT_SPEED_BLOCKS_PER_SECOND}",
+            pace * TICKS_PER_SECOND
+        );
+        assert!((story_pace_cap_blocks_per_tick() - 2.0 * pace).abs() < 1e-12);
+        assert!((0.5611..0.5613).contains(&story_pace_cap_blocks_per_tick()));
+    }
 
     #[test]
     fn the_table_is_consistent_with_itself_and_with_the_player_half() {

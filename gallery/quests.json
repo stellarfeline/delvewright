@@ -1939,7 +1939,7 @@
                   }
                 }
               ],
-              "speed": 1.0,
+              "speed": 0.56,
               "to": {
                 "anchor": "anchor/pedestal"
               },
@@ -2021,7 +2021,7 @@
                 "verb": "arrives"
               },
               "npc": "npc/warden",
-              "speed": 1.0,
+              "speed": 0.56,
               "to": {
                 "anchor": "anchor/pocket"
               },
@@ -2929,7 +2929,7 @@
                   }
                 }
               ],
-              "speed": 1.2,
+              "speed": 0.56,
               "to": {
                 "anchor": "anchor/vantage",
                 "offset": [
@@ -3603,7 +3603,7 @@
                 "text": "The spider takes the yard the long way, on its feet.",
                 "verb": "arrives"
               },
-              "speed": 1.0,
+              "speed": 0.56,
               "to": {
                 "anchor": "anchor/pocket"
               },
@@ -3791,7 +3791,7 @@
                 "verb": "arrives"
               },
               "npc": "npc/marshal",
-              "speed": 1.0,
+              "speed": 0.56,
               "to": {
                 "anchor": "anchor/pocket"
               },

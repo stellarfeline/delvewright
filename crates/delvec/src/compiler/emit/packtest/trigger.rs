@@ -488,6 +488,15 @@ fn objective_drive(plan: &Plan, oid: &str, complete: Option<bool>) -> Vec<String
         obj_score(oid),
         if complete == Some(true) { 1 } else { 0 }
     ));
+    // A limited objective's every guard reads its expired score (spec-0133
+    // §3): the drive owns it, or a sibling that left it expired decides
+    // whether the window is open.
+    if o.limit().is_some() {
+        v.push(format!(
+            "scoreboard players set {party} {} 0",
+            expired_score(oid)
+        ));
+    }
     v
 }
 
