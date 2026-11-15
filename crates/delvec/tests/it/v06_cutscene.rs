@@ -738,5 +738,12 @@ fn the_cutscene_return_is_judged_with_two_players() {
     ] {
         assert!(t.contains(want), "`{want}` in the template: {t}");
     }
-    assert!(t.contains(&format!("function {NS}:cs_end_")), "{t}");
+    // One drive of the real bracket, one set of assertions.
+    assert_eq!(
+        t.matches(&format!("function {NS}:cs_end_")).count(),
+        1,
+        "{t}"
+    );
+    assert_eq!(t.matches("dummy dwcsr0 spawn").count(), 1, "{t}");
+    assert_eq!(t.matches("assert score ").count(), 4, "{t}");
 }
