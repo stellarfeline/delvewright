@@ -39,7 +39,7 @@ import type { MineflayerExecutor } from "../executor.ts";
  * one tick away; this is a generous ceiling on "one tick", not a guess at how long
  * dying takes.
  */
-const LETHAL_DEATH_TIMEOUT_MS = 10_000;
+export const LETHAL_DEATH_TIMEOUT_MS = 10_000;
 
 /** How long to wait for the collected stake's hardware to be retired. */
 const MARKER_RETIRE_TIMEOUT_MS = 5_000;

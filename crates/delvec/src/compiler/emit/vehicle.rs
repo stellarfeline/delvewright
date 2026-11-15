@@ -104,6 +104,44 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
     )
 }
 
+/// **The vehicle body actor `actor` is seated on** (spec-0135 §13): the plan
+/// of the one body of the vehicle whose `rider` it is, or `None` for an
+/// actor on its own feet.
+pub(super) fn rider_vehicle<'p>(plan: &'p Plan, actor: &str) -> Option<&'p VehiclePlan> {
+    let v = delvewright_dsl::vehicle_of_rider(plan.campaign, actor)?;
+    plan.vehicles.iter().find(|p| p.id == v.id.as_str())
+}
+
+/// **The actor's body put aboard its vehicle** (spec-0135 §13), by the pinned
+/// game's `ride <actor> mount <vehicle>`, whenever both stand: the puppet,
+/// held as it is, on the vehicle held without its AI; or the twin, a free
+/// body, on a mount given its AI back, as a player's boarding gives it. A
+/// line that finds no body, or no vehicle, does nothing. Empty for an actor
+/// that is no vehicle's rider.
+pub(super) fn rider_aboard_lines(plan: &Plan, actor: &str) -> Vec<String> {
+    let Some(v) = rider_vehicle(plan, actor) else {
+        return Vec::new();
+    };
+    let safe = plan::safe_local(actor);
+    let tag = v.tag();
+    let twin =
+        format!("@e[tag=dw_actor_{safe},tag=!dw_pup_{safe},type=!minecraft:interaction,limit=1]");
+    let mut out = vec![
+        format!(
+            "execute if entity @e[tag={tag}] as @e[tag=dw_pup_{safe},limit=1] run ride @s mount @e[tag={tag},limit=1]"
+        ),
+        format!(
+            "execute if entity @e[tag={tag}] as {twin} run ride @s mount @e[tag={tag},limit=1]"
+        ),
+    ];
+    if v.kind == VehicleKind::Mount {
+        out.push(format!(
+            "execute as {twin} on vehicle run data merge entity @s[tag={tag}] {{NoAI:0b}}"
+        ));
+    }
+    out
+}
+
 /// The removal of one vehicle's bodies: a rider set down, the body leaving
 /// unseen — the removal a wave's re-seat performs.
 pub(super) fn vehicle_removal_lines(ns: &str, v: &VehiclePlan) -> Vec<String> {
@@ -276,6 +314,10 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
         }
         let mut seat = vehicle_removal_lines(ns, v);
         seat.push(vehicle_summon(plan, v));
+        // spec-0135 §13: the actor it seats, put aboard when it stands.
+        if let Some(r) = &plan.campaign.quests.content.vehicles[v.index].rider {
+            seat.extend(rider_aboard_lines(plan, r.as_str()));
+        }
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
         let p = summon_point(v);
         let mut reseat = vec![

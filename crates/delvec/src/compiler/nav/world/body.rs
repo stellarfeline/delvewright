@@ -116,29 +116,34 @@ pub fn actor_body_entity(a: &delvewright_dsl::Actor) -> String {
     delvewright_dsl::BodyRef::Actor(a).worn_entity().to_string()
 }
 
-/// **The box a body occupies with the mount it rides** (spec-0135 §13): the
-/// wider of the two widths, and the mount's height plus the rider's. A bound,
-/// on the pinned jar: a rider's feet stand at the mount's passenger point
-/// less the rider's own vehicle attachment, and the point is under the top of
-/// the mount's box for the kinds a campaign rides (a pig's 0.86875 of 0.9, a
-/// zombie horse's 1.31875 of 1.6 — `docs/reference/vehicles-animals-and-targets.md`
-/// §16), so the box over-covers a rider and never under-covers one. A body that
-/// rides nothing is its own [`entity_dims`].
-pub fn ridden_dims(entity: &str, mount: Option<&delvewright_dsl::Mount>) -> (f64, f64) {
+/// **The box a body occupies with the body it rides** (spec-0135 §13): the
+/// wider of the two widths, and the carrier's height plus the rider's. A
+/// bound, on the pinned jar: a rider's feet stand at the carrier's passenger
+/// point less the rider's own vehicle attachment, and the point is under the
+/// top of the carrier's box for the kinds a campaign rides (a pig's 0.86875
+/// of 0.9, a zombie horse's 1.31875 of 1.6 —
+/// `docs/reference/vehicles-animals-and-targets.md` §16), so the box
+/// over-covers a rider and never under-covers one. A body that rides nothing
+/// (`carrier` `None`) is its own [`entity_dims`].
+pub fn ridden_dims(entity: &str, carrier: Option<&str>) -> (f64, f64) {
     let (w, h) = entity_dims(entity);
-    match mount {
+    match carrier {
         None => (w, h),
         Some(m) => {
-            let (mw, mh) = entity_dims(&m.entity);
+            let (mw, mh) = entity_dims(m);
             (w.max(mw), mh + h)
         }
     }
 }
 
-/// [`ridden_dims`] of the body a stage-5 actor ships as: the box every
+/// [`ridden_dims`] of the body a stage-5 actor ships as, seated on the
+/// vehicle whose `rider` it is (`dsl::vehicle_of_rider`): the box every
 /// geometric proof of an actor reads.
-pub fn actor_body_dims(a: &delvewright_dsl::Actor) -> (f64, f64) {
-    ridden_dims(&actor_body_entity(a), a.mount.as_ref())
+pub fn actor_body_dims(c: &delvewright_dsl::Campaign, a: &delvewright_dsl::Actor) -> (f64, f64) {
+    ridden_dims(
+        &actor_body_entity(a),
+        delvewright_dsl::vehicle_of_rider(c, a.id.as_str()).map(|v| v.entity.as_str()),
+    )
 }
 
 /// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).

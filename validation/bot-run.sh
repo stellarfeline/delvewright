@@ -3,7 +3,9 @@
 # critical-path bot, one compose project, exit code = the bot's result.
 #
 #   EULA=TRUE validation/bot-run.sh --project dw-<id>
-#   DELVEWRIGHT_RUN_TIMEOUT_MS=2400000 EULA=TRUE validation/bot-run.sh --project dw-<id>
+#
+# The run's wall-clock budget is derived from the build it walks
+# (`harness/src/run-budget.ts`); DELVEWRIGHT_RUN_TIMEOUT_MS overrides it, printed.
 #
 # ## Why the project id is REQUIRED
 #

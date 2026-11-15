@@ -457,13 +457,45 @@ static THRASHED_JUDGED: AtomicU64 = AtomicU64::new(0);
 /// Read-backs between two judgements of the need.
 const SAMPLE: u64 = 64;
 
-/// The one structure the budget asks: every store's paged arrays, weakly,
-/// each with whether it was made under a test's budget — so a relief over
-/// every store passes a fenced array by without taking a strong reference
-/// to it, which, were it the last, would drop the array and free its region
-/// on the relieving thread.
+/// The one structure the budget asks: every store's paged arrays, weakly
+/// ([`Listed`]).
 struct Store {
-    pages: Mutex<Vec<(bool, Weak<Paged>)>>,
+    pages: Mutex<Vec<Listed>>,
+}
+
+/// One paged array as the stores list it: weakly, with whether it was made
+/// under a test's budget and which store's clock it keeps. A relief picks
+/// its arrays by these two before it takes a strong reference to any: a
+/// relief over every store passes a fenced array by, and a test's relief
+/// over its own store passes every other store's array by, so neither ever
+/// holds another's array, which, were that reference the last, would drop
+/// the array on the relieving thread and free its region into that thread's
+/// list.
+struct Listed {
+    fenced: bool,
+    /// The address of the array's [`Tally`]: unique among live arrays, since
+    /// an array keeps its tally alive.
+    tally: usize,
+    page: Weak<Paged>,
+}
+
+impl Listed {
+    fn of(p: &Arc<Paged>) -> Listed {
+        Listed {
+            fenced: budget::override_here() != 0,
+            tally: Arc::as_ptr(&p.tally) as usize,
+            page: Arc::downgrade(p),
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Strong references a relief took on this thread to an array of a
+    /// store it was not relieving: what [`Listed`] exists to keep at zero.
+    static FOREIGN_TAKEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Listed arrays of another store a test's relief on this thread passed.
+    static FOREIGN_LISTED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 fn store() -> &'static Arc<Store> {
@@ -519,14 +551,32 @@ impl Store {
         let Some(mut pages) = pages else {
             return 0;
         };
-        pages.retain(|(_, w)| w.strong_count() > 0);
+        pages.retain(|l| l.page.strong_count() > 0);
+        #[cfg(test)]
+        if let Some(t) = only {
+            let foreign = pages
+                .iter()
+                .filter(|l| l.tally != Arc::as_ptr(t) as usize && l.page.strong_count() > 0)
+                .count() as u64;
+            FOREIGN_LISTED.with(|n| n.set(n.get() + foreign));
+        }
         let mut order: Vec<(u64, Arc<Paged>)> = pages
             .iter()
-            .filter(|(fenced, _)| only.is_some() || !fenced)
-            .filter_map(|(_, w)| w.upgrade())
-            .filter(|p| match only {
-                Some(t) => Arc::ptr_eq(&p.tally, t),
-                None => !p.tally.fenced.load(Ordering::Relaxed),
+            .filter(|l| match only {
+                Some(t) => l.tally == Arc::as_ptr(t) as usize,
+                None => !l.fenced,
+            })
+            .filter_map(|l| l.page.upgrade())
+            .filter(|p| {
+                let ours = match only {
+                    Some(t) => Arc::ptr_eq(&p.tally, t),
+                    None => !p.tally.fenced.load(Ordering::Relaxed),
+                };
+                #[cfg(test)]
+                if !ours && only.is_some() {
+                    FOREIGN_TAKEN.with(|n| n.set(n.get() + 1));
+                }
+                ours
             })
             .map(|p| (p.used.load(Ordering::Relaxed), p))
             .collect();
@@ -683,11 +733,7 @@ impl Paged {
         });
         alive(1);
         hold(tally, bytes);
-        store()
-            .pages
-            .lock()
-            .expect("pages")
-            .push((budget::override_here() != 0, Arc::downgrade(&p)));
+        store().pages.lock().expect("pages").push(Listed::of(&p));
         relieve(tally);
         p
     }
@@ -723,11 +769,7 @@ impl Paged {
                 });
                 alive(1);
                 drop(g);
-                store()
-                    .pages
-                    .lock()
-                    .expect("pages")
-                    .push((budget::override_here() != 0, Arc::downgrade(&p)));
+                store().pages.lock().expect("pages").push(Listed::of(&p));
                 p
             }
         }
@@ -2057,6 +2099,61 @@ mod tests {
                 "round {round}: the section columns"
             );
         }
+    }
+
+    /// **A test's relief holds no other store's array.** Another thread's
+    /// stores, made under its own budget, stay listed and alive while this
+    /// thread's store relieves itself under its budget; the relief passes
+    /// them by from the list alone. A strong reference it took to one would
+    /// be the last whenever that thread dropped its store in the meantime,
+    /// and the array would die here, its region freed into this thread's
+    /// list and the other thread's file grown by one region it never got
+    /// back — the scratch-file test read that once as one region more than
+    /// arrays alive.
+    #[test]
+    fn a_tests_relief_takes_no_other_stores_array() {
+        use std::sync::Barrier;
+        let listed = Arc::new(Barrier::new(2));
+        let relieved = Arc::new(Barrier::new(2));
+        let (l, r) = (Arc::clone(&listed), Arc::clone(&relieved));
+        let other = std::thread::spawn(move || {
+            budget::with_budget(1, || {
+                let mut m: SectionMap<u32> = SectionMap::new();
+                for i in 0..32 {
+                    m.insert([i * 16, 0, 0], 1);
+                }
+                l.wait();
+                r.wait();
+                assert_eq!(m.iter().count(), 32);
+            });
+        });
+        listed.wait();
+        let (taken, passed) = budget::with_budget(1, || {
+            let before = (
+                FOREIGN_TAKEN.with(std::cell::Cell::get),
+                FOREIGN_LISTED.with(std::cell::Cell::get),
+            );
+            let mut m: SectionMap<u32> = SectionMap::new();
+            for i in 0..32 {
+                m.insert([i * 16, 32, 0], 2);
+            }
+            assert_eq!(m.iter().count(), 32);
+            (
+                FOREIGN_TAKEN.with(std::cell::Cell::get) - before.0,
+                FOREIGN_LISTED.with(std::cell::Cell::get) - before.1,
+            )
+        });
+        relieved.wait();
+        other.join().expect("the other store's thread");
+        eprintln!("relief: passed {passed} listed array(s) of another store, took {taken}");
+        assert!(
+            passed >= 32,
+            "the other store's arrays were not listed: {passed}"
+        );
+        assert_eq!(
+            taken, 0,
+            "the relief took {taken} strong reference(s) to another store's array"
+        );
     }
 
     /// **A copy shares its arrays until one side writes**: the copy's sections
