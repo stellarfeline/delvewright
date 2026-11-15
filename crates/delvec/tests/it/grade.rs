@@ -332,7 +332,11 @@ fn a_campaign_with_nothing_to_grade_moves_no_byte_by_its_grade() {
             let ledger: Value =
                 serde_json::from_slice(out.get("validation/grade.json").expect("the ledger"))
                     .expect("parses");
-            assert_eq!(ledger["regraded_columns"], json!(0), "{name}, {which}: C = 0");
+            assert_eq!(
+                ledger["regraded_columns"],
+                json!(0),
+                "{name}, {which}: C = 0"
+            );
             let own: Value =
                 serde_json::from_slice(&out["validation/packtest-own-cells.json"]).expect("json");
             assert_eq!(own["laying_count"], 0, "{name}, {which}: {own}");

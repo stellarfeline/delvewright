@@ -55,7 +55,10 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
         let jid = join.id().as_str();
         let jsafe = plan::safe_local(jid);
         let arms: Vec<&str> = join.after_required().iter().map(|a| a.as_str()).collect();
-        let n = arms.len().max(min_players).min(delvewright_dsl::wave::MAX_PARTY as usize);
+        let n = arms
+            .len()
+            .max(min_players)
+            .min(delvewright_dsl::wave::MAX_PARTY as usize);
         // Member selectors. Member 1 is the framework dummy (`@s` — the binding
         // survives teleports and can never resolve to a neighbour's dummy);
         // members 2..n are spawned here under this template's own names.
