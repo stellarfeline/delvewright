@@ -887,13 +887,24 @@ pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
             // raised by a body that boards, which the ride step does.
             let select = super::census::census_terms(plan, &k.of)?;
             let count = cmp.census_bodies();
-            Some(json!({
+            let mut row = json!({
                 "state": cmp.state.as_str(),
                 "objective": plan::state_score(cmp.state.as_str()),
                 "select": select,
                 "region": [lo, hi],
                 "count": count,
-            }))
+            });
+            // A census of a kind declares no body of its own: every body of
+            // the kind in the world is some other object's (a wave's, an
+            // actor's), and one taken out of its fight leaves the fight short
+            // — a named elite included. The harness places bodies of the kind
+            // it summons for the act and removes after.
+            if let delvewright_dsl::CensusOf::Kind(kind) = &k.of
+                && let Some(o) = row.as_object_mut()
+            {
+                o.insert("stand_in".to_string(), json!(kind));
+            }
+            Some(row)
         })
         .collect()
 }

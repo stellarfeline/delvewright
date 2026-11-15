@@ -91,9 +91,15 @@ pub fn mob_reach(w: &delvewright_dsl::Wave, mob: &delvewright_dsl::WaveMob) -> (
             let r = f64::from(l.aggro_radius);
             let s = species_reach(&mob.entity);
             if s > r {
-                (s, "the species' `follow_range`, which a released lane mob is reset to")
+                (
+                    s,
+                    "the species' `follow_range`, which a released lane mob is reset to",
+                )
             } else {
-                (r, "the lane's `aggro_radius`, the floor a released lane mob keeps")
+                (
+                    r,
+                    "the lane's `aggro_radius`, the floor a released lane mob keeps",
+                )
             }
         }
         None => match mob.attributes.and_then(|a| a.follow_range) {

@@ -13,49 +13,79 @@ export interface CensusResult {
   readonly detail: string;
 }
 
-/**
- * The box's centre, where the bodies are put: the middle of the inclusive
- * cell box, on its floor course.
- */
-export function censusCentre(row: CensusRow): [number, number, number] {
-  const [lo, hi] = row.region;
-  return [(lo[0] + hi[0] + 1) / 2, lo[1], (lo[2] + hi[2] + 1) / 2];
-}
-
 /** The tag a body carries between its selection and its teleport. */
 export const CENSUS_PLACED_TAG = "dw_census_placed";
 /** The tag a body carries while the census holds it still. */
 export const CENSUS_HELD_TAG = "dw_census_held";
+/** The tag every body the census placed carries until it is let go, so no
+ * second cell takes it. */
+export const CENSUS_TAKEN_TAG = "dw_census_taken";
+/** The tag on a body the census summoned for a census of a kind. */
+export const CENSUS_STAND_IN_TAG = "dw_census_standin";
+
+/** A cell's feet position: the centre of its floor. */
+function feet(c: readonly [number, number, number]): string {
+  return `${c[0] + 0.5} ${c[1]} ${c[2] + 0.5}`;
+}
 
 /**
  * The commands that put `row.count` bodies of the set in the box and hold them
- * there — the nearest ones to the bot, by the set's own selector terms. The
- * bodies are chosen once (tagged), teleported, and each that moves by its own
- * AI is stilled (`NoAI`) until {@link censusReleaseCommands}: a goat moved into
- * a pen leaves it again by its own wandering, and the herding is the
- * playtest's, not the bot's. A body already without its AI (a puppet) is not
- * held, so the release never wakes it. A count of zero teleports nothing and
- * asks only that the box hold none.
+ * there, each on a cell of its own (`row.cells`, the box's standable cells the
+ * compiler handed over — never the box's centre, which can be inside a block,
+ * and never one cell for two bodies). A census of a declared body (a wave's,
+ * an actor's, an NPC's) takes the nearest bodies of the set, one per cell, by
+ * the set's own selector terms; a census of a kind (`row.standIn`) takes no
+ * body some other object owns — a raider of a fight still to come, its named
+ * elite included — and summons its own for the act. Each body that moves by
+ * its own AI is stilled (`NoAI`) until {@link censusReleaseCommands}: a goat
+ * moved into a pen leaves it again by its own wandering, and the herding is
+ * the playtest's, not the bot's. A body already without its AI (a puppet) is
+ * not held, so the release never wakes it. A count of zero places nothing and
+ * asks only that the box hold none. A row whose box holds fewer cells than it
+ * places is refused by name.
  */
 export function censusCommands(row: CensusRow): string[] {
   // A vehicle's riders are placed by boarding (the `ride` step), never here.
   if (row.count === 0 || row.select === undefined) return [];
-  const [x, y, z] = censusCentre(row);
-  return [
-    `/tag @e[${row.select},limit=${row.count},sort=nearest] add ${CENSUS_PLACED_TAG}`,
-    `/tp @e[tag=${CENSUS_PLACED_TAG}] ${x} ${y} ${z}`,
-    `/execute as @e[tag=${CENSUS_PLACED_TAG},nbt=!{NoAI:1b}] run tag @s add ${CENSUS_HELD_TAG}`,
-    `/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:1b}`,
-    `/tag @e[tag=${CENSUS_PLACED_TAG}] remove ${CENSUS_PLACED_TAG}`,
-  ];
+  const cells = row.cells ?? [];
+  if (cells.length < row.count) {
+    throw new Error(
+      `census ${row.state}: the box holds ${cells.length} cell(s) a body of the set stands on, ` +
+        `and the step places ${row.count} — no body is put inside a block or onto another`,
+    );
+  }
+  const out: string[] = [];
+  for (const cell of cells.slice(0, row.count)) {
+    if (row.standIn !== undefined) {
+      out.push(
+        `/summon ${row.standIn} ${feet(cell)} ` +
+          `{Tags:["${CENSUS_STAND_IN_TAG}","${CENSUS_TAKEN_TAG}"],NoAI:1b,PersistenceRequired:1b}`,
+      );
+      continue;
+    }
+    out.push(
+      `/tag @e[${row.select},tag=!${CENSUS_TAKEN_TAG},limit=1,sort=nearest] add ${CENSUS_PLACED_TAG}`,
+      `/tp @e[tag=${CENSUS_PLACED_TAG}] ${feet(cell)}`,
+      `/execute as @e[tag=${CENSUS_PLACED_TAG},nbt=!{NoAI:1b}] run tag @s add ${CENSUS_HELD_TAG}`,
+      `/tag @e[tag=${CENSUS_PLACED_TAG}] add ${CENSUS_TAKEN_TAG}`,
+      `/tag @e[tag=${CENSUS_PLACED_TAG}] remove ${CENSUS_PLACED_TAG}`,
+    );
+  }
+  if (row.standIn === undefined) {
+    out.push(`/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:1b}`);
+  }
+  return out;
 }
 
-/** The commands that give every held body its AI back, once the act gated on
- * the census has ended. */
+/** The commands that give every held body its AI back, remove every body the
+ * census summoned, and free every body it took, once the act gated on the
+ * census has ended. */
 export function censusReleaseCommands(): string[] {
   return [
     `/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:0b}`,
     `/execute as @e[tag=${CENSUS_HELD_TAG}] run tag @s remove ${CENSUS_HELD_TAG}`,
+    `/kill @e[tag=${CENSUS_STAND_IN_TAG}]`,
+    `/tag @e[tag=${CENSUS_TAKEN_TAG}] remove ${CENSUS_TAKEN_TAG}`,
   ];
 }
 

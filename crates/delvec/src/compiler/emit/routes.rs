@@ -32,6 +32,9 @@ pub(super) struct WorldProofs {
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
     pub(super) pulse_gate: Option<crate::compiler::pulse::PulseGate>,
+    /// spec-0134 §1: per counted datum, the cells its census places bodies on
+    /// (`nav::census_cells`).
+    pub(super) census_cells: BTreeMap<String, Vec<[i32; 3]>>,
 }
 
 /// The proofs over the assembled world — walk, waves, lanes, branches,
@@ -148,6 +151,7 @@ pub(super) fn prove_world(
     // over the forced route's legs below. `None` for a campaign that assembles
     // no world; the caller prints the line either way.
     let mut pulse_gate: Option<crate::compiler::pulse::PulseGate> = None;
+    let mut census_cells: BTreeMap<String, Vec<[i32; 3]>> = BTreeMap::new();
 
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::compiler::nav::MovePlan>,
@@ -1190,6 +1194,7 @@ pub(super) fn prove_world(
                             }
                         })?;
                     crate::note!("{}", census.line());
+                    census_cells = crate::compiler::nav::census_cells(plan, world);
                 }
                 let water = crate::compiler::waypoints::water_json(world, &routes);
                 crate::note!("{}", crate::compiler::waypoints::water_line(&water));
@@ -1471,6 +1476,7 @@ pub(super) fn prove_world(
     };
     Ok(WorldProofs {
         pulse_gate,
+        census_cells,
         moves,
         actor_moves,
         wave_placements,

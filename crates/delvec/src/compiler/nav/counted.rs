@@ -155,6 +155,80 @@ pub fn check_censuses(plan: &Plan, world: &World) -> Result<CensusBinding, Failu
     Ok(b)
 }
 
+/// **Where a census places its bodies** (spec-0134 §1): per counted datum,
+/// every cell of its box a body of the set can stand in at its footprint, by
+/// the nav model's one standability predicate (`World::standable_fp`), nearest
+/// the box's centre first (then by cell, ADR-0006). The harness puts each body
+/// it places on a cell of its own, so no body is put inside a block or onto
+/// another. A wave's cells are taken at the footprint of its widest stack; a
+/// vehicle's riders are placed by boarding and take none.
+pub fn census_cells(
+    plan: &Plan,
+    world: &World,
+) -> std::collections::BTreeMap<String, Vec<[i32; 3]>> {
+    let c = plan.campaign;
+    let mut out = std::collections::BTreeMap::new();
+    for s in &c.quests.content.state {
+        let Some(k) = &s.counts else {
+            continue;
+        };
+        let Some((lo, hi)) = plan.zone_box(&k.region) else {
+            continue;
+        };
+        let entities: Vec<String> = match &k.of {
+            CensusOf::Wave(w) => c
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|x| x.id == *w)
+                .map(|x| x.mobs.iter().map(|m| m.entity.clone()).collect())
+                .unwrap_or_default(),
+            CensusOf::Actor(a) => c
+                .quests
+                .content
+                .actors
+                .iter()
+                .find(|x| x.id == *a)
+                .map(|x| vec![super::actor_body_entity(x)])
+                .unwrap_or_default(),
+            CensusOf::Npc(n) => c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|x| x.id == *n)
+                .map(|x| vec![delvewright_dsl::BodyRef::Npc(x).worn_entity().to_string()])
+                .unwrap_or_default(),
+            CensusOf::Kind(kind) => vec![kind.clone()],
+            CensusOf::Riders(_) => continue,
+        };
+        let fps: Vec<Footprint> = entities.iter().map(|e| entity_footprint(e)).collect();
+        out.insert(s.id.as_str().to_string(), box_stands(world, (lo, hi), &fps));
+    }
+    out
+}
+
+/// The cells of `region` every footprint of `fps` stands in, nearest the
+/// box's horizontal centre first, then lowest, then by cell.
+pub(in crate::compiler::nav) fn box_stands(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    fps: &[Footprint],
+) -> Vec<[i32; 3]> {
+    let (lo, hi) = region;
+    let centre2 = [lo[0] + hi[0], lo[2] + hi[2]];
+    let mut cells: Vec<[i32; 3]> = crate::compiler::assembled::region_cells(lo, hi)
+        .filter(|cell| fps.iter().all(|fp| world.standable_fp(*cell, fp)))
+        .collect();
+    cells.sort_by_key(|cell| {
+        let dx = 2 * cell[0] - centre2[0];
+        let dz = 2 * cell[2] - centre2[1];
+        (dx * dx + dz * dz, cell[1], *cell)
+    });
+    cells
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +275,29 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// A box that takes in the floor course under its standing course (the
+    /// stage's box, two courses tall from the floor) holds only the cells a
+    /// body stands in: never the floor's own cells, where a body put there
+    /// suffocates, and never a wall's.
+    #[test]
+    fn a_census_places_on_standable_cells_only_and_never_in_the_floor() {
+        let world = pen(false);
+        let goat = entity_footprint("minecraft:goat");
+        let cells = box_stands(
+            &world,
+            ([3, 64, 1], [6, 65, 3]),
+            std::slice::from_ref(&goat),
+        );
+        assert!(!cells.is_empty());
+        assert!(cells.iter().all(|c| c[1] == 65), "{cells:?}");
+        assert!(cells.iter().all(|c| c[0] != 5), "a wall's cell: {cells:?}");
+        let distinct: BTreeSet<_> = cells.iter().collect();
+        assert_eq!(distinct.len(), cells.len());
+        // The old placement, the box's centre on its floor course, is no
+        // cell a body stands in.
+        assert!(!cells.contains(&[5, 64, 2]));
     }
 
     #[test]

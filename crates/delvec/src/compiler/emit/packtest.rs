@@ -19,6 +19,7 @@ mod cutscene;
 mod dialogue;
 mod economy;
 pub(super) mod ending;
+mod engage;
 mod guidance;
 mod healthbar;
 mod holders;
@@ -272,6 +273,13 @@ pub(super) fn emit_packtest(
     // and an aggro-edge wave really materializes on its perception ring. Emits
     // nothing for a campaign with no lane and no aggro-edge wave.
     lane::emit_td_lane_packtests(plan, out, waves.lanes, waves.rings);
+    // Every hostile wave's bodies keep the party as their target within the
+    // reach the proofs read (`nav::follow`). Emits nothing for a campaign with
+    // no hostile wave; the binding is printed either way.
+    {
+        let b = engage::emit_engagement_packtests(plan, out, waves.placements);
+        crate::note!("{}", b.line());
+    }
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
