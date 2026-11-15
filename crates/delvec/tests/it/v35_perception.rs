@@ -568,6 +568,19 @@ fn samples() -> Vec<(&'static str, Value)> {
             "fail-objective",
             json!({"type":"fail-objective","objective":"obj/talk"}),
         ),
+        // spec-0135 §13: the sidebar is the world's; a place is a body's.
+        (
+            "show-board",
+            json!({"type":"show-board","board":"board/race"}),
+        ),
+        (
+            "hide-board",
+            json!({"type":"hide-board","board":"board/race"}),
+        ),
+        (
+            "place-on-board",
+            json!({"type":"place-on-board","board":"board/race"}),
+        ),
     ]
 }
 
@@ -620,6 +633,8 @@ fn every_verb_is_classified_by_what_the_emitter_does() {
         common::objective_effects(d, 0, "obj/talk").push(hop.clone());
         common::objective_effects(d, 0, "obj/talk").push(rec.clone());
         d["content"]["on_death"] = json!([seq.clone()]);
+        // The board the sample board verbs name.
+        d["content"]["boards"] = json!([{"id": "board/race", "title": "The Race"}]);
     }));
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
