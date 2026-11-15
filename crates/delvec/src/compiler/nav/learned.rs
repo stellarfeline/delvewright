@@ -266,8 +266,10 @@ struct Met {
     length: usize,
     rise: i32,
     seen: SeenFinding,
-    reward: RewardFinding,
-    cut: Cut,
+    /// What the branch ground holds, and where it is cut off the route;
+    /// `None` for a way declared `hidden`, whose verdict and words read no
+    /// branch ground.
+    reward: Option<(RewardFinding, Cut)>,
 }
 
 /// Where the branch ground is cut off the open route (spec-0118 §5.2).
@@ -774,7 +776,10 @@ fn cut_branch(
     let path: Vec<[i32; 3]> = std::iter::once(junction)
         .chain(branch.iter().copied())
         .collect();
-    let ground = branch_ground(w, face, route, &path, &BTreeSet::new());
+    // The closure from the face is the cut's to subtract from, the same for
+    // every cut tried.
+    let behind = w.body_flood(face, &Confinement::none());
+    let ground = branch_ground(w, &behind, route, &path, &BTreeSet::new());
     if !ground.is_empty() {
         return (ground, Cut::Path);
     }
@@ -790,7 +795,7 @@ fn cut_branch(
         (a.0, a.1, &a.2.way, &a.2.station).cmp(&(b.0, b.1, &b.2.way, &b.2.station))
     });
     for (_, _, s) in walked {
-        let ground = branch_ground(w, face, route, &path, &s.cells);
+        let ground = branch_ground(w, &behind, route, &path, &s.cells);
         if !ground.is_empty() {
             return (
                 ground,
@@ -808,7 +813,7 @@ fn cut_branch(
 /// **The ground behind one cut**: the cells a body reaches from the shut
 /// way's face that it cannot reach from the open route without passing the
 /// cut — the junction, the branch path, and the cross-section `across` when
-/// one is given. The open side is the reach graph's closure of the route cells
+/// one is given — out of `behind`, the closure from the face. The open side is the reach graph's closure of the route cells
 /// ([`World::body_flood`]) over the world with the cut walled up
 /// ([`World::walls_over`], the one rule a walk over the graph takes floor out
 /// of a body's reach by); the ground is the unconfined closure
@@ -820,7 +825,7 @@ fn cut_branch(
 /// an open floor is not a branch, and nothing on it pays for one.
 fn branch_ground(
     w: &World,
-    face: &[[i32; 3]],
+    behind: &BTreeSet<[i32; 3]>,
     route: &BTreeSet<[i32; 3]>,
     path: &[[i32; 3]],
     across: &BTreeSet<[i32; 3]>,
@@ -847,8 +852,9 @@ fn branch_ground(
             .iter()
             .any(|e| (leaps || e.yaw.is_none()) && open.contains(&e.to))
     };
-    w.body_flood(face, &Confinement::none())
-        .into_iter()
+    behind
+        .iter()
+        .copied()
         .filter(|c| !open.contains(c) && !route.contains(c) && !beside(*c))
         .collect()
 }
@@ -1360,12 +1366,16 @@ fn verify_with_eye(
                         .max()
                         .map_or(0, |y| y - junction[1]);
                     // A way met by the eye alone pays for no walk: its ground
-                    // is empty.
-                    let (ground, cut) = if how == How::Face {
-                        cut_branch(w, &face, &route_set, junction, branch, sections)
-                    } else {
-                        (BTreeSet::new(), Cut::Path)
-                    };
+                    // is empty. A hidden way's verdict and words read no
+                    // branch ground, so none is measured for it.
+                    let reward = (ways[gi].learned != Some(Learned::Hidden)).then(|| {
+                        let (ground, cut) = if how == How::Face {
+                            cut_branch(w, &face, &route_set, junction, branch, sections)
+                        } else {
+                            (BTreeSet::new(), Cut::Path)
+                        };
+                        (reward_on(&ground, rewards), cut)
+                    });
                     out.push(Met {
                         way: gi,
                         config: *ci,
@@ -1376,8 +1386,7 @@ fn verify_with_eye(
                         length: branch.len(),
                         rise,
                         seen: sight(w, junction, region, eye_height),
-                        reward: reward_on(&ground, rewards),
-                        cut,
+                        reward,
                     });
                 }
             }
@@ -1446,7 +1455,7 @@ fn verify_with_eye(
                     }
                     Learned::Rewarded => {
                         binding.rewarded += 1;
-                        matches!(m.reward, RewardFinding::Rewarded(..))
+                        matches!(m.reward, Some((RewardFinding::Rewarded(..), _)))
                     }
                     Learned::Hidden => {
                         binding.hidden += 1;
@@ -1611,11 +1620,14 @@ fn told_words(way: &ShutWay) -> String {
 
 fn reward_words(m: &Met) -> String {
     match &m.reward {
-        RewardFinding::Rewarded(a, kind) => format!("`{a}` ({kind}) stands on the branch"),
-        RewardFinding::Bare(n, nearest) => {
+        None => "the branch ground is not measured for a hidden way".to_string(),
+        Some((RewardFinding::Rewarded(a, kind), _)) => {
+            format!("`{a}` ({kind}) stands on the branch")
+        }
+        Some((RewardFinding::Bare(n, nearest), cut)) => {
             let mut s = format!(
                 "no pickup, interaction or fight within the branch's {n} cell(s) behind {}",
-                cut_words(&m.cut)
+                cut_words(cut)
             );
             if let Some((a, d)) = nearest {
                 s.push_str(&format!(" (the nearest is `{a}`, {d} block(s) from it)"));
@@ -1795,8 +1807,11 @@ fn row(
         None => serde_json::json!({ "answered_by": null, "at": way.seam }),
     };
     let reward = match &m.reward {
-        RewardFinding::Rewarded(a, kind) => serde_json::json!({ "rewarded_by": a, "kind": kind }),
-        RewardFinding::Bare(n, nearest) => serde_json::json!({
+        None => serde_json::Value::Null,
+        Some((RewardFinding::Rewarded(a, kind), _)) => {
+            serde_json::json!({ "rewarded_by": a, "kind": kind })
+        }
+        Some((RewardFinding::Bare(n, nearest), _)) => serde_json::json!({
             "rewarded_by": null,
             "ground_cells": n,
             "nearest": nearest.as_ref().map(|(a, d)| serde_json::json!({ "anchor": a, "distance": d })),
@@ -1819,7 +1834,7 @@ fn row(
         "junction": m.junction,
         "branch_length": m.length,
         "branch_rise": m.rise,
-        "branch_cut": cut_json(&m.cut),
+        "branch_cut": m.reward.as_ref().map(|(_, cut)| cut_json(cut)),
         "learned": way.learned.map(Learned::word),
         "confirmed": confirmed,
         "seen": seen,
@@ -2208,6 +2223,29 @@ mod learned_tests {
             "{}",
             err.message
         );
+    }
+
+    /// A way declared `hidden`, met at a face down a branch, measures no
+    /// branch ground — its verdict and its words read none — and its row
+    /// says so with `null`; the same way declared `rewarded` measures it.
+    #[test]
+    fn a_hidden_way_measures_no_branch_ground() {
+        let region = ([5, 1, 8], [5, 2, 8]);
+        let (base, shut) = (branch(7, 2, false, &[]), branch(7, 2, true, &[]));
+        let chest = [Reward {
+            anchor: "anchor/chest".to_string(),
+            kind: "a loot holder",
+            pos: [6, 1, 6],
+        }];
+        for (learned, measured) in [(Learned::Hidden, false), (Learned::Rewarded, true)] {
+            let ways = [way(region, 2, Some(learned))];
+            let (b, _) = judge(&shut, &base, &ways, &chest, PLAYER_EYE);
+            assert!(!b.rows.is_empty(), "the way is met at its face");
+            for r in &b.rows {
+                assert_eq!(!r["branch_cut"].is_null(), measured, "{r}");
+                assert_eq!(!r["rewarded"].is_null(), measured, "{r}");
+            }
+        }
     }
 
     /// Acceptance 6: a `reach-anchor` is not a reward; a `collect`, an
