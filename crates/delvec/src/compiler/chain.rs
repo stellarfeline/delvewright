@@ -67,10 +67,11 @@ use crate::compiler::emit::BuildOutput;
 
 delvewright_dsl::dw_code! {
     /// `DW0984`: a shipped function's command chain — its own commands and
-    /// every function it calls in the same tick — could exceed the game's
-    /// `max_command_sequence_length`, so the server would stop it part-way. An
-    /// **engine self-check**: the emitter that wrote the function owes the
-    /// split across ticks.
+    /// every function it calls in the same tick — could exceed the
+    /// `max_command_sequence_length` of the context it runs in (the default
+    /// inside a `load`, the quota the build declares elsewhere), so the server
+    /// would stop it part-way. An **engine self-check**: the emitter that wrote
+    /// the function owes the bound.
     pub const DW_CHAIN_OVER_LIMIT: DwCode = DwCode::new("DW0984", ExitTier::Build);
 }
 
