@@ -100,7 +100,7 @@ pub use threshold::*;
 pub use timed_gate::*;
 pub use trap::*;
 pub use view::*;
-pub use wave::*;
+use wave::*;
 
 #[cfg(test)]
 mod testkit;
