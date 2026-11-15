@@ -1619,6 +1619,14 @@ fn emit_all(
     crate::note!("{}", fresh.line());
     put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
 
+    // ---- the quota the delve's own sources need ----
+    // Last of the writers, over the finished tree: every tick repeats work
+    // that grows with the campaign and cannot move to a later tick, so when a
+    // source outside `load` measures past the game's default quota, the
+    // delve's `load` states the one it needs (`crate::compiler::chain`).
+    // Nothing is written when the default holds.
+    crate::compiler::chain::declare(&mut out);
+
     // ---- the checks read off the finished tree ----
     check_finished_tree(
         plan,

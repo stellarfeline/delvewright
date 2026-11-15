@@ -372,9 +372,10 @@ pub(super) fn check_finished_tree(
 
     // ---- one tick's command chain stays under the game's limit (DW0984) ----
     // Every shipped function, with every function it calls in the same tick,
-    // against `max_command_sequence_length`: past it the server stops the
-    // function part-way and nothing reads the log line. Feature-blind, read off
-    // the finished tree, run on every build.
+    // against the `max_command_sequence_length` of the context it runs in —
+    // the default inside a `load`, the delve's declared quota elsewhere: past
+    // it the server stops the function part-way and nothing reads the log
+    // line. Feature-blind, read off the finished tree, run on every build.
     let chains = crate::compiler::chain::check(out).map_err(|e| BuildFailure::Diagnostic {
         code: e.code,
         message: e.message,
