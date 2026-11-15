@@ -1,0 +1,15 @@
+{
+  "code": "DW1116",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/on_objective_complete/obj~1ride-clover/1/audience",
+      "value": {
+        "actor": "actor/hall-usher"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the groom's place on the race board is given to the usher, who carries no name. Its row would read as an id; the placing is refused where it is written. It declares no unit."
+}

@@ -72,6 +72,8 @@ struct Bay {
     /// The objectives after `obj/talk`, written whole (each from a leading
     /// comma), in place of the reach-anchor `obj/exit`.
     objectives: Option<&'static str>,
+    /// A stone block at this cell: a lid over a body's head.
+    lid: Option<[i32; 3]>,
 }
 
 /// The pool's courses across the room.
@@ -156,6 +158,9 @@ fn cells(bay: Bay) -> Vec<([i32; 3], &'static str)> {
             [16, 4, 7],
             "minecraft:rail[shape=east_west,waterlogged=false]",
         );
+    }
+    if let Some(c) = bay.lid {
+        by.insert(c, "minecraft:stone");
     }
     for x in [3, 7, 11, 15, 18] {
         for z in [2, 6] {
@@ -1821,4 +1826,305 @@ fn a_lapse_waits_after_every_crate_whose_clock_runs_beside_it() {
             steps[lapse]
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0135 §13: a body that rides, a vehicle per player, a board of places
+// ---------------------------------------------------------------------------
+
+/// A row of pigs on the west floor, `[2, 4, 2]` east by `spacing`, one per
+/// player present when the talk seats them.
+fn piglets(spacing: [i32; 3]) -> String {
+    format!(
+        r#"{{ "id": "vehicle/piglets", "entity": "minecraft:pig",
+            "at": {{ "anchor": "anchor/floor", "offset": [-1, 0, -1] }},
+            "bounds": {{ "anchor": "anchor/floor", "extent": [3, 2, 3] }},
+            "count": {{ "base": 1, "per_player": 1 }},
+            "spacing": [{}, {}, {}], "seated": "by-story" }}"#,
+        spacing[0], spacing[1], spacing[2]
+    )
+}
+
+const SEAT_PIGLETS: &str = r#"{ "type": "seat-vehicle", "vehicle": "vehicle/piglets" }"#;
+
+/// A count per player: the seat measures the party and seats one body per
+/// player, each at its own mark and with its own re-seat, and the PackTest
+/// steps the four party sizes. Perturbation: a spacing that carries the last
+/// body into the pool is `DW1097` naming that body's seat — every body is
+/// judged, not the first alone.
+#[test]
+fn a_vehicle_seats_one_body_per_player_present() {
+    let (dir, lib) = write("piglets", Bay::default(), &piglets([1, 0, 0]), SEAT_PIGLETS);
+    let out = try_build(&dir, &lib).expect("the row of pigs builds");
+    let seat = function(&out, "vehicle_seat_piglets");
+    assert!(
+        seat.contains(
+            "execute store result score #pn_v_piglets dw.sys if entity @a[tag=!dw_cutscene]"
+        ) && seat.contains("function hello-world:vehicle_seat_piglets_party"),
+        "{seat}"
+    );
+    let party = function(&out, "vehicle_seat_piglets_party");
+    assert!(
+        party.contains("function hello-world:vehicle_seat_piglets_b0\n"),
+        "{party}"
+    );
+    for (k, t) in [(1, 2), (2, 3), (3, 4)] {
+        assert!(
+            party.contains(&format!(
+                "execute if score #pn_v_piglets dw.sys matches {t}.. run function hello-world:vehicle_seat_piglets_b{k}"
+            )),
+            "body {k} needs {t} players: {party}"
+        );
+    }
+    for k in 0..4 {
+        let body = function(&out, &format!("vehicle_seat_piglets_b{k}"));
+        assert!(
+            body.contains(&format!("summon minecraft:pig {}.5 68.0 2.5", 2 + k))
+                && body
+                    .contains(r#"Tags:["dw_vehicle","dw_vehicle_piglets","dw_vehicle_piglets_b"#),
+            "body {k}: {body}"
+        );
+    }
+    let reseat = function(&out, "vehicle_reseat_piglets_b3");
+    assert!(
+        reseat.contains(
+            "execute unless entity @e[tag=dw_vehicle_piglets_b3] if score #pn_v_piglets dw.sys matches 4.. run function hello-world:vehicle_seat_piglets_b3"
+        ),
+        "a missing body is put back only when its party had it: {reseat}"
+    );
+    let t = out
+        .iter()
+        .find(|(k, _)| k.ends_with("/test/vehicle_piglets_party.mcfunction"))
+        .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
+        .expect("the per-party template");
+    for n in 1..=4 {
+        assert!(
+            t.contains(&format!("scoreboard players set #pn_v_piglets dw.sys {n}")),
+            "{t}"
+        );
+        assert!(t.contains(&format!("matches {n}\n")), "{t}");
+    }
+    // The perturbation: a step of two puts body 2 at x = 6, over the pool.
+    let (dir, lib) = write(
+        "piglets-wet",
+        Bay::default(),
+        &piglets([2, 0, 0]),
+        SEAT_PIGLETS,
+    );
+    match try_build(&dir, &lib) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code.to_string(), "DW1097", "{message}");
+            assert!(message.contains("[6, 68, 2]"), "{message}");
+        }
+        other => panic!(
+            "expected DW1097 on the wet body, got {:?}",
+            other.map(|_| ())
+        ),
+    }
+}
+
+/// A rider is summoned as its mount's passenger, the wave's tag on the rider
+/// alone: the kill count, the census and the muster read riders, and the
+/// mounts leave after them by the wave's one removal.
+#[test]
+fn a_wave_body_rides_its_mount_and_only_the_rider_is_counted() {
+    let bay = Bay {
+        more: r#""waves": [ { "id": "wave/horsemen", "anchor": "anchor/floor",
+            "mobs": [ { "entity": "minecraft:zombie", "count": 2,
+                        "equipment": { "main_hand": "minecraft:iron_spear" },
+                        "mount": { "entity": "minecraft:zombie_horse" } } ] } ]"#,
+        ..Bay::default()
+    };
+    let talk = r#"{ "type": "spawn-wave", "wave": "wave/horsemen" },
+                  { "type": "despawn-wave", "wave": "wave/horsemen" }"#;
+    let (dir, lib) = write("horsemen", bay, "", talk);
+    let out = try_build(&dir, &lib).expect("the horsemen build");
+    let spawn = function(&out, "spawn_horsemen");
+    let summons: Vec<&str> = spawn.lines().filter(|l| l.contains("summon")).collect();
+    assert_eq!(summons.len(), 2, "{spawn}");
+    for l in &summons {
+        assert!(
+            l.starts_with("summon minecraft:zombie_horse ")
+                && l.contains(r#"Tags:["dw_mount","dw_wmount_horsemen"],PersistenceRequired:1b,Passengers:[{id:"minecraft:zombie",Tags:["dw_wave_horsemen"]"#)
+                && l.contains("iron_spear"),
+            "{l}"
+        );
+        let mount_part = &l[..l.find("Passengers").unwrap()];
+        assert!(
+            !mount_part.contains("dw_wave_horsemen"),
+            "the mount is no member: {l}"
+        );
+    }
+    let census = function(&out, "wave_census_horsemen");
+    assert!(census.contains("@e[tag=dw_wave_horsemen]") && !census.contains("dw_wmount"));
+    let talked = out
+        .iter()
+        .filter(|(k, _)| k.contains("/function/") && !k.contains("/test/"))
+        .map(|(_, v)| String::from_utf8_lossy(v).to_string())
+        .find(|f| f.contains("function hello-world:spawn_horsemen"))
+        .expect("the talk's bundle");
+    let rider = talked
+        .find("dw_wave_horsemen")
+        .expect("the riders' removal");
+    let mount = talked
+        .find("dw_wmount_horsemen")
+        .expect("the mounts' removal");
+    assert!(rider < mount, "the riders leave first: {talked}");
+}
+
+fn racer(mount: &str) -> String {
+    format!(
+        r#""actors": [ {{ "id": "actor/racer", "entity": "minecraft:villager", "name": "Ulla",
+            "anchor": "anchor/floor"{mount} }} ]"#
+    )
+}
+
+/// A mounted puppet arrives aboard its mount, walks by its mount, and its
+/// twin stands up on a fresh one; the clearance proof reads the stacked box.
+/// Perturbation: a lid three blocks over the floor clears a villager (1.95)
+/// and not a villager on a zombie horse (1.6 + 1.95), so the mount alone
+/// turns the proof red.
+#[test]
+fn an_actor_rides_its_mount_where_it_stands_walks_and_stands_up() {
+    let mount = r#", "mount": { "entity": "minecraft:zombie_horse" }"#;
+    let more: &'static str = Box::leak(racer(mount).into_boxed_str());
+    let talk = r#"{ "type": "spawn-actor", "actor": "actor/racer",
+                    "happening": { "subject": "actor/racer", "verb": "arrives", "text": "Ulla rides in." } },
+                  { "type": "move-actor", "actor": "actor/racer", "to": { "anchor": "anchor/rail-end" }, "speed": 0.1,
+                    "happening": { "subject": "actor/racer", "verb": "departs", "text": "Ulla rides off." } },
+                  { "type": "unleash-actor", "actor": "actor/racer" }"#;
+    let bay = Bay {
+        more,
+        ..Bay::default()
+    };
+    let (dir, lib) = write("racer", bay, "", talk);
+    let out = try_build(&dir, &lib).expect("the mounted actor builds");
+    let spawn = function(&out, "spawn_actor_racer");
+    assert!(
+        spawn.contains(r#"run summon minecraft:zombie_horse 3.5 68.0 3.5 {Tags:["dw_mount","dw_amount_racer","dw_pmount_racer"],NoAI:1b"#)
+            && spawn.contains(r#"Passengers:[{id:"minecraft:villager",NoAI:1b"#),
+        "{spawn}"
+    );
+    let tick = out
+        .iter()
+        .find(|(k, _)| k.contains("/function/ma_tick_racer"))
+        .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
+        .expect("the walk's driver");
+    assert!(
+        tick.contains("as @e[tag=dw_pup_racer] on vehicle run tp @s ")
+            && !tick.contains("run tp @e[tag=dw_pup_racer]"),
+        "the walk moves the mount, never the rider: {tick}"
+    );
+    let unleash = function(&out, "unleash_racer");
+    assert!(
+        unleash.contains("execute at @e[tag=dw_pmount_racer,limit=1] run summon minecraft:zombie_horse ~ ~ ~ {Tags:[\"dw_mount\",\"dw_amount_racer\"],PersistenceRequired:1b,Passengers:[{id:\"minecraft:villager\""),
+        "{unleash}"
+    );
+    assert!(unleash.contains("dw_pmount_racer"), "{unleash}");
+    // The lid over the racer's mark, three cells of headroom.
+    let lidded = |tag: &str, mount: &'static str| {
+        let more: &'static str = Box::leak(racer(mount).into_boxed_str());
+        let bay = Bay {
+            more,
+            lid: Some([3, 7, 3]),
+            ..Bay::default()
+        };
+        let talk = r#"{ "type": "spawn-actor", "actor": "actor/racer",
+                        "happening": { "subject": "actor/racer", "verb": "arrives", "text": "Ulla rides in." } }"#;
+        let (dir, lib) = write(tag, bay, "", talk);
+        try_build(&dir, &lib)
+    };
+    assert!(
+        lidded("racer-lid-afoot", "").is_ok(),
+        "a villager fits three blocks"
+    );
+    match lidded("racer-lid-mounted", mount) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code.to_string(), "DW0450", "{message}");
+        }
+        other => panic!(
+            "expected DW0450 for the stacked box, got {:?}",
+            other.map(|_| ())
+        ),
+    }
+}
+
+/// A board: its objective headed by its title at setup, shown and hidden in
+/// the sidebar, a player placed by the function run as them and a named body
+/// under its own holder and name, each place written once.
+#[test]
+fn a_board_lists_the_places_the_story_writes() {
+    let more: &'static str = Box::leak(
+        format!(
+            r#"{}, "boards": [ {{ "id": "board/race", "title": "The Pig Race" }} ]"#,
+            racer("")
+        )
+        .into_boxed_str(),
+    );
+    let talk = r#"{ "type": "show-board", "board": "board/race" },
+                  { "type": "place-on-board", "board": "board/race", "audience": "actor" },
+                  { "type": "place-on-board", "board": "board/race", "audience": { "actor": "actor/racer" } },
+                  { "type": "hide-board", "board": "board/race" }"#;
+    let bay = Bay {
+        more,
+        ..Bay::default()
+    };
+    let (dir, lib) = write("board", bay, "", talk);
+    let out = try_build(&dir, &lib).expect("the board builds");
+    let setup = out
+        .iter()
+        .filter(|(k, _)| k.ends_with("/function/setup.mcfunction"))
+        .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
+        .next()
+        .expect("setup");
+    assert!(
+        setup.contains("scoreboard objectives add dw.bd.race dummy"),
+        "{setup}"
+    );
+    let player = function(&out, "board_place_race");
+    let row = function(&out, "board_row_race_racer");
+    // Rows: four players and the one named body.
+    for (f, h) in [(&player, "@s"), (&row, "dw.r.racer")] {
+        assert!(
+            f.starts_with(&format!(
+                "execute if score {h} dw.bd.race matches -2147483648.. run return 0\n"
+            )),
+            "a holder already placed keeps its place: {f}"
+        );
+        assert!(
+            f.contains(&format!("scoreboard players set {h} dw.bd.race 6")),
+            "{f}"
+        );
+        assert!(
+            f.contains("matches 5 run scoreboard players display numberformat"),
+            "{f}"
+        );
+        assert!(!f.contains("matches 6 run"), "{f}");
+    }
+    assert!(
+        row.contains("scoreboard players display name dw.r.racer dw.bd.race"),
+        "{row}"
+    );
+    assert!(
+        !player.contains("display name"),
+        "a player's row shows the player's name: {player}"
+    );
+    let talked = out
+        .iter()
+        .filter(|(k, _)| k.contains("/function/") && !k.contains("/test/"))
+        .map(|(_, v)| String::from_utf8_lossy(v).to_string())
+        .find(|f| f.contains("setdisplay sidebar dw.bd.race"))
+        .expect("the talk's bundle");
+    assert!(
+        talked.contains("execute as @s run function hello-world:board_place_race"),
+        "{talked}"
+    );
+    assert!(
+        talked.contains("function hello-world:board_row_race_racer"),
+        "{talked}"
+    );
+    assert!(
+        talked.contains("scoreboard objectives setdisplay sidebar\n"),
+        "{talked}"
+    );
 }

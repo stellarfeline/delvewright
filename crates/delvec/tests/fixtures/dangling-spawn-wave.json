@@ -1,5 +1,5 @@
 {
-  "description": "A kill-less `spawn-wave` (spec-0008 SS4 'live threat' — no `kill` objective ever drains `wave/ambush`, exactly like v04-showcase's wave/ambush) whose `anchor` is not part of the single bound prefab (`prefab/hello-room`)'s metadata. Wave anchors are not resolved against prefab metadata at DSL validation time (no DW0142-style check exists for them), and a single-prefab area registers whatever anchors its one bound prefab declares without cross-checking campaign references — so this passes validate + analyze and only the build-time spawn-wave guard (DW0310) catches the dangling reference.",
+  "description": "A kill-less `spawn-wave` (spec-0008 SS4 'live threat' — no `kill` objective ever drains `wave/ambush`, exactly like v04-showcase's wave/ambush) whose `anchor` is not part of the single bound prefab (`prefab/hello-room`)'s metadata. A wave's anchor is resolved at validation by the resolver the build places anchors from, so this is refused at analyze with DW0142 at the wave's `anchor`.",
   "documents": {
     "quests": {
       "campaign_id": "hello-world",

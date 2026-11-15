@@ -296,6 +296,22 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"despawn-vehicle","vehicle":"vehicle/gull"}),
             None,
         ),
+        // spec-0135 §13: a board is not a story subject.
+        (
+            "show-board",
+            serde_json::json!({"type":"show-board","board":"board/race"}),
+            None,
+        ),
+        (
+            "hide-board",
+            serde_json::json!({"type":"hide-board","board":"board/race"}),
+            None,
+        ),
+        (
+            "place-on-board",
+            serde_json::json!({"type":"place-on-board","board":"board/race"}),
+            None,
+        ),
         // spec-0136: a move is not a story subject (no `happening` is
         // demanded of one), so none resolves one.
         (

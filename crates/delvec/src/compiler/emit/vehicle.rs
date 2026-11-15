@@ -49,7 +49,16 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
         }
     }
     nbt.push(format!("Rotation:[{}f,0f]", v.yaw));
-    nbt.push(format!("Tags:[\"dw_vehicle\",\"{}\"]", v.tag()));
+    // spec-0135 §13: a body of several carries the vehicle's tag and its own.
+    if v.several() {
+        nbt.push(format!(
+            "Tags:[\"dw_vehicle\",\"{}\",\"{}\"]",
+            v.group_tag(),
+            v.tag()
+        ));
+    } else {
+        nbt.push(format!("Tags:[\"dw_vehicle\",\"{}\"]", v.tag()));
+    }
     if let Some(n) = &decl.name {
         nbt.push(format!(
             "CustomName:{},CustomNameVisible:1b",
@@ -123,9 +132,50 @@ pub(super) fn vehicle_despawn_lines(ns: &str, v: &VehiclePlan) -> Vec<String> {
     out
 }
 
-/// The vehicle a `seat-vehicle` / `despawn-vehicle` names, as planned.
-pub(super) fn vehicle_named<'p>(plan: &'p Plan, id: &str) -> Option<&'p VehiclePlan> {
-    plan.vehicles.iter().find(|v| v.id == id)
+/// The bodies of the vehicle a `seat-vehicle` / `despawn-vehicle` names, as
+/// planned, in body order.
+pub(super) fn vehicle_bodies<'p>(plan: &'p Plan, id: &str) -> Vec<&'p VehiclePlan> {
+    plan.vehicles.iter().filter(|v| v.id == id).collect()
+}
+
+/// The `dw.sys` holder a vehicle whose count scales writes the party size to
+/// when the story seats it (spec-0135 §13): the size its bodies were seated
+/// for, which its re-seat reads to put back only the bodies that party has.
+pub(super) fn vehicle_party(group_safe: &str) -> String {
+    format!("#pn_v_{group_safe}")
+}
+
+/// **What a `seat-vehicle` runs** for vehicle `id` (spec-0135 §2, §13): for
+/// a vehicle of one body, that body's seat and its re-seat armed; for one of
+/// several, the function that seats them all, `vehicle_seat_<id>`.
+pub(super) fn vehicle_seat_effect_lines(plan: &Plan, id: &str) -> Vec<String> {
+    let ns = &plan.namespace;
+    let bodies = vehicle_bodies(plan, id);
+    match bodies.as_slice() {
+        [] => Vec::new(),
+        [v] if !v.several() => vehicle_seat_lines(ns, v),
+        [v, ..] => vec![format!("function {ns}:vehicle_seat_{}", v.group_safe())],
+    }
+}
+
+/// **What a `despawn-vehicle` runs** for vehicle `id`: every body removed
+/// and every re-seat cleared.
+pub(super) fn vehicle_despawn_effect_lines(plan: &Plan, id: &str) -> Vec<String> {
+    let ns = &plan.namespace;
+    let bodies = vehicle_bodies(plan, id);
+    match bodies.as_slice() {
+        [] => Vec::new(),
+        [v] if !v.several() => vehicle_despawn_lines(ns, v),
+        [v, ..] => {
+            let mut out = removal_lines(ns, &v.group_tag(), false, Exit::Unseen);
+            out.extend(
+                bodies
+                    .iter()
+                    .map(|b| format!("schedule clear {ns}:vehicle_reseat_{}", b.safe)),
+            );
+            out
+        }
+    }
 }
 
 /// `setup_finish` lines: each vehicle seated at load seated, and its re-seat
@@ -133,12 +183,73 @@ pub(super) fn vehicle_named<'p>(plan: &'p Plan, id: &str) -> Option<&'p VehicleP
 /// Empty for a campaign that declares none, so its `setup_finish` is
 /// byte-identical.
 pub(super) fn vehicle_setup(plan: &Plan) -> Vec<String> {
-    let ns = &plan.namespace;
-    plan.vehicles
+    let mut out = Vec::new();
+    for v in plan
+        .vehicles
         .iter()
-        .filter(|v| v.seated == delvewright_dsl::VehicleSeated::AtLoad)
-        .flat_map(|v| vehicle_seat_lines(ns, v))
-        .collect()
+        .filter(|v| v.seated == delvewright_dsl::VehicleSeated::AtLoad && v.body == 0)
+    {
+        out.extend(vehicle_seat_effect_lines(plan, &v.id));
+    }
+    out
+}
+
+/// The function that seats every body of a vehicle of several (spec-0135
+/// §13): the party counted when the count scales, every standing body
+/// removed and every re-seat cleared, then each body the party has seated
+/// and its re-seat armed. `None` for a vehicle of one body.
+///
+/// A vehicle whose count scales seats its bodies in `vehicle_seat_<id>_party`,
+/// which reads the party size its seat measured — so a PackTest, whose party
+/// is its own dummy, states the size it judges and seats the vehicle at it
+/// (the wave's split, spec-0134 §4).
+fn vehicle_group_seat(plan: &Plan, first: &VehiclePlan) -> Vec<(String, String)> {
+    if !first.several() {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    let g = first.group_safe();
+    let bodies = vehicle_bodies(plan, &first.id);
+    let mut out = Vec::new();
+    let mut fns = Vec::new();
+    if first.count.scales() {
+        fns.push((
+            format!("vehicle_seat_{g}"),
+            lines(&[
+                format!(
+                    "execute store result score {} dw.sys if entity @a[tag=!dw_cutscene]",
+                    vehicle_party(&g)
+                ),
+                format!("function {ns}:{}", vehicle_party_seat_fn(&g)),
+            ]),
+        ));
+    }
+    out.extend(vehicle_despawn_effect_lines(plan, &first.id));
+    for b in &bodies {
+        let guard = match b.threshold {
+            None => String::new(),
+            Some(t) => format!(
+                "execute if score {} dw.sys matches {t}.. run ",
+                vehicle_party(&g)
+            ),
+        };
+        for line in vehicle_seat_lines(ns, b) {
+            out.push(format!("{guard}{line}"));
+        }
+    }
+    let name = if first.count.scales() {
+        vehicle_party_seat_fn(&g)
+    } else {
+        format!("vehicle_seat_{g}")
+    };
+    fns.push((name, lines(&out)));
+    fns
+}
+
+/// The function that seats a vehicle whose count scales at the party size
+/// its seat measured (spec-0135 §13).
+pub(super) fn vehicle_party_seat_fn(group_safe: &str) -> String {
+    format!("vehicle_seat_{group_safe}_party")
 }
 
 /// Two functions per vehicle: `vehicle_seat_<s>` (any standing body removed
@@ -151,6 +262,18 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
     let mut fns = Vec::new();
     for v in &plan.vehicles {
         let tag = v.tag();
+        // spec-0135 §13: a body past the count's base is put back only when
+        // the party it was seated for had it.
+        let missing = match v.threshold {
+            None => String::new(),
+            Some(t) => format!(
+                "if score {} dw.sys matches {t}.. ",
+                vehicle_party(&v.group_safe())
+            ),
+        };
+        if v.body == 0 {
+            fns.extend(vehicle_group_seat(plan, v));
+        }
         let mut seat = vehicle_removal_lines(ns, v);
         seat.push(vehicle_summon(plan, v));
         fns.push((format!("vehicle_seat_{}", v.safe), lines(&seat)));
@@ -170,7 +293,7 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
                 v.safe
             ),
             format!(
-                "execute unless entity @e[tag={tag}] run function {ns}:vehicle_seat_{}",
+                "execute unless entity @e[tag={tag}] {missing}run function {ns}:vehicle_seat_{}",
                 v.safe
             ),
             format!("tag @e[tag={RESEAT_TAG}] remove {RESEAT_TAG}"),
@@ -197,7 +320,7 @@ pub(super) fn emit_vehicle_functions(plan: &Plan) -> Vec<(String, String)> {
             reseat.extend([
                 format!("tag @e[tag={RESEAT_TAG}] remove {RESEAT_TAG}"),
                 format!(
-                    "execute unless entity @e[tag={tag}] run function {ns}:vehicle_seat_{}",
+                    "execute unless entity @e[tag={tag}] {missing}run function {ns}:vehicle_seat_{}",
                     v.safe
                 ),
                 format!(

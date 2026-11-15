@@ -9,6 +9,7 @@ use super::*;
 mod actor;
 mod assembly;
 mod atmosphere;
+mod board;
 mod boundary;
 mod cast;
 mod checkpoint;
@@ -173,6 +174,9 @@ pub(super) fn emit_packtest(
     // spec-0135: a vehicle's seat and re-seat. Emits nothing for a campaign
     // that declares no vehicle.
     vehicle::emit_vehicle_packtests(plan, out);
+    // spec-0135 §13: a board's places. Emits nothing without a board that
+    // places a named body.
+    board::emit_board_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final

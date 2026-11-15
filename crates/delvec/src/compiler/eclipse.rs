@@ -212,6 +212,9 @@ struct Body {
     /// The entity id whose hitbox the body wears (`minecraft:warden`, or
     /// `minecraft:mannequin` for a skinned NPC).
     entity: String,
+    /// `(width, height)` of the box the body occupies, a mount included
+    /// (spec-0135 §13).
+    dims: (f64, f64),
     /// The declared standing anchor.
     anchor: String,
     /// The resolved anchor cell (feet).
@@ -404,6 +407,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
         out.push(Body {
             kind: "npc",
             id: n.id.as_str().to_string(),
+            dims: entity_dims(&entity),
             entity,
             anchor: delvewright_dsl::BodyRef::Npc(n).mark().display(),
             pos,
@@ -422,6 +426,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
             kind: "actor",
             id: a.id.as_str().to_string(),
             entity,
+            dims: crate::compiler::nav::actor_body_dims(a),
             anchor: delvewright_dsl::BodyRef::Actor(a).mark().display(),
             pos,
             path: format!("/content/actors/{i}"),
@@ -568,7 +573,7 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
     let affordances = affordances(plan);
     let mut warnings = Vec::new();
     for b in &bodies {
-        let (w, h) = entity_dims(&b.entity);
+        let (w, h) = b.dims;
         let bbox = body_box(b.pos, w, h);
         for a in &affordances {
             match verdict(bbox, a.boxed()) {

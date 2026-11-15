@@ -797,6 +797,20 @@ fn firings_of(
     ];
     let (prefix, verb) = beats.iter().find(|(p, _)| name.starts_with(p))?;
     let safe = &name[prefix.len()..];
+    // spec-0135 §13: a body of a vehicle of several is seated by the
+    // vehicle's own `seat-vehicle`.
+    let group;
+    let safe = match plan
+        .vehicles
+        .iter()
+        .find(|v| *verb == "seat-vehicle" && v.safe == safe)
+    {
+        Some(v) => {
+            group = v.group_safe();
+            group.as_str()
+        }
+        None => safe,
+    };
     let optional = plan.campaign.quest_plan.content.optional();
     let mut out: Vec<Firing> = Vec::new();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
