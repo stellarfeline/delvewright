@@ -183,11 +183,11 @@ fn the_repair_is_per_player_and_returns_to_the_checkpoint() {
     for expected in [
         "gamemode adventure @s",
         "tag @s remove dw_cutscene",
-        "execute unless score @s dw.cs_y matches -2147483648.. run data modify storage dw:cs at.x set from storage dw:cp pos[0]",
-        "execute unless score @s dw.cs_y matches -2147483648.. run data modify storage dw:cs at.y set from storage dw:cp pos[1]",
-        "execute unless score @s dw.cs_y matches -2147483648.. run data modify storage dw:cs at.z set from storage dw:cp pos[2]",
-        "execute unless score @s dw.cs_y matches -2147483648.. run function hello-world:cs_repair_tp with storage dw:cs at",
-        "execute if score @s dw.cs_y matches -2147483648.. run function hello-world:cs_return",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.x set from storage dw:cp pos[0]",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.y set from storage dw:cp pos[1]",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.z set from storage dw:cp pos[2]",
+        "execute unless score @s dw.cs_saved matches 1 run function hello-world:cs_repair_tp with storage dw:cs at",
+        "execute if score @s dw.cs_saved matches 1 run function hello-world:cs_return",
     ] {
         assert!(
             repair.lines().any(|l| l.trim() == expected),

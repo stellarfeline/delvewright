@@ -219,87 +219,91 @@ pub(super) const CS_LIVE: &str = "#cs_live";
 /// teleport is an effect the author declares (`teleport`), never a side effect
 /// of watching a shot.
 ///
-/// The place is five per-player scores — the feet and the facing, in
-/// thousandths — rather than an entity left at the spot: a marker in a chunk the
-/// camera has carried every player away from is unloaded and answers no
-/// selector, and a score answers wherever its player is. Saved by
-/// [`CS_SAVE_FN`] at the start of the first cutscene a player watches, put back
-/// and cleared by [`CS_RETURN_FN`] at its end (or by the rejoin repair).
-pub(super) const CS_PLACE: [(&str, &str, &str); 5] = [
-    ("dw.cs_x", "Pos[0]", "double"),
-    ("dw.cs_y", "Pos[1]", "double"),
-    ("dw.cs_z", "Pos[2]", "double"),
-    ("dw.cs_yaw", "Rotation[0]", "float"),
-    ("dw.cs_pitch", "Rotation[1]", "float"),
-];
+/// The place is the player's own `Pos` and `Rotation`, copied whole into
+/// `storage dw:cs places.p<n>`, where `<n>` is the player's own number
+/// ([`CS_ID`], given once and kept): a copy, not a scaled score, so no coordinate
+/// overflows a score and nothing is rounded; and not an entity left at the
+/// spot, since a marker in a chunk the camera carried every player away from is
+/// unloaded and answers no selector. [`CS_SAVED`] holds 1 while a place is
+/// saved. Saved by [`CS_SAVE_FN`] at the start of the first cutscene a player
+/// watches, put back and cleared by [`CS_RETURN_FN`] at its end (or by the rejoin
+/// repair).
+pub(super) const CS_ID: &str = "dw.cs_id";
+/// See [`CS_ID`].
+pub(super) const CS_SAVED: &str = "dw.cs_saved";
+/// The `dw.sys` holder that hands out [`CS_ID`]'s numbers.
+const CS_IDS: &str = "#cs_ids";
 
-/// The fixed-point scale of [`CS_PLACE`]: thousandths of a block, of a degree.
-const CS_PLACE_SCALE: u32 = 1000;
-/// One unit of [`CS_PLACE_SCALE`], the factor the return reads a score back by.
-const CS_PLACE_UNIT: &str = "0.001";
-
-/// The macro keys [`CS_RETURN_TP_FN`] reads, in [`CS_PLACE`]'s order.
-const CS_PLACE_KEYS: [&str; 5] = ["x", "y", "z", "yaw", "pitch"];
-
-/// Saves `@s`'s own place into [`CS_PLACE`] (run as and at the player).
+/// Saves `@s`'s own place (run as and at the player).
 pub(super) const CS_SAVE_FN: &str = "cs_save";
+/// The macro half of [`CS_SAVE_FN`], keyed by the player's number.
+const CS_SAVE_AT_FN: &str = "cs_save_at";
 /// Puts `@s` back on its saved place and clears it.
 pub(super) const CS_RETURN_FN: &str = "cs_return";
-/// The macro `tp` [`CS_RETURN_FN`] calls with the saved place.
+/// The macro half of [`CS_RETURN_FN`], keyed by the player's number.
+const CS_RETURN_AT_FN: &str = "cs_return_at";
+/// The macro `tp` [`CS_RETURN_AT_FN`] calls with the saved place.
 const CS_RETURN_TP_FN: &str = "cs_return_tp";
 
 /// The `execute` condition that holds exactly while `@s` has a saved place.
 pub(super) fn cs_place_saved() -> String {
-    format!("score @s {} matches -2147483648..", CS_PLACE[1].0)
+    format!("score @s {CS_SAVED} matches 1")
 }
 
-/// The `setup` lines declaring [`CS_PLACE`]. Empty for a cutscene-less
-/// campaign, so those packs stay byte-identical.
+/// The `setup` lines declaring [`CS_ID`] and [`CS_SAVED`]. Empty for a
+/// cutscene-less campaign, so those packs stay byte-identical.
 pub(super) fn cutscene_place_objectives(plan: &Plan) -> Vec<String> {
     if !campaign_has_cutscene(plan.campaign) {
         return Vec::new();
     }
-    CS_PLACE
-        .iter()
-        .map(|(o, _, _)| format!("scoreboard objectives add {o} dummy"))
-        .collect()
+    vec![
+        format!("scoreboard objectives add {CS_ID} dummy"),
+        format!("scoreboard objectives add {CS_SAVED} dummy"),
+    ]
 }
 
-/// [`CS_SAVE_FN`], [`CS_RETURN_FN`] and [`CS_RETURN_TP_FN`]. Empty for a
+/// [`CS_SAVE_FN`], [`CS_RETURN_FN`] and their macro halves. Empty for a
 /// cutscene-less campaign.
 pub(super) fn cutscene_place_fns(plan: &Plan) -> Vec<(String, String)> {
     if !campaign_has_cutscene(plan.campaign) {
         return Vec::new();
     }
     let ns = &plan.namespace;
-    let save: Vec<String> = CS_PLACE
-        .iter()
-        .map(|(o, path, _)| {
-            format!(
-                "execute store result score @s {o} run data get entity @s {path} {CS_PLACE_SCALE}"
-            )
-        })
-        .collect();
-    let mut ret: Vec<String> = CS_PLACE
-        .iter()
-        .zip(CS_PLACE_KEYS)
-        .map(|((o, _, ty), k)| {
-            format!(
-                "execute store result storage dw:cs ret.{k} {ty} {CS_PLACE_UNIT} run scoreboard players get @s {o}"
-            )
-        })
-        .collect();
-    ret.push(format!(
-        "function {ns}:{CS_RETURN_TP_FN} with storage dw:cs ret"
-    ));
-    ret.extend(
-        CS_PLACE
-            .iter()
-            .map(|(o, _, _)| format!("scoreboard players reset @s {o}")),
+    let unnumbered = format!("execute unless score @s {CS_ID} matches 1.. run");
+    let who = format!(
+        "execute store result storage dw:cs who.id int 1 run scoreboard players get @s {CS_ID}"
     );
+    let save = vec![
+        format!("{unnumbered} scoreboard players add {CS_IDS} dw.sys 1"),
+        format!("{unnumbered} scoreboard players operation @s {CS_ID} = {CS_IDS} dw.sys"),
+        who.clone(),
+        format!("function {ns}:{CS_SAVE_AT_FN} with storage dw:cs who"),
+        format!("scoreboard players set @s {CS_SAVED} 1"),
+    ];
+    let save_at = vec![
+        "$data modify storage dw:cs places.p$(id).pos set from entity @s Pos".to_string(),
+        "$data modify storage dw:cs places.p$(id).rot set from entity @s Rotation".to_string(),
+    ];
+    let ret = vec![
+        who,
+        format!("function {ns}:{CS_RETURN_AT_FN} with storage dw:cs who"),
+        format!("scoreboard players reset @s {CS_SAVED}"),
+    ];
+    let ret_at = vec![
+        "$data modify storage dw:cs ret.x set from storage dw:cs places.p$(id).pos[0]".to_string(),
+        "$data modify storage dw:cs ret.y set from storage dw:cs places.p$(id).pos[1]".to_string(),
+        "$data modify storage dw:cs ret.z set from storage dw:cs places.p$(id).pos[2]".to_string(),
+        "$data modify storage dw:cs ret.yaw set from storage dw:cs places.p$(id).rot[0]"
+            .to_string(),
+        "$data modify storage dw:cs ret.pitch set from storage dw:cs places.p$(id).rot[1]"
+            .to_string(),
+        format!("function {ns}:{CS_RETURN_TP_FN} with storage dw:cs ret"),
+    ];
     vec![
         (CS_SAVE_FN.to_string(), lines(&save)),
+        (CS_SAVE_AT_FN.to_string(), lines(&save_at)),
         (CS_RETURN_FN.to_string(), lines(&ret)),
+        (CS_RETURN_AT_FN.to_string(), lines(&ret_at)),
         (
             CS_RETURN_TP_FN.to_string(),
             lines(&["$tp @s $(x) $(y) $(z) $(yaw) $(pitch)".to_string()]),
@@ -337,7 +341,7 @@ pub(super) fn cutscene_repair_tick(plan: &Plan) -> Vec<String> {
 }
 
 /// The repair itself, per stranded player (`@s`): back to adventure, untagged, and
-/// returned to the place they stood when the cutscene began ([`CS_PLACE`], which
+/// returned to the place they stood when the cutscene began ([`CS_ID`], which
 /// a disconnect keeps), or — a player with no saved place — to the party's live
 /// checkpoint.
 ///
@@ -385,7 +389,7 @@ pub(super) fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
 /// function.
 ///
-/// Mechanic: save each player's own place ([`CS_PLACE`]) and a fallback marker
+/// Mechanic: save each player's own place ([`CS_ID`]) and a fallback marker
 /// at a player in play (for a player who has no saved place: one who joined or
 /// was waiting while the shot began), spectator, then dolly two co-located invisible cameras along the
 /// shot's keyframe schedule — a `tp` every `cadence` ticks with display-entity

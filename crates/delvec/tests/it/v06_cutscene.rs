@@ -642,7 +642,7 @@ fn a_cutscene_puts_each_player_back_where_they_stood() {
         .expect("a cutscene end is emitted")
         .to_string();
     let end = function(&out, &format!("cs_end_{bare}"));
-    let saved = "score @s dw.cs_y matches -2147483648..";
+    let saved = "score @s dw.cs_saved matches 1";
     assert!(
         start.contains(&format!(
             "execute as @a[tag=!dw_cutscene] unless {saved} at @s run function {NS}:cs_save"
@@ -677,27 +677,39 @@ fn a_cutscene_puts_each_player_back_where_they_stood() {
         mark < ret,
         "the fallback runs before the return clears the place: {end}"
     );
-    // The place is the player's own feet and facing, and is cleared on return.
+    // The place is the player's own `Pos` and `Rotation`, copied whole (no
+    // scale, so no coordinate overflows a score), under the player's own number.
     let save = function(&out, "cs_save");
-    for (obj, path) in [
-        ("dw.cs_x", "Pos[0]"),
-        ("dw.cs_y", "Pos[1]"),
-        ("dw.cs_z", "Pos[2]"),
-        ("dw.cs_yaw", "Rotation[0]"),
-        ("dw.cs_pitch", "Rotation[1]"),
-    ] {
-        assert!(
-            save.contains(&format!(
-                "execute store result score @s {obj} run data get entity @s {path} 1000"
-            )),
-            "cs_save keeps {path}: {save}"
-        );
-    }
+    assert!(save.contains(&format!("function {NS}:cs_save_at with storage dw:cs who")));
+    assert!(save.contains("scoreboard players set @s dw.cs_saved 1"));
+    let save_at = function(&out, "cs_save_at");
+    assert!(
+        save_at.contains("$data modify storage dw:cs places.p$(id).pos set from entity @s Pos")
+    );
+    assert!(
+        save_at
+            .contains("$data modify storage dw:cs places.p$(id).rot set from entity @s Rotation")
+    );
     let ret_body = function(&out, "cs_return");
     assert!(ret_body.contains(&format!(
-        "function {NS}:cs_return_tp with storage dw:cs ret"
+        "function {NS}:cs_return_at with storage dw:cs who"
     )));
-    assert!(ret_body.contains("scoreboard players reset @s dw.cs_y"));
+    assert!(ret_body.contains("scoreboard players reset @s dw.cs_saved"));
+    let ret_at = function(&out, "cs_return_at");
+    for (k, from) in [
+        ("x", "pos[0]"),
+        ("y", "pos[1]"),
+        ("z", "pos[2]"),
+        ("yaw", "rot[0]"),
+        ("pitch", "rot[1]"),
+    ] {
+        assert!(
+            ret_at.contains(&format!(
+                "$data modify storage dw:cs ret.{k} set from storage dw:cs places.p$(id).{from}"
+            )),
+            "cs_return_at reads {k}: {ret_at}"
+        );
+    }
     assert_eq!(
         function(&out, "cs_return_tp").trim(),
         "$tp @s $(x) $(y) $(z) $(yaw) $(pitch)"

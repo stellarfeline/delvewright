@@ -307,7 +307,7 @@ pub(super) fn emit_functions(
         setup.push("scoreboard objectives add dw.st_grace dummy".to_string());
         setup.push("scoreboard objectives add dw.st_safe dummy".to_string());
     }
-    // Each player's own place across a cutscene (`cutscene::CS_PLACE`).
+    // Each player's own place across a cutscene (`cutscene::CS_ID`).
     setup.extend(cutscene_place_objectives(plan));
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece

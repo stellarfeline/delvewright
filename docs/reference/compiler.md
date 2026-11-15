@@ -2133,24 +2133,28 @@ they are watching, not playing. Consumers:
 
 **A cutscene moves nobody.** The camera carries every body away while a shot
 plays; the end puts each player back on the place that player stood on, facing
-where they faced. Each player's place is five per-player scores
-(`cutscene::CS_PLACE`: `dw.cs_x`/`dw.cs_y`/`dw.cs_z` from `Pos`, `dw.cs_yaw`/
-`dw.cs_pitch` from `Rotation`, in thousandths), declared in `setup` for a
-campaign with a cutscene. `cs_<bare>` runs `execute as @a[tag=!dw_cutscene]
-unless score @s dw.cs_y matches -2147483648.. at @s run function <ns>:cs_save`
-before anything else touches the players, so a player already holding a place
-(a second cutscene begun under the first) keeps the one they stood on; a score
-rather than an entity because a marker in a chunk the camera carried every
-player away from is unloaded and answers no selector. `cs_end_<bare>` runs
-`gamemode adventure @a`, then `execute as @a unless <saved> run tp @s
+where they faced. Each player's place is their own `Pos` and `Rotation`, copied
+whole into `storage dw:cs places.p<n>` (`pos`, `rot`), `<n>` the player's own
+number `dw.cs_id` (handed out once from `#cs_ids dw.sys` and kept), with
+`dw.cs_saved` 1 while a place is held; both objectives are declared in `setup`
+for a campaign with a cutscene. A copy rather than a scaled score: thousandths
+in a score overflow past ±2,147,483 blocks, and PackTest's own world stands its
+tests near x 16,683,675; rather than an entity because a marker in a chunk the
+camera carried every player away from is unloaded and answers no selector.
+`cs_<bare>` runs `execute as @a[tag=!dw_cutscene] unless score @s dw.cs_saved
+matches 1 at @s run function <ns>:cs_save` before anything else touches the
+players, so a player already holding a place (a second cutscene begun under the
+first) keeps the one they stood on. `cs_save` numbers the player if needed and
+calls the macro `cs_save_at` with `dw:cs who`. `cs_end_<bare>` runs `gamemode
+adventure @a`, then `execute as @a unless <saved> run tp @s
 @e[tag=dw_csmark_<bare>,limit=1]` — only a player with no place of their own (one
 who joined, or was waiting out a respawn, while the shot began) is put on the
 marker `cs_<bare>` summoned at a player in play — then `execute as @a if <saved>
-run function <ns>:cs_return`, which writes the place into `storage dw:cs ret`
-(`double`/`float`, scale 0.001), calls the macro `cs_return_tp` (`$tp @s $(x)
-$(y) $(z) $(yaw) $(pitch)`; a macro writes a float or double through
-`DecimalFormat("#")` with 15 fraction digits and no suffix,
-`docs/reference/sound-audience.md`) and resets the five scores. No line of the end
+run function <ns>:cs_return`, which calls the macro `cs_return_at` (copying the
+five values into `storage dw:cs ret`), which calls the macro `cs_return_tp`
+(`$tp @s $(x) $(y) $(z) $(yaw) $(pitch)`; a macro writes a float or double
+through `DecimalFormat("#")` with 15 fraction digits and no suffix,
+`docs/reference/sound-audience.md`), and resets `dw.cs_saved`. No line of the end
 moves the party as one. Generated PackTest `cutscene_return_<n>`, one per
 cutscene bracket with an empty `then` (a `then` would fire the author's effects):
 two players four blocks apart facing 90 and -90, the real `cs_<bare>`, its
