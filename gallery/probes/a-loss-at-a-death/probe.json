@@ -6,8 +6,8 @@
       "op": "add",
       "path": "/content/on_death/-",
       "value": {
-        "type": "fail-objective",
-        "objective": "obj/climb-the-loft"
+        "objective": "obj/climb-the-loft",
+        "type": "fail-objective"
       }
     }
   ],

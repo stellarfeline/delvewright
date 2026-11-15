@@ -55,9 +55,12 @@ fi
 #     `require-resource-pack` (spec-0084 §11) is the campaign's declaration that
 #     its pack is required; underived, the image would prompt where the campaign
 #     said require.
+#
+#     `max-players` is the party cap the build's proofs hold for; underived, the
+#     base image admits twenty.
 for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
            generator-settings:GENERATOR_SETTINGS view-distance:VIEW_DISTANCE \
-           simulation-distance:SIMULATION_DISTANCE \
+           simulation-distance:SIMULATION_DISTANCE max-players:MAX_PLAYERS \
            require-resource-pack:RESOURCE_PACK_ENFORCE; do
   prop="${key%%:*}"; env_var="${key##*:}"
   if grep -q "prop $prop" "$SCRIPT" && grep -q "export $env_var=" "$SCRIPT"; then
