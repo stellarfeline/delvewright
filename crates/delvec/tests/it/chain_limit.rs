@@ -17,9 +17,9 @@
 //! The work every tick repeats cannot move to a later tick. A campaign whose
 //! tick measures past the limit builds, and its `load` declares the quota its
 //! sources need (`gamerule max_command_sequence_length`), which the server
-//! reads when it makes each later context: the second fixture is the
-//! `long-gallery` corridor with its one reach objective repeated until the
-//! compass's per-objective aims carry the tick past the limit.
+//! reads when it makes each later context: the second fixture is v06-edits
+//! with its one reach objective repeated until the compass's per-objective
+//! aims carry the tick past the limit.
 
 use crate::common;
 
@@ -218,25 +218,30 @@ fn a_world_build_over_the_chain_limit_runs_in_steps_and_finishes() {
     assert!(ledger["longest"]["chain"].as_u64().unwrap() <= LIMIT as u64);
 }
 
-/// `long-gallery` with its reach objective repeated `n` times: one quest, every
-/// objective at the corridor's far end, each one a compass target the tick
-/// aims at.
+/// The v06-edits fixture with its reach objective repeated `n` times: one
+/// quest, every copy at the same door after the same talk, each one a compass
+/// target the tick aims at.
 fn over_limit_tick(n: usize) -> PathBuf {
     let dir = tmp("chain-limit-tick");
-    common::copy_dir_all(&common::compiler_fixtures_dir().join("long-gallery"), &dir);
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("v06-edits"), &dir);
     let path = dir.join("quests.json");
     let mut doc: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    let quest = &mut doc["content"]["quests"][0];
-    let one = quest["objectives"][0].clone();
-    quest["objectives"] = (0..n)
-        .map(|k| {
-            let mut o = one.clone();
-            o["id"] = serde_json::json!(format!("obj/end-{k}"));
-            o["title"] = serde_json::json!(format!("Walk to the end of the gallery, pass {k}"));
-            o
-        })
-        .collect();
+    let objectives = doc["content"]["quests"][0]["objectives"]
+        .as_array_mut()
+        .unwrap();
+    let at = objectives
+        .iter()
+        .position(|o| o["type"] == "reach-anchor")
+        .expect("a reach objective");
+    let one = objectives.remove(at);
+    for k in 0..n {
+        let mut o = one.clone();
+        o["id"] = serde_json::json!(format!("obj/exit-{k}"));
+        o["title"] = serde_json::json!(format!("Go through the door, pass {k}"));
+        o["happening"]["text"] = serde_json::json!(format!("the party completes obj/exit-{k}"));
+        objectives.insert(at + k, o);
+    }
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     dir
 }
@@ -310,11 +315,12 @@ fn a_tick_past_the_chain_limit_builds_and_its_load_declares_the_quota() {
         .expect("run delvec");
     assert!(
         r.status.success(),
-        "build failed:\n{}",
+        "build failed:\n{}\n{}",
+        String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
 
-    let ns = "long-gallery";
+    let ns = "hello-world";
     let fdir = out.join(format!("datapack/data/{ns}/function"));
     let mut fns = std::collections::BTreeMap::new();
     for e in walk(&fdir) {
