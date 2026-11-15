@@ -563,6 +563,11 @@ fn samples() -> Vec<(&'static str, Value)> {
             "resize",
             json!({"type":"resize","scale":1.25,"audience":{"npc":"npc/keeper"}}),
         ),
+        // spec-0133: a lost task is the party's, settled once for everyone.
+        (
+            "fail-objective",
+            json!({"type":"fail-objective","objective":"obj/talk"}),
+        ),
     ]
 }
 
