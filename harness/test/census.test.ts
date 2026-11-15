@@ -47,8 +47,8 @@ test("a census puts each needed body of the set on a cell of its own, nearest fi
   assert.deepEqual(censusReleaseCommands(), [
     "/execute as @e[tag=dw_census_held] run data merge entity @s {NoAI:0b}",
     "/execute as @e[tag=dw_census_held] run tag @s remove dw_census_held",
-    "/kill @e[tag=dw_census_standin]",
-    "/tag @e[tag=dw_census_taken] remove dw_census_taken",
+    "/execute as @e[tag=dw_census_standin] run kill @s",
+    "/execute as @e[tag=dw_census_taken] run tag @s remove dw_census_taken",
   ]);
 });
 

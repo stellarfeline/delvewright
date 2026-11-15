@@ -79,13 +79,14 @@ export function censusCommands(row: CensusRow): string[] {
 
 /** The commands that give every held body its AI back, remove every body the
  * census summoned, and free every body it took, once the act gated on the
- * census has ended. */
+ * census has ended. Each is run as its bodies, so a census that summoned or
+ * took none answers nothing rather than a refusal. */
 export function censusReleaseCommands(): string[] {
   return [
     `/execute as @e[tag=${CENSUS_HELD_TAG}] run data merge entity @s {NoAI:0b}`,
     `/execute as @e[tag=${CENSUS_HELD_TAG}] run tag @s remove ${CENSUS_HELD_TAG}`,
-    `/kill @e[tag=${CENSUS_STAND_IN_TAG}]`,
-    `/tag @e[tag=${CENSUS_TAKEN_TAG}] remove ${CENSUS_TAKEN_TAG}`,
+    `/execute as @e[tag=${CENSUS_STAND_IN_TAG}] run kill @s`,
+    `/execute as @e[tag=${CENSUS_TAKEN_TAG}] run tag @s remove ${CENSUS_TAKEN_TAG}`,
   ];
 }
 
