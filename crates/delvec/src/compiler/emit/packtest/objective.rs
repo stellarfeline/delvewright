@@ -18,9 +18,6 @@ pub(super) fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)
     out
 }
 
-/// The party-size cap: a delve is played by one party of 1–4 (CLAUDE.md).
-const MAX_PARTY: usize = 4;
-
 /// Generated **division-of-labour** PackTests (spec-0018), one per AND-join.
 ///
 /// The claim under test is the whole point of party progression: `n` DIFFERENT
@@ -46,7 +43,7 @@ const MAX_PARTY: usize = 4;
 /// whole body is one atomic tick, so no sibling can interleave inside it.
 ///
 /// `n` is the arm count, raised to `world.min_players` when the campaign declares
-/// a bigger mandatory party and capped at [`MAX_PARTY`]; arms are handed out
+/// a bigger mandatory party and capped at [`MAX_PARTY`](delvewright_dsl::wave::MAX_PARTY); arms are handed out
 /// round-robin, so a join with more arms than members gives someone two.
 pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
@@ -58,7 +55,7 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
         let jid = join.id().as_str();
         let jsafe = plan::safe_local(jid);
         let arms: Vec<&str> = join.after_required().iter().map(|a| a.as_str()).collect();
-        let n = arms.len().max(min_players).min(MAX_PARTY);
+        let n = arms.len().max(min_players).min(delvewright_dsl::wave::MAX_PARTY as usize);
         // Member selectors. Member 1 is the framework dummy (`@s` — the binding
         // survives teleports and can never resolve to a neighbour's dummy);
         // members 2..n are spawned here under this template's own names.

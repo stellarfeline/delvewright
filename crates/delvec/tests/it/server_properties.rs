@@ -40,7 +40,7 @@ use delvewright_dsl::viewdistance::FLOOR as VIEW_DISTANCE_FLOOR;
 /// Exactly the keys a delve pins. Everything else on the pinned server version
 /// is left to the host **on purpose**, with a per-key verdict recorded in
 /// `docs/reference/compiler.md` (§World / build output).
-const PINNED_KEYS: [&str; 15] = [
+const PINNED_KEYS: [&str; 16] = [
     "allow-nether",
     "difficulty",
     "force-gamemode",
@@ -50,6 +50,7 @@ const PINNED_KEYS: [&str; 15] = [
     "level-name",
     "level-seed",
     "level-type",
+    "max-players",
     "online-mode",
     "pvp",
     "simulation-distance",
@@ -166,6 +167,28 @@ fn chunk_distances_carry_their_established_values() {
     assert_eq!(
         value(&out, "view-distance"),
         value(&out, "simulation-distance")
+    );
+}
+
+/// The server admits the party every bound is proven for, and no more: the
+/// chain quota, the census and every per-player count are measured at
+/// [`delvewright_dsl::wave::MAX_PARTY`], so a fifth player would stand in a
+/// world no proof covers. The value is the one constant, never a literal.
+#[test]
+fn the_server_admits_the_party_the_proofs_hold_for() {
+    for dir in [common::hello_world_dir(), common::keep_trial_dir()] {
+        let out = build_dir(&dir);
+        assert_eq!(
+            value(&out, "max-players"),
+            delvewright_dsl::wave::MAX_PARTY.to_string(),
+            "{}: max-players is the engine's party cap",
+            dir.display()
+        );
+    }
+    assert_eq!(
+        delvec::compiler::chain::PARTY,
+        u64::from(delvewright_dsl::wave::MAX_PARTY),
+        "the chain quota is measured for the same party"
     );
 }
 

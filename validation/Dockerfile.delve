@@ -158,6 +158,9 @@ gs=$(prop generator-settings); if [ -n "$gs" ]; then export GENERATOR_SETTINGS="
 # simulation-distance -> SIMULATION_DISTANCE).
 vd=$(prop view-distance);       if [ -n "$vd" ]; then export VIEW_DISTANCE="$vd";       fi
 sd=$(prop simulation-distance); if [ -n "$sd" ]; then export SIMULATION_DISTANCE="$sd"; fi
+# The party cap: the build states the largest party every bound it proves holds
+# for, and the server admits no more (itzg maps MAX_PLAYERS -> max-players).
+mp=$(prop max-players);         if [ -n "$mp" ]; then export MAX_PLAYERS="$mp";         fi
 # The delve's resource pack (spec-0084 §11, as spec-0009 and spec-0024 decided
 # it). Served, never installed into a player's own folder: every server that
 # boots this build points `resource-pack` at a URL the client can reach and

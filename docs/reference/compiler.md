@@ -2589,7 +2589,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   staged body is of a type peaceful discards, `peaceful` otherwise. No server jar, no region files (ADR-0010) — the
   bootstrap `/place template`s prefabs, so byte-identity covers the whole tree.
   `view-distance=<the campaign's, floor 10>` and `simulation-distance=10` (below).
-  The file writes 15 keys (16 when the campaign declares `require_resource_pack`) and the key set is asserted exactly
+  `max-players` is the party cap every bound is proven for
+  (`delvewright_dsl::wave::MAX_PARTY`, 4: the chain quota, the census, every
+  per-player count); the shared entrypoint exports it as `MAX_PLAYERS`.
+  The file writes 16 keys (17 when the campaign declares `require_resource_pack`) and the key set is asserted exactly
   (`crates/delvec/tests/it/server_properties.rs`): what a delve pins and what it
   leaves to the host is a reviewed decision, not a residue.
 - **Chunk distances.** `view-distance=<n>` — the campaign's `world.view_distance`
@@ -2652,8 +2655,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     entity's tracking for the whole delve for the sake of one shot), `hardcore=false`,
     `allow-flight=false`. Safe at their defaults today and the first place to
     look if a host ever renders or ticks a delve differently.
-  - **Agree, product-shaped**: `max-players=20` against a 1–4 player delve
-    (`world.min_players` states the floor, nothing states the ceiling), `motd`,
+  - **Agree, product-shaped**: `motd`,
     `white-list=false`, `player-idle-timeout=0`, `pause-when-empty-seconds=60`
     (an empty server stops ticking, including force-loaded chunks, and resumes on
     join — desirable for a delve).
