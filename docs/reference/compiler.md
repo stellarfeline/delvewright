@@ -3601,7 +3601,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   from the position before it to the step that reads the flag (`DW1044`, the
   reader recorded in `PathFiring::trigger_debts`).
   A path whose trigger gate never holds, or whose target never shares an area
-  with a step, does not perform it, and nothing it opens is credited. Placing a
+  with a step, does not perform it, and nothing it opens is credited. A trigger
+  scheduled for its way alone (no flag debt, no entry deed, one performance) is
+  performed only where the guaranteed replay, probing it at the step it is due
+  in front of, fires its opening line (`plan::path::opening_performed`); one
+  whose opening waits on what the path does not do — a count other presses
+  make — opens nothing the region model credits, and is not performed. Placing a
   trigger reads no numeric gate (`requires_state`); a trigger performed for a
   way it opens whose state gate is closed broadcasts no marker and the step
   fails where it stands. A flag a trigger is performed to pay is judged by the
