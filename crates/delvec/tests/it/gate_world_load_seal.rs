@@ -401,8 +401,9 @@ fn a_sibling_that_shuts_the_door_after_the_lever_keeps_the_refusal() {
 /// exit's side of the bars — counts `state/levers` up, and its own `open-gate`
 /// waits on `levers >= 2`, a count one press cannot reach (the other presses
 /// of the puzzle are not on the path). Nothing on the path reads the datum or a
-/// flag the lever sets. `gated: false` drops the `when`: the press opens the
-/// door itself.
+/// flag the lever sets (a line of its own reads the count, so the datum is
+/// one a gate asks after). `gated: false` drops the opening's `when`: the
+/// press opens the door itself.
 fn quests_doc_lever_behind_door(gated: bool) -> String {
     let when = if gated {
         r#", "when": { "requires_state": [
@@ -425,6 +426,9 @@ fn quests_doc_lever_behind_door(gated: bool) -> String {
          "answers": {{ "done": "The lever is down." }},
          "effects": [
            {{ "type": "add-state", "state": "state/levers", "amount": 1 }},
+           {{ "type": "narrate", "style": "actionbar", "text": "Something shifts.",
+              "when": {{ "requires_state": [
+                {{ "state": "state/levers", "op": "at-least", "value": 1 }} ] }} }},
            {{ "type": "open-gate", "anchor": "anchor/door"{when} }}
          ] }}
     ],
