@@ -399,11 +399,17 @@ fn a_sibling_that_shuts_the_door_after_the_lever_keeps_the_refusal() {
 /// **A lever behind the door, counted toward a way the path never needs.**
 /// `obj/talk` opens the door; a `use` trigger at `anchor/far-knock` — on the
 /// exit's side of the bars — counts `state/levers` up, and its own `open-gate`
-/// waits on `levers >= threshold`. Nothing on the path reads the datum or a
-/// flag the lever sets. `threshold` 2 is a count one press cannot reach (the
-/// other presses of the puzzle are not on the path); 1 is a count this press
-/// makes itself.
-fn quests_doc_lever_behind_door(threshold: u32) -> String {
+/// waits on `levers >= 2`, a count one press cannot reach (the other presses
+/// of the puzzle are not on the path). Nothing on the path reads the datum or a
+/// flag the lever sets. `gated: false` drops the `when`: the press opens the
+/// door itself.
+fn quests_doc_lever_behind_door(gated: bool) -> String {
+    let when = if gated {
+        r#", "when": { "requires_state": [
+                { "state": "state/levers", "op": "at-least", "value": 2 } ] }"#
+    } else {
+        ""
+    };
     common::at_dsl_version(&format!(
         r#"{{
   "dsl_version": "%dsl_version%",
@@ -419,9 +425,7 @@ fn quests_doc_lever_behind_door(threshold: u32) -> String {
          "answers": {{ "done": "The lever is down." }},
          "effects": [
            {{ "type": "add-state", "state": "state/levers", "amount": 1 }},
-           {{ "type": "open-gate", "anchor": "anchor/door",
-              "when": {{ "requires_state": [
-                {{ "state": "state/levers", "op": "at-least", "value": {threshold} }} ] }} }}
+           {{ "type": "open-gate", "anchor": "anchor/door"{when} }}
          ] }}
     ],
     "quests": [
@@ -470,18 +474,18 @@ fn validated_admitting_warnings(quests: &str, prefabs: &PrefabRegistry) -> Campa
 #[test]
 fn a_lever_whose_opening_waits_on_other_presses_is_not_performed() {
     let p = prefabs();
-    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(2), &p);
+    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(true), &p);
     build(&c, &p).expect("the path needs nothing of the lever behind the door");
 }
 
-/// **The perturbation: the press opens the way itself.** The same lever whose
-/// opening its own press reaches is performed for that way, at the first step
+/// **The perturbation: the press opens the way itself.** The same lever with
+/// its opening ungated is performed for that way, at the first step
 /// in its area, behind the door the talk has not yet opened — the refusal the
 /// rule above withdraws only for a press that opens nothing.
 #[test]
 fn a_lever_whose_press_opens_the_way_is_still_performed_and_refused_behind_the_door() {
     let p = prefabs();
-    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(1), &p);
+    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(false), &p);
     let err = build(&c, &p).expect_err("the lever is performed before the talk opens the door");
     assert!(err.contains("DW0317"), "{err}");
     assert!(err.contains("anchor/door"), "{err}");
