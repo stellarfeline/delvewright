@@ -288,14 +288,14 @@ pub struct StandUp {
 /// route order: a climb that goes down (a crouching body holds on the
 /// climbable and will not walk off the brink it starts from), a step from a
 /// route cell to a lower one outside any climb (vanilla backs a crouching body
-/// off every edge), and a declared jump the route takes (`taken`). The one
+/// off every edge), and a jump the route takes, declared or a hop (`taken`). The one
 /// answer to "which moves of a sneak leg are made standing": the exported leg
 /// carries it to the bot as `stand_ups`, and the sculk model hears exactly
 /// those moves ([`standing_cells`]).
 pub fn stand_ups(
     cells: &[[i32; 3]],
     climbs: &[crate::compiler::nav::ClimbRun],
-    taken: &[&crate::compiler::nav::ProvenJump],
+    taken: &[([i32; 3], [i32; 3], bool, u32)],
 ) -> Vec<StandUp> {
     let index =
         |c: [i32; 3], from: usize| cells[from..].iter().position(|x| *x == c).map(|i| i + from);
@@ -327,8 +327,8 @@ pub fn stand_ups(
         }
     }
     for j in taken {
-        let Some(a) = index(j.from, 0) else { continue };
-        if cells.get(a + 1) != Some(&j.to) {
+        let Some(a) = index(j.0, 0) else { continue };
+        if cells.get(a + 1) != Some(&j.1) {
             continue;
         }
         covered[a] = true;
@@ -336,8 +336,8 @@ pub fn stand_ups(
             a,
             a + 1,
             StandUp {
-                from: j.from,
-                to: j.to,
+                from: j.0,
+                to: j.1,
                 why: "jump",
             },
         ));
@@ -703,7 +703,11 @@ mod tests {
             sprint: false,
             run_up: 1,
         };
-        let ups = stand_ups(&cells, &[up, down], &[&jump]);
+        let ups = stand_ups(
+            &cells,
+            &[up, down],
+            &[(jump.from, jump.to, jump.sprint, jump.run_up)],
+        );
         let got: Vec<([i32; 3], [i32; 3], &str)> =
             ups.iter().map(|u| (u.from, u.to, u.why)).collect();
         assert_eq!(
