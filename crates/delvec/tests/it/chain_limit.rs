@@ -299,7 +299,7 @@ fn quota(
 
 #[test]
 fn a_tick_past_the_chain_limit_builds_and_its_load_declares_the_quota() {
-    let src = over_limit_tick(200);
+    let src = over_limit_tick(80);
     let out = tmp("chain-limit-tick-out");
     let r = Command::new(BIN)
         .args([
