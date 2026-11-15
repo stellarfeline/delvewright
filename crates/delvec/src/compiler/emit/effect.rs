@@ -1068,17 +1068,6 @@ pub(super) fn emit_quest_effect(
                 body.extend(actor_answer_box_kill(plan.campaign, a));
             }
             emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
-            // spec-0135 §13: the mount leaves with its rider, unseen.
-            if let Some(a) = plan
-                .campaign
-                .quests
-                .content
-                .actors
-                .iter()
-                .find(|a| a.id.as_str() == actor.as_str())
-            {
-                body.extend(actor_mount_removal(ns, a));
-            }
         }
         Verb::MoveActor { actor, to, .. } => {
             body.push(format!(

@@ -1,4 +1,5 @@
-//! spec-0135 §13, document tier: a body that rides another (`DW1114`), a
+//! spec-0135 §13, document tier: a wave body on its mount, an actor seated
+//! on a vehicle (`DW1114`), a
 //! vehicle counted per player present (`DW1115`), a board of places
 //! (`DW1116`), and a wave's spawn anchor resolved where it is written
 //! (`DW0142`).
@@ -53,11 +54,19 @@ fn racer() -> Value {
     // The document tier's registry is the vendored sixteen; the compiler's
     // is the pinned game's whole list.
     json!({"id": "actor/racer", "entity": "minecraft:zombie", "name": "Oskar",
-           "anchor": "anchor/keeper-stand", "mount": {"entity": "minecraft:spider"}})
+           "anchor": "anchor/keeper-stand"})
+}
+
+/// A one-body pig on the racer's mark, seating it.
+fn racer_pig() -> Value {
+    json!({"id": "vehicle/racer-pig", "entity": "minecraft:pig",
+           "at": {"anchor": "anchor/keeper-stand"},
+           "bounds": {"anchor": "anchor/keeper-stand", "extent": [8, 3, 8]},
+           "rider": "actor/racer"})
 }
 
 #[test]
-fn a_wave_mob_and_an_actor_take_a_mount() {
+fn a_wave_mob_takes_a_mount_and_an_actor_does_not() {
     let c = with(|q| {
         q["waves"] = json!([{"id": "wave/horsemen", "anchor": "anchor/keeper-stand",
             "mobs": [{"entity": "minecraft:skeleton", "count": 2,
@@ -67,26 +76,103 @@ fn a_wave_mob_and_an_actor_take_a_mount() {
     let sites = delvewright_dsl::mount_sites(&c);
     assert_eq!(
         sites.iter().map(|s| s.path.as_str()).collect::<Vec<_>>(),
-        ["/content/waves/0/mobs/0/mount", "/content/actors/0/mount"]
+        ["/content/waves/0/mobs/0/mount"]
     );
-    assert!(codes_at(&c, "DW1114").is_empty());
     assert!(codes_at(&c, "DW0173").is_empty());
+    // An actor rides a vehicle of `vehicles[]`: a `mount` on one is a field
+    // the class does not have, refused as the document is read.
+    let mut q: Value = serde_json::from_str(&hw("quests.json")).unwrap();
+    q["dsl_version"] = json!(DSL_VERSION);
+    let mut a = racer();
+    a["mount"] = json!({"entity": "minecraft:pig"});
+    q["content"]["actors"] = json!([a]);
+    let err = delvewright_dsl::parse_campaign(&RawCampaign {
+        world: hw("world.json"),
+        npcs: hw("npcs.json"),
+        classes: hw("classes.json"),
+        quest_plan: hw("quest-plan.json"),
+        quests: q.to_string(),
+        dialogue: hw("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    })
+    .expect_err("an actor's `mount` is refused");
+    assert!(format!("{err:?}").contains("mount"), "{err:?}");
 }
 
 #[test]
 fn a_mount_of_no_known_kind_is_dw0173() {
     let c = with(|q| {
-        let mut a = racer();
-        a["mount"]["entity"] = json!("minecraft:unicorn");
-        q["actors"] = json!([a]);
+        q["waves"] = json!([{"id": "wave/horsemen", "anchor": "anchor/keeper-stand",
+            "mobs": [{"entity": "minecraft:skeleton", "count": 1,
+                      "mount": {"entity": "minecraft:unicorn"}}]}]);
     });
-    assert_eq!(codes_at(&c, "DW0173"), ["/content/actors/0/mount/entity"]);
+    assert_eq!(
+        codes_at(&c, "DW0173"),
+        ["/content/waves/0/mobs/0/mount/entity"]
+    );
 }
 
 #[test]
-fn a_hop_of_a_rider_and_an_entrance_on_one_are_dw1114() {
+fn a_vehicle_seats_a_declared_actor_on_its_own_mark() {
+    let ok = with(|q| {
+        q["actors"] = json!([racer()]);
+        q["vehicles"] = json!([racer_pig()]);
+    });
+    assert!(
+        codes_at(&ok, "DW1114").is_empty(),
+        "{:#?}",
+        validate_campaign(&ok)
+    );
+    assert_eq!(
+        delvewright_dsl::vehicle_of_rider(&ok, "actor/racer").map(|v| v.id.as_str()),
+        Some("vehicle/racer-pig")
+    );
+    let unknown = with(|q| q["vehicles"] = json!([racer_pig()]));
+    assert_eq!(codes_at(&unknown, "DW0112"), ["/content/vehicles/0/rider"]);
+    let apart = with(|q| {
+        q["actors"] = json!([racer()]);
+        let mut v = racer_pig();
+        v["at"]["offset"] = json!([1, 0, 0]);
+        q["vehicles"] = json!([v]);
+    });
+    assert_eq!(codes_at(&apart, "DW1114"), ["/content/vehicles/0/rider"]);
+    let two = with(|q| {
+        q["actors"] = json!([racer()]);
+        let mut second = racer_pig();
+        second["id"] = json!("vehicle/second-pig");
+        q["vehicles"] = json!([racer_pig(), second]);
+    });
+    assert_eq!(codes_at(&two, "DW1114"), ["/content/vehicles/1/rider"]);
+    let row = with(|q| {
+        q["actors"] = json!([racer()]);
+        let mut v = racer_pig();
+        v["count"] = json!(2);
+        v["spacing"] = json!([2, 0, 0]);
+        q["vehicles"] = json!([v]);
+    });
+    assert!(codes_at(&row, "DW1114").contains(&"/content/vehicles/0/rider".to_string()));
+    // A pig seats one: with its actor aboard, the party has no seat on it.
+    let full = with(|q| {
+        q["actors"] = json!([racer()]);
+        q["vehicles"] = json!([racer_pig()]);
+        q["quests"][0]["objectives"][0]["ride"] = json!("vehicle/racer-pig");
+    });
+    assert_eq!(
+        codes_at(&full, "DW1114"),
+        ["/content/quests/0/objectives/0/ride"]
+    );
+}
+
+#[test]
+fn a_hop_of_a_seated_actor_and_an_entrance_on_one_are_dw1114() {
     let hop = |q: &mut Value| {
         q["actors"] = json!([racer()]);
+        q["vehicles"] = json!([racer_pig()]);
         on_talk(
             q,
             json!([{"type": "spawn-actor", "actor": "actor/racer"},
@@ -103,7 +189,7 @@ fn a_hop_of_a_rider_and_an_entrance_on_one_are_dw1114() {
     // Perturbation: the same hop of the actor on its own feet is no refusal.
     let c = with(|q| {
         hop(q);
-        q["actors"][0].as_object_mut().unwrap().remove("mount");
+        q["vehicles"][0].as_object_mut().unwrap().remove("rider");
     });
     assert!(codes_at(&c, "DW1114").is_empty());
     let c = with(|q| {
@@ -111,8 +197,30 @@ fn a_hop_of_a_rider_and_an_entrance_on_one_are_dw1114() {
         a["entity"] = json!("minecraft:warden");
         a["entrance"] = json!("native");
         q["actors"] = json!([a]);
+        q["vehicles"] = json!([racer_pig()]);
     });
-    assert_eq!(codes_at(&c, "DW1114"), ["/content/actors/0/mount"]);
+    assert_eq!(codes_at(&c, "DW1114"), ["/content/actors/0/entrance"]);
+}
+
+#[test]
+fn a_seated_actor_walks_a_mount_and_never_a_boat() {
+    let walk = |entity: &str| {
+        let entity = entity.to_string();
+        with(move |q| {
+            q["actors"] = json!([racer()]);
+            let mut v = racer_pig();
+            v["entity"] = json!(entity);
+            q["vehicles"] = json!([v]);
+            on_talk(
+                q,
+                json!([{"type": "spawn-actor", "actor": "actor/racer"},
+                       {"type": "move-actor", "actor": "actor/racer",
+                        "to": {"anchor": "anchor/keeper-stand"}, "speed": 0.1}]),
+            );
+        })
+    };
+    assert!(codes_at(&walk("minecraft:pig"), "DW1114").is_empty());
+    assert_eq!(codes_at(&walk("minecraft:oak_boat"), "DW1114").len(), 1);
 }
 
 fn pig(count: Value) -> Value {

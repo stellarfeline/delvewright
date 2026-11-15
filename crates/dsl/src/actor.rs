@@ -141,12 +141,6 @@ pub struct Actor {
     /// `DW1082`. Absent = `false`, judged as every other actor.
     #[serde(default, skip_serializing_if = "is_false")]
     pub outrun: bool,
-    /// The body this actor rides (DSL v0.78, spec-0135 §13), in the wave
-    /// mob's shape: the puppet is summoned as its passenger, a `move-actor`
-    /// walks the mount with the puppet aboard, and `unleash-actor` stands
-    /// the twin on a fresh mount with its AI. Absent = byte-identical.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mount: Option<crate::Mount>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

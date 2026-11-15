@@ -329,7 +329,9 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
                 delvewright_dsl::BodyRef::Npc(n) => {
                     entity_dims(&crate::compiler::nav::npc_body_entity(n))
                 }
-                delvewright_dsl::BodyRef::Actor(a) => crate::compiler::nav::actor_body_dims(a),
+                delvewright_dsl::BodyRef::Actor(a) => {
+                    crate::compiler::nav::actor_body_dims(plan.campaign, a)
+                }
             },
             pos: cell_feet(pos),
             path: s.path.clone(),
@@ -378,7 +380,7 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
             .find(|a| a.id.as_str() == m.actor)
             .map_or_else(
                 || entity_dims(&entity),
-                crate::compiler::nav::actor_body_dims,
+                |a| crate::compiler::nav::actor_body_dims(plan.campaign, a),
             );
         for (t, wp) in m.waypoints.iter().enumerate() {
             out.push(Volume {

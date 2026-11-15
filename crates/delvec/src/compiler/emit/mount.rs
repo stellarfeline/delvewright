@@ -1,5 +1,5 @@
-//! A body that rides another (spec-0135 §13): the mount a wave mob or an
-//! actor is summoned on, through the pinned game's `Passengers` entity data —
+//! A body that rides another (spec-0135 §13): the mount a wave mob is
+//! summoned on, through the pinned game's `Passengers` entity data —
 //! the shape vanilla's own mounted spawn takes
 //! (`docs/reference/vehicles-animals-and-targets.md` §16).
 
@@ -14,17 +14,6 @@ pub(super) const MOUNT_TAG: &str = "dw_mount";
 /// no member of the wave felled.
 pub(crate) fn wave_mount_tag(wave: &str) -> String {
     format!("dw_wmount_{}", plan::safe_local(wave))
-}
-
-/// The tag every mount of actor `actor` carries — its puppet's and its twin's.
-pub(crate) fn actor_mount_tag(actor: &str) -> String {
-    format!("dw_amount_{}", plan::safe_local(actor))
-}
-
-/// The tag the **puppet's** mount carries beside [`actor_mount_tag`]: the
-/// mount an `unleash-actor` takes away when it stands the twin on a fresh one.
-pub(crate) fn puppet_mount_tag(actor: &str) -> String {
-    format!("dw_pmount_{}", plan::safe_local(actor))
 }
 
 /// The mount's own compound, inside the braces: its tags, then `extra`, then
@@ -129,46 +118,6 @@ pub(super) fn wave_mount_removal(ns: &str, w: &delvewright_dsl::Wave) -> Vec<Str
         return Vec::new();
     }
     removal_lines(ns, &wave_mount_tag(w.id.as_str()), false, Exit::Unseen)
-}
-
-/// The puppet's mount: held as the puppet is — without its AI, silent,
-/// facing the actor's way, `Invulnerable` unless the actor is `vulnerable`.
-pub(super) fn puppet_ride_on(a: &delvewright_dsl::Actor, summon: String, yaw: i32) -> String {
-    let inv = if a.vulnerable { 0 } else { 1 };
-    ride_on(
-        &summon,
-        a.mount.as_ref(),
-        &[
-            actor_mount_tag(a.id.as_str()),
-            puppet_mount_tag(a.id.as_str()),
-        ],
-        &[
-            "NoAI:1b".to_string(),
-            "Silent:1b".to_string(),
-            "PersistenceRequired:1b".to_string(),
-            format!("Invulnerable:{inv}b"),
-            format!("Rotation:[{yaw}f,0f]"),
-        ],
-    )
-}
-
-/// The twin's mount: a fresh body with its AI, as the twin has.
-pub(super) fn twin_ride_on(a: &delvewright_dsl::Actor, summon: String) -> String {
-    ride_on(
-        &summon,
-        a.mount.as_ref(),
-        &[actor_mount_tag(a.id.as_str())],
-        &["PersistenceRequired:1b".to_string()],
-    )
-}
-
-/// The removal of every mount of actor `a`: empty for an actor that rides
-/// nothing.
-pub(super) fn actor_mount_removal(ns: &str, a: &delvewright_dsl::Actor) -> Vec<String> {
-    if a.mount.is_none() {
-        return Vec::new();
-    }
-    removal_lines(ns, &actor_mount_tag(a.id.as_str()), false, Exit::Unseen)
 }
 
 #[cfg(test)]

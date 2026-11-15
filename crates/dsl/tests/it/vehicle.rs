@@ -3,9 +3,9 @@
 
 use delvewright_dsl::{VehicleKind, VehicleMedium, steering, steering_table};
 
-/// Criterion 1: `vehicles[]` is exported with its twelve fields — `seated`
-/// and `left` among them (spec-0135 §2, §3), and `count` and `spacing`
-/// (§13) — and the two verbs with it.
+/// Criterion 1: `vehicles[]` is exported with its thirteen fields — `seated`
+/// and `left` among them (spec-0135 §2, §3), and `count`, `spacing` and
+/// `rider` (§13) — and the two verbs with it.
 #[test]
 fn the_surface_is_exported() {
     let schema = delvewright_dsl::schema::stage_schema(delvewright_dsl::envelope::Stage::Quests);
@@ -30,6 +30,7 @@ fn the_surface_is_exported() {
             "id",
             "left",
             "name",
+            "rider",
             "seated",
             "spacing"
         ]

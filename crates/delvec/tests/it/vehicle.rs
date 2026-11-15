@@ -1972,22 +1972,35 @@ fn a_wave_body_rides_its_mount_and_only_the_rider_is_counted() {
     assert!(rider < mount, "the riders leave first: {talked}");
 }
 
-fn racer(mount: &str) -> String {
+fn racer(more: &str) -> String {
     format!(
         r#""actors": [ {{ "id": "actor/racer", "entity": "minecraft:villager", "name": "Ulla",
-            "anchor": "anchor/floor"{mount} }} ]"#
+            "anchor": "anchor/floor"{more} }} ]"#
     )
 }
 
-/// A mounted puppet arrives aboard its mount, walks by its mount, and its
-/// twin stands up on a fresh one; the clearance proof reads the stacked box.
-/// Perturbation: a lid three blocks over the floor clears a villager (1.95)
-/// and not a villager on a zombie horse (1.6 + 1.95), so the mount alone
-/// turns the proof red.
+/// The horse actor `actor/racer` is seated on, standing on the racer's mark.
+fn racer_horse(rider: &str) -> String {
+    format!(
+        r#"{{ "id": "vehicle/racer-horse", "entity": "minecraft:horse",
+            "at": {{ "anchor": "anchor/floor" }},
+            "bounds": {{ "anchor": "anchor/floor", "extent": [3, 2, 3] }}{rider} }}"#
+    )
+}
+
+const SEATS_RACER: &str = r#", "rider": "actor/racer""#;
+
+/// A seated actor rides a vehicle of `vehicles[]` (spec-0135 §13): put
+/// aboard by `ride` when the vehicle is seated and when the actor is
+/// spawned, walked by its vehicle — on its own feet only while the vehicle
+/// is not standing — and its twin takes the puppet's seat with the mount's
+/// AI given back; the clearance proof reads the stacked box. Perturbation: a
+/// lid three blocks over the floor clears a villager (1.95) and not a
+/// villager on a horse (1.6 + 1.95), so the `rider` alone turns the proof
+/// red.
 #[test]
-fn an_actor_rides_its_mount_where_it_stands_walks_and_stands_up() {
-    let mount = r#", "mount": { "entity": "minecraft:zombie_horse" }"#;
-    let more: &'static str = Box::leak(racer(mount).into_boxed_str());
+fn an_actor_seated_on_a_vehicle_rides_and_walks_it() {
+    let more: &'static str = Box::leak(racer("").into_boxed_str());
     let talk = r#"{ "type": "spawn-actor", "actor": "actor/racer",
                     "happening": { "subject": "actor/racer", "verb": "arrives", "text": "Ulla rides in." } },
                   { "type": "move-actor", "actor": "actor/racer", "to": { "anchor": "anchor/rail-end" }, "speed": 0.1,
@@ -1997,13 +2010,20 @@ fn an_actor_rides_its_mount_where_it_stands_walks_and_stands_up() {
         more,
         ..Bay::default()
     };
-    let (dir, lib) = write("racer", bay, "", talk);
-    let out = try_build(&dir, &lib).expect("the mounted actor builds");
+    let (dir, lib) = write("racer", bay, &racer_horse(SEATS_RACER), talk);
+    let out = try_build(&dir, &lib).expect("the seated actor builds");
+    let aboard = "execute if entity @e[tag=dw_vehicle_racer_horse] as @e[tag=dw_pup_racer,limit=1] run ride @s mount @e[tag=dw_vehicle_racer_horse,limit=1]";
     let spawn = function(&out, "spawn_actor_racer");
+    let summon = spawn.find("summon minecraft:villager").expect("the puppet");
+    let ride = spawn.find(aboard).unwrap_or_else(|| panic!("{spawn}"));
     assert!(
-        spawn.contains(r#"run summon minecraft:zombie_horse 3.5 68.0 3.5 {Tags:["dw_mount","dw_amount_racer","dw_pmount_racer"],NoAI:1b"#)
-            && spawn.contains(r#"Passengers:[{id:"minecraft:villager",NoAI:1b"#),
-        "{spawn}"
+        summon < ride,
+        "the puppet is put aboard once it stands: {spawn}"
+    );
+    let seat = function(&out, "vehicle_seat_racer_horse");
+    assert!(
+        seat.contains(aboard),
+        "the seat puts the actor aboard: {seat}"
     );
     let tick = out
         .iter()
@@ -2011,19 +2031,28 @@ fn an_actor_rides_its_mount_where_it_stands_walks_and_stands_up() {
         .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
         .expect("the walk's driver");
     assert!(
-        tick.contains("as @e[tag=dw_pup_racer] on vehicle run tp @s ")
-            && !tick.contains("run tp @e[tag=dw_pup_racer]"),
-        "the walk moves the mount, never the rider: {tick}"
+        tick.contains(
+            "as @e[tag=dw_pup_racer] on vehicle if entity @s[tag=dw_vehicle_racer_horse] run tp @s "
+        ) && tick
+            .contains("unless entity @e[tag=dw_vehicle_racer_horse] run tp @e[tag=dw_pup_racer] "),
+        "the walk moves the vehicle, and the rider only afoot: {tick}"
     );
     let unleash = function(&out, "unleash_racer");
+    let twin = "@e[tag=dw_actor_racer,tag=!dw_pup_racer,type=!minecraft:interaction,limit=1]";
     assert!(
-        unleash.contains("execute at @e[tag=dw_pmount_racer,limit=1] run summon minecraft:zombie_horse ~ ~ ~ {Tags:[\"dw_mount\",\"dw_amount_racer\"],PersistenceRequired:1b,Passengers:[{id:\"minecraft:villager\""),
-        "{unleash}"
+        unleash.contains(&format!(
+            "execute if entity @e[tag=dw_vehicle_racer_horse] as {twin} run ride @s mount @e[tag=dw_vehicle_racer_horse,limit=1]"
+        )) && unleash.contains(&format!(
+            "execute as {twin} on vehicle run data merge entity @s[tag=dw_vehicle_racer_horse] {{NoAI:0b}}"
+        )),
+        "the twin takes the seat, the mount its AI: {unleash}"
     );
-    assert!(unleash.contains("dw_pmount_racer"), "{unleash}");
+    assert!(
+        !out.keys().any(|k| k.contains("dw_mount")) && !spawn.contains("Passengers"),
+        "a seated actor is no wave mount: {spawn}"
+    );
     // The lid over the racer's mark, three cells of headroom.
-    let lidded = |tag: &str, mount: &'static str| {
-        let more: &'static str = Box::leak(racer(mount).into_boxed_str());
+    let lidded = |tag: &str, rider: &str| {
         let bay = Bay {
             more,
             lid: Some([3, 7, 3]),
@@ -2031,14 +2060,14 @@ fn an_actor_rides_its_mount_where_it_stands_walks_and_stands_up() {
         };
         let talk = r#"{ "type": "spawn-actor", "actor": "actor/racer",
                         "happening": { "subject": "actor/racer", "verb": "arrives", "text": "Ulla rides in." } }"#;
-        let (dir, lib) = write(tag, bay, "", talk);
+        let (dir, lib) = write(tag, bay, &racer_horse(rider), talk);
         try_build(&dir, &lib)
     };
     assert!(
         lidded("racer-lid-afoot", "").is_ok(),
-        "a villager fits three blocks"
+        "a villager and a horse each fit three blocks"
     );
-    match lidded("racer-lid-mounted", mount) {
+    match lidded("racer-lid-seated", SEATS_RACER) {
         Err(BuildFailure::Diagnostic { code, message }) => {
             assert_eq!(code.to_string(), "DW0450", "{message}");
         }

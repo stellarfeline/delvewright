@@ -62,7 +62,8 @@ pub struct VehiclePlan {
     pub kind: VehicleKind,
     /// The medium.
     pub medium: VehicleMedium,
-    /// Riders it seats.
+    /// Riders of the party it seats: the kind's seats, less the one its
+    /// actor takes (spec-0135 §13).
     pub seats: u32,
     /// Summoned `Tame`.
     pub tame: bool,
@@ -265,7 +266,8 @@ pub fn vehicle_plans(
                 entity: delvewright_dsl::namespaced_entity(&v.entity),
                 kind: s.kind,
                 medium: s.medium,
-                seats: s.seats,
+                // spec-0135 §13: an actor seated on it takes one seat.
+                seats: s.seats.saturating_sub(u32::from(v.rider.is_some())),
                 tame: s.tame,
                 steering_item: s.steering_item.clone(),
                 seat: [mark[0] + off[0], mark[1] + off[1], mark[2] + off[2]],

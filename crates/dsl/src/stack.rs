@@ -393,11 +393,6 @@ pub fn for_each_stack<'a>(c: &'a Campaign, f: &mut dyn FnMut(StackAt<'a>)) {
             }
         }
     }
-    for (i, a) in q.actors.iter().enumerate() {
-        if let Some(eq) = a.mount.as_ref().and_then(|m| m.equipment.as_ref()) {
-            worn(format!("/content/actors/{i}/mount/equipment"), eq, f);
-        }
-    }
     let dropped = |base: String, drops: &'a [crate::MobDrop], f: &mut dyn FnMut(StackAt<'a>)| {
         for (n, dr) in drops.iter().enumerate() {
             if let crate::MobDrop::Item(s) = dr {
