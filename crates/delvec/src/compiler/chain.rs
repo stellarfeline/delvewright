@@ -580,8 +580,7 @@ fn declared(out: &BuildOutput, bodies: &BTreeMap<String, Vec<Line>>) -> Option<u
             [g, r, n] if g == "gamerule" && r == SEQUENCE_RULE => n.parse::<u64>().ok(),
             _ => None,
         })
-        .filter(|n| *n <= RULE_MAX)
-        .next_back()
+        .rfind(|n| *n <= RULE_MAX)
 }
 
 /// Every function a `#minecraft:load` entry (of any datapack) runs in its own
