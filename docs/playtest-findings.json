@@ -4204,7 +4204,7 @@
       "round": null,
       "triage": "capability",
       "finding": "the machine proofs of the dusk raid passed while its raiders did not fight: the bot clears a wave by scripted blows and its die-retry deaths are scripted, so nothing it ran asked whether a raider takes the party as its target",
-      "general_form": "every wave with a stack of the game's `monster` category has a generated PackTest (`engage_<wave>`) that stands each hostile kind at its reach from the dummy, has the dummy strike it, and asserts every body holds the dummy as its target; difficulty and survival are never asked",
+      "general_form": "every wave with a stack of the game's `monster` category has a generated PackTest (`engage_<wave>`) that stands each hostile kind at its reach from the dummy, has the dummy strike it, and waits until every body holds the dummy as its target; difficulty and survival are never asked",
       "carrier": {
         "kind": "packtest",
         "template": "engage_{safe}"
@@ -4234,7 +4234,7 @@
           }
         }
       },
-      "note": "A lane mob held at the lane's radius after its release drops a target past it; the template stands a lane pillager 30 blocks off on an 8-block lane, so the emission before the release reset reds it."
+      "note": "A lane mob held at the lane's radius after its release drops a target past it; the template stands a lane pillager 20 blocks off on an 8-block lane (a vindicator 10), so the emission before the release reset reds it."
     },
     {
       "id": "fotm-07",

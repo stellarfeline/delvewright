@@ -6,8 +6,9 @@ const PAD_FLOOR_Y: i32 = 300;
 /// The highest course an engagement pad may stand on, leaving its two
 /// courses of headroom under the build top.
 const PAD_CEILING_Y: i32 = 316;
-/// How long the template waits after the blows for the target goals to run.
-const ENGAGE_WAIT_TICKS: u32 = 20;
+/// How far past its farthest body the pad runs, and how wide it is on either
+/// side: a blow knocks a body back, and a bowman steps away to shoot.
+const PAD_MARGIN: i32 = 8;
 
 /// One kind of hostile body a wave seats, as the engagement template drives it.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,18 +27,16 @@ pub(crate) struct EngagedKind {
     pub beyond_lane: bool,
 }
 
-/// **The distance the template stands a kind from the party**: inside its
-/// reach by a margin a step or two of the mob's walk cannot close, and — for
-/// a lane mob whose reach runs past the radius — past the lane's radius, so a
-/// mob still held at the radius after its release lets the party go.
+/// **The distance the template stands a kind from the party**: for a lane
+/// mob whose reach runs past the lane's radius, midway between the two — so a
+/// mob still held at the radius after its release lets the party go, and a
+/// knock or a step back does not carry one past its reach; for any other, half
+/// its reach (at least one block).
 pub(crate) fn engage_distance(reach: f64, lane_radius: Option<u32>) -> (f64, bool) {
-    let d = if reach >= 4.0 {
-        reach - 2.0
-    } else {
-        (reach - 0.5).max(1.0)
-    };
-    let beyond = lane_radius.is_some_and(|r| d > f64::from(r));
-    (d, beyond)
+    match lane_radius.map(f64::from) {
+        Some(r) if reach > r + 1.0 => ((r + reach) / 2.0, true),
+        _ => ((reach / 2.0).max(1.0), false),
+    }
 }
 
 /// The hostile kinds of `w`, in declaration order: every stack whose species
@@ -106,16 +105,18 @@ impl EngageBinding {
     }
 }
 
-/// **A hostile wave's bodies keep the party as their target within the reach
-/// the compiler's proofs read** (`nav::follow::mob_reach`): one template per
-/// wave with a hostile stack. The wave is seated, every hostile body is stood
-/// on a barrier pad above the world at its kind's distance from the dummy
-/// ([`engage_distance`]), struck once by the dummy, its lane clock run, and
-/// after [`ENGAGE_WAIT_TICKS`] every body of the kind must hold the dummy as
-/// its target. Whether the party survives, or how hard the fight is, is not
-/// asked (ADR-0039): only that the bodies engage at the reach the proofs
-/// assume. A lane mob whose follow range is held at the lane's radius drops a
-/// target past it, so the template reds on that emission.
+/// **A hostile wave's bodies take the party as their target within the
+/// reach the compiler's proofs read** (`nav::follow::mob_reach`): one template
+/// per wave with a hostile stack. The wave is seated, every hostile body is
+/// stood on a barrier pad above the world at its kind's distance from the
+/// dummy ([`engage_distance`]), struck once by the dummy, its lane clock run,
+/// and the template waits until every body holds the dummy as its target at
+/// once (`engage_poll_<wave>`, counted every tick) — by the blow or by sight;
+/// one that never does times it out. Whether the party survives, or how hard
+/// the fight is, is not asked (ADR-0039): only that the bodies engage at the
+/// reach the proofs assume. A lane mob whose follow range is held at the
+/// lane's radius drops a target past it, so the template reds on that
+/// emission.
 pub(super) fn emit_engagement_packtests(
     plan: &Plan,
     out: &mut BuildOutput,
@@ -156,11 +157,45 @@ pub(super) fn emit_engagement_packtests(
             .max()
             .unwrap_or(1);
         let (x0, z0) = (seat[0], seat[2]);
-        let (x1, z1) = (x0 + far + 1, z0 + 1);
-        let pad = format!("{} {} {} {} {} {}", x0 - 1, y - 1, z0 - 1, x1, y - 1, z1);
+        let (xa, za, xb, zb) = (
+            x0 - 2,
+            z0 - PAD_MARGIN,
+            x0 + far + PAD_MARGIN,
+            z0 + PAD_MARGIN,
+        );
+        let pad = format!("{xa} {} {za} {xb} {} {zb}", y - 1, y - 1);
+        let mark = format!("dw_pt_eng_{safe}");
+        let all = format!("#ea_{safe}");
+        let on = format!("#eon_{safe}");
+        let total: u32 = kinds.iter().map(|k| k.count).sum();
+        // The poll: every body of every hostile kind that holds the dummy as
+        // its target, counted every tick while the template waits on it.
+        let poll = format!("engage_poll_{safe}");
+        let mut pl = vec![format!("scoreboard players set {all} dw.sys 0")];
+        for (i, k) in kinds.iter().enumerate() {
+            let held = format!("#e{i}_{safe}");
+            pl.push(format!("scoreboard players set {held} dw.sys 0"));
+            pl.push(format!(
+                "execute as @e[tag={tag},type={}] on target if entity @s[tag={mark}] run \
+                 scoreboard players add {held} dw.sys 1",
+                k.entity
+            ));
+            pl.push(format!(
+                "execute if score {held} dw.sys matches {}.. run scoreboard players add {all} \
+                 dw.sys {}",
+                k.count, k.count
+            ));
+        }
+        pl.push(format!(
+            "execute if score {on} dw.sys matches 1 run schedule function {ns}:{poll} 1t"
+        ));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/{poll}.mcfunction"),
+            lines(&pl).into_bytes(),
+        );
         let mut t = vec![
             format!(
-                "#> {title}: every hostile of `{}` keeps the party as its target within the reach \
+                "#> {title}: every hostile of `{}` takes the party as its target within the reach \
                  the proofs read (spec-0016 §6)",
                 w.id
             ),
@@ -170,8 +205,14 @@ pub(super) fn emit_engagement_packtests(
             String::new(),
             format!("function {ns}:setup"),
             pin,
+            // The dummy is the party standing in the fight: in no cutscene
+            // (`cs_repair` returns a player left tagged to its checkpoint),
+            // and free of the playable region's clock while it stands on the
+            // pad above the world.
+            format!("tag {sel} remove {}", super::super::cutscene::CUTSCENE_TAG),
+            format!("tag {sel} add {}", crate::compiler::creator::FREE_TAG),
             format!("kill @e[tag={tag}]"),
-            format!("forceload add {} {} {x1} {z1}", x0 - 1, z0 - 1),
+            format!("forceload add {xa} {za} {xb} {zb}"),
             format!("fill {pad} minecraft:barrier replace minecraft:air"),
             format!("tp {sel} {}.5 {y} {}.5", x0, z0),
             format!("effect give {sel} minecraft:resistance 60 4 true"),
@@ -191,23 +232,23 @@ pub(super) fn emit_engagement_packtests(
         if w.lane.is_some() {
             t.push(format!("function {ns}:lane_tick_{safe}"));
         }
-        t.push(format!("await delay {ENGAGE_WAIT_TICKS}t"));
-        for (i, k) in kinds.iter().enumerate() {
-            let held = format!("#e{i}_{safe}");
-            t.push(format!("scoreboard players set {held} dw.sys 0"));
-            t.push(format!(
-                "execute as @e[tag={tag},type={}] on target if entity @s[tag=dw_pt_eng_{safe}] \
-                 run scoreboard players add {held} dw.sys 1",
-                k.entity
-            ));
-            t.push(format!("assert score {held} dw.sys matches {}", k.count));
-        }
+        t.push(format!("scoreboard players set {on} dw.sys 1"));
+        t.push(format!("function {ns}:{poll}"));
+        // Every body takes the dummy as its target at some tick, by the blow
+        // or by sight, while the dummy stands within its reach; one that never
+        // does times the template out.
+        t.push(format!("await score {all} dw.sys matches {total}"));
+        t.push(format!("scoreboard players set {on} dw.sys 0"));
         t.push(format!("kill @e[tag={tag}]"));
         t.push(format!(
             "fill {pad} minecraft:air replace minecraft:barrier"
         ));
         t.push(format!("effect clear {sel}"));
-        t.push(format!("tag {sel} remove dw_pt_eng_{safe}"));
+        t.push(format!(
+            "tag {sel} remove {}",
+            crate::compiler::creator::FREE_TAG
+        ));
+        t.push(format!("tag {sel} remove {mark}"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
             lines(&t).into_bytes(),
@@ -220,12 +261,15 @@ pub(super) fn emit_engagement_packtests(
 mod tests {
     use super::*;
 
-    /// A lane pillager (reach 32) is stood past its 8-block radius; a
-    /// vindicator on a 14-block lane reaches the radius only and is not.
+    /// A lane pillager (reach 32) and a lane vindicator (12) are stood past
+    /// their 8-block radius; a vindicator on a 14-block lane reaches the
+    /// radius only and is not.
     #[test]
     fn a_kind_is_stood_inside_its_reach_and_past_its_lane() {
-        assert_eq!(engage_distance(32.0, Some(8)), (30.0, true));
-        assert_eq!(engage_distance(14.0, Some(14)), (12.0, false));
+        assert_eq!(engage_distance(32.0, Some(8)), (20.0, true));
+        assert_eq!(engage_distance(12.0, Some(8)), (10.0, true));
+        assert_eq!(engage_distance(14.0, Some(14)), (7.0, false));
+        assert_eq!(engage_distance(12.0, None), (6.0, false));
         assert_eq!(engage_distance(1.0, None), (1.0, false));
     }
 }
