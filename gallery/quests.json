@@ -6238,7 +6238,12 @@
               "attributes": {
                 "movement_speed": 0.3
               },
-              "entity": "minecraft:chicken"
+              "entity": "minecraft:pig",
+              "equipment": {
+                "saddle": {
+                  "item": "minecraft:saddle"
+                }
+              }
             }
           },
           {
