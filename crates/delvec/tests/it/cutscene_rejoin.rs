@@ -172,9 +172,10 @@ fn the_cutscene_bracket_refcounts_itself() {
 }
 
 /// The repair itself is per-player (`@s`, never `@a` — a repair must not disturb
-/// players who are mid-cutscene right now) and returns the player to the live
-/// checkpoint mirror, because the cutscene's own position marker has been killed
-/// by the time this can run.
+/// players who are mid-cutscene right now) and returns the player to the place
+/// they stood on when the shot began, which a disconnect keeps; a player with no
+/// saved place goes to the live checkpoint mirror. The fallback runs first, since
+/// the return clears the place it tests.
 #[test]
 fn the_repair_is_per_player_and_returns_to_the_checkpoint() {
     let out = build(A_CUTSCENE);
@@ -182,10 +183,11 @@ fn the_repair_is_per_player_and_returns_to_the_checkpoint() {
     for expected in [
         "gamemode adventure @s",
         "tag @s remove dw_cutscene",
-        "data modify storage dw:cs at.x set from storage dw:cp pos[0]",
-        "data modify storage dw:cs at.y set from storage dw:cp pos[1]",
-        "data modify storage dw:cs at.z set from storage dw:cp pos[2]",
-        "function hello-world:cs_repair_tp with storage dw:cs at",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.x set from storage dw:cp pos[0]",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.y set from storage dw:cp pos[1]",
+        "execute unless score @s dw.cs_saved matches 1 run data modify storage dw:cs at.z set from storage dw:cp pos[2]",
+        "execute unless score @s dw.cs_saved matches 1 run function hello-world:cs_repair_tp with storage dw:cs at",
+        "execute if score @s dw.cs_saved matches 1 run function hello-world:cs_return",
     ] {
         assert!(
             repair.lines().any(|l| l.trim() == expected),
@@ -195,6 +197,12 @@ fn the_repair_is_per_player_and_returns_to_the_checkpoint() {
     assert!(
         !repair.contains("@a"),
         "the repair must never touch the whole party:\n{repair}"
+    );
+    let fallback = repair.find("cs_repair_tp with").unwrap();
+    let ret = repair.find("run function hello-world:cs_return").unwrap();
+    assert!(
+        fallback < ret,
+        "the fallback runs before the return clears the place:\n{repair}"
     );
     assert_eq!(
         body(&out, "cs_repair_tp").trim(),
@@ -212,7 +220,13 @@ fn a_cutscene_less_campaign_emits_no_repair() {
         !body(&out, "tick").contains("cs_repair"),
         "a cutscene-less campaign must not gain a repair clause"
     );
-    for name in ["cs_repair", "cs_repair_tp"] {
+    for name in [
+        "cs_repair",
+        "cs_repair_tp",
+        "cs_save",
+        "cs_return",
+        "cs_return_tp",
+    ] {
         assert!(
             !out.keys()
                 .any(|p| p.ends_with(&format!("{name}.mcfunction"))),
