@@ -415,6 +415,7 @@ fn quests_doc_lever_behind_door(threshold: u32) -> String {
     "triggers": [
       {{ "id": "trigger/far-lever", "at": "anchor/far-knock", "on": {{ "on": "use" }},
          "once": true, "audience": "presser",
+         "prop": {{ "block": "minecraft:lever[face=floor,facing=north,powered=false]" }},
          "answers": {{ "done": "The lever is down." }},
          "effects": [
            {{ "type": "add-state", "state": "state/levers", "amount": 1 }},
