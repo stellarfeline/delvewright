@@ -171,6 +171,7 @@ pub fn validate_campaign_with(
     crate::loot::container_declaration_checks(c, &mut d);
     crate::sign::sign_checks(c, anchors, &mut d);
     crate::wave::lane_checks(c, anchors, &mut d);
+    crate::wave::wave_anchor_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);
     crate::firework::firework_checks(c, &mut d);
     crate::loot::loot_fill_checks(c, &mut d);
