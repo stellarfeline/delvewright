@@ -880,6 +880,7 @@ export class RunReport {
               trials_completed: this.dieRetryBinding.trialsCompleted,
               skipped_no_checkpoint: this.dieRetryBinding.skippedNoCheckpoint,
               skipped_unarmed_checkpoint: this.dieRetryBinding.skippedUnarmed,
+              skipped_unattended: this.dieRetryBinding.skippedUnattended,
               unbound: this.dieRetryBinding.unbound,
               reason: this.dieRetryBinding.reason ?? null,
             },

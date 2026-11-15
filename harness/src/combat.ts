@@ -1302,6 +1302,35 @@ export function checkpointPrecondition(
   };
 }
 
+/**
+ * Why the die-retry stage takes no death at a fight whose own bodies may fire a
+ * story trigger the walked world never performs (the step's `unattended`,
+ * critical-path format 13), or `undefined` when they may fire none.
+ *
+ * A death takes the party off the fight: it respawns at the checkpoint and
+ * walks back, and the fight's bodies walk where they would with nobody to
+ * fight. Where the compiler shows they may walk into a census box whose trigger
+ * writes the world, the run would leave the world it is judged against — the
+ * journal, the endings and every later reading would then compare it with a
+ * world it is not in. Advisory, never red: that a death here can change the
+ * story is the content's design, and the trigger's own world judges it; the
+ * finding says the retry loop went unproven in this world, and why.
+ */
+export function unattendedPrecondition(
+  wave: string,
+  unattended: readonly string[] | undefined,
+): string | undefined {
+  if (unattended === undefined || unattended.length === 0) return undefined;
+  return (
+    `${wave}: die-retry precondition: the fight's own bodies may fire ` +
+    `${unattended.map((t) => `\`${t}\``).join(", ")} while the party is away from it, ` +
+    `which this world never performs — a death here takes the run out of the world it is ` +
+    `judged against. No death was taken. Advisory, not a failure: the retry loop is ` +
+    `proven in a world where no such trigger is open at this fight; in this one it went ` +
+    `unproven.`
+  );
+}
+
 /** Every finding across a stage's trials, in order. */
 export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
   return trials.map(trialVerdict).filter((v): v is string => v !== undefined);
@@ -1399,6 +1428,9 @@ export interface DieRetryBinding {
   readonly skippedNoCheckpoint: number;
   /** Encounters excluded because the governing checkpoint was never armed. */
   readonly skippedUnarmed: number;
+  /** Encounters excluded because the fight's own bodies may fire a story
+   * trigger this world never performs ({@link unattendedPrecondition}). */
+  readonly skippedUnattended: number;
   /** True when no scripted death was taken — nothing about dying was examined. */
   readonly unbound: boolean;
   /** Why it examined nothing. `undefined` exactly when it examined something. */
@@ -1413,6 +1445,7 @@ export function dieRetryBinding(
   trials: readonly DeathTrial[],
   skippedNoCheckpoint: number,
   skippedUnarmed: number,
+  skippedUnattended: number,
 ): DieRetryBinding {
   const deathsScripted = trials.length;
   const base = {
@@ -1422,6 +1455,7 @@ export function dieRetryBinding(
     trialsCompleted: trials.filter((t) => t.completed).length,
     skippedNoCheckpoint,
     skippedUnarmed,
+    skippedUnattended,
     unbound: deathsScripted === 0,
   };
   if (deathsScripted > 0) return base;
@@ -1441,6 +1475,12 @@ export function dieRetryBinding(
       `checkpoint before them: every death there is a full restart, so the stage took no ` +
       `death and proved nothing. Where the rest points go is a CONTENT judgement ` +
       `(DW0379/DW0315/DW0316), but the consequence for this stage is that it examined zero`;
+  } else if (skippedNoCheckpoint + skippedUnattended >= declared) {
+    reason =
+      `all ${declared} mandatory encounter(s) were excluded: ${skippedNoCheckpoint} for want of ` +
+      `a checkpoint before them, ${skippedUnattended} because the fight's own bodies may fire ` +
+      `a story trigger this world never performs while the party is away — so the stage ` +
+      `took no death in this world and proved nothing here`;
   } else if (skippedUnarmed > 0) {
     reason =
       `${skippedUnarmed} encounter(s) were excluded because the governing checkpoint was ` +

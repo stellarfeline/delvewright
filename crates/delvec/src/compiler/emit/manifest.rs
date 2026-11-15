@@ -386,6 +386,18 @@ pub(super) fn critical_path_json(
                     {
                         obj.insert("seat_ticks".to_string(), json!(t));
                     }
+                    // Format 13: the world-writing triggers this path never
+                    // performs that the fight's own bodies may fire while it
+                    // is taken (`combat::fight_may_fire`). Present only when
+                    // there is one, so every other path is byte-identical.
+                    let away = firing.unattended.get(i).map_or_else(Vec::new, |u| {
+                        crate::compiler::combat::fight_may_fire(plan.campaign, wave_id, u)
+                    });
+                    if !away.is_empty()
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("unattended".to_string(), json!(away));
+                    }
                     v
                 }
                 Step::Collect { objective_id, item, count, pos, dropped } => {

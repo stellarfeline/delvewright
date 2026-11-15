@@ -659,34 +659,41 @@ test("a die-retry stage that scripted no death reports UNBOUND, whatever else it
   // 2026-08-11: encounters exist, every one is excluded for want of a governing
   // checkpoint, the coverage arithmetic runs over an emptied list and finds
   // nothing wrong, and the stage reports a pass having proven nothing.
-  const b = dieRetryBinding(true, 1, new Set(), [], 1, 0);
+  const b = dieRetryBinding(true, 1, new Set(), [], 1, 0, 0);
   assert.equal(b.unbound, true);
   assert.equal(b.deathsScripted, 0);
   assert.match(b.reason ?? "", /fires NO\s+checkpoint before them/);
 });
 
 test("a build with no mandatory encounter says THAT, not something vaguer", () => {
-  const b = dieRetryBinding(true, 0, new Set(), [], 0, 0);
+  const b = dieRetryBinding(true, 0, new Set(), [], 0, 0, 0);
   assert.equal(b.unbound, true);
   assert.match(b.reason ?? "", /declares NO mandatory encounter/);
 });
 
 test("a stage that did not run is distinguished from one that ran and found nothing", () => {
-  const b = dieRetryBinding(false, 2, new Set(), [], 0, 0);
+  const b = dieRetryBinding(false, 2, new Set(), [], 0, 0, 0);
   assert.equal(b.unbound, true);
   assert.match(b.reason ?? "", /did not run/);
 });
 
 test("an unarmed governing checkpoint is the RUN's own gap, and is named as such", () => {
-  const b = dieRetryBinding(true, 2, new Set(), [], 0, 2);
+  const b = dieRetryBinding(true, 2, new Set(), [], 0, 2, 0);
   assert.match(b.reason ?? "", /never armed — the run's own gap/);
+});
+
+test("a stage whose every encounter could leave the world says so, and is unbound", () => {
+  const b = dieRetryBinding(true, 2, new Set(), [], 1, 0, 1);
+  assert.equal(b.unbound, true);
+  assert.equal(b.skippedUnattended, 1);
+  assert.match(b.reason!, /1 because the fight's own bodies may fire a story trigger/);
 });
 
 test("a stage that took deaths is bound, and owes no reason", () => {
   const t1 = openTrial(encounter(), 1, "first-contact");
   t1.completed = true;
   const t2 = openTrial(encounter(), 2, "mid-fight");
-  const b = dieRetryBinding(true, 1, new Set(["wave/bellkeeper"]), [t1, t2], 0, 0);
+  const b = dieRetryBinding(true, 1, new Set(["wave/bellkeeper"]), [t1, t2], 0, 0, 0);
   assert.equal(b.unbound, false);
   assert.equal(b.reason, undefined);
   assert.equal(b.deathsScripted, 2);

@@ -1540,10 +1540,38 @@ test("a kill step carries the compiler's seat date when one is exported, and not
   }
 });
 
-test("format 12: the constant moved, and a format-11 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 12);
+test("format 13: a kill step carries the triggers its fight's bodies may fire while it is unattended", () => {
+  const kill = {
+    action: "kill",
+    objective: "obj/stop-the-captain",
+    wave: "wave/the-captain",
+    pos: [122, 64, 457],
+    tag: "dw_wave_the_captain",
+    count: 4,
+    pursuers: [],
+  };
+  const named = parseCriticalPath(
+    withStep({ ...kill, unattended: ["trigger/cake-taken-pillager", "trigger/cake-taken-vindicator"] }),
+  ).steps[2]!;
+  assert.deepEqual(named.action === "kill" && named.unattended, [
+    "trigger/cake-taken-pillager",
+    "trigger/cake-taken-vindicator",
+  ]);
+  const plain = parseCriticalPath(withStep(kill)).steps[2]!;
+  assert.equal(plain.action === "kill" && "unattended" in plain, false);
+  for (const bad of [[], "trigger/x", [""], [3]]) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...kill, unattended: bad })),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/unattended",
+      JSON.stringify(bad),
+    );
+  }
+});
+
+test("format 13: the constant moved, and a format-12 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 13);
   const raw = validRaw();
-  raw["format_version"] = 11;
+  raw["format_version"] = 12;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

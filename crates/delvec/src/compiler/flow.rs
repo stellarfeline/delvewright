@@ -852,34 +852,65 @@ impl Walk<'_, '_> {
     /// gate reads as open. Whether it has already fired is not read: the caller
     /// asks about the triggers its path never performs. In declaration order.
     pub fn gate_open_triggers(&self) -> Vec<String> {
-        self.flow
-            .c
-            .quests
-            .content
-            .triggers
-            .iter()
-            .filter(|t| {
-                t.requires_flags
-                    .iter()
-                    .all(|f| self.st.flags.contains(f.as_str()))
-                    && !t
-                        .forbids_flags
-                        .iter()
-                        .any(|f| self.st.flags.contains(f.as_str()))
-                    && self.state_terms_hold(&t.requires_state, false)
-                    && match &t.serves {
-                        Some(delvewright_dsl::Serves::Objective(o)) => {
-                            !self.st.done_obj.contains(o.as_str())
-                                && self
-                                    .flow
-                                    .objective_quest(o.as_str())
-                                    .is_some_and(|q| self.st.active.contains(q))
-                        }
-                        _ => true,
-                    }
+        self.gate_open_where(false)
+            .map(|t| t.id.as_str().to_string())
+            .collect()
+    }
+
+    /// **Every trigger a body other than the party may fire now** — a
+    /// `body-enters` on a census of a set that is not the party's
+    /// ([`delvewright_dsl::CensusOf::counts_the_party`]), whose gate may hold
+    /// here: [`Self::gate_open_triggers`]'s gate, with a term on a datum the
+    /// walk cannot date read as OPEN, because a census is written by the
+    /// bodies in its box and no walk dates it. Whether it has already fired is
+    /// not read: the caller asks about the triggers its path never performs.
+    /// In declaration order.
+    pub fn unattended_triggers(&self) -> Vec<String> {
+        let census_of = |state: &str| {
+            self.flow
+                .c
+                .quests
+                .content
+                .state_decl(state)
+                .and_then(|d| d.counts.as_ref())
+        };
+        self.gate_open_where(true)
+            .filter(|t| match &t.on {
+                delvewright_dsl::TriggerOn::BodyEnters { state } => {
+                    census_of(state.as_str()).is_some_and(|k| !k.of.counts_the_party())
+                }
+                _ => false,
             })
             .map(|t| t.id.as_str().to_string())
             .collect()
+    }
+
+    /// The triggers whose gate holds now, a term on an undatable datum read
+    /// as `undated_open` ([`Self::gate_open_triggers`]).
+    fn gate_open_where(
+        &self,
+        undated_open: bool,
+    ) -> impl Iterator<Item = &delvewright_dsl::EnvTrigger> + '_ {
+        self.flow.c.quests.content.triggers.iter().filter(move |t| {
+            t.requires_flags
+                .iter()
+                .all(|f| self.st.flags.contains(f.as_str()))
+                && !t
+                    .forbids_flags
+                    .iter()
+                    .any(|f| self.st.flags.contains(f.as_str()))
+                && self.state_terms_hold(&t.requires_state, undated_open)
+                && match &t.serves {
+                    Some(delvewright_dsl::Serves::Objective(o)) => {
+                        !self.st.done_obj.contains(o.as_str())
+                            && self
+                                .flow
+                                .objective_quest(o.as_str())
+                                .is_some_and(|q| self.st.active.contains(q))
+                    }
+                    _ => true,
+                }
+        })
     }
 
     /// This walk with the entry deeds its story world performs in front of the

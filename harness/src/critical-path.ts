@@ -106,9 +106,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   of the box per body it places, no two rows of a step sharing one
  *   (spec-0134 §1). A format-11 bot would refuse the key.
  *
+ * * `13` — a `kill` step may carry `unattended`: the world-writing triggers
+ *   the path never performs that the fight's own bodies may fire while it is
+ *   taken. The die-retry stage takes no death there. A format-12 bot would
+ *   refuse the key.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 12;
+export const CRITICAL_PATH_FORMAT_VERSION = 13;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -379,6 +384,15 @@ export interface KillStep extends PresentationMarkers, Pursued {
    * wave before it walks to the anchor.
    */
   readonly seatTicks?: number;
+  /**
+   * Format 13: the world-writing triggers this path never performs that the
+   * fight's own bodies may fire while it is taken (`unattended`, the
+   * compiler's `combat::fight_may_fire`) — absent when there is none. A party
+   * away from the fight, as a death takes it, leaves them free to fire one,
+   * and the run then leaves the world it is judged against, so the die-retry
+   * stage takes no death here.
+   */
+  readonly unattended?: readonly string[];
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -1377,12 +1391,26 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "seat_ticks", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        ["action", "objective", "wave", "pos", "tag", "count", "seat_ticks", "unattended", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const seat = obj["seat_ticks"];
       if (seat !== undefined && (typeof seat !== "number" || !Number.isInteger(seat) || seat <= 0)) {
         fail(`${pointer}/seat_ticks`, `must be a positive integer when present, got ${describe(seat)}`);
+      }
+      const unattended = obj["unattended"];
+      if (
+        unattended !== undefined &&
+        !(
+          Array.isArray(unattended) &&
+          unattended.length > 0 &&
+          unattended.every((t) => typeof t === "string" && t.length > 0)
+        )
+      ) {
+        fail(
+          `${pointer}/unattended`,
+          `must be a non-empty list of trigger ids when present, got ${describe(unattended)}`,
+        );
       }
       return {
         action: "kill",
@@ -1392,6 +1420,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         tag: requireString(obj, "tag", pointer),
         count: requireInteger(obj, "count", pointer),
         ...(seat === undefined ? {} : { seatTicks: seat as number }),
+        ...(unattended === undefined ? {} : { unattended: unattended as string[] }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };
