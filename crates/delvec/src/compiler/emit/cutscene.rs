@@ -213,6 +213,100 @@ pub(super) fn campaign_has_cutscene(campaign: &delvewright_dsl::Campaign) -> boo
 /// test reads correctly before the first cutscene ever runs.
 pub(super) const CS_LIVE: &str = "#cs_live";
 
+/// **Each player's own place, held across a cutscene.** A cutscene moves no
+/// player: the camera carries each body away while it plays, and its end puts
+/// every player back where *that* player stood, facing where they faced. A
+/// teleport is an effect the author declares (`teleport`), never a side effect
+/// of watching a shot.
+///
+/// The place is five per-player scores — the feet and the facing, in
+/// thousandths — rather than an entity left at the spot: a marker in a chunk the
+/// camera has carried every player away from is unloaded and answers no
+/// selector, and a score answers wherever its player is. Saved by
+/// [`CS_SAVE_FN`] at the start of the first cutscene a player watches, put back
+/// and cleared by [`CS_RETURN_FN`] at its end (or by the rejoin repair).
+pub(super) const CS_PLACE: [(&str, &str, &str); 5] = [
+    ("dw.cs_x", "Pos[0]", "double"),
+    ("dw.cs_y", "Pos[1]", "double"),
+    ("dw.cs_z", "Pos[2]", "double"),
+    ("dw.cs_yaw", "Rotation[0]", "float"),
+    ("dw.cs_pitch", "Rotation[1]", "float"),
+];
+
+/// The fixed-point scale of [`CS_PLACE`]: thousandths of a block, of a degree.
+const CS_PLACE_SCALE: u32 = 1000;
+/// One unit of [`CS_PLACE_SCALE`], the factor the return reads a score back by.
+const CS_PLACE_UNIT: &str = "0.001";
+
+/// The macro keys [`CS_RETURN_TP_FN`] reads, in [`CS_PLACE`]'s order.
+const CS_PLACE_KEYS: [&str; 5] = ["x", "y", "z", "yaw", "pitch"];
+
+/// Saves `@s`'s own place into [`CS_PLACE`] (run as and at the player).
+pub(super) const CS_SAVE_FN: &str = "cs_save";
+/// Puts `@s` back on its saved place and clears it.
+pub(super) const CS_RETURN_FN: &str = "cs_return";
+/// The macro `tp` [`CS_RETURN_FN`] calls with the saved place.
+const CS_RETURN_TP_FN: &str = "cs_return_tp";
+
+/// The `execute` condition that holds exactly while `@s` has a saved place.
+pub(super) fn cs_place_saved() -> String {
+    format!("score @s {} matches -2147483648..", CS_PLACE[1].0)
+}
+
+/// The `setup` lines declaring [`CS_PLACE`]. Empty for a cutscene-less
+/// campaign, so those packs stay byte-identical.
+pub(super) fn cutscene_place_objectives(plan: &Plan) -> Vec<String> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    CS_PLACE
+        .iter()
+        .map(|(o, _, _)| format!("scoreboard objectives add {o} dummy"))
+        .collect()
+}
+
+/// [`CS_SAVE_FN`], [`CS_RETURN_FN`] and [`CS_RETURN_TP_FN`]. Empty for a
+/// cutscene-less campaign.
+pub(super) fn cutscene_place_fns(plan: &Plan) -> Vec<(String, String)> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    let save: Vec<String> = CS_PLACE
+        .iter()
+        .map(|(o, path, _)| {
+            format!(
+                "execute store result score @s {o} run data get entity @s {path} {CS_PLACE_SCALE}"
+            )
+        })
+        .collect();
+    let mut ret: Vec<String> = CS_PLACE
+        .iter()
+        .zip(CS_PLACE_KEYS)
+        .map(|((o, _, ty), k)| {
+            format!(
+                "execute store result storage dw:cs ret.{k} {ty} {CS_PLACE_UNIT} run scoreboard players get @s {o}"
+            )
+        })
+        .collect();
+    ret.push(format!(
+        "function {ns}:{CS_RETURN_TP_FN} with storage dw:cs ret"
+    ));
+    ret.extend(
+        CS_PLACE
+            .iter()
+            .map(|(o, _, _)| format!("scoreboard players reset @s {o}")),
+    );
+    vec![
+        (CS_SAVE_FN.to_string(), lines(&save)),
+        (CS_RETURN_FN.to_string(), lines(&ret)),
+        (
+            CS_RETURN_TP_FN.to_string(),
+            lines(&["$tp @s $(x) $(y) $(z) $(yaw) $(pitch)".to_string()]),
+        ),
+    ]
+}
+
 /// The `tick` clause that repairs a player stranded by a mid-cutscene disconnect.
 ///
 /// The cutscene bracket is entirely `@a`-scoped: `cs_end_<bare>` restores gamemode,
@@ -243,15 +337,17 @@ pub(super) fn cutscene_repair_tick(plan: &Plan) -> Vec<String> {
 }
 
 /// The repair itself, per stranded player (`@s`): back to adventure, untagged, and
-/// returned to the party's live checkpoint.
+/// returned to the place they stood when the cutscene began ([`CS_PLACE`], which
+/// a disconnect keeps), or — a player with no saved place — to the party's live
+/// checkpoint.
 ///
-/// The destination is `storage dw:cp pos` — the checkpoint mirror, seeded to the
-/// entry point at setup and rewritten by every `set-checkpoint` — because the
-/// cutscene's own saved position (a single `dw_csmark_<bare>` marker) is destroyed
-/// by `cs_end_<bare>` before this can ever run. It is a macro teleport for the same
-/// reason the boundary return is one: the mirror is an `[x, y, z]` list, not
-/// tp-shaped arguments. Emitted only when the campaign resolves an entry anchor,
-/// which is what seeds the mirror in the first place.
+/// The fallback destination is `storage dw:cp pos` — the checkpoint mirror,
+/// seeded to the entry point at setup and rewritten by every `set-checkpoint`. It
+/// is a macro teleport for the same reason the boundary return is one: the mirror
+/// is an `[x, y, z]` list, not tp-shaped arguments. Emitted only when the
+/// campaign resolves an entry anchor, which is what seeds the mirror in the first
+/// place. The fallback runs before the return, which clears the place, so a
+/// player is moved once.
 pub(super) fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
     if !campaign_has_cutscene(plan.campaign) {
         return Vec::new();
@@ -262,18 +358,24 @@ pub(super) fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
         format!("tag @s remove {CUTSCENE_TAG}"),
     ];
     let mut out = Vec::new();
+    let saved = cs_place_saved();
     if campaign_spawn(plan).is_some() {
         for (i, axis) in ["x", "y", "z"].iter().enumerate() {
             repair.push(format!(
-                "data modify storage dw:cs at.{axis} set from storage dw:cp pos[{i}]"
+                "execute unless {saved} run data modify storage dw:cs at.{axis} set from storage dw:cp pos[{i}]"
             ));
         }
-        repair.push(format!("function {ns}:cs_repair_tp with storage dw:cs at"));
+        repair.push(format!(
+            "execute unless {saved} run function {ns}:cs_repair_tp with storage dw:cs at"
+        ));
         out.push((
             "cs_repair_tp".to_string(),
             lines(&["$tp @s $(x) $(y) $(z)".to_string()]),
         ));
     }
+    repair.push(format!(
+        "execute if {saved} run function {ns}:{CS_RETURN_FN}"
+    ));
     out.push(("cs_repair".to_string(), lines(&repair)));
     out
 }
@@ -283,8 +385,9 @@ pub(super) fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
 /// function.
 ///
-/// Mechanic: save each player's return point (a marker at a representative
-/// player), spectator, then dolly two co-located invisible cameras along the
+/// Mechanic: save each player's own place ([`CS_PLACE`]) and a fallback marker
+/// at a player in play (for a player who has no saved place: one who joined or
+/// was waiting while the shot began), spectator, then dolly two co-located invisible cameras along the
 /// shot's keyframe schedule — a `tp` every `cadence` ticks with display-entity
 /// `teleport_duration` set to the cadence, so the *client* tweens position and
 /// rotation between keyframes ([`crate::compiler::camera`], spike-measured) — while
@@ -293,7 +396,8 @@ pub(super) fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
 /// in-flight tween, measurement 4). The bounce skips any player actively
 /// holding sneak (`predicate=!<ns>:sneak_held`, see [`SNEAK_HELD_PREDICATE`]):
 /// sneak dismounts a spectator, so re-attaching against a held key strobes.
-/// On completion, restore adventure mode + teleport players back to the marker.
+/// On completion, restore adventure mode and put each player back on their own
+/// saved place; only a player with none is put on the marker.
 ///
 /// **Path timing**: the dolly is arc-length parameterized (equal
 /// distance per time, not equal segments per time) with baked smoothstep
@@ -387,8 +491,19 @@ pub(super) fn cutscene_fns(
         start.push(format!("scoreboard players add {CS_LIVE} dw.sys 1"));
         start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
         start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
-        // The return point is a player in play: a waiting player (spec-0077)
-        // already carries the observation tag and may be anywhere.
+        // Each player in play keeps their own place: a waiting player
+        // (spec-0077) already carries the observation tag and may be anywhere. A
+        // place already saved (a cutscene that began while another plays) is
+        // the one the player stood on, and is kept.
+        let in_play = match observer_guard(plan).strip_prefix(',') {
+            Some(g) => format!("@a[{g}]"),
+            None => "@a".to_string(),
+        };
+        start.push(format!(
+            "execute as {in_play} unless {} at @s run function {ns}:{CS_SAVE_FN}",
+            cs_place_saved()
+        ));
+        // The fallback for a player with no saved place: a player in play.
         let marker_at = match observer_guard(plan).strip_prefix(',') {
             Some(g) => format!("@p[{g}]"),
             None => "@p".to_string(),
@@ -503,12 +618,15 @@ pub(super) fn cutscene_fns(
         ));
         out.push((format!("cs_tick_{bare}"), lines(&tick)));
 
-        // end / restore: leaving spectator returns each player to their
-        // pre-spectator position; the explicit tp to the saved marker makes the
-        // restore robust (spec addendum: restore gamemode + position).
+        // end / restore: leaving spectator leaves a body where the camera
+        // carried it, so each player is put back on their own saved place; only a
+        // player with none is put on the marker. The marker line runs first: the
+        // return clears the place it reads.
+        let saved = cs_place_saved();
         let mut end: Vec<String> = vec![
             "gamemode adventure @a".to_string(),
-            format!("tp @a @e[tag=dw_csmark_{bare},limit=1]"),
+            format!("execute as @a unless {saved} run tp @s @e[tag=dw_csmark_{bare},limit=1]"),
+            format!("execute as @a if {saved} run function {ns}:{CS_RETURN_FN}"),
         ];
         // spec-0109 §3.6: every painted cell back to the base it wore, once the
         // players are returned.

@@ -335,9 +335,23 @@ fn every_answer_plays_the_refusal_cue() {
         if n.starts_with("trig_dw_answer_npc_") || n.starts_with("trig_dw_answer_actor_") {
             continue;
         }
+        // The cue is the place's: played at what was pressed, to every player
+        // near it, never to the presser alone (`docs/reference/sound-audience.md`).
+        let cue: Vec<&str> = body
+            .lines()
+            .filter(|l| l.contains("playsound minecraft:block.chest.locked"))
+            .collect();
+        assert_eq!(cue.len(), 1, "`{n}` plays the refusal cue once: {body}");
         assert!(
-            body.contains("playsound minecraft:block.chest.locked player @s"),
-            "`{n}` plays the refusal cue: {body}"
+            cue[0].starts_with("execute positioned ") || cue[0].starts_with("execute at @s "),
+            "`{n}`'s cue states where it plays: {}",
+            cue[0]
+        );
+        assert!(
+            cue[0].ends_with("run playsound minecraft:block.chest.locked block @a ~ ~ ~")
+                && cue[0].contains("store result score #ans_heard dw.sys"),
+            "`{n}`'s cue reaches every player near it and counts them: {}",
+            cue[0]
         );
         answers += 1;
     }
@@ -463,4 +477,48 @@ fn the_blow_names_its_striker() {
         !tick.contains("run function gallery:trig_strike_the_hearth"),
         "a presser strike has no fire clause in tick"
     );
+}
+
+/// Every press answer owes a template that judges its cue with two players
+/// standing by what was pressed: one `answer_heard_<k>` per answer, each
+/// spawning the second player and asserting the cue reached at least two.
+#[test]
+fn every_answer_is_heard_by_two_players_in_a_packtest() {
+    let f = gallery().join("datapack/data/gallery/function");
+    let answers = std::fs::read_dir(&f)
+        .unwrap()
+        .filter(|e| {
+            let n = e
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            n.starts_with("trig_dw_answer_")
+                && !n.starts_with("trig_dw_answer_npc_")
+                && !n.starts_with("trig_dw_answer_actor_")
+        })
+        .count();
+    let t = gallery().join("packtest-datapack/data/gallery/test");
+    let mut templates = 0;
+    for e in std::fs::read_dir(&t).unwrap() {
+        let p = e.unwrap().path();
+        let n = p.file_name().unwrap().to_string_lossy().into_owned();
+        if !n.starts_with("answer_heard_") {
+            continue;
+        }
+        let body = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            body.contains("dummy dwah"),
+            "`{n}` stands a second player: {body}"
+        );
+        assert!(
+            body.contains("assert score #ans_heard dw.sys matches 2.."),
+            "`{n}` asks that both heard: {body}"
+        );
+        templates += 1;
+    }
+    assert!(answers >= 20, "the gallery's answers are read: {answers}");
+    assert_eq!(templates, answers, "one template per answer");
+    println!("answer-heard binding: {templates} template(s) of {answers} answer(s)");
 }

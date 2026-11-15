@@ -21,15 +21,24 @@ pub(super) fn teleport_fn(eff: &QuestEffect) -> String {
 /// owns that failure, and an invalid selector emitted here would report it as
 /// something else.
 pub(super) fn teleport_command(plan: &Plan, eff: &QuestEffect) -> Option<String> {
-    let (from, to) = eff.teleport()?;
+    let (from, _) = eff.teleport()?;
     let (lo, hi) = plan.zone_box(from)?;
-    let d = ent_xyz(to.cell(anchor_point_any(plan, to.anchor.as_str())?));
+    let d = teleport_destination(plan, eff)?;
     Some(format!(
         "tp @e[{}] {} {} {}",
         entity_box_selector(lo, hi),
         d[0],
         d[1],
         d[2]
+    ))
+}
+
+/// Where a `teleport` puts what it carries: its `to` mark's cell centre, as the
+/// `tp` writes it. `None` when the mark's anchor is unresolved (`DW0360`).
+pub(super) fn teleport_destination(plan: &Plan, eff: &QuestEffect) -> Option<[String; 3]> {
+    let (_, to) = eff.teleport()?;
+    Some(ent_xyz(
+        to.cell(anchor_point_any(plan, to.anchor.as_str())?),
     ))
 }
 

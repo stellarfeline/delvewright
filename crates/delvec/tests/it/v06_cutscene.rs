@@ -606,3 +606,125 @@ fn cutscene_less_campaign_emits_no_predicate() {
         "no predicate directory for a cutscene-less campaign"
     );
 }
+
+/// One emitted function's body by its exact name.
+fn function(out: &BuildOutput, name: &str) -> String {
+    let key = format!("datapack/data/{NS}/function/{name}.mcfunction");
+    String::from_utf8(
+        out.get(&key)
+            .unwrap_or_else(|| panic!("`{name}` is emitted"))
+            .clone(),
+    )
+    .unwrap()
+}
+
+/// **A cutscene moves nobody.** The camera carries every body away while a shot
+/// plays; its end puts each player back on the place *that* player stood on,
+/// facing where they faced — never one player's place for the whole party. The
+/// start saves each player in play their own place (`cs_save`, the feet and the
+/// facing, per player), the end returns each one who has one (`cs_return`), and
+/// no line of the end moves the party as one. Only a player with no saved place
+/// — one who joined or was waiting while the shot began — is put on the marker.
+#[test]
+fn a_cutscene_puts_each_player_back_where_they_stood() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "seconds": 2,
+             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
+                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ] }"#,
+    );
+    let start = start_body(&out);
+    let bare = out
+        .keys()
+        .find_map(|k| {
+            k.strip_prefix(&format!("datapack/data/{NS}/function/cs_end_"))
+                .and_then(|s| s.strip_suffix(".mcfunction"))
+        })
+        .expect("a cutscene end is emitted")
+        .to_string();
+    let end = function(&out, &format!("cs_end_{bare}"));
+    let saved = "score @s dw.cs_y matches -2147483648..";
+    assert!(
+        start.contains(&format!(
+            "execute as @a[tag=!dw_cutscene] unless {saved} at @s run function {NS}:cs_save"
+        )),
+        "the start saves each player in play their own place: {start}"
+    );
+    // The end returns each player who has a place, and moves the party as one
+    // nowhere: no `tp`/`teleport` whose target is every player.
+    assert!(
+        end.contains(&format!(
+            "execute as @a if {saved} run function {NS}:cs_return"
+        )),
+        "the end returns each player to their own place: {end}"
+    );
+    for l in end.lines() {
+        let payload = l.rsplit_once(" run ").map_or(l, |(_, p)| p);
+        let mut toks = payload.split_whitespace();
+        if matches!(toks.next(), Some("tp" | "teleport")) {
+            assert_ne!(toks.next(), Some("@a"), "the end gathers the party: `{l}`");
+        }
+    }
+    assert!(
+        end.contains(&format!(
+            "execute as @a unless {saved} run tp @s @e[tag=dw_csmark_{bare},limit=1]"
+        )),
+        "only a player with no place of their own is put on the marker: {end}"
+    );
+    // The order: the marker line reads the place the return clears.
+    let mark = end.find("run tp @s @e[tag=dw_csmark_").unwrap();
+    let ret = end.find(&format!("run function {NS}:cs_return")).unwrap();
+    assert!(
+        mark < ret,
+        "the fallback runs before the return clears the place: {end}"
+    );
+    // The place is the player's own feet and facing, and is cleared on return.
+    let save = function(&out, "cs_save");
+    for (obj, path) in [
+        ("dw.cs_x", "Pos[0]"),
+        ("dw.cs_y", "Pos[1]"),
+        ("dw.cs_z", "Pos[2]"),
+        ("dw.cs_yaw", "Rotation[0]"),
+        ("dw.cs_pitch", "Rotation[1]"),
+    ] {
+        assert!(
+            save.contains(&format!(
+                "execute store result score @s {obj} run data get entity @s {path} 1000"
+            )),
+            "cs_save keeps {path}: {save}"
+        );
+    }
+    let ret_body = function(&out, "cs_return");
+    assert!(ret_body.contains(&format!(
+        "function {NS}:cs_return_tp with storage dw:cs ret"
+    )));
+    assert!(ret_body.contains("scoreboard players reset @s dw.cs_y"));
+    assert_eq!(
+        function(&out, "cs_return_tp").trim(),
+        "$tp @s $(x) $(y) $(z) $(yaw) $(pitch)"
+    );
+}
+
+/// The generated PackTest that judges the return with two players present:
+/// two dummies apart, facing apart, the real start and end, each back on its
+/// own cell facing its own way.
+#[test]
+fn the_cutscene_return_is_judged_with_two_players() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "seconds": 2,
+             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
+                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ] }"#,
+    );
+    let key = format!("packtest-datapack/data/{NS}/test/cutscene_return_0.mcfunction");
+    let t = String::from_utf8(out.get(&key).expect("the template is emitted").clone()).unwrap();
+    for want in [
+        "dummy dwcsr0 spawn",
+        "assert score #csr_a dw.sys matches 1",
+        "assert score #csr_b dw.sys matches 1",
+        "assert score #csr_ya dw.sys matches 90",
+        "assert score #csr_yb dw.sys matches -90",
+        "dummy dwcsr0 leave",
+    ] {
+        assert!(t.contains(want), "`{want}` in the template: {t}");
+    }
+    assert!(t.contains(&format!("function {NS}:cs_end_")), "{t}");
+}

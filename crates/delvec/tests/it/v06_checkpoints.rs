@@ -608,3 +608,49 @@ fn a_campaign_without_a_bonfire_carries_no_party_wipe_latch() {
         );
     }
 }
+
+/// **A checkpoint moves nobody.** It records where the party respawns and
+/// nothing else: every command a `set-checkpoint` lowers to, under the party
+/// audience and the solo one, is a `spawnpoint`, the mirror's `data` write or the
+/// marker's `scoreboard` write — none moves, re-modes or gathers a body. A
+/// teleport is the author's own `teleport` effect, declared where they want one.
+#[test]
+fn a_checkpoint_moves_nobody() {
+    let dir = fixture_dir();
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("v06-checkpoints parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut checkpoints = 0;
+    let mut lines = 0;
+    for list in campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.on_objective_complete.values().chain([&q.on_complete]))
+    {
+        for eff in list {
+            if !matches!(eff.verb, Verb::SetCheckpoint { .. }) {
+                continue;
+            }
+            checkpoints += 1;
+            for solo in [false, true] {
+                let cmds = emit::effect_commands(&plan, eff, solo);
+                assert!(!cmds.is_empty(), "the checkpoint emits: {eff:?}");
+                for c in &cmds {
+                    lines += 1;
+                    let head = c.split_whitespace().next().unwrap_or("");
+                    assert!(
+                        matches!(head, "spawnpoint" | "data" | "scoreboard"),
+                        "a checkpoint line moves nothing: `{c}`"
+                    );
+                }
+            }
+        }
+    }
+    assert!(checkpoints > 0, "the fixture declares a checkpoint");
+    println!(
+        "checkpoint binding: {checkpoints} checkpoint(s), {lines} line(s), 0 that move a body"
+    );
+}

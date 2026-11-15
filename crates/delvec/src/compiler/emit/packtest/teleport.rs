@@ -227,6 +227,11 @@ pub(super) fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
         let key = &name["teleport_".len()..];
         let tag = format!("dw_tptest_{key}");
         let n = TELEPORT_WITNESS_TYPES.len();
+        let k = seen.len() - 1;
+        let Some(dest) = super::super::teleport::teleport_destination(plan, eff) else {
+            continue;
+        };
+        let at = format!("{} {} {}", mid[0] as f64 + 0.5, mid[1], mid[2] as f64 + 0.5);
         let mut t = packtest_header(&format!(
             "{title}: `{name}` moves EVERYTHING in its volume — no type is exempt (spec-0031)"
         ));
@@ -248,6 +253,18 @@ pub(super) fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute store result score #tp_in_{key} dw.sys if entity @e[tag={tag},{bx}]"
         ));
         t.push(format!("assert score #tp_in_{key} dw.sys matches {n}"));
+        // Two players: one inside the volume, whom the teleport declares it
+        // carries, and one standing three blocks past its edge, whom it does not.
+        let inside = format!("dwtpi{k}");
+        let outside = format!("dwtpo{k}");
+        let out_at = format!("{} {} {}", center(hi[0] + 3), mid[1], center(mid[2]));
+        t.push(format!("dummy {inside} spawn"));
+        t.push(format!("dummy {outside} spawn"));
+        t.push(format!("tp @a[name={inside},limit=1] {at}"));
+        t.push(format!("tp @a[name={outside},limit=1] {out_at}"));
+        t.push(format!(
+            "summon minecraft:marker {out_at} {{Tags:[\"{tag}\",\"{tag}_stay\"]}}"
+        ));
         t.push(format!("function {ns}:{name}"));
         // …and none of them is left behind. A `type=!…` term in the selector
         // leaves its entity here and this count is non-zero.
@@ -255,6 +272,19 @@ pub(super) fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute store result score #tp_left_{key} dw.sys if entity @e[tag={tag},{bx}]"
         ));
         t.push(format!("assert score #tp_left_{key} dw.sys matches 0"));
+        // The player inside arrived where the teleport declares…
+        t.push(format!(
+            "execute positioned {} {} {} store success score #tp_pin_{key} dw.sys if entity @a[name={inside},distance=..0.5]",
+            dest[0], dest[1], dest[2]
+        ));
+        t.push(format!("assert score #tp_pin_{key} dw.sys matches 1"));
+        // …and the player outside it was moved by nothing.
+        t.push(format!(
+            "execute at @a[name={outside},limit=1] store success score #tp_pout_{key} dw.sys if entity @e[type=minecraft:marker,tag={tag}_stay,distance=..0.01]"
+        ));
+        t.push(format!("assert score #tp_pout_{key} dw.sys matches 1"));
+        t.push(format!("dummy {inside} leave"));
+        t.push(format!("dummy {outside} leave"));
         t.push(format!("kill @e[tag={tag}]"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
