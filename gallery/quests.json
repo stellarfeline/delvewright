@@ -198,7 +198,15 @@
         "anchor": "anchor/usher",
         "entity": "minecraft:villager",
         "facing": "south",
-        "id": "actor/hall-usher"
+        "id": "actor/hall-usher",
+        "mount": {
+          "entity": "minecraft:pig",
+          "equipment": {
+            "saddle": {
+              "item": "minecraft:saddle"
+            }
+          }
+        }
       },
       {
         "anchor": "anchor/usher",
@@ -469,6 +477,12 @@
             ]
           }
         }
+      }
+    ],
+    "boards": [
+      {
+        "id": "board/hall-race",
+        "title": "The Long Hall Race"
       }
     ],
     "containers": {
@@ -4491,6 +4505,14 @@
             {
               "type": "seat-vehicle",
               "vehicle": "vehicle/hall-cart"
+            },
+            {
+              "type": "seat-vehicle",
+              "vehicle": "vehicle/piglets"
+            },
+            {
+              "board": "board/hall-race",
+              "type": "show-board"
             }
           ],
           "obj/reach-the-hall-end": [
@@ -4514,10 +4536,28 @@
               "wave": "wave/yard-hen"
             }
           ],
+          "obj/ride-clover": [
+            {
+              "audience": "actor",
+              "board": "board/hall-race",
+              "type": "place-on-board"
+            },
+            {
+              "audience": {
+                "npc": "npc/groom"
+              },
+              "board": "board/hall-race",
+              "type": "place-on-board"
+            }
+          ],
           "obj/row-the-basin": [
             {
               "type": "despawn-vehicle",
               "vehicle": "vehicle/race-pig"
+            },
+            {
+              "board": "board/hall-race",
+              "type": "hide-board"
             }
           ]
         },
@@ -6097,6 +6137,41 @@
         "id": "vehicle/yard-jenny",
         "left": "where-left",
         "name": "Jenny"
+      },
+      {
+        "at": {
+          "anchor": "anchor/long-hall-paddock",
+          "offset": [
+            2,
+            0,
+            3
+          ]
+        },
+        "bounds": {
+          "anchor": "anchor/long-hall-paddock",
+          "extent": [
+            2,
+            2,
+            6
+          ]
+        },
+        "count": {
+          "base": 1,
+          "per_player": 1
+        },
+        "entity": "minecraft:pig",
+        "equipment": {
+          "saddle": {
+            "item": "minecraft:saddle"
+          }
+        },
+        "id": "vehicle/piglets",
+        "seated": "by-story",
+        "spacing": [
+          0,
+          0,
+          1
+        ]
       }
     ],
     "waves": [
@@ -6137,6 +6212,9 @@
               "main_hand": {
                 "item": "minecraft:wooden_sword"
               }
+            },
+            "mount": {
+              "entity": "minecraft:chicken"
             }
           },
           {

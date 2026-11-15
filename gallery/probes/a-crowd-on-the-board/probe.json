@@ -1,0 +1,15 @@
+{
+  "code": "DW1116",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/on_objective_complete/obj~1ride-clover/1/audience",
+      "value": {
+        "wave": "wave/muster"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the groom's place on the race board is given to the muster wave instead. A wave is a crowd, and a row of places names one body; the placing is refused where it is written. It declares no unit."
+}

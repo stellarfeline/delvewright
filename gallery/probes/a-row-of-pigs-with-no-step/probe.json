@@ -1,0 +1,12 @@
+{
+  "code": "DW1115",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/vehicles/5/spacing"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the piglets, one per player, lose their spacing. Every body would be seated in the one cell of the mark; the count is refused at the document. It declares no unit."
+}

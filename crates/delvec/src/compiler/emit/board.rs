@@ -19,7 +19,7 @@ pub(crate) fn board_objective(id: &str) -> String {
 }
 
 /// The `dw.sys` holder that counts the places board `id` has given.
-fn board_counter(id: &str) -> String {
+pub(super) fn board_counter(id: &str) -> String {
     format!("#bp_{}", plan::safe_local(id))
 }
 
@@ -89,7 +89,7 @@ fn place_lines(plan: &Plan, id: &str, h: &str) -> Vec<String> {
 
 /// Every named body some `place-on-board` of board `id` places, in the
 /// campaign's effect order, once each.
-fn placed_bodies(c: &delvewright_dsl::Campaign, id: &str) -> Vec<BodyKey> {
+pub(super) fn placed_bodies(c: &delvewright_dsl::Campaign, id: &str) -> Vec<BodyKey> {
     let mut out: Vec<BodyKey> = Vec::new();
     for e in all_campaign_effects(c) {
         if let Verb::PlaceOnBoard { board } = &e.verb
