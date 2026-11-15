@@ -1603,6 +1603,75 @@ fn a_served_objective_is_told_while_its_presses_are_open() {
     }
 }
 
+/// A clock starts the tick the party is told (spec-0133 §3: `activation` is
+/// "the tick its told guard first holds"). A served objective is told before
+/// its gate holds, so its clock starts there and times the presses; the
+/// town's bell, told at the clerk's word, started its clock only on the third
+/// arrow, when the presses were done. An objective nothing serves is told —
+/// and clocked — under its whole gate.
+#[test]
+fn a_served_objectives_clock_starts_when_it_is_told() {
+    let limited = |serves: bool| {
+        let mut q = quests(nulls());
+        let c = &mut q["content"];
+        c["state"] = json!([{ "id": "state/turns", "initial": 0, "name": "Turns",
+                              "scope": "party", "note": "How far the crank is wound." }]);
+        let objs = c["quests"][0]["objectives"].as_array_mut().unwrap();
+        objs.truncate(2);
+        objs[1]["requires_state"] =
+            json!([{ "state": "state/turns", "op": "at-least", "value": 2 }]);
+        objs[1]["limit"] = json!({ "ticks": 2400 });
+        let mut t = json!({
+            "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
+            "once": false,
+            "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+            "effects": [{ "type": "add-state", "state": "state/turns", "amount": 1 }]
+        });
+        if serves {
+            t["serves"] = json!({ "objective": "obj/pull" });
+        }
+        c["triggers"] = json!([t]);
+        q
+    };
+    let gate = "if score #party dw.s_turns matches 2..";
+    let driver = |name: &str, serves: bool| -> (String, String) {
+        let out = try_build(&variant(name, limited(serves), dialogue(GREETING))).expect("builds");
+        let tick = fn_body(&out, "tick").unwrap();
+        let pick = |needle: &str| {
+            tick.lines()
+                .find(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("tick names {needle}"))
+                .to_string()
+        };
+        (
+            pick("run function hello-world:activate_o_pull"),
+            pick("run function hello-world:announce_o_pull"),
+        )
+    };
+    let (activate, announce) = driver("clock-served", true);
+    assert!(
+        !activate.contains(gate) && activate.contains("unless score #party dw.o_pull matches 1"),
+        "a served objective's clock starts before its gate: {activate}"
+    );
+    let window = |l: &str| {
+        l.split(" run ")
+            .next()
+            .unwrap()
+            .replace(" unless score #act_pull dw.sys matches 1", "")
+            .replace(" unless score #party dw.ann_pull matches 1", "")
+    };
+    assert_eq!(
+        window(&activate),
+        window(&announce),
+        "the clock starts under the guard the party is told under"
+    );
+    let (activate, _) = driver("clock-unserved", false);
+    assert!(
+        activate.contains(gate),
+        "an unserved objective is clocked under its whole gate: {activate}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // §6 — the compass follows its line
 // ---------------------------------------------------------------------------

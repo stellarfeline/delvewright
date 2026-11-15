@@ -183,10 +183,61 @@ fn lane_follow_range_equals_aggro_radius() {
         3,
         "every lane mob's follow_range is the lane's aggro_radius: {spawn}"
     );
+    let engaged = fn_body(&out, "lane_engaged_warband");
+    assert!(
+        engaged.contains("@a[distance=..16,tag=!dw_cutscene]"),
+        "the release radius is the same 16: {engaged}"
+    );
+    let route = fn_body(&out, "lane_route_warband");
+    assert!(
+        route.contains("attribute @s minecraft:follow_range base set 16"),
+        "a mob put back on the lane perceives at the radius again: {route}"
+    );
+}
+
+/// **A lane mob that fights keeps its fight.** Released, a mob takes its
+/// species' own `follow_range` (vanilla's target goal drops a target beyond
+/// it), never narrower than the radius; it is engaged while it holds a target
+/// or a player has hurt it, and an engaged mob is never re-routed. Before this,
+/// a crossbow pillager on an 8-block lane dropped every player who stepped back
+/// to shoot, and a mob shot from beyond the radius never answered.
+#[test]
+fn a_released_lane_mob_keeps_its_target_and_answers_a_shot() {
+    let out = build_fixture();
+    let engaged = fn_body(&out, "lane_engaged_warband");
+    assert!(
+        engaged.contains("execute on target run return 1"),
+        "a mob holding a target is engaged: {engaged}"
+    );
+    assert!(
+        engaged.contains(
+            "execute on attacker if entity @s[type=minecraft:player,tag=!dw_cutscene] run return 1"
+        ),
+        "a mob a player hurt is engaged, however far the player stands: {engaged}"
+    );
+    let release = fn_body(&out, "lane_release_warband");
+    assert!(
+        release.contains("attribute @s minecraft:follow_range base reset"),
+        "released, the mob perceives as its species does: {release}"
+    );
+    assert!(
+        release.contains(
+            "execute if score #lane_fr dw.sys matches ..15 run attribute @s minecraft:follow_range base set 16"
+        ),
+        "…and never narrower than the radius that released it: {release}"
+    );
     let tick = fn_body(&out, "lane_tick_warband");
     assert!(
-        tick.contains("@a[distance=..16,tag=!dw_cutscene]"),
-        "the release radius is the same 16: {tick}"
+        tick.contains(&format!(
+            "unless function {NS}:lane_engaged_warband run function {NS}:lane_route_warband"
+        )),
+        "only a mob that is not engaged is put back on the lane: {tick}"
+    );
+    let t = template(&out, "souls_td_lane_release");
+    assert!(
+        t.contains("assert score #h_tdrel dw.sys matches 1")
+            && t.contains("assert score #r_tdrel dw.sys matches 16.."),
+        "the release PackTest hurts the leader from beyond the radius and reads it answer: {t}"
     );
 }
 
@@ -255,13 +306,17 @@ fn the_lane_reseat_is_packtested() {
 fn lane_tick_advances_releases_reasserts_and_self_terminates() {
     let out = build_fixture();
     let tick = fn_body(&out, "lane_tick_warband");
+    let release = fn_body(&out, "lane_release_warband");
     assert!(
-        tick.contains("run data merge entity @s {Patrolling:0b}"),
-        "a player inside the radius releases the mob to native AI: {tick}"
+        tick.contains(&format!(
+            "if function {NS}:lane_engaged_warband run function {NS}:lane_release_warband"
+        )) && release.contains("data merge entity @s {Patrolling:0b}"),
+        "an engaged mob is released to native AI: {tick}\n{release}"
     );
+    let route = fn_body(&out, "lane_route_warband");
     assert!(
-        tick.contains("unless entity @a[distance=..16,tag=!dw_cutscene] run data merge entity @s {Patrolling:1b,"),
-        "a mob with nobody near is put back on the lane: {tick}"
+        route.contains("run data merge entity @s {Patrolling:1b,"),
+        "a mob that is not engaged is put back on the lane: {route}"
     );
     assert!(
         tick.contains("scoreboard players set #lane_warband dw.sys"),

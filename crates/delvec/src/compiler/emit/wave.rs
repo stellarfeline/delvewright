@@ -611,7 +611,7 @@ pub(super) fn wave_fns(
             lines(&body),
         ));
         if let Some((l, wps)) = lane {
-            fns.push(lane_tick_fn(ns, w, l, wps, &observer_guard(plan)));
+            fns.extend(lane_tick_fn(ns, w, l, wps, &observer_guard(plan)));
         }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
         // spawn (same authored composition, same proven cells). Emitted for a

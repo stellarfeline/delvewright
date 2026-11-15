@@ -88,8 +88,10 @@ base `applyInput` for the player whose client this is.
 - After the move, gravity: `y −= 0.08` (`Attributes.GRAVITY` default `0.08`;
   `getEffectiveGravity`), then drag: `(x · f1, y · 0.98, z · f1)`.
 - **Derived**: on default ground (`f = 0.6`) the acceleration is `0.1`/tick walking
-  and `0.13` sprinting and the horizontal drag factor is `0.546`; in the air the
-  drag factor is `0.91`. The fall law `v′ = (v + 0.08) · 0.98` has fixed point
+  and `0.13` sprinting (before the input's `0.98`) and the horizontal drag factor is `0.546`, so a
+  sprint on the flat settles at `0.13 · 0.98 / (1 − 0.546) = 0.2806` blocks a tick, `5.612` a second
+  (`metrics::sprint_blocks_per_tick`, the simulator run to saturation; the wiki's figure agrees);
+  in the air the drag factor is `0.91`. The fall law `v′ = (v + 0.08) · 0.98` has fixed point
   `3.92` blocks a tick; the 15th tick of a fall from rest is the first to move a
   whole block (`8.58` fallen before it), so a one-block cell catches a body that
   has fallen at most 7 (`metrics::climb_catch_fall_blocks`).

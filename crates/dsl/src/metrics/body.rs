@@ -1266,6 +1266,29 @@ pub fn saturated_velocity(
     material: Material,
     input: &Input,
 ) -> [f64; 3] {
+    saturated_state(body, rules, material, input).1.vel
+}
+
+/// **How far a body holding `input` moves in one tick, horizontally, once its
+/// run-up has saturated** on an endless floor of `material` — the distance
+/// between the feet of the last two ticks of [`saturated_velocity`]'s run. The
+/// velocity a tick ends on is after the drag; the distance it moves is before
+/// it, so this is the number a pace is compared with.
+#[must_use]
+pub fn saturated_pace(body: &Attributes, rules: Rules, material: Material, input: &Input) -> f64 {
+    let (before, after) = saturated_state(body, rules, material, input);
+    let (dx, dz) = (after.pos[0] - before.pos[0], after.pos[2] - before.pos[2]);
+    (dx * dx + dz * dz).sqrt()
+}
+
+/// The last two states of a run on an endless floor that stopped once the
+/// velocity stopped changing.
+fn saturated_state(
+    body: &Attributes,
+    rules: Rules,
+    material: Material,
+    input: &Input,
+) -> (State, State) {
     struct Floor(Material);
     impl CollisionWorld for Floor {
         fn shapes(&self, c: [i32; 3], out: &mut Vec<Aabb>) {
@@ -1292,14 +1315,16 @@ pub fn saturated_velocity(
     let mut held = *input;
     held.jump = false;
     let mut last = [f64::NAN; 3];
+    let mut before = st;
     for _ in 0..400 {
+        before = st;
         tick(&world, body, rules, &mut st, &held);
         if st.vel == last {
             break;
         }
         last = st.vel;
     }
-    st.vel
+    (before, st)
 }
 
 /// **Ticks a swimming player takes per block** across a flat body of still
