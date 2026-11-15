@@ -68,20 +68,6 @@ pub(super) fn fail_fn(oid: &str) -> String {
     format!("settle_failed_{}", safe_obj_fn(oid))
 }
 
-/// The guard term every guard of a failable objective gains: once failed,
-/// nothing completes, expires or tells it.
-pub(super) fn failed_term(c: &delvewright_dsl::Campaign, o: &Objective) -> String {
-    if failable(c, o.id().as_str()) {
-        format!(
-            " unless score {} {} matches 1",
-            plan::PARTY,
-            failed_score(o.id().as_str())
-        )
-    } else {
-        String::new()
-    }
-}
-
 /// The line a `fail-objective` emits: the objective settled failed, unless it
 /// has already settled some way.
 pub(super) fn fail_lines(ns: &str, oid: &str) -> Vec<String> {

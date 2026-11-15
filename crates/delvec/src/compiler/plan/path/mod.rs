@@ -1327,9 +1327,11 @@ pub(super) fn build_critical_path(
                 _ => Vec::new(),
             };
             let aggro = match obj {
-                Objective::Kill { wave, .. } => wave_of(campaign, wave.as_str())
-                    .and_then(|w| point_of(anchors, area, w.anchor.as_str()).ok())
-                    .map(|at| (at, f64::from(crate::compiler::nav::DEFAULT_FOLLOW_RANGE))),
+                Objective::Kill { wave, .. } => wave_of(campaign, wave.as_str()).and_then(|w| {
+                    point_of(anchors, area, w.anchor.as_str())
+                        .ok()
+                        .map(|at| (at, crate::compiler::nav::follow::wave_reach(w).0))
+                }),
                 _ => None,
             };
             steps.push(Step::Expire {

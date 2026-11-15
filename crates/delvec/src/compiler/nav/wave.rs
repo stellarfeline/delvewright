@@ -6,17 +6,11 @@ use crate::compiler::plan::Plan;
 use delvewright_dsl::Diagnostic;
 use std::collections::BTreeSet;
 
-/// Default aggro radius for a wave mob with no declared `follow_range` — vanilla's
-/// `generic.follow_range` default for the common hostiles (zombie, skeleton,
-/// husk, pillager). Used by the optional-elite bypass lint when the author has
-/// not tuned the attribute.
-pub const DEFAULT_FOLLOW_RANGE: u32 = 16;
-
 /// `DW0380`: every optional enemy must be walkable around.
 ///
 /// A wave is **optional** when no `kill` objective on the critical path names it —
 /// the party is never required to fight it. For each such wave, its mobs' aggro
-/// spheres (the declared `follow_range`, else [`DEFAULT_FOLLOW_RANGE`]) are
+/// spheres (the wave's reach, [`super::follow::wave_reach`]) are
 /// forced solid around the wave anchor and the forced critical path is re-routed:
 /// if a leg that routed before no longer does, every way forward runs through the
 /// fight and "optional" is a lie.
@@ -42,13 +36,7 @@ pub(in crate::compiler::nav) fn optional_elite_lint(plan: &Plan, world: &World) 
         .filter(|w| !required.contains(w.id.as_str()))
         .filter_map(|w| {
             let centre = crate::compiler::plan::point_any(&plan.anchors, w.anchor.as_str())?;
-            let radius = w
-                .mobs
-                .iter()
-                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
-                .map(|r| r.max(0.0) as i32)
-                .max()
-                .unwrap_or(DEFAULT_FOLLOW_RANGE as i32);
+            let radius = super::follow::wave_reach(w).0.max(0.0) as i32;
             Some((w.id.as_str().to_string(), centre, radius))
         })
         .collect();

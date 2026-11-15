@@ -13,9 +13,8 @@ use std::collections::BTreeMap;
 pub struct AggroSource {
     /// What the message calls it (`wave/gate-assault`, `actor/barrow-warden`).
     pub id: String,
-    /// The perception radius, in blocks — the declared `follow_range`, a lane's
-    /// `aggro_radius` (which the compiler emits AS `follow_range`), or
-    /// [`DEFAULT_FOLLOW_RANGE`].
+    /// The reach, in blocks — what the emitted body keeps a target at once it
+    /// fights ([`super::follow::wave_reach`], [`super::follow::actor_reach`]).
     pub radius: f64,
     /// Why this radius is the number it is, for the message.
     pub radius_source: &'static str,
@@ -62,10 +61,10 @@ pub struct AggroSource {
 ///   (the same rule `DW0469` is built on), so the compiler cannot and does not
 ///   ask whether `minecraft:sheep` is a monster.
 ///
-/// Radius per force: a lane's `aggro_radius` (emitted verbatim as each lane mob's
-/// `follow_range`), else the largest declared `follow_range` among its mobs, else
-/// [`DEFAULT_FOLLOW_RANGE`] — one documented number, never a per-species table the
-/// compiler would have to invent (`DW0475`'s rule).
+/// Radius per force: the reach its emitted bodies keep a target at once they
+/// fight ([`super::follow`]) — a released lane mob's species range, never
+/// narrower than the lane's `aggro_radius`; else the declared `follow_range`;
+/// else the species' own, read from the pinned jar.
 ///
 /// A campaign with no respawn point at all, or with no hostile force at all,
 /// proves nothing here — and [`RespawnSafetyLedger`] says so out loud rather than
@@ -476,29 +475,6 @@ fn nearest_offending(
 
 /// Every hostile force in the campaign, in deterministic content order (waves
 /// then actors, each in declaration order).
-/// **A wave's reach**: the radius inside which its bodies acquire a player —
-/// the lane's `aggro_radius`, else the largest `follow_range` any of its mobs
-/// declares, else [`DEFAULT_FOLLOW_RANGE`] — with the words a message names it
-/// by. The one reading `DW0380`, `DW0478` and `DW0863` share: a fight that
-/// starts within this distance of the party finds the party.
-pub(crate) fn wave_aggro_radius(w: &delvewright_dsl::Wave) -> (f64, &'static str) {
-    match &w.lane {
-        Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
-        None => match w
-            .mobs
-            .iter()
-            .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
-            .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
-        {
-            Some(r) => (r, "the wave's declared `follow_range`"),
-            None => (
-                f64::from(DEFAULT_FOLLOW_RANGE),
-                "the default `follow_range` (none declared)",
-            ),
-        },
-    }
-}
-
 pub(crate) fn aggro_sources(
     plan: &Plan,
     world: &World,
@@ -514,7 +490,7 @@ pub(crate) fn aggro_sources(
             .flatten()
             .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
-        let (radius, radius_source) = wave_aggro_radius(w);
+        let (radius, radius_source) = super::follow::wave_reach(w);
         if let Some(wps) = lanes.get(w.id.as_str()) {
             cells.extend(
                 lane_march_cells(plan, world, w, wps)
@@ -539,13 +515,7 @@ pub(crate) fn aggro_sources(
         let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) else {
             continue;
         };
-        let (radius, radius_source) = match a.attributes.and_then(|at| at.follow_range) {
-            Some(r) => (r, "the actor's declared `follow_range`"),
-            None => (
-                f64::from(DEFAULT_FOLLOW_RANGE),
-                "the default `follow_range` (none declared)",
-            ),
-        };
+        let (radius, radius_source) = super::follow::actor_reach(a);
         out.push(AggroSource {
             id: a.id.as_str().to_string(),
             radius,

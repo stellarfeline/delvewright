@@ -745,8 +745,9 @@ Mojang publishes no per-entity default attributes — mob base `max_health` and
 The winnability arithmetic therefore runs its numeric time-to-kill bound **only**
 where the campaign declares `attributes.max_health` on the stack, and says so out
 loud (`DW0475`) rather than inventing a health table. Inventing one is the
-"invented precision" this codebase already refuses for `DEFAULT_FOLLOW_RANGE`
-(`compiler/nav/mod.rs`) and `MODEL_MARGIN` (`clearance.rs`).
+"invented precision" this codebase already refuses for `MODEL_MARGIN`
+(`clearance.rs`). A species' `follow_range` is not invented either: it is read
+from the jar's code (`entity-engagement-1.21.11.json`, below).
 
 ## Default-font glyph metrics (measured, not vendored)
 

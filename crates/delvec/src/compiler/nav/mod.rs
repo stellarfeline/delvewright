@@ -42,6 +42,7 @@ mod checkpoint;
 mod counted;
 mod cutscene;
 mod door;
+pub mod follow;
 mod furniture;
 mod hazard;
 mod horizon;

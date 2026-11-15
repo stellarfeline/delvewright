@@ -1707,9 +1707,8 @@ impl WaveLethalBinding {
 /// mob finds it) and once with every barrier a player can open standing open —
 /// and record the first way each wave gets into each volume.
 ///
-/// The follow range is a lane's `aggro_radius` (which the compiler emits as each
-/// lane mob's `follow_range`), else the stack's declared `follow_range`, else
-/// [`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`] — the radius `DW0478` reads.
+/// The follow range is the reach the emitted stack has once it fights
+/// ([`crate::compiler::nav::follow::mob_reach`]) — the radius `DW0478` reads.
 /// The roots are the seats the seating pass chose, so `wave_seats` is that
 /// pass's answer, handed over as `DW0511` takes it.
 pub fn wave_reach(
@@ -1758,13 +1757,7 @@ pub fn wave_reach(
             }
             b.stacks += 1;
             b.seats += roots.len();
-            let radius = match &w.lane {
-                Some(l) => f64::from(l.aggro_radius),
-                None => mob
-                    .attributes
-                    .and_then(|a| a.follow_range)
-                    .unwrap_or(f64::from(crate::compiler::nav::DEFAULT_FOLLOW_RANGE)),
-            };
+            let radius = crate::compiler::nav::follow::mob_reach(w, mob).0;
             let fp = crate::compiler::nav::entity_footprint(&mob.entity);
             let built = shut.reach_into_volumes(&roots, &fp, true, Some(radius), &vols);
             b.reached += built.reached.len();

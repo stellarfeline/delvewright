@@ -220,24 +220,49 @@ pub(super) fn serving_guard(
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
-    g.push_str(&expired_term(o));
-    g.push_str(&super::quorum::lapsed_term(c, o));
-    g.push_str(&super::limit::failed_term(c, o));
+    g.push_str(&settlement_terms(c, o));
     g
 }
 
-/// spec-0133 §3: the term every guard of a limited objective gains — once
-/// its clock has run out, nothing completes it.
-pub(super) fn expired_term(o: &Objective) -> String {
+/// **The settlement scores every guard of `o` reads**, besides its done
+/// score, in the order the guard reads them: its expired score when it
+/// carries a limit (spec-0133 §3 — once its clock has run out, nothing
+/// completes it), its settled score when it is a quorum member with no limit
+/// (spec-0134 §7 — once lapsed), its failed score when a `fail-objective`
+/// names it. One list, read by the guard ([`settlement_terms`]) and by every
+/// PackTest drive that opens the guard ([`settlement_drive`]), so a drive
+/// cannot clear fewer of them than the guard reads.
+pub(super) fn settlement_scores(c: &delvewright_dsl::Campaign, o: &Objective) -> Vec<String> {
+    let oid = o.id().as_str();
+    let mut v = Vec::new();
     if o.limit().is_some() {
-        format!(
-            " unless score {} {} matches 1",
-            plan::PARTY,
-            expired_score(o.id().as_str())
-        )
-    } else {
-        String::new()
+        v.push(expired_score(oid));
     }
+    if super::quorum::is_member(c, oid) && o.limit().is_none() {
+        v.push(settled_score(oid));
+    }
+    if super::limit::failable(c, oid) {
+        v.push(super::limit::failed_score(oid));
+    }
+    v
+}
+
+/// The guard terms of [`settlement_scores`]: `o` is refused once it has
+/// settled any way but done.
+pub(super) fn settlement_terms(c: &delvewright_dsl::Campaign, o: &Objective) -> String {
+    settlement_scores(c, o)
+        .iter()
+        .map(|s| format!(" unless score {} {s} matches 1", plan::PARTY))
+        .collect()
+}
+
+/// The lines that clear every one of [`settlement_scores`], as a fresh
+/// delve's are: what a PackTest drive writes to hold `o` pending.
+pub(super) fn settlement_drive(c: &delvewright_dsl::Campaign, o: &Objective) -> Vec<String> {
+    settlement_scores(c, o)
+        .iter()
+        .map(|s| format!("scoreboard players set {} {s} 0", plan::PARTY))
+        .collect()
 }
 
 /// Whether a trigger declares `serves: {objective: o}` (spec-0117 §4): the
@@ -276,9 +301,7 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
-    g.push_str(&expired_term(o));
-    g.push_str(&super::quorum::lapsed_term(plan.campaign, o));
-    g.push_str(&super::limit::failed_term(plan.campaign, o));
+    g.push_str(&settlement_terms(plan.campaign, o));
     g
 }
 

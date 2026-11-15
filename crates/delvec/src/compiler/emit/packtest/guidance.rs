@@ -107,8 +107,11 @@ fn isolate(plan: &Plan, open: &[&Watched], d: &mut Drive) {
             if settled != obj_score(oid) {
                 d.put(&settled, v);
             }
-            if o.limit().is_some() {
-                d.put(&expired_score(oid), 0);
+            // Every other settlement score its guard reads starts clear.
+            for s in super::super::quest::settlement_scores(c, o) {
+                if s != settled {
+                    d.put(&s, 0);
+                }
             }
         }
     }

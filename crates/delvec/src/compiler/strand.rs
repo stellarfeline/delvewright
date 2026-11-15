@@ -54,7 +54,7 @@ use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 use delvewright_dsl::{DwCode, ExitTier, Objective};
 
 use crate::compiler::failure::Failure;
-use crate::compiler::nav::{DEFAULT_FOLLOW_RANGE, Footprint, World, entity_footprint};
+use crate::compiler::nav::{Footprint, World, entity_footprint};
 use crate::compiler::plan::Plan;
 
 delvewright_dsl::dw_code! {
@@ -312,13 +312,7 @@ pub fn check(
             }
             b.stacks += 1;
             b.seats += roots.len();
-            let radius = match &w.lane {
-                Some(l) => f64::from(l.aggro_radius),
-                None => mob
-                    .attributes
-                    .and_then(|a| a.follow_range)
-                    .unwrap_or(f64::from(DEFAULT_FOLLOW_RANGE)),
-            };
+            let radius = crate::compiler::nav::follow::mob_reach(w, mob).0;
             let fp = entity_footprint(&mob.entity);
             if let Some(s) = strand(mobs, &party, &roots, &fp, radius, &mut b) {
                 b.stranded.push(Stranding {
