@@ -614,6 +614,11 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             f(&format!("state.{sl}.name"), name);
         }
     }
+    // Stage 5 — a board's heading (spec-0135 §13), read in the sidebar.
+    for b in &mut c.quests.content.boards {
+        let bl = local(b.id.as_str()).to_string();
+        f(&format!("board.{bl}.title"), &mut b.title);
+    }
     // Stage 5 — shops (v0.10, spec-0032): the dialog's title, and each button's
     // caption and tooltip. Keyed exactly as a dialogue node's label/tooltip are,
     // because they are the same two components of the same vanilla button codec.

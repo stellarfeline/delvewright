@@ -80,12 +80,40 @@ pub struct VehiclePlan {
     pub seated: delvewright_dsl::VehicleSeated,
     /// Where a riderless body is once its rider has left it (spec-0135 §3).
     pub left: delvewright_dsl::VehicleLeft,
+    /// Which of the vehicle's bodies this is, from 0 (spec-0135 §13).
+    pub body: u32,
+    /// The most bodies the vehicle stands: its count for a full party.
+    pub bodies: u32,
+    /// The fewest players present at which this body is seated, or `None`
+    /// when it is one of the count's `base` and always is (spec-0134 §4's
+    /// rule, `emit::party_threshold`).
+    pub threshold: Option<u32>,
+    /// The declared count.
+    pub count: delvewright_dsl::MobCount,
 }
 
 impl VehiclePlan {
-    /// The tag every body of this vehicle carries.
+    /// The tag this body carries alone: the vehicle's tag for a vehicle of
+    /// one body, else the vehicle's tag and the body's place.
     pub fn tag(&self) -> String {
         format!("dw_vehicle_{}", self.safe)
+    }
+
+    /// The tag every body of this vehicle carries, whatever its count: what a
+    /// `riders` census and the ride's server reading ask for.
+    pub fn group_tag(&self) -> String {
+        format!("dw_vehicle_{}", crate::compiler::plan::safe_local(&self.id))
+    }
+
+    /// `safe_local` of the vehicle's id: the name of the functions that seat
+    /// and remove every body of it.
+    pub fn group_safe(&self) -> String {
+        crate::compiler::plan::safe_local(&self.id)
+    }
+
+    /// Whether the vehicle stands more than one body.
+    pub fn several(&self) -> bool {
+        self.bodies > 1
     }
 
     /// Whether `c` is inside `bounds`.
@@ -215,33 +243,49 @@ pub fn vehicle_plans(
         let Some(bounds) = crate::compiler::plan::zone_box_in(anchors, &v.bounds) else {
             continue;
         };
-        out.push(VehiclePlan {
-            id: v.id.as_str().to_string(),
-            safe: crate::compiler::plan::safe_local(v.id.as_str()),
-            index,
-            entity: delvewright_dsl::namespaced_entity(&v.entity),
-            kind: s.kind,
-            medium: s.medium,
-            seats: s.seats,
-            tame: s.tame,
-            steering_item: s.steering_item.clone(),
-            seat: v.at.cell(anchor_cell),
-            bounds,
-            yaw: match v.facing {
-                None | Some(delvewright_dsl::Facing::South) => 0,
-                Some(delvewright_dsl::Facing::West) => 90,
-                Some(delvewright_dsl::Facing::North) => 180,
-                Some(delvewright_dsl::Facing::East) => 270,
-            },
-            facing: match v.facing {
-                None | Some(delvewright_dsl::Facing::South) => [0, 1],
-                Some(delvewright_dsl::Facing::West) => [-1, 0],
-                Some(delvewright_dsl::Facing::North) => [0, -1],
-                Some(delvewright_dsl::Facing::East) => [1, 0],
-            },
-            seated: v.seated,
-            left: v.left,
-        });
+        // spec-0135 §13: one plan per body, body `k` at the mark plus
+        // `k × spacing`; a vehicle of one body is the one plan it always was.
+        let bodies = v.count.max();
+        for body in 0..bodies {
+            let mark = v.at.cell(anchor_cell);
+            let off = v.body_offset(body);
+            let group = crate::compiler::plan::safe_local(v.id.as_str());
+            out.push(VehiclePlan {
+                id: v.id.as_str().to_string(),
+                safe: if bodies > 1 {
+                    format!("{group}_b{body}")
+                } else {
+                    group
+                },
+                index,
+                body,
+                bodies,
+                threshold: crate::compiler::emit::party_threshold(v.count, body),
+                count: v.count,
+                entity: delvewright_dsl::namespaced_entity(&v.entity),
+                kind: s.kind,
+                medium: s.medium,
+                seats: s.seats,
+                tame: s.tame,
+                steering_item: s.steering_item.clone(),
+                seat: [mark[0] + off[0], mark[1] + off[1], mark[2] + off[2]],
+                bounds,
+                yaw: match v.facing {
+                    None | Some(delvewright_dsl::Facing::South) => 0,
+                    Some(delvewright_dsl::Facing::West) => 90,
+                    Some(delvewright_dsl::Facing::North) => 180,
+                    Some(delvewright_dsl::Facing::East) => 270,
+                },
+                facing: match v.facing {
+                    None | Some(delvewright_dsl::Facing::South) => [0, 1],
+                    Some(delvewright_dsl::Facing::West) => [-1, 0],
+                    Some(delvewright_dsl::Facing::North) => [0, -1],
+                    Some(delvewright_dsl::Facing::East) => [1, 0],
+                },
+                seated: v.seated,
+                left: v.left,
+            });
+        }
     }
     out
 }
@@ -533,6 +577,9 @@ pub struct VehicleBinding {
     pub critical_rides: usize,
     /// Objectives that declare their leg ridden.
     pub declared: usize,
+    /// Per vehicle of several bodies (spec-0135 §13): its id and the bodies
+    /// it seats for a party of 1, 2, 3 and 4.
+    pub parties: Vec<(String, [u32; 4])>,
 }
 
 /// One vehicle's counts.
@@ -571,10 +618,27 @@ impl VehicleBinding {
                     .join("; ")
             )
         };
+        let parties = if self.parties.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; bodies per party of 1–4 (DW1115): {}",
+                self.parties
+                    .iter()
+                    .map(|(id, n)| format!("{id} {}, {}, {}, {}", n[0], n[1], n[2], n[3]))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        };
         format!(
             "vehicle binding (DW1097–DW1099): {} vehicle(s){rows}; {} objective(s) declare \
-             their leg ridden; {} ride leg(s) on the critical path",
-            self.rows.len(),
+             their leg ridden; {} ride leg(s) on the critical path{parties}",
+            self.rows.len()
+                - self
+                    .parties
+                    .iter()
+                    .map(|(_, n)| n[3] as usize - 1)
+                    .sum::<usize>(),
             self.declared,
             self.critical_rides
         )
@@ -676,8 +740,22 @@ pub fn judge_vehicles(
     // One for every vehicle: two boats on one bay ask the graph once.
     let mut off_walk = OffWalk::new(world, walk);
     for v in vehicles {
+        if v.several() && v.body == 0 {
+            let at = |n: u32| {
+                (0..v.bodies)
+                    .filter(|k| {
+                        crate::compiler::emit::party_threshold(v.count, *k).is_none_or(|t| n >= t)
+                    })
+                    .count() as u32
+            };
+            b.parties.push((v.id.clone(), [at(1), at(2), at(3), at(4)]));
+        }
         let mut row = VehicleRow {
-            id: v.id.clone(),
+            id: if v.several() {
+                format!("{} body {}", v.id, v.body)
+            } else {
+                v.id.clone()
+            },
             kind: v.kind.token(),
             seats: v.seats,
             ..VehicleRow::default()
@@ -1049,6 +1127,10 @@ mod tests {
             id: "vehicle/b".into(),
             safe: "b".into(),
             index: 0,
+            body: 0,
+            bodies: 1,
+            threshold: None,
+            count: delvewright_dsl::MobCount::Fixed(1),
             entity: "minecraft:oak_boat".into(),
             kind: VehicleKind::Boat,
             medium: VehicleMedium::Water,

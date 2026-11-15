@@ -127,6 +127,28 @@ pub enum Verb {
         /// The wave (stage-5 `waves` ref) to remove.
         wave: WaveId,
     },
+    /// Puts a stage-5 board in the sidebar (spec-0135 §13): its title over
+    /// the rows placed on it, for every player. A board shown takes the
+    /// sidebar from whatever stood there.
+    ShowBoard {
+        /// The board (stage-5 `boards` ref).
+        board: crate::BoardId,
+    },
+    /// Takes a stage-5 board off the sidebar (spec-0135 §13), and puts back
+    /// the datum that stands there (spec-0076) when the campaign has one.
+    HideBoard {
+        /// The board (stage-5 `boards` ref).
+        board: crate::BoardId,
+    },
+    /// **Gives each body the effect addresses the next place on a board**
+    /// (spec-0135 §13): the acting player, the party, or a named NPC or
+    /// actor — the envelope's `audience`. A body already placed keeps its
+    /// place, so the event that fires it may fire again. The first placed is
+    /// first; the board lists them in that order, each with its place.
+    PlaceOnBoard {
+        /// The board (stage-5 `boards` ref).
+        board: crate::BoardId,
+    },
     /// Seats a stage-5 vehicle at its mark (spec-0135 §2): the body the
     /// vehicle's seat function places, by the function every load runs. A
     /// vehicle already standing is removed first, so a seat is one body.
@@ -1232,6 +1254,9 @@ impl Verb {
             Verb::SpawnWave { .. } => "spawn-wave",
             Verb::DespawnWave { .. } => "despawn-wave",
             Verb::SeatVehicle { .. } => "seat-vehicle",
+            Verb::ShowBoard { .. } => "show-board",
+            Verb::HideBoard { .. } => "hide-board",
+            Verb::PlaceOnBoard { .. } => "place-on-board",
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
@@ -1290,7 +1315,11 @@ impl Verb {
     pub fn addresses_bodies(&self) -> bool {
         matches!(
             self,
-            Verb::GiveEffect { .. } | Verb::ClearEffect { .. } | Verb::Damage { .. }
+            Verb::GiveEffect { .. }
+                | Verb::ClearEffect { .. }
+                | Verb::Damage { .. }
+                // spec-0135 §13: a named body takes a place as a player does.
+                | Verb::PlaceOnBoard { .. }
         )
     }
 
@@ -1319,7 +1348,9 @@ impl Verb {
             | Verb::Damage { .. }
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
-            | Verb::Particle { .. } => true,
+            | Verb::Particle { .. }
+            // spec-0135 §13: a place is given to whom the effect addresses.
+            | Verb::PlaceOnBoard { .. } => true,
             Verb::OpenGate { .. }
             | Verb::CloseGate { .. }
             | Verb::CampaignComplete { .. }
@@ -1332,6 +1363,9 @@ impl Verb {
             | Verb::DespawnWave { .. }
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            // spec-0135 §13: the sidebar is every player's.
+            | Verb::ShowBoard { .. }
+            | Verb::HideBoard { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
             // spec-0137: the journal's page is the party's.
@@ -1445,6 +1479,11 @@ impl Verb {
             | Verb::Resize { .. } => true,
             // spec-0136: a hop ends where it began.
             Verb::Hop { .. }
+            // spec-0135 §13: a board is shown to the players, not left in the
+            // world.
+            | Verb::ShowBoard { .. }
+            | Verb::HideBoard { .. }
+            | Verb::PlaceOnBoard { .. }
             // spec-0137: a line in the journal is said, not left in the world.
             | Verb::RecordOutcome { .. }
             | Verb::Narrate { .. }

@@ -1304,8 +1304,7 @@ pub fn posted_places(
     }
     for a in &c.quests.content.actors {
         if let Some(pos) = plan.body_point(delvewright_dsl::BodyRef::Actor(a)) {
-            let (w, h) =
-                crate::compiler::nav::entity_dims(&crate::compiler::nav::actor_body_entity(a));
+            let (w, h) = crate::compiler::nav::actor_body_dims(a);
             push(
                 &mut out,
                 format!("actor `{}`'s post `{}`", a.id, a.anchor),

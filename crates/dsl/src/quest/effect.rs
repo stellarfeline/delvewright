@@ -585,6 +585,10 @@ impl QuestEffect {
             // spec-0137's `record-outcome`.
             | Verb::RecordOutcome { .. }
             | Verb::FailObjective { .. }
+            // spec-0135 §13's board verbs.
+            | Verb::ShowBoard { .. }
+            | Verb::HideBoard { .. }
+            | Verb::PlaceOnBoard { .. }
             // spec-0136's moves.
             | Verb::Hop { .. }
             | Verb::Pose { .. }

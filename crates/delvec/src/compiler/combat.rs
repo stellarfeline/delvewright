@@ -1765,6 +1765,7 @@ mod tests {
             }],
             equipment: None,
             drops: Vec::new(),
+            mount: None,
         };
         let (multiplier, source) = mob_damage_multiplier(&mob);
         assert_eq!(multiplier, 0.0);
@@ -1784,6 +1785,7 @@ mod tests {
             }],
             equipment: None,
             drops: Vec::new(),
+            mount: None,
         };
         let (multiplier, _) = mob_damage_multiplier(&mob);
         assert!((multiplier - 0.2).abs() < 1e-9, "{multiplier}");
@@ -1828,6 +1830,7 @@ mod tests {
                 effects,
                 equipment: None,
                 drops: Vec::new(),
+                mount: None,
             }],
             respawns_on_rest: false,
             lane: None,

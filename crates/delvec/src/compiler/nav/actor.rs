@@ -159,7 +159,11 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 actor.as_str()
             ),
         })?;
-        let fp = entity_footprint(&a.entity);
+        // spec-0135 §13: a rider is walked as the mount and the rider stacked.
+        let fp = {
+            let (w, h) = ridden_dims(&a.entity, a.mount.as_ref());
+            Footprint::for_dims(w, h)
+        };
         // The destination is a mark (spec-0066): the snap starts from its cell.
         let to_mark = to.display();
         let dest = actor_anchor_pos(plan, to.anchor.as_str())
@@ -310,7 +314,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // The rendered motion is bounded by the volume the proof proved, so the
         // hop shape uses the SAME hitbox this leg was routed under, never the
         // entity's true size.
-        let (body_w, _) = entity_dims(&actor_body_entity(a));
+        let (body_w, _) = actor_body_dims(a);
         // A puppet crosses open ground the same way a villager does — smoothing
         // belongs to a walked body, not to the verb that first needed it. Swept at
         // the footprint THIS leg was routed under, which for an actor is its own.

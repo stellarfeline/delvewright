@@ -268,6 +268,13 @@ pub struct WaveMob {
     /// every slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
+    /// The body each of this stack's bodies rides (DSL v0.78, spec-0135
+    /// §13): one mount per body, summoned with the body as its passenger.
+    /// The stack's bodies are the wave's — counted, censused and killed;
+    /// the mount is not. Absent = the body stands on its own feet,
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<crate::Mount>,
 }
 
 /// Worn/held equipment for a wave mob (DSL v0.6). Each field is a vanilla item

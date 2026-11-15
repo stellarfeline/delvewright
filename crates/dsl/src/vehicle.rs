@@ -60,6 +60,38 @@ pub struct Vehicle {
     /// a mount waits there without its AI — until the story seats it again.
     #[serde(default, skip_serializing_if = "VehicleLeft::is_at_its_mark")]
     pub left: VehicleLeft,
+    /// How many bodies of this vehicle stand (DSL v0.78, spec-0135 §13): a
+    /// constant, or `{base, per_player}` — `base + per_player × (n − 1)` for
+    /// the `n` players present when the story seats it (spec-0134 §4's
+    /// count, the one shape). Absent = one body, byte-identical. A count
+    /// that scales is measured at the seat, so it is seated `by-story`
+    /// (`DW1115`).
+    #[serde(default = "one_body", skip_serializing_if = "is_one_body")]
+    pub count: crate::MobCount,
+    /// Where each further body stands (DSL v0.78, spec-0135 §13): body `k`
+    /// (from 0) is seated at `at` plus `k × spacing`, so a row of mounts at a
+    /// starting line is one mark and one step. Required when more than one
+    /// body can stand (`DW1115`); each body's seat is proven in its medium
+    /// and inside `bounds` as the first one's is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<[i32; 3]>,
+}
+
+fn one_body() -> crate::MobCount {
+    crate::MobCount::Fixed(1)
+}
+
+fn is_one_body(c: &crate::MobCount) -> bool {
+    *c == crate::MobCount::Fixed(1)
+}
+
+impl Vehicle {
+    /// The seat offset of body `k` from the mark: `k × spacing`.
+    pub fn body_offset(&self, k: u32) -> [i32; 3] {
+        let s = self.spacing.unwrap_or([0, 0, 0]);
+        let k = k as i32;
+        [s[0] * k, s[1] * k, s[2] * k]
+    }
 }
 
 /// When a vehicle's body is first placed (spec-0135 §2).
@@ -213,6 +245,17 @@ crate::dw_code! {
     pub const VEHICLE_CARRIES_NO_RIDER: DwCode = DwCode::new("DW1096", ExitTier::Build);
 }
 
+crate::dw_code! {
+    /// (spec-0135 §13) **A count of vehicle bodies the engine cannot seat**: a
+    /// count of no body; more than one body with no `spacing` to stand the
+    /// rest by (they would stand in one cell); or a count that scales with
+    /// the party on a vehicle seated `at-load` — the party is measured when
+    /// the story seats the vehicle, and no player is present when the world
+    /// is built. Validation-tier (exit 1). Prescription: a count of one or
+    /// more, a `spacing`, and `seated: by-story` for a count per player.
+    pub const VEHICLE_COUNT_UNSEATABLE: DwCode = DwCode::new("DW1115", ExitTier::Build);
+}
+
 /// The entities that carry a rider, by kind, for a diagnostic.
 fn riders_by_kind() -> String {
     let mut by: BTreeMap<VehicleKind, Vec<&str>> = BTreeMap::new();
@@ -335,6 +378,51 @@ pub(crate) fn vehicle_checks(
                     ),
                 ));
             }
+        }
+    }
+    // spec-0135 §13: the count is one the engine can seat.
+    for (i, v) in vehicles.iter().enumerate() {
+        let at = format!("/content/vehicles/{i}/count");
+        if v.count.base() == 0 {
+            d.push(Diagnostic::error(
+                VEHICLE_COUNT_UNSEATABLE,
+                "quests",
+                at.clone(),
+                format!(
+                    "vehicle `{}` counts no body: a vehicle is at least one body. Give it a count \
+                     of one or more, or remove it",
+                    v.id
+                ),
+            ));
+        }
+        if v.count.max() > 1 && v.spacing.is_none_or(|s| s == [0, 0, 0]) {
+            d.push(Diagnostic::error(
+                VEHICLE_COUNT_UNSEATABLE,
+                "quests",
+                format!("/content/vehicles/{i}/spacing"),
+                format!(
+                    "vehicle `{}` stands up to {} bodies and declares no `spacing`: body k is \
+                     seated at `at` plus k × `spacing`, and with none they would all stand in one \
+                     cell. Declare `spacing` — the step from one body's seat to the next, e.g. \
+                     `[2, 0, 0]` for a row two blocks apart",
+                    v.id,
+                    v.count.max()
+                ),
+            ));
+        }
+        if v.count.scales() && v.seated == VehicleSeated::AtLoad {
+            d.push(Diagnostic::error(
+                VEHICLE_COUNT_UNSEATABLE,
+                "quests",
+                at,
+                format!(
+                    "vehicle `{}` counts its bodies per player present and is seated at load: \
+                     the party is counted when the story seats the vehicle, and no player is \
+                     present while the world is built. Declare `seated: by-story` and seat it \
+                     with `seat-vehicle` at the beat the party is there",
+                    v.id
+                ),
+            ));
         }
     }
     // Every objective's `ride` names a declared vehicle.

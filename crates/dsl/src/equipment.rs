@@ -378,6 +378,17 @@ pub fn dressed_bodies(c: &Campaign) -> Vec<DressedBody<'_>> {
             });
         }
     }
+    // spec-0135 §13: a mount wears what its body shows.
+    for site in crate::mount::mount_sites(c) {
+        if let Some(eq) = &site.mount.equipment {
+            out.push(DressedBody {
+                path: format!("{}/equipment", site.path),
+                what: "mount",
+                entity: site.mount.entity.clone(),
+                equipment: eq,
+            });
+        }
+    }
     // spec-0135: a vehicle wears what its body shows; a boat or a cart
     // shows nothing.
     for (i, v) in q.vehicles.iter().enumerate() {

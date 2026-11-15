@@ -249,6 +249,8 @@ pub fn validate_campaign_with(
     // spec-0135: a vehicle carries a rider (`DW1096`) and stands on anchors
     // a prefab provides.
     crate::vehicle::vehicle_checks(c, anchors, entities, &mut d);
+    crate::mount::mount_checks(c, entities, &mut d);
+    crate::board::board_checks(c, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     crate::economy::shop_anchor_checks(c, anchors, &mut d);
