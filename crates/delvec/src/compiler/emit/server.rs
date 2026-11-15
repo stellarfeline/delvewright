@@ -389,6 +389,10 @@ pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // `view-distance` is the campaign's (spec-0091) and `simulation-distance`
     // is [`DELVE_SIMULATION_DISTANCE`]; `validation/world-settings-entrypoint.sh`
     // derives both from this file, so the image cannot boot a different pair.
+    //
+    // `max-players` is the party every bound is proven for
+    // (`delvewright_dsl::wave::MAX_PARTY`: the chain quota, the census, every
+    // per-player count): a fifth player would join a world no proof covers.
     let view_distance = delvewright_dsl::viewdistance::chunks(plan.campaign);
     let mut props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
@@ -400,6 +404,7 @@ pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("level-name", "world".to_string()),
         ("level-seed", plan.seed.to_string()),
         ("level-type", "minecraft:flat".to_string()),
+        ("max-players", delvewright_dsl::wave::MAX_PARTY.to_string()),
         ("online-mode", "false".to_string()),
         ("pvp", "false".to_string()),
         ("simulation-distance", DELVE_SIMULATION_DISTANCE.to_string()),

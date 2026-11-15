@@ -3955,6 +3955,10 @@
       "triage": "capability"
     },
     {
+      "applies_when": {
+        "glob": "quest-plan.json",
+        "kind": "campaign"
+      },
       "binding": {
         "file": "water.json",
         "kind": "artifact",
@@ -3969,65 +3973,55 @@
       "finding": "the route proof crosses a connected body of water by swimming, and a stretch of it can be submerged — the body's head under water for cell after cell — with nothing judging whether a body holds its breath that long",
       "general_form": "every walked leg's longest run of submerged cells is stated where the build writes the route (`validation/water.json`, one row per leg, a dry leg's run of zero included; the `water binding:` line); a run longer than a body's breath is not judged (spec-0134 §10, recorded debt)",
       "id": "gal-04",
-      "note": "Recorded by spec-0134 §10 as a debt, not found in play: breath and underwater light are out of that spec's scope. The binding counts the legs the build examined, so it is non-zero on every build that exports a route; on the gallery it includes the long hall's pool leg. The carrier states the run and refuses nothing — the row closes when a rule judges a submerged run against a body's air supply.",
+      "note": "Recorded by spec-0134 §10 as a debt, not found in play: breath and underwater light are out of that spec's scope. The binding counts the legs the build examined, so it is non-zero on every build that exports a route; on the gallery it includes the long hall's pool leg. The carrier states the run and refuses nothing — the row closes when a rule judges a submerged run against a body's air supply. Its precondition is counted over the campaign source: a campaign that plans a walk (`quest-plan.json`) is one whose legs the class reaches, wherever its water comes from (a prefab's pool included), so a build that stopped writing the ledger reads as unbound rather than inapplicable.",
       "round": null,
       "triage": "capability"
     },
     {
-      "id": "fotm-01",
-      "campaign": "foot-of-the-mountain",
-      "round": null,
-      "triage": "capability",
-      "finding": "the dusk raid's crossbow pillagers did not take up the fight: a player who stood back to shoot was never targeted, and a pillager shot from beyond its lane's radius never answered",
-      "general_form": "a lane mob that is engaged — a player inside the lane's radius, a target it holds, or a player who hurt it — is released with its species' own perception and is never put back on the lane while it fights; the generated `souls_td_lane_release` PackTest hurts the leader by a player from beyond the radius and asserts it alone is released, its follow range no narrower than the radius",
-      "carrier": {
-        "kind": "packtest",
-        "template": "souls_td_lane_release"
-      },
-      "binding": {
-        "kind": "dsl",
-        "files": [
-          "quests.json"
-        ],
-        "match": {
-          "prefix": {
-            "id": "wave/"
-          },
-          "has": [
-            "lane"
-          ]
-        }
-      },
       "applies_when": {
-        "kind": "dsl",
         "files": [
           "quests.json"
         ],
+        "kind": "dsl",
         "match": {
           "prefix": {
             "id": "wave/"
           }
         }
       },
-      "note": "The lane clock held every mob's follow range at the lane's radius (8 on the town), and the game's target goal drops a target beyond follow range: a crossbow pillager's attack radius is also 8, so it lost the player as soon as the player stepped back, and a hit from further away set a target the next check dropped. The bot's kill steps clear a wave by attributed command and its die-retry deaths are scripted, so the bot measured the muster and the kill's wiring, never whether a raider strikes. Vanilla's record: docs/reference/lane-engagement.md."
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "lane"
+          ],
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "foot-of-the-mountain",
+      "carrier": {
+        "kind": "packtest",
+        "template": "souls_td_lane_release"
+      },
+      "finding": "the dusk raid's crossbow pillagers did not take up the fight: a player who stood back to shoot was never targeted, and a pillager shot from beyond its lane's radius never answered",
+      "general_form": "a lane mob that is engaged — a player inside the lane's radius, a target it holds, or a player who hurt it — is released with its species' own perception and is never put back on the lane while it fights; the generated `souls_td_lane_release` PackTest hurts the leader by a player from beyond the radius and asserts it alone is released, its follow range no narrower than the radius",
+      "id": "fotm-01",
+      "note": "The lane clock held every mob's follow range at the lane's radius (8 on the town), and the game's target goal drops a target beyond follow range: a crossbow pillager's attack radius is also 8, so it lost the player as soon as the player stepped back, and a hit from further away set a target the next check dropped. The bot's kill steps clear a wave by attributed command and its die-retry deaths are scripted, so the bot measured the muster and the kill's wiring, never whether a raider strikes. Vanilla's record: docs/reference/lane-engagement.md.",
+      "round": null,
+      "triage": "capability"
     },
     {
-      "id": "fotm-02",
-      "campaign": "foot-of-the-mountain",
-      "round": null,
-      "triage": "capability",
-      "finding": "bodies the story walks ran several times faster than a player can sprint: townsfolk walking to the square, and a fox flushed from cover",
-      "general_form": "a `move-npc` or `move-actor` `speed` above twice a player's sprint (`dsl::metrics::story_pace_cap_blocks_per_tick`, 0.5612 blocks a tick, from the body simulator under the pinned jar's rules) is refused at validation (`DW1113`); the walk speed the engine picks when none is declared is under it",
-      "carrier": {
-        "kind": "dw",
-        "code": "DW1113"
-      },
       "binding": {
-        "kind": "dsl",
         "files": [
           "quests.json",
           "dialogue.json"
         ],
+        "kind": "dsl",
         "match": {
           "in": {
             "type": [
@@ -4037,70 +4031,80 @@
           }
         }
       },
-      "note": "The cap binds the two bodies whose pace the story sets, an NPC and an actor's puppet; a wave mob, an unleashed twin and a vehicle are moved by the game. On the town's content at the beta revision it refuses fourteen walks (the fox's four at 1.3, nine walks at 1.0, one at 1.2)."
+      "campaign": "foot-of-the-mountain",
+      "carrier": {
+        "code": "DW1113",
+        "kind": "dw"
+      },
+      "finding": "bodies the story walks ran several times faster than a player can sprint: townsfolk walking to the square, and a fox flushed from cover",
+      "general_form": "a `move-npc` or `move-actor` `speed` above twice a player's sprint (`dsl::metrics::story_pace_cap_blocks_per_tick`, 0.5612 blocks a tick, from the body simulator under the pinned jar's rules) is refused at validation (`DW1113`); the walk speed the engine picks when none is declared is under it",
+      "id": "fotm-02",
+      "note": "The cap binds the two bodies whose pace the story sets, an NPC and an actor's puppet; a wave mob, an unleashed twin and a vehicle are moved by the game. On the town's content at the beta revision it refuses fourteen walks (the fox's four at 1.3, nine walks at 1.0, one at 1.2).",
+      "round": null,
+      "triage": "capability"
     },
     {
-      "id": "fotm-03",
-      "campaign": "foot-of-the-mountain",
-      "round": null,
-      "triage": "capability",
-      "finding": "after the festival two townsfolk stood half sunk in the cobbles of the square",
-      "general_form": "a hop lands on the height it took off from, written absolutely, whatever moved the body in the air; the hop's generated PackTest crouches and stands a skinned body at the arc's peak and asserts the landing",
-      "carrier": {
-        "kind": "invariant",
-        "test": "a_hop_never_releases_the_body_and_ends_where_it_began"
-      },
       "binding": {
-        "kind": "dsl",
         "files": [
           "quests.json",
           "dialogue.json"
         ],
+        "kind": "dsl",
         "match": {
           "eq": {
             "type": "hop"
           }
         }
       },
-      "note": "Two of the festival's hoppers also crouched and stood on a four-tick cadence. The game moves a body whose box grows by re-centring the larger box (Entity.fudgePositionAfterSizeChange); in the air that drops the feet by half the growth, and the hop's relative landing kept the drop. Measured on the pinned jar: hop plus pose sank a mannequin a full block in 640 ticks, either alone did not. Every stance check (DW0450, DW1103) judged the stances the story declares, all clean; the sink happened between them."
-    },
-    {
-      "id": "fotm-04",
       "campaign": "foot-of-the-mountain",
-      "round": null,
-      "triage": "capability",
-      "finding": "the bell's countdown began only after the three arrows it was meant to time had been shot",
-      "general_form": "a limited objective's clock starts under the guard the party is told of it under: an objective a press serves is told, and clocked, before its own gate holds",
       "carrier": {
         "kind": "invariant",
-        "test": "a_served_objectives_clock_starts_when_it_is_told"
+        "test": "a_hop_never_releases_the_body_and_ends_where_it_began"
       },
-      "binding": {
-        "kind": "dsl",
-        "files": [
-          "quests.json"
-        ],
-        "match": {
-          "prefix": {
-            "id": "obj/"
-          },
-          "has": [
-            "limit"
-          ]
-        }
-      },
+      "finding": "after the festival two townsfolk stood half sunk in the cobbles of the square",
+      "general_form": "a hop lands on the height it took off from, written absolutely, whatever moved the body in the air; the hop's generated PackTest crouches and stands a skinned body at the arc's peak and asserts the landing",
+      "id": "fotm-03",
+      "note": "Two of the festival's hoppers also crouched and stood on a four-tick cadence. The game moves a body whose box grows by re-centring the larger box (Entity.fudgePositionAfterSizeChange); in the air that drops the feet by half the growth, and the hop's relative landing kept the drop. Measured on the pinned jar: hop plus pose sank a mannequin a full block in 640 ticks, either alone did not. Every stance check (DW0450, DW1103) judged the stances the story declares, all clean; the sink happened between them.",
+      "round": null,
+      "triage": "capability"
+    },
+    {
       "applies_when": {
-        "kind": "dsl",
         "files": [
           "quests.json"
         ],
+        "kind": "dsl",
         "match": {
           "prefix": {
             "id": "obj/"
           }
         }
       },
-      "note": "The bar and the clock appeared together; what was late was activation. The objective was announced at the clerk's word (its presses serve it), while activate_<obj> was driven under the pending guard, which holds the objective's own gate (three hits), so the clock timed only the bell's use. Paired with the expiry reading the open guard rather than the gate: a served objective's clock can now run out before its gate holds."
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "limit"
+          ],
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "foot-of-the-mountain",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_served_objectives_clock_starts_when_it_is_told"
+      },
+      "finding": "the bell's countdown began only after the three arrows it was meant to time had been shot",
+      "general_form": "a limited objective's clock starts under the guard the party is told of it under: an objective a press serves is told, and clocked, before its own gate holds",
+      "id": "fotm-04",
+      "note": "The bar and the clock appeared together; what was late was activation. The objective was announced at the clerk's word (its presses serve it), while activate_<obj> was driven under the pending guard, which holds the objective's own gate (three hits), so the clock timed only the bell's use. Paired with the expiry reading the open guard rather than the gate: a served objective's clock can now run out before its gate holds.",
+      "round": null,
+      "triage": "capability"
     },
     {
       "applies_when": {

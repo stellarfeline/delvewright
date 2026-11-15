@@ -6,9 +6,9 @@
       "op": "add",
       "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/-",
       "value": {
-        "type": "record-outcome",
-        "objective": "obj/press-the-case",
         "line": "We pried the case open with a knife.",
+        "objective": "obj/press-the-case",
+        "type": "record-outcome",
         "when": {
           "requires_flags": [
             "flag/loft-went-dark"

@@ -1,6 +1,6 @@
 //! spec-0138 over a built world: the assembled ground is the graded ground,
 //! a declared-open side over a drop stands open, and a campaign with nothing
-//! to grade emits what it emitted.
+//! to grade moves no byte by its grade.
 //!
 //! The fixture is the blockout campaign (`tests/fixtures/blockout`): an open
 //! fill, flat, its surface at y 63, every place walled. Its corners, read off
@@ -21,7 +21,6 @@ use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::Campaign;
 use delvewright_dsl::siteplan::{Ground, SitePlan};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 fn fixture_dir() -> std::path::PathBuf {
     common::repo_root().join("crates/delvec/tests/fixtures/blockout")
@@ -244,75 +243,6 @@ fn a_declared_open_side_over_a_drop_stands_open() {
 
 // ---------------------------------------------------------------- criterion 10
 
-/// The `dsl_version` the base revision stated: the one string a build of an
-/// unchanged campaign states differently from it, and nothing else.
-const BASE_DSL_VERSION: &str = "0.75.0";
-
-/// The `critical-path.json` `format_version` the base revision stated: the
-/// number of the bot's file format, which a later revision moves whenever the
-/// format gains a key, whatever the campaign.
-const BASE_CRITICAL_PATH_FORMAT_VERSION: u32 = 9;
-
-/// One emitted file's SHA-256, with this revision's `dsl_version` read as the
-/// base's, and in `critical-path.json` this revision's `format_version` read
-/// as the base's — exactly one occurrence, or the file is not the one the base
-/// emitted.
-fn file_hash(path: &str, bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut bytes: Vec<u8> = if text.contains(delvewright_dsl::DSL_VERSION) {
-        text.replace(delvewright_dsl::DSL_VERSION, BASE_DSL_VERSION)
-            .into_bytes()
-    } else {
-        bytes.to_vec()
-    };
-    if path == "critical-path.json" {
-        let text = String::from_utf8(bytes).expect("critical-path.json is UTF-8");
-        let now = format!(
-            "\"format_version\": {}",
-            delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
-        );
-        assert_eq!(
-            text.matches(&now).count(),
-            1,
-            "critical-path.json states its format version once"
-        );
-        bytes = text
-            .replace(
-                &now,
-                &format!("\"format_version\": {BASE_CRITICAL_PATH_FORMAT_VERSION}"),
-            )
-            .into_bytes();
-    }
-    Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-/// Records a later revision added beside the base's files: each is its own
-/// binding statement, and the files the base emitted are still hashed whole.
-const ADDED_SINCE_BASE: &[&str] = &["validation/packtest-own-cells.json"];
-
-/// SHA-256 over one line `path sha256` per emitted file, in path order, but
-/// the grade's own ledger, `manifest.json` (the index of the input documents,
-/// whose `dsl_version` lines moved) and the records added since the base.
-fn digest(out: &BTreeMap<String, Vec<u8>>) -> String {
-    let mut text = String::new();
-    for (path, bytes) in out {
-        if path == "validation/grade.json"
-            || path == "manifest.json"
-            || ADDED_SINCE_BASE.contains(&path.as_str())
-        {
-            continue;
-        }
-        text.push_str(&format!("{path} {}\n", file_hash(path, bytes)));
-    }
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
 fn emitted(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
     let reg = library();
     let plan = Plan::build(c, &reg).expect("plans");
@@ -328,11 +258,34 @@ fn emitted(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
     .expect("builds")
 }
 
-/// Three campaigns with nothing to grade emit exactly the bytes the base
-/// revision emitted (the digests were measured there, by this same
-/// function), and their ledger says `C = 0`.
+/// The emitted paths whose bytes differ between two builds, both sides'
+/// paths included.
+fn moved(a: &BTreeMap<String, Vec<u8>>, b: &BTreeMap<String, Vec<u8>>) -> Vec<String> {
+    a.keys()
+        .chain(b.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|p| a.get(*p) != b.get(*p))
+        .cloned()
+        .collect()
+}
+
+/// Every place of the plan given the steepest bank the surface admits.
+fn every_place_steep(v: &mut Value) {
+    for b in boxes(v) {
+        b["grade"] = json!({"rise": 5, "run": 1});
+    }
+}
+
+/// Three campaigns with nothing to grade: the grade moves no byte of their
+/// build. Measured on this revision by varying only the grade's own input —
+/// every place's bank made the steepest the surface admits — so a later
+/// change to anything else the build emits is not read as the grade's
+/// (CLAUDE.md, *Measurement doctrine*). With a plan, the two builds are equal
+/// file by file but the grade's own ledger, which states `C = 0`; with no
+/// plan, nothing of the grade is resolved and no ledger is written.
 #[test]
-fn a_campaign_with_nothing_to_grade_emits_what_it_emitted() {
+fn a_campaign_with_nothing_to_grade_moves_no_byte_by_its_grade() {
     let no_plan = {
         let loaded = delvec::compiler::load::load_campaign_dir(
             &common::repo_root().join("crates/delvec/tests/fixtures/and-join"),
@@ -340,58 +293,73 @@ fn a_campaign_with_nothing_to_grade_emits_what_it_emitted() {
         .expect("readable");
         delvewright_dsl::parse_campaign(&loaded.raw).expect("parses")
     };
-    let solid = campaign_with(|v| {
+    assert!(no_plan.site_plan.is_none());
+    assert!(
+        delvewright_dsl::siteplan::grade::GradeBinding::of(&no_plan).is_none(),
+        "no site plan: no grade is resolved"
+    );
+    assert!(Ground::of(&no_plan).grade().is_none());
+    let out = emitted(&no_plan);
+    assert!(
+        !out.contains_key("validation/grade.json"),
+        "no site plan: no grade ledger"
+    );
+    let own: Value =
+        serde_json::from_slice(&out["validation/packtest-own-cells.json"]).expect("json");
+    assert_eq!(own["laying_count"], 0, "no site plan: {own}");
+
+    let solid = |v: &mut Value| {
         v["content"]["fill"] = json!({"kind": "solid", "block": "minecraft:stone"});
-    });
-    let walled = campaign_with(|_| {});
-    let cases = [
-        ("no site plan", &no_plan, BASE_NO_PLAN),
-        ("a solid fill", &solid, BASE_SOLID),
-        ("every side walled", &walled, BASE_WALLED),
+    };
+    let cases: [(&str, Edit); 2] = [
+        ("a solid fill", Box::new(solid)),
+        ("every side walled", Box::new(|_: &mut Value| {})),
     ];
-    let mut bound = 0;
-    for (name, c, want) in cases {
-        let out = emitted(c);
-        if digest(&out) != want {
-            for (p, b) in &out {
-                eprintln!("FILE {name} {p} {}", file_hash(p, b));
-                if let Ok(dir) = std::env::var("DW_GRADE_DUMP") {
-                    let path = std::path::Path::new(&dir)
-                        .join(name.replace(' ', "-"))
-                        .join(p);
-                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                    std::fs::write(path, b).unwrap();
-                }
-            }
-        }
-        assert_eq!(
-            digest(&out),
-            want,
-            "{name}: the bytes the base revision emitted"
+    let mut files = 0;
+    for (name, edit) in &cases {
+        let as_written = campaign_with(|v| edit(v));
+        let steep = campaign_with(|v| {
+            edit(v);
+            every_place_steep(v);
+        });
+        assert_ne!(
+            as_written.site_plan.as_ref().map(|p| &p.content),
+            steep.site_plan.as_ref().map(|p| &p.content),
+            "{name}: the perturbation reaches the plan"
         );
-        // A record added since the base changes no file the base emitted: here,
-        // no template lays a world container.
-        let own: serde_json::Value =
-            serde_json::from_slice(&out["validation/packtest-own-cells.json"]).expect("json");
-        assert_eq!(own["laying_count"], 0, "{name}: {own}");
-        if c.site_plan.is_some() {
+        let (a, b) = (emitted(&as_written), emitted(&steep));
+        for (which, out) in [("as written", &a), ("steep", &b)] {
             let ledger: Value =
                 serde_json::from_slice(out.get("validation/grade.json").expect("the ledger"))
                     .expect("parses");
-            assert_eq!(ledger["regraded_columns"], json!(0), "{name}: C = 0");
+            assert_eq!(
+                ledger["regraded_columns"],
+                json!(0),
+                "{name}, {which}: C = 0"
+            );
+            let own: Value =
+                serde_json::from_slice(&out["validation/packtest-own-cells.json"]).expect("json");
+            assert_eq!(own["laying_count"], 0, "{name}, {which}: {own}");
         }
-        bound += 1;
+        let moved: Vec<String> = moved(&a, &b)
+            .into_iter()
+            .filter(|p| p != "validation/grade.json")
+            .collect();
+        assert!(
+            moved.is_empty(),
+            "{name}: a bank of another slope moved {} emitted file(s) where nothing \
+             is graded: {moved:?}",
+            moved.len()
+        );
+        files += a.len();
     }
+    println!(
+        "nothing-to-grade binding: 3 of the 4 fixture campaigns the criterion names; \
+         {files} emitted file(s) compared across 2 builds each"
+    );
     // The fourth campaign the spec names — unwalled sides all at the
     // terrain's height — is not among these: on the blockout fixture an
-    // unwalled side at the grade lets a body walk off the region (`DW0322`
-    // at the base revision as here). Recorded as a debt of criterion 10.
-    assert_eq!(bound, 3, "3 of the 4 fixture campaigns the criterion names");
+    // unwalled side at the grade lets a body walk off the region (`DW0322`).
+    // Recorded as a debt of criterion 10.
+    assert!(files > 0);
 }
-
-// Measured at the base revision `e5cdf409b`: the per-file SHA-256 of every
-// emitted file of the same three campaigns, built there by an integration test
-// of that tree holding these helpers, folded by this `digest`'s rule.
-const BASE_NO_PLAN: &str = "c1cb996aae241c7c2830c4f5a4567247aa6fa6938407eb381808caef83b62563";
-const BASE_SOLID: &str = "e680557c945d4ee97f092c2973b1e3221dfde94d0bc26e9515828e84c8b2f5ac";
-const BASE_WALLED: &str = "b48cf0929d17a9aac4387b46801071f9f78d3847992dc44eba3ba5570a3dc37a";

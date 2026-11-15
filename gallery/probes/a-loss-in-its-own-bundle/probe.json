@@ -6,8 +6,8 @@
       "op": "add",
       "path": "/content/quests/1/on_objective_complete/obj~1climb-the-loft/-",
       "value": {
-        "type": "fail-objective",
-        "objective": "obj/climb-the-loft"
+        "objective": "obj/climb-the-loft",
+        "type": "fail-objective"
       }
     }
   ],
