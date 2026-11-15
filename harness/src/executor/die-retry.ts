@@ -33,7 +33,7 @@ import type { MineflayerExecutor } from "../executor.ts";
 const TIME_PACKET_TICKS = 20;
 
 /** Bound on the respawn-protection wait, however slowly the server ticks. */
-const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
+export const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
 
 /**
  * How long the die-retry re-engage probe waits for the encounter to show itself
@@ -52,7 +52,7 @@ const RESPAWN_PROTECTION_TIMEOUT_MS = 15_000;
  * so what it settles on is the wave itself — client tracking range does not bound
  * the answer, and nothing standing nearby can enter it.
  */
-const REENGAGE_SETTLE_MS = 6_000;
+export const REENGAGE_SETTLE_MS = 6_000;
 
 /**
  * How long the re-seat census may settle ({@link Executor.awaitReseat}). The
