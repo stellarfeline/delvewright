@@ -82,8 +82,8 @@
 //!    block whose top is below the water's surface (a waterlogged bottom slab — the
 //!    feet stand in its water, measured on the pinned server), and a flooded cell a
 //!    body can walk or drop into from a reachable standable neighbour. The radius
-//!    and the walk are `DW0496`'s: the declared `follow_range` or
-//!    [`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`], and an unbounded walk from the
+//!    and the walk are `DW0496`'s: the stack's reach
+//!    ([`crate::compiler::nav::follow::mob_reach`]), and an unbounded walk from the
 //!    seated cells. Any wet cell silences the rule, so it under-fires by
 //!    construction: one puddle in reach is enough for it to hold its tongue.
 //!

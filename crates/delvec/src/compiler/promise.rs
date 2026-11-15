@@ -631,7 +631,7 @@ pub fn judge_acts(
                     .iter()
                     .find(|x| x.id.as_str() == wave.as_str());
                 if let Some(wv) = w {
-                    kill = Some(crate::compiler::nav::wave_aggro_radius(wv));
+                    kill = Some(crate::compiler::nav::follow::wave_perception(wv));
                 }
                 let sites = firing_sites(plan, wave.as_str());
                 if sites.is_empty() {
@@ -848,7 +848,7 @@ pub fn judge_acts(
             else {
                 continue; // an unknown wave is `DW0171`'s refusal
             };
-            let (r, src) = crate::compiler::nav::wave_aggro_radius(wv);
+            let (r, src) = crate::compiler::nav::follow::wave_perception(wv);
             let anchor = crate::compiler::plan::wave_area(c, wave.as_str())
                 .and_then(|a| plan.point(a, wv.anchor.as_str()));
             let sites = firing_sites(plan, wave.as_str());

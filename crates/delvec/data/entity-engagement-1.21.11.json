@@ -1,0 +1,562 @@
+{
+  "minecraft:acacia_boat": {
+    "category": "misc"
+  },
+  "minecraft:acacia_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:allay": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:area_effect_cloud": {
+    "category": "misc"
+  },
+  "minecraft:armadillo": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:armor_stand": {
+    "category": "misc"
+  },
+  "minecraft:arrow": {
+    "category": "misc"
+  },
+  "minecraft:axolotl": {
+    "category": "axolotls",
+    "follow_range": 16.0
+  },
+  "minecraft:bamboo_chest_raft": {
+    "category": "misc"
+  },
+  "minecraft:bamboo_raft": {
+    "category": "misc"
+  },
+  "minecraft:bat": {
+    "category": "ambient",
+    "follow_range": 16.0
+  },
+  "minecraft:bee": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:birch_boat": {
+    "category": "misc"
+  },
+  "minecraft:birch_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:blaze": {
+    "category": "monster",
+    "follow_range": 48.0
+  },
+  "minecraft:block_display": {
+    "category": "misc"
+  },
+  "minecraft:bogged": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:breeze": {
+    "category": "monster",
+    "follow_range": 24.0
+  },
+  "minecraft:breeze_wind_charge": {
+    "category": "misc"
+  },
+  "minecraft:camel": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:camel_husk": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:cat": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:cave_spider": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:cherry_boat": {
+    "category": "misc"
+  },
+  "minecraft:cherry_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:chest_minecart": {
+    "category": "misc"
+  },
+  "minecraft:chicken": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:cod": {
+    "category": "water_ambient",
+    "follow_range": 16.0
+  },
+  "minecraft:command_block_minecart": {
+    "category": "misc"
+  },
+  "minecraft:copper_golem": {
+    "category": "misc",
+    "follow_range": 16.0
+  },
+  "minecraft:cow": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:creaking": {
+    "category": "monster",
+    "follow_range": 32.0
+  },
+  "minecraft:creeper": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:dark_oak_boat": {
+    "category": "misc"
+  },
+  "minecraft:dark_oak_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:dolphin": {
+    "category": "water_creature",
+    "follow_range": 16.0
+  },
+  "minecraft:donkey": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:dragon_fireball": {
+    "category": "misc"
+  },
+  "minecraft:drowned": {
+    "category": "monster",
+    "follow_range": 35.0
+  },
+  "minecraft:egg": {
+    "category": "misc"
+  },
+  "minecraft:elder_guardian": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:end_crystal": {
+    "category": "misc"
+  },
+  "minecraft:ender_dragon": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:ender_pearl": {
+    "category": "misc"
+  },
+  "minecraft:enderman": {
+    "category": "monster",
+    "follow_range": 64.0
+  },
+  "minecraft:endermite": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:evoker": {
+    "category": "monster",
+    "follow_range": 12.0
+  },
+  "minecraft:evoker_fangs": {
+    "category": "misc"
+  },
+  "minecraft:experience_bottle": {
+    "category": "misc"
+  },
+  "minecraft:experience_orb": {
+    "category": "misc"
+  },
+  "minecraft:eye_of_ender": {
+    "category": "misc"
+  },
+  "minecraft:falling_block": {
+    "category": "misc"
+  },
+  "minecraft:fireball": {
+    "category": "misc"
+  },
+  "minecraft:firework_rocket": {
+    "category": "misc"
+  },
+  "minecraft:fishing_bobber": {
+    "category": "misc"
+  },
+  "minecraft:fox": {
+    "category": "creature",
+    "follow_range": 32.0
+  },
+  "minecraft:frog": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:furnace_minecart": {
+    "category": "misc"
+  },
+  "minecraft:ghast": {
+    "category": "monster",
+    "follow_range": 100.0
+  },
+  "minecraft:giant": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:glow_item_frame": {
+    "category": "misc"
+  },
+  "minecraft:glow_squid": {
+    "category": "underground_water_creature",
+    "follow_range": 16.0
+  },
+  "minecraft:goat": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:guardian": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:happy_ghast": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:hoglin": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:hopper_minecart": {
+    "category": "misc"
+  },
+  "minecraft:horse": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:husk": {
+    "category": "monster",
+    "follow_range": 35.0
+  },
+  "minecraft:illusioner": {
+    "category": "monster",
+    "follow_range": 18.0
+  },
+  "minecraft:interaction": {
+    "category": "misc"
+  },
+  "minecraft:iron_golem": {
+    "category": "misc",
+    "follow_range": 16.0
+  },
+  "minecraft:item": {
+    "category": "misc"
+  },
+  "minecraft:item_display": {
+    "category": "misc"
+  },
+  "minecraft:item_frame": {
+    "category": "misc"
+  },
+  "minecraft:jungle_boat": {
+    "category": "misc"
+  },
+  "minecraft:jungle_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:leash_knot": {
+    "category": "misc"
+  },
+  "minecraft:lightning_bolt": {
+    "category": "misc"
+  },
+  "minecraft:lingering_potion": {
+    "category": "misc"
+  },
+  "minecraft:llama": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:llama_spit": {
+    "category": "misc"
+  },
+  "minecraft:magma_cube": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:mangrove_boat": {
+    "category": "misc"
+  },
+  "minecraft:mangrove_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:mannequin": {
+    "category": "misc"
+  },
+  "minecraft:marker": {
+    "category": "misc"
+  },
+  "minecraft:minecart": {
+    "category": "misc"
+  },
+  "minecraft:mooshroom": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:mule": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:nautilus": {
+    "category": "water_creature",
+    "follow_range": 16.0
+  },
+  "minecraft:oak_boat": {
+    "category": "misc"
+  },
+  "minecraft:oak_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:ocelot": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:ominous_item_spawner": {
+    "category": "misc"
+  },
+  "minecraft:painting": {
+    "category": "misc"
+  },
+  "minecraft:pale_oak_boat": {
+    "category": "misc"
+  },
+  "minecraft:pale_oak_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:panda": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:parched": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:parrot": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:phantom": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:pig": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:piglin": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:piglin_brute": {
+    "category": "monster",
+    "follow_range": 12.0
+  },
+  "minecraft:pillager": {
+    "category": "monster",
+    "follow_range": 32.0
+  },
+  "minecraft:player": {
+    "category": "misc"
+  },
+  "minecraft:polar_bear": {
+    "category": "creature",
+    "follow_range": 20.0
+  },
+  "minecraft:pufferfish": {
+    "category": "water_ambient",
+    "follow_range": 16.0
+  },
+  "minecraft:rabbit": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:ravager": {
+    "category": "monster",
+    "follow_range": 32.0
+  },
+  "minecraft:salmon": {
+    "category": "water_ambient",
+    "follow_range": 16.0
+  },
+  "minecraft:sheep": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:shulker": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:shulker_bullet": {
+    "category": "misc"
+  },
+  "minecraft:silverfish": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:skeleton": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:skeleton_horse": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:slime": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:small_fireball": {
+    "category": "misc"
+  },
+  "minecraft:sniffer": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:snow_golem": {
+    "category": "misc",
+    "follow_range": 16.0
+  },
+  "minecraft:snowball": {
+    "category": "misc"
+  },
+  "minecraft:spawner_minecart": {
+    "category": "misc"
+  },
+  "minecraft:spectral_arrow": {
+    "category": "misc"
+  },
+  "minecraft:spider": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:splash_potion": {
+    "category": "misc"
+  },
+  "minecraft:spruce_boat": {
+    "category": "misc"
+  },
+  "minecraft:spruce_chest_boat": {
+    "category": "misc"
+  },
+  "minecraft:squid": {
+    "category": "water_creature",
+    "follow_range": 16.0
+  },
+  "minecraft:stray": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:strider": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:tadpole": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:text_display": {
+    "category": "misc"
+  },
+  "minecraft:tnt": {
+    "category": "misc"
+  },
+  "minecraft:tnt_minecart": {
+    "category": "misc"
+  },
+  "minecraft:trader_llama": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:trident": {
+    "category": "misc"
+  },
+  "minecraft:tropical_fish": {
+    "category": "water_ambient",
+    "follow_range": 16.0
+  },
+  "minecraft:turtle": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:vex": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:villager": {
+    "category": "misc",
+    "follow_range": 16.0
+  },
+  "minecraft:vindicator": {
+    "category": "monster",
+    "follow_range": 12.0
+  },
+  "minecraft:wandering_trader": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:warden": {
+    "category": "monster",
+    "follow_range": 24.0
+  },
+  "minecraft:wind_charge": {
+    "category": "misc"
+  },
+  "minecraft:witch": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:wither": {
+    "category": "monster",
+    "follow_range": 40.0
+  },
+  "minecraft:wither_skeleton": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:wither_skull": {
+    "category": "misc"
+  },
+  "minecraft:wolf": {
+    "category": "creature",
+    "follow_range": 16.0
+  },
+  "minecraft:zoglin": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:zombie": {
+    "category": "monster",
+    "follow_range": 35.0
+  },
+  "minecraft:zombie_horse": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:zombie_nautilus": {
+    "category": "monster",
+    "follow_range": 16.0
+  },
+  "minecraft:zombie_villager": {
+    "category": "monster",
+    "follow_range": 35.0
+  },
+  "minecraft:zombified_piglin": {
+    "category": "monster",
+    "follow_range": 35.0
+  }
+}

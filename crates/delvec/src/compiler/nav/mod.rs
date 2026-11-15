@@ -42,6 +42,7 @@ mod checkpoint;
 mod counted;
 mod cutscene;
 mod door;
+pub mod follow;
 mod furniture;
 mod hazard;
 mod horizon;
@@ -99,7 +100,7 @@ pub use threshold::*;
 pub use timed_gate::*;
 pub use trap::*;
 pub use view::*;
-pub use wave::*;
+use wave::*;
 
 #[cfg(test)]
 mod testkit;

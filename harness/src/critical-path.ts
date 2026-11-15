@@ -102,9 +102,13 @@ import type { GateTerm } from "./death-loop.ts";
  *   party sits in, and its `stand` is that seat (spec-0135 §5). A format-10
  *   bot would refuse the key, or walk from the seat.
  *
+ * * `12` — a `census` row with `select` carries `cells`: one standable cell
+ *   of the box per body it places, no two rows of a step sharing one
+ *   (spec-0134 §1). A format-11 bot would refuse the key.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 11;
+export const CRITICAL_PATH_FORMAT_VERSION = 12;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -123,6 +127,12 @@ export interface CensusRow {
   readonly riders?: string;
   readonly region: readonly [Vec3Tuple, Vec3Tuple];
   readonly count: number;
+  /** Format 12: with `select`, one standable cell of the box per body placed,
+   * no cell shared with another row of the step. */
+  readonly cells?: readonly Vec3Tuple[];
+  /** Format 12: a census of a kind — the entity the harness summons for the
+   * act and removes after, never a body some other object owns. */
+  readonly standIn?: string;
 }
 
 /** The censuses a step is gated on — empty for a step gated on none. */
@@ -1208,7 +1218,7 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
   return value.map((row, i) => {
     const at = `${pointer}/${i}`;
     if (!isRecord(row)) fail(at, `must be an object, got ${describe(row)}`);
-    rejectUnknownKeys(row, ["state", "objective", "select", "riders", "region", "count"], at);
+    rejectUnknownKeys(row, ["state", "objective", "select", "riders", "region", "count", "cells", "stand_in"], at);
     const select = row["select"];
     const riders = row["riders"];
     if ((select === undefined) === (riders === undefined)) {
@@ -1223,6 +1233,16 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
     }
     const count = requireInteger(row, "count", at);
     if (count < 0) fail(`${at}/count`, `must not be negative, got ${count}`);
+    const rawCells = row["cells"];
+    if (select !== undefined && !Array.isArray(rawCells)) {
+      fail(`${at}/cells`, `a row placed by teleport carries its cells, got ${describe(rawCells)}`);
+    }
+    if (select === undefined && rawCells !== undefined) {
+      fail(`${at}/cells`, "a riders row is placed by boarding and carries no cells");
+    }
+    const cells: Vec3Tuple[] | undefined = Array.isArray(rawCells)
+      ? rawCells.map((c, k) => requireVec3({ c }, "c", `${at}/cells/${k}`))
+      : undefined;
     return {
       state: requireString(row, "state", at),
       objective: requireString(row, "objective", at),
@@ -1233,6 +1253,8 @@ export function parseCensus(value: unknown, pointer: string): CensusRow[] {
         requireVec3({ hi: region[1] }, "hi", `${at}/region`),
       ],
       count,
+      ...(cells === undefined ? {} : { cells }),
+      ...(row["stand_in"] === undefined ? {} : { standIn: requireString(row, "stand_in", at) }),
     };
   });
 }

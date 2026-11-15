@@ -715,6 +715,19 @@ not third-party reconstructions.
   be one value or the script refuses), and every stated value equals the runtime
   answer. Feeds `DW1034` (a body subject sent and drawn) and the assembly
   `view_range` derivation.
+- **`entity-engagement-1.21.11.json`** — every registered entity type (157) with
+  its mob category (`EntityType#getCategory()`, by its serialised name) and, for
+  the 89 whose `DefaultAttributes` supplier carries it, the base value of
+  `minecraft:follow_range` (`AttributeSupplier#getBaseValue`, what `attribute …
+  base reset` restores), by `tools/maintenance/extract-entity-engagement.py` from
+  the pinned server jar through the same mappings as `entity-bodies-1.21.11.json`.
+  Two methods: (1) a dumper boots the registries and asks every type; (2)
+  `DefaultAttributes.<clinit>` is disassembled and each supplier's builder chain
+  is followed (up the class chain, as `invokestatic` resolves) until a
+  `FOLLOW_RANGE` add states the value. At 1.21.11 all 89 chains state one and
+  every one equals the runtime answer; the two methods see the same 89 types.
+  Pillager 32, vindicator 12, zombie 35, skeleton 16, warden 24. Read by
+  `nav::follow` (the reach of a fight, spec-0016 §6) and the engagement PackTest.
 
 - **`item-use-duration-1.21.11.json`** (in `crates/dsl/data/`) — every item the pinned game holds in use (74 of 1505) with its use duration in ticks, from `Item#getUseDuration(ItemStack, LivingEntity)` on the item's default stack, by `tools/maintenance/extract-item-use-duration.py` from the pinned server jar through the official 1.21.11 server mappings (same verification as `entity-bodies-1.21.11.json`). Two methods: (1) a dumper boots the registries and asks every item; (2) the same jar's data generator report (`reports/items.json`) — all 43 items carrying `minecraft:consumable` take `consume_seconds × 20` ticks at runtime. The goat horn reads its duration through its holder's registries, so it is resolved from its default instrument (`ponder_goat_horn`) and the jar's `data/minecraft/instrument/ponder_goat_horn.json` (`use_duration` 7.0 s, 140 ticks). Lives in the DSL crate because `DW1092` (spec-0134 §3) is a validation rule. sha256 `6580c367de73be2fb7c6a0f83ffb80e7f9bc2f973301dced8f714d16ee33288e`.
 
@@ -745,8 +758,9 @@ Mojang publishes no per-entity default attributes — mob base `max_health` and
 The winnability arithmetic therefore runs its numeric time-to-kill bound **only**
 where the campaign declares `attributes.max_health` on the stack, and says so out
 loud (`DW0475`) rather than inventing a health table. Inventing one is the
-"invented precision" this codebase already refuses for `DEFAULT_FOLLOW_RANGE`
-(`compiler/nav/mod.rs`) and `MODEL_MARGIN` (`clearance.rs`).
+"invented precision" this codebase already refuses for `MODEL_MARGIN`
+(`clearance.rs`). A species' `follow_range` is not invented either: it is read
+from the jar's code (`entity-engagement-1.21.11.json`, below).
 
 ## Default-font glyph metrics (measured, not vendored)
 
@@ -811,6 +825,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `support-bases-1.21.11.tsv` | `c6769b88424488fe1b82888989f4d291890efe786381571eec406afc576a53d4` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 | `entity-bodies-1.21.11.json` | `77fd204e55ec3212359dd2bbca5124c403c76c25953924a38d07dcfdb27b14a9` |
+| `entity-engagement-1.21.11.json` | `a15902706bba27d8a8e09825a489fc8d23e6778521287c3f80d288705dc9670c` |
 
 ## Not committed
 

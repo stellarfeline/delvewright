@@ -925,6 +925,7 @@ fn emit_all(
         stake_table,
         death_plan,
         pulse_gate,
+        census_cells,
     } = prove_world(
         plan,
         &world,
@@ -1471,6 +1472,7 @@ fn emit_all(
     // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
     let holder_step_hints = holder_steps(&owned_holders, &holder_stances);
     annotate_holder_steps(&mut cp, &holder_step_hints);
+    census::annotate_census_cells(&mut cp, &census_cells);
     if let Some(mut b) = assembly_binding {
         let laid = layout.witnessed();
         b.witnessed = witnesses
@@ -1753,6 +1755,7 @@ fn emit_all(
     let mut expired_in_paths: BTreeSet<String> = BTreeSet::new();
     for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
         annotate_holder_steps(&mut path, &holder_step_hints);
+        census::annotate_census_cells(&mut path, &census_cells);
         for e in path["steps"]
             .as_array()
             .into_iter()

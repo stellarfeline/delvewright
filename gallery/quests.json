@@ -6250,7 +6250,7 @@
           },
           {
             "count": 1,
-            "entity": "minecraft:spider",
+            "entity": "minecraft:vindicator",
             "name": "Muster Stray"
           }
         ],
@@ -6293,7 +6293,7 @@
                 "item": "minecraft:arrow"
               }
             ],
-            "entity": "minecraft:pillager"
+            "entity": "minecraft:vindicator"
           }
         ],
         "on_kill": {
