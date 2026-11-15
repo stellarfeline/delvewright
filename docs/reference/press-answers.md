@@ -21,7 +21,7 @@ What established practice, the pinned game and this engine's own record say abou
 ## 3. What the pinned game does itself
 
 - **Cited** (Minecraft Wiki, *Data component format*, `minecraft:lock`): a container carrying `lock` opens only for a player holding the matching item in the main hand; a player without it who interacts with the container is answered — the game "will play a sound and display a message in the actionbar".
-- **Cited** (`crates/delvec/data/sounds-1.21.11.json`, the pinned sound registry): `minecraft:block.chest.locked` is the sound event vanilla pairs with that message; `minecraft:block.lever.click`, `minecraft:entity.villager.no` and `minecraft:ui.button.click` are in the same registry.
+- **Cited** (`crates/delvec/data/sounds-1.21.11.json`, the pinned sound registry): `minecraft:block.chest.locked` is the sound event vanilla pairs with that message, and vanilla plays it at the container to every player within range while the message goes to the presser alone (`sound-audience.md`); `minecraft:block.lever.click`, `minecraft:entity.villager.no` and `minecraft:ui.button.click` are in the same registry.
 - **Cited** (`crates/delvec/data/commands-1.21.11.json`, the pinned command tree): `title <targets> actionbar <component>` is the one command that writes the action bar; `tellraw <targets> <component>` writes chat; `playsound <sound> …` plays a registered sound event. **Cited** (Minecraft Wiki, *Commands/title*): the action bar is "the space just above the player's hotbar" and a new `actionbar` "changes the current action bar title".
 - **Cited** (`game-writing.md` F3, FromSoftware as quoted there): the system message for a shut door is flat — "Door does not open from this side" — and says the state, not the lore.
 
