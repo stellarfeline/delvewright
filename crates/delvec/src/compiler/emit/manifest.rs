@@ -862,32 +862,6 @@ fn census_needs<'a>(
     need
 }
 
-#[cfg(test)]
-mod census_need_tests {
-    use super::*;
-
-    /// The cake's census: the trigger's gate (at least 1) and its own entry
-    /// deed (at least 1) on one datum are one row of one body; before, they
-    /// were two rows, two pillagers were put on the stage and the game read 2.
-    #[test]
-    fn a_deed_and_its_gate_on_one_datum_place_one_census() {
-        let cmp = |state: &str, value: i32| -> delvewright_dsl::StateCompare {
-            serde_json::from_value(json!({"state": state, "op": "at-least", "value": value}))
-                .expect("a term")
-        };
-        let (a, b, c) = (
-            cmp("state/cake", 1),
-            cmp("state/cake", 1),
-            cmp("state/pen", 3),
-        );
-        let need = census_needs([&a, &c, &b].into_iter());
-        let got: Vec<(&str, i32)> = need.iter().map(|(x, n)| (x.state.as_str(), *n)).collect();
-        assert_eq!(got, vec![("state/cake", 1), ("state/pen", 3)]);
-        let d = cmp("state/cake", 2);
-        assert_eq!(census_needs([&a, &d].into_iter())[0].1, 2);
-    }
-}
-
 pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
     let q = &plan.campaign.quests.content;
     // A `body-enters` deed (a story world's entry deed, spec-0134 §1) is
@@ -949,4 +923,30 @@ pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
             Some(row)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod census_need_tests {
+    use super::*;
+
+    /// The cake's census: the trigger's gate (at least 1) and its own entry
+    /// deed (at least 1) on one datum are one row of one body; before, they
+    /// were two rows, two pillagers were put on the stage and the game read 2.
+    #[test]
+    fn a_deed_and_its_gate_on_one_datum_place_one_census() {
+        let cmp = |state: &str, value: i32| -> delvewright_dsl::StateCompare {
+            serde_json::from_value(json!({"state": state, "op": "at-least", "value": value}))
+                .expect("a term")
+        };
+        let (a, b, c) = (
+            cmp("state/cake", 1),
+            cmp("state/cake", 1),
+            cmp("state/pen", 3),
+        );
+        let need = census_needs([&a, &c, &b].into_iter());
+        let got: Vec<(&str, i32)> = need.iter().map(|(x, n)| (x.state.as_str(), *n)).collect();
+        assert_eq!(got, vec![("state/cake", 1), ("state/pen", 3)]);
+        let d = cmp("state/cake", 2);
+        assert_eq!(census_needs([&a, &d].into_iter())[0].1, 2);
+    }
 }
