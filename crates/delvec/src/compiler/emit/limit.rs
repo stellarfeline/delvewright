@@ -37,11 +37,197 @@ pub(super) fn settled_score(oid: &str) -> String {
 pub(super) fn after_score(c: &delvewright_dsl::Campaign, oid: &str) -> String {
     // A quorum member settles done or lapsed (spec-0134 §7), as a limited
     // objective settles done or expired.
-    if limited(c, oid).is_some() || super::quorum::is_member(c, oid) {
+    if owns_settled(c, oid) {
         settled_score(oid)
     } else {
         obj_score(oid)
     }
+}
+
+/// Whether `oid` owns a settled score: it can settle some way other than
+/// done — expired (a `limit`), lapsed (a quorum member) or failed (named by a
+/// `fail-objective`).
+pub(super) fn owns_settled(c: &delvewright_dsl::Campaign, oid: &str) -> bool {
+    limited(c, oid).is_some() || super::quorum::is_member(c, oid) || failable(c, oid)
+}
+
+/// Whether some `fail-objective` anywhere in the campaign names `oid`: it can
+/// settle **failed**.
+pub(super) fn failable(c: &delvewright_dsl::Campaign, oid: &str) -> bool {
+    delvewright_dsl::failed_objectives(c).contains(oid)
+}
+
+/// The scoreboard objective marking an objective **failed** (party holder):
+/// set by `settle_failed_<obj>`, read by its guards.
+pub(super) fn failed_score(oid: &str) -> String {
+    plan::failed_score(oid)
+}
+
+/// The function that settles `oid` failed.
+pub(super) fn fail_fn(oid: &str) -> String {
+    format!("settle_failed_{}", safe_obj_fn(oid))
+}
+
+/// The guard term every guard of a failable objective gains: once failed,
+/// nothing completes, expires or tells it.
+pub(super) fn failed_term(c: &delvewright_dsl::Campaign, o: &Objective) -> String {
+    if failable(c, o.id().as_str()) {
+        format!(
+            " unless score {} {} matches 1",
+            plan::PARTY,
+            failed_score(o.id().as_str())
+        )
+    } else {
+        String::new()
+    }
+}
+
+/// The line a `fail-objective` emits: the objective settled failed, unless it
+/// has already settled some way.
+pub(super) fn fail_lines(ns: &str, oid: &str) -> Vec<String> {
+    vec![format!(
+        "execute unless score {} {} matches 1 run function {ns}:{}",
+        plan::PARTY,
+        settled_score(oid),
+        fail_fn(oid)
+    )]
+}
+
+/// The line `complete_<obj>` gains for a failable objective that owns its
+/// settled score through nothing else: settled.
+pub(super) fn failure_completion_lines(c: &delvewright_dsl::Campaign, oid: &str) -> Vec<String> {
+    if failable(c, oid) && limited(c, oid).is_none() && !super::quorum::is_member(c, oid) {
+        vec![format!(
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
+            settled_score(oid)
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The lines that put a failable objective's failure back to a fresh
+/// delve's: its failed score clear, and its settled score where nothing else
+/// owns it — what every PackTest template that drives the objective owns, so a
+/// sibling's leftover failure never decides its assertion (`DW0807`).
+pub(super) fn failure_clear_lines(c: &delvewright_dsl::Campaign, oid: &str) -> Vec<String> {
+    if !failable(c, oid) {
+        return Vec::new();
+    }
+    let mut out = vec![format!(
+        "scoreboard players set {} {} 0",
+        plan::PARTY,
+        failed_score(oid)
+    )];
+    if limited(c, oid).is_none() && !super::quorum::is_member(c, oid) {
+        out.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            settled_score(oid)
+        ));
+    }
+    out
+}
+
+/// `setup` lines: the failed score of every failable objective, and its
+/// settled score where nothing else owns it.
+pub(super) fn failure_setup_lines(plan: &Plan) -> Vec<String> {
+    let c = plan.campaign;
+    let mut out = Vec::new();
+    for o in c.quests.content.quests.iter().flat_map(|q| &q.objectives) {
+        let oid = o.id().as_str();
+        if !failable(c, oid) {
+            continue;
+        }
+        out.push(format!(
+            "scoreboard objectives add {} dummy",
+            failed_score(oid)
+        ));
+        if limited(c, oid).is_none() && !super::quorum::is_member(c, oid) {
+            out.push(format!(
+                "scoreboard objectives add {} dummy",
+                settled_score(oid)
+            ));
+        }
+    }
+    out
+}
+
+/// Every failable objective's `settle_failed_<obj>`: failed and settled, its
+/// clock stopped, its closing told to a party that was told of it, its
+/// affordance gone as completion's goes, and its quest asked whether it is
+/// complete. Nothing of its completion bundle or its `on_expire` fires: the
+/// bundle that failed it is the story's account of how it was lost.
+pub(super) fn failure_fns(
+    plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
+    holders: &[crate::compiler::holders::OwnedHolder],
+    guide: &guidance::Guide,
+) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let mut fns = Vec::new();
+    for q in &c.quests.content.quests {
+        let q_area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            let oid = o.id().as_str();
+            if !failable(c, oid) {
+                continue;
+            }
+            let mut body = vec![
+                format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    failed_score(oid)
+                ),
+                format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    settled_score(oid)
+                ),
+            ];
+            if o.limit().is_some() {
+                body.extend(stop_settlement_lines(ns, oid));
+            }
+            // Told only to a party that was told of it: an objective failed
+            // before it opened was never announced, and its closing names
+            // nothing the party has heard of.
+            if o.announced(&c.quests.content.guidance)
+                && let Some(title) = o.title()
+            {
+                let told = format!(
+                    "execute if score {} {} matches 1 run ",
+                    plan::PARTY,
+                    announce_score(oid)
+                );
+                body.push(format!(
+                    "{told}tellraw @a {}",
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::LIMIT_FAILED),
+                        &[
+                            ("color", json!("red")),
+                            (
+                                "with",
+                                json!([tr_with(title, &[("color", json!("white"))])])
+                            ),
+                        ],
+                    )
+                ));
+                body.push(format!("{told}{}", cue_line(CUE_EXPIRED)));
+            }
+            if !activation_commands(plan, holders, q_area, o).is_empty() {
+                body.extend(completion_cleanup(plan, o));
+            }
+            body.extend(guidance::completion_lines(guide, ns, oid));
+            body.push(format!(
+                "function {ns}:check_q_{}",
+                plan::safe_local(q.id.as_str())
+            ));
+            fns.push((fail_fn(oid), lines(&body)));
+        }
+    }
+    fns
 }
 
 /// The objective `oid`'s limit, when it declares one.
@@ -290,10 +476,12 @@ pub(super) fn born_expired_drivers(plan: &Plan) -> Vec<String> {
                 continue;
             }
             let oid = o.id().as_str();
+            // The objective's open guard, never its gate: a clock settles a
+            // task whatever its completion's gate says.
             out.push(format!(
                 "execute if score {} dw.sys matches 1{} run function {ns}:{}",
                 ran_out_latch(oid),
-                pending_guard(plan, o, &qa),
+                serving_guard(plan.campaign, o, &qa),
                 settle_fn(oid)
             ));
         }
@@ -343,9 +531,12 @@ pub(super) fn limit_fns(
                         obj_score(oid),
                         ran_out_latch(oid)
                     ),
+                    // The open guard, never the gate (spec-0133 §3 as
+                    // amended): a body the task needed may be lost, and a
+                    // clock that waited on its gate would never settle.
                     format!(
                         "execute{} run function {ns}:{}",
-                        pending_guard(plan, o, &qa),
+                        serving_guard(c, o, &qa),
                         settle_fn(oid)
                     ),
                 ]),

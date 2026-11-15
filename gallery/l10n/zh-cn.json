@@ -245,6 +245,9 @@
     "vehicle.yard-skiff.name": "海鸥号",
     "wave.edge.mob.0.name": "边沿哨兵",
     "wave.lane.health_bar.title": "行进巡队",
+    "wave.loft-bat.mob.0.name": "阁楼蝙蝠",
+    "wave.loft-bat.on_kill.0.outcome": "我们打落了守着阁楼灯火的那只蝙蝠，夹层从此对我们一片漆黑。",
+    "wave.loft-bat.on_kill.2.narrate": "蝙蝠坠地，夹层上它守着的那几盏灯随之熄灭。",
     "wave.muster.health_bar.title": "点兵之阵",
     "wave.muster.mob.0.drop.0.name": "点兵之骨",
     "wave.muster.mob.1.name": "点兵散兵",
@@ -252,7 +255,7 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
   },
-  "dsl_version": "0.76.0",
+  "dsl_version": "0.77.0",
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {
@@ -458,6 +461,9 @@
     "trigger.strike-the-sentinel.answers.not_yet": "The sentinel is sunk and takes no more blows.",
     "wave.edge.mob.0.name": "The Edge Sentry",
     "wave.lane.health_bar.title": "The Lane Patrol",
+    "wave.loft-bat.mob.0.name": "The Loft Bat",
+    "wave.loft-bat.on_kill.0.outcome": "We brought down the bat that kept the loft's lamps, and the mezzanine stayed dark to us.",
+    "wave.loft-bat.on_kill.2.narrate": "The bat falls, and up on the mezzanine the lamps it kept go out.",
     "wave.muster.health_bar.title": "The Muster",
     "wave.muster.mob.0.drop.0.name": "Muster Bone",
     "wave.muster.mob.1.name": "Muster Stray",

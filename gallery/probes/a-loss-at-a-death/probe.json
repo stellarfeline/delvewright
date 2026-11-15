@@ -1,0 +1,16 @@
+{
+  "code": "DW1112",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/on_death/-",
+      "value": {
+        "type": "fail-objective",
+        "objective": "obj/climb-the-loft"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: a death fails the climb. No story world dies, so none can say when the climb is lost, and every proof would hold it open after the delve has settled it. Refused at build, naming the root. It declares no unit: `fail-objective` is bound by the loft bat's kill; what the engine refuses is a loss no world dates."
+}

@@ -186,7 +186,28 @@ pub(super) fn mocks_before(
             walk = walk.performing(a);
         }
         let alone = walk.performed_alone(act);
-        let (before, after) = change_terms(campaign, &walk, &alone);
+        let (mut before, mut after) = change_terms(campaign, &walk, &alone);
+        // An objective the act fails is asserted settled failed after it, and
+        // not before.
+        for o in campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .map(|o| o.id().as_str())
+            .filter(|o| alone.failed(o) && !walk.failed(o))
+        {
+            let term = |negate: bool| GateTerm {
+                objective: crate::compiler::plan::failed_score(o),
+                party: true,
+                min: Some(1),
+                max: Some(1),
+                negate,
+            };
+            before.push(term(true));
+            after.push(term(false));
+        }
         out.push(Step::Mock {
             act: act.to_string(),
             kind: kind.to_string(),

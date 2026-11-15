@@ -723,6 +723,11 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
             settled_score(o.id().as_str())
         ));
     }
+    // A failable objective's every guard reads its failed score.
+    p.extend(super::limit::failure_clear_lines(
+        plan.campaign,
+        o.id().as_str(),
+    ));
     p
 }
 
@@ -753,6 +758,7 @@ fn objective_state_clear(plan: &Plan, o: &Objective) -> Vec<String> {
             settled_score(oid)
         ));
     }
+    p.extend(super::limit::failure_clear_lines(plan.campaign, oid));
     p
 }
 

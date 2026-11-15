@@ -1297,9 +1297,15 @@ pub(super) fn build_critical_path(
             continue;
         };
         let before = steps.len();
-        // spec-0133 §8: in a story world that expires this objective, the step
-        // is a wait where the party already stands, passed on the expiry marker.
-        if path.expires(&st.objective) {
+        // A story world that fails this objective performs the loss in front
+        // of it (its entry deed); the objective itself is no act of the
+        // party's, so it has no step.
+        let fails = walk.failed(&st.objective)
+            || (path.story.is_some() && walk.with_due_deeds().failed(&st.objective));
+        if fails {
+        } else if path.expires(&st.objective) {
+            // spec-0133 §8: in a story world that expires this objective, the step
+            // is a wait where the party already stands, passed on the expiry marker.
             // A shot's `pos` is the target it hits, never where the party
             // stands (it stands at the stance, `nav::shot::fix_stances`): the
             // wait is where the party last stood by any other step.
