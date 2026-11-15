@@ -3287,7 +3287,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `tests/it/teleport_link.rs`). The harness holds the crouch on every tick of
   such a walk (`harness/src/movement.ts` `configureLeg`) and stands only for
   the leg's `stand_ups`: the moves a crouched body cannot make — a climb down,
-  a step from a route cell to a lower one outside any climb, a declared jump —
+  a step from a route cell to a lower one outside any climb, a jump (declared, or a hop) —
   which `compiler::waypoints::stand_ups` derives once and exports on the sneak
   leg in the waypoints artifact (`{from, to, why}`, both ends kept waypoints,
   present only when non-empty). The sculk model reads the same answer: a sneak
