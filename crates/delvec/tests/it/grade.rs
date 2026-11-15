@@ -248,16 +248,41 @@ fn a_declared_open_side_over_a_drop_stands_open() {
 /// unchanged campaign states differently from it, and nothing else.
 const BASE_DSL_VERSION: &str = "0.75.0";
 
+/// The `critical-path.json` `format_version` the base revision stated: the
+/// number of the bot's file format, which a later revision moves whenever the
+/// format gains a key, whatever the campaign.
+const BASE_CRITICAL_PATH_FORMAT_VERSION: u32 = 9;
+
 /// One emitted file's SHA-256, with this revision's `dsl_version` read as the
-/// base's.
-fn file_hash(bytes: &[u8]) -> String {
+/// base's, and in `critical-path.json` this revision's `format_version` read
+/// as the base's — exactly one occurrence, or the file is not the one the base
+/// emitted.
+fn file_hash(path: &str, bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
-    let bytes: Vec<u8> = if text.contains(delvewright_dsl::DSL_VERSION) {
+    let mut bytes: Vec<u8> = if text.contains(delvewright_dsl::DSL_VERSION) {
         text.replace(delvewright_dsl::DSL_VERSION, BASE_DSL_VERSION)
             .into_bytes()
     } else {
         bytes.to_vec()
     };
+    if path == "critical-path.json" {
+        let text = String::from_utf8(bytes).expect("critical-path.json is UTF-8");
+        let now = format!(
+            "\"format_version\": {}",
+            delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION
+        );
+        assert_eq!(
+            text.matches(&now).count(),
+            1,
+            "critical-path.json states its format version once"
+        );
+        bytes = text
+            .replace(
+                &now,
+                &format!("\"format_version\": {BASE_CRITICAL_PATH_FORMAT_VERSION}"),
+            )
+            .into_bytes();
+    }
     Sha256::digest(&bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -280,7 +305,7 @@ fn digest(out: &BTreeMap<String, Vec<u8>>) -> String {
         {
             continue;
         }
-        text.push_str(&format!("{path} {}\n", file_hash(bytes)));
+        text.push_str(&format!("{path} {}\n", file_hash(path, bytes)));
     }
     Sha256::digest(text.as_bytes())
         .iter()
@@ -329,7 +354,7 @@ fn a_campaign_with_nothing_to_grade_emits_what_it_emitted() {
         let out = emitted(c);
         if digest(&out) != want {
             for (p, b) in &out {
-                eprintln!("FILE {name} {p} {}", file_hash(b));
+                eprintln!("FILE {name} {p} {}", file_hash(p, b));
                 if let Ok(dir) = std::env::var("DW_GRADE_DUMP") {
                     let path = std::path::Path::new(&dir)
                         .join(name.replace(' ', "-"))
