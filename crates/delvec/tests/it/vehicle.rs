@@ -2157,3 +2157,38 @@ fn a_board_lists_the_places_the_story_writes() {
         "{talked}"
     );
 }
+
+/// The re-seat template judges a body nobody rides. A ridden body is in use
+/// and its re-seat leaves it where it is, by design; the seat puts a declared
+/// `rider` aboard wherever that actor stands, and another test of the suite
+/// may have left her standing. So `_reseats` sets every passenger down after
+/// the seat and before it moves the body: whether the rider was in the world
+/// when the template ran no longer decides its verdict.
+#[test]
+fn the_reseat_template_moves_a_body_nobody_rides() {
+    let more: &'static str = Box::leak(racer("").into_boxed_str());
+    let talk = r#"{ "type": "spawn-actor", "actor": "actor/racer",
+                    "happening": { "subject": "actor/racer", "verb": "arrives", "text": "Ulla rides in." } }"#;
+    let bay = Bay {
+        more,
+        ..Bay::default()
+    };
+    let (dir, lib) = write("racer-reseats", bay, &racer_horse(SEATS_RACER), talk);
+    let out = try_build(&dir, &lib).expect("the seated actor builds");
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/vehicle_racer_horse_reseats.mcfunction",
+    );
+    let at = |needle: &str| {
+        t.find(needle)
+            .unwrap_or_else(|| panic!("`{needle}` is not in the template: {t}"))
+    };
+    let seat = at("function hello-world:vehicle_seat_racer_horse\n");
+    let down = at("execute as @e[tag=dw_vehicle_racer_horse] on passengers run ride @s dismount\n");
+    let moved = at("tp @e[tag=dw_vehicle_racer_horse] ");
+    let reseat = at("function hello-world:vehicle_reseat_racer_horse\n");
+    assert!(
+        seat < down && down < moved && moved < reseat,
+        "the body is set riderless after its seat and before it is moved: {t}"
+    );
+}
