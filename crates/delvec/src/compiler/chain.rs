@@ -439,8 +439,6 @@ pub struct ChainLedger {
     /// everything they call in it: held to the limit that stands before the
     /// declaration runs.
     pub load_rooted: BTreeSet<String>,
-    /// The functions the delve's own datapack ships.
-    pub delve: BTreeSet<String>,
 }
 
 impl ChainLedger {
@@ -465,13 +463,15 @@ impl ChainLedger {
         }
     }
 
-    /// The quota the delve's own sources need: the longest bounded chain of a
-    /// function its datapack ships that no `load` runs, or the default when
-    /// that is more.
+    /// The quota the tree's sources need: the longest bounded chain of a
+    /// function any of its datapacks ships that no `load` runs — the
+    /// creator overlay and the PackTest pack run beside the delve's, under
+    /// the quota the delve's `load` declares — or the default when that is
+    /// more.
     pub fn need(&self) -> u64 {
         self.chains
             .iter()
-            .filter(|(f, _)| self.delve.contains(*f) && !self.load_rooted.contains(*f))
+            .filter(|(f, _)| !self.load_rooted.contains(*f))
             .filter_map(|(_, c)| c.bounded())
             .fold(MAX_COMMAND_SEQUENCE_LENGTH, u64::max)
     }
@@ -696,14 +696,10 @@ pub fn measure(out: &BuildOutput) -> ChainLedger {
 pub fn measure_at(out: &BuildOutput, party: u64) -> ChainLedger {
     let mut bodies: BTreeMap<String, Vec<Line>> = BTreeMap::new();
     let mut tags: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut delve: BTreeSet<String> = BTreeSet::new();
     for (path, bytes) in out {
         if let Some(id) = function_id(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
-            if path.starts_with(DELVE_PACK) {
-                delve.insert(id.clone());
-            }
             bodies
                 .entry(id)
                 .or_default()
@@ -762,7 +758,6 @@ pub fn measure_at(out: &BuildOutput, party: u64) -> ChainLedger {
             .collect(),
         declared: declared(out, &bodies),
         load_rooted: load_rooted(&bodies, &tags),
-        delve,
     }
 }
 
@@ -818,8 +813,8 @@ fn load_rooted(
     seen
 }
 
-/// State the quota the delve's own sources need: when a function its datapack
-/// ships, outside `load`, measures past the default, write `gamerule
+/// State the quota the tree's sources need: when a function any of its
+/// datapacks ships, outside `load`, measures past the default, write `gamerule
 /// max_command_sequence_length <its chain>` as the first line of the first
 /// function the delve's `#minecraft:load` tag names. Returns the declared
 /// quota; `None` when the default holds — the tree is left byte-identical — or
@@ -1184,7 +1179,7 @@ mod tests {
             "datapack/data/dw/function/each.mcfunction".to_string(),
             "say hi\n".repeat(40_000).into_bytes(),
         );
-        assert!(MOST_SOURCES * 40_000 > RULE_MAX);
+        const { assert!(MOST_SOURCES * 40_000 > RULE_MAX) };
         assert_eq!(declare(&mut past), None);
         assert_eq!(check(&past).unwrap_err().code.id(), "DW0984");
     }
