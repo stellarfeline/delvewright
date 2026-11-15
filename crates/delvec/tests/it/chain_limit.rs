@@ -13,6 +13,13 @@
 //! limit, the steps chain from tick to tick through `schedule function` alone,
 //! they carry block writes and nothing else, and only the function they end in
 //! latches the world placed.
+//!
+//! The work every tick repeats cannot move to a later tick. A campaign whose
+//! tick measures past the limit builds, and its `load` declares the quota its
+//! sources need (`gamerule max_command_sequence_length`), which the server
+//! reads when it makes each later context: the second fixture is the
+//! `long-gallery` corridor with its one reach objective repeated until the
+//! compass's per-objective aims carry the tick past the limit.
 
 use crate::common;
 
@@ -209,4 +216,181 @@ fn a_world_build_over_the_chain_limit_runs_in_steps_and_finishes() {
     assert_eq!(ledger["steps"], serde_json::json!(steps));
     assert_eq!(ledger["refused"], serde_json::json!([]));
     assert!(ledger["longest"]["chain"].as_u64().unwrap() <= LIMIT as u64);
+}
+
+/// `long-gallery` with its reach objective repeated `n` times: one quest, every
+/// objective at the corridor's far end, each one a compass target the tick
+/// aims at.
+fn over_limit_tick(n: usize) -> PathBuf {
+    let dir = tmp("chain-limit-tick");
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("long-gallery"), &dir);
+    let path = dir.join("quests.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let quest = &mut doc["content"]["quests"][0];
+    let one = quest["objectives"][0].clone();
+    quest["objectives"] = (0..n)
+        .map(|k| {
+            let mut o = one.clone();
+            o["id"] = serde_json::json!(format!("obj/end-{k}"));
+            o["title"] = serde_json::json!(format!("Walk to the end of the gallery, pass {k}"));
+            o
+        })
+        .collect();
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    dir
+}
+
+/// The `execute` sub-commands that each cost a stage before `run`, as the
+/// pinned command tree names them (`run` aside).
+const STAGES: [&str; 13] = [
+    "align",
+    "anchored",
+    "as",
+    "at",
+    "facing",
+    "if",
+    "in",
+    "on",
+    "positioned",
+    "rotated",
+    "store",
+    "summon",
+    "unless",
+];
+
+/// One call's quota, read off the files the server loads: the call, then per
+/// line its `execute` stages, its command and, for a call, the callee's quota.
+/// No same-tick cycle is expected in this fixture's pack.
+fn quota(
+    fns: &std::collections::BTreeMap<String, String>,
+    f: &str,
+    memo: &mut std::collections::BTreeMap<String, u64>,
+) -> u64 {
+    if let Some(q) = memo.get(f) {
+        return *q;
+    }
+    let Some(body) = fns.get(f) else {
+        return 1;
+    };
+    let mut q = 1u64;
+    for l in commands(body) {
+        let t: Vec<&str> = l.trim_start_matches('$').split_whitespace().collect();
+        let run = t.iter().rposition(|w| *w == "run");
+        let head = run.map_or(&t[..0], |r| &t[..r]);
+        if t.first() == Some(&"execute") && run.is_none() {
+            q += t.iter().filter(|w| STAGES.contains(w)).count().max(1) as u64;
+            continue;
+        }
+        q += head.iter().filter(|w| STAGES.contains(w)).count() as u64 + 1;
+        let tail = run.map_or(&t[..], |r| &t[r + 1..]);
+        if tail.first() == Some(&"function") && tail.get(1).is_some_and(|c| *c != f) {
+            q += quota(fns, tail[1], memo) - 1;
+        }
+    }
+    memo.insert(f.to_string(), q);
+    q
+}
+
+#[test]
+fn a_tick_past_the_chain_limit_builds_and_its_load_declares_the_quota() {
+    let src = over_limit_tick(200);
+    let out = tmp("chain-limit-tick-out");
+    let r = Command::new(BIN)
+        .args([
+            "build",
+            src.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            &common::prefabs_dir().display().to_string(),
+        ])
+        .current_dir(common::repo_root())
+        .output()
+        .expect("run delvec");
+    assert!(
+        r.status.success(),
+        "build failed:\n{}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+
+    let ns = "long-gallery";
+    let fdir = out.join(format!("datapack/data/{ns}/function"));
+    let mut fns = std::collections::BTreeMap::new();
+    for e in walk(&fdir) {
+        let rel = e
+            .strip_prefix(&fdir)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if let Some(name) = rel.strip_suffix(".mcfunction") {
+            fns.insert(format!("{ns}:{name}"), std::fs::read_to_string(&e).unwrap());
+        }
+    }
+    let mut memo = std::collections::BTreeMap::new();
+    let tick = quota(&fns, &format!("{ns}:tick"), &mut memo);
+    assert!(
+        tick > LIMIT as u64,
+        "the fixture binds: the tick's quota {tick} is past the {LIMIT} limit"
+    );
+
+    // The declaration: the first line of `load`, and nowhere else.
+    let load = function_in(&out, ns, "load").expect("load");
+    let first = commands(&load)[0];
+    let declared: u64 = first
+        .strip_prefix("gamerule max_command_sequence_length ")
+        .unwrap_or_else(|| panic!("`load` opens with the declaration, got `{first}`"))
+        .parse()
+        .unwrap();
+    for (f, body) in &fns {
+        if f != &format!("{ns}:load") {
+            assert!(
+                !body.contains("max_command_sequence_length"),
+                "`{f}` declares a quota"
+            );
+        }
+    }
+    // Every source outside `load` within the declared quota, the longest at
+    // it; `load` and `setup` (the context that runs the line) within the
+    // default.
+    let in_load = [format!("{ns}:load"), format!("{ns}:setup")];
+    let mut longest = 0u64;
+    for f in fns.keys() {
+        let q = quota(&fns, f, &mut memo);
+        if in_load.contains(f) {
+            assert!(q <= LIMIT as u64, "`{f}` runs in `load` at {q}");
+        } else {
+            assert!(
+                q <= declared,
+                "`{f}` measures {q} past the declared {declared}"
+            );
+            longest = longest.max(q);
+        }
+    }
+    assert_eq!(longest, declared, "the quota declared is the one measured");
+    assert_eq!(tick, declared, "the tick is the longest source");
+
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("validation/chain-length.json")).unwrap())
+            .unwrap();
+    assert_eq!(ledger["declared_limit"], serde_json::json!(declared));
+    assert_eq!(ledger["refused"], serde_json::json!([]));
+}
+
+fn function_in(out: &Path, ns: &str, name: &str) -> Option<String> {
+    std::fs::read_to_string(out.join(format!("datapack/data/{ns}/function/{name}.mcfunction"))).ok()
+}
+
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            v.extend(walk(&p));
+        } else {
+            v.push(p);
+        }
+    }
+    v.sort();
+    v
 }
