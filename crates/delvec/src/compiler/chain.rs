@@ -580,7 +580,7 @@ fn declared(out: &BuildOutput, bodies: &BTreeMap<String, Vec<Line>>) -> Option<u
             _ => None,
         })
         .filter(|n| *n <= RULE_MAX)
-        .last()
+        .next_back()
 }
 
 /// Every function a `#minecraft:load` entry (of any datapack) runs in its own
