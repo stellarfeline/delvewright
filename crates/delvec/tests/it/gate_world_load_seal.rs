@@ -395,3 +395,93 @@ fn a_sibling_that_shuts_the_door_after_the_lever_keeps_the_refusal() {
     assert!(err.contains("DW0311"), "{err}");
     assert!(err.contains("`close-gate` has sealed"), "{err}");
 }
+
+/// **A lever behind the door, counted toward a way the path never needs.**
+/// `obj/talk` opens the door; a `use` trigger at `anchor/far-knock` — on the
+/// exit's side of the bars — counts `state/levers` up, and its own `open-gate`
+/// waits on `levers >= threshold`. Nothing on the path reads the datum or a
+/// flag the lever sets. `threshold` 2 is a count one press cannot reach (the
+/// other presses of the puzzle are not on the path); 1 is a count this press
+/// makes itself.
+fn quests_doc_lever_behind_door(threshold: u32) -> String {
+    common::at_dsl_version(&format!(
+        r#"{{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "state": [ {{ "id": "state/levers", "initial": 0, "scope": "party",
+                  "note": "Levers pulled down; enough of them open the door." }} ],
+    "triggers": [
+      {{ "id": "trigger/far-lever", "at": "anchor/far-knock", "on": {{ "on": "use" }},
+         "once": true, "audience": "presser",
+         "answers": {{ "done": "The lever is down." }},
+         "effects": [
+           {{ "type": "add-state", "state": "state/levers", "amount": 1 }},
+           {{ "type": "open-gate", "anchor": "anchor/door",
+              "when": {{ "requires_state": [
+                {{ "state": "state/levers", "op": "at-least", "value": {threshold} }} ] }} }}
+         ] }}
+    ],
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {OPEN_DOOR} ]
+        }},
+        "on_complete": []
+      }}
+    ]
+  }}
+}}"#
+    ))
+}
+
+/// Parse and validate, admitting advisories: the lever's `when` reads the
+/// datum its own bundle has just counted, which `DW0527` remarks on.
+fn validated_admitting_warnings(quests: &str, prefabs: &PrefabRegistry) -> Campaign {
+    let c = parse_hw(quests);
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let errors: Vec<_> = validate_campaign_with(&c, &items, prefabs, &entities)
+        .into_iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "the campaign under test must be valid: {errors:#?}"
+    );
+    c
+}
+
+/// **The green.** The lever's opening waits on a count its one press cannot
+/// make, so performing it opens nothing the proofs credit: the path does not
+/// perform it, and does not walk through the bars before the talk opens them.
+/// Before the path read what a press opens, it performed the lever in front of
+/// `obj/talk` — the first step in its area — and the leg to it ran through the
+/// shut door: `DW0317`.
+#[test]
+fn a_lever_whose_opening_waits_on_other_presses_is_not_performed() {
+    let p = prefabs();
+    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(2), &p);
+    build(&c, &p).expect("the path needs nothing of the lever behind the door");
+}
+
+/// **The perturbation: the press opens the way itself.** The same lever whose
+/// opening its own press reaches is performed for that way, at the first step
+/// in its area, behind the door the talk has not yet opened — the refusal the
+/// rule above withdraws only for a press that opens nothing.
+#[test]
+fn a_lever_whose_press_opens_the_way_is_still_performed_and_refused_behind_the_door() {
+    let p = prefabs();
+    let c = validated_admitting_warnings(&quests_doc_lever_behind_door(1), &p);
+    let err = build(&c, &p).expect_err("the lever is performed before the talk opens the door");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}

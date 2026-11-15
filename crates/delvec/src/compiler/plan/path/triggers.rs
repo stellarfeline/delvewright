@@ -26,6 +26,13 @@ use super::*;
 /// performs its trigger for one of the two reasons above, and otherwise not at
 /// all.
 ///
+/// A trigger performed for the way it opens alone is performed only where
+/// performing it opens that way: the guaranteed replay fires its opening line
+/// there ([`opening_performed`]). One whose opening waits on what this path
+/// does not do — a count other presses make, a value the replay cannot name —
+/// opens nothing the proofs credit, so nothing on the path needs it, and it is
+/// not performed at all.
+///
 /// A trigger whose gate never holds on this path, or whose target never shares
 /// an area with a step of it, is not performed — and then nothing it opens is
 /// credited ([`collect_region_events`]), which is the direction that can only
@@ -44,6 +51,9 @@ pub(super) fn path_triggers(
     if path.steps.is_empty() {
         return out;
     }
+    // The triggers scheduled for the way they open and nothing else: once
+    // each, no flag debt, no entry deed.
+    let mut for_the_way: BTreeSet<String> = BTreeSet::new();
     // Which triggers open a way: the SAME walk the region-write model credits
     // them from, so the two cannot disagree about what a trigger's bundle holds.
     let mut opens: BTreeSet<&str> = BTreeSet::new();
@@ -265,6 +275,9 @@ pub(super) fn path_triggers(
         } else {
             fires_needed(campaign, t)
         };
+        if reader.is_none() && times == 1 {
+            for_the_way.insert(t.id.as_str().to_string());
+        }
         for _ in 0..times {
             out.entry(si).or_default().push(Step::Trigger {
                 trigger_id: t.id.as_str().to_string(),
@@ -283,6 +296,78 @@ pub(super) fn path_triggers(
                 item: super::drive::use_item(t),
             });
         }
+    }
+    opening_performed(campaign, flow, path, out, &for_the_way)
+}
+
+/// **A trigger performed for its way opens it where it is performed**: `due`
+/// with every trigger in `for_the_way` dropped whose opening line the
+/// guaranteed replay does not fire at the step it is due in front of.
+///
+/// The replay is [`path_fired_lines`]'s, taken forward over the path: each due
+/// trigger probed at the state the walk holds in front of its step, the kept
+/// ones then performed, so a later trigger is judged against what the kept
+/// ones did and never against a dropped one. A line the replay fires is the
+/// only opening the region model credits ([`firing_of`]); a trigger whose
+/// opening it does not fire is performed for a way the proofs keep shut, which
+/// is a walk the path does not need. Dropping it credits less, never more —
+/// its other lines become unforced, as for any trigger the path does not
+/// perform.
+fn opening_performed(
+    campaign: &Campaign,
+    flow: &crate::compiler::flow::Flow<'_>,
+    path: &crate::compiler::flow::Playthrough,
+    due: BTreeMap<usize, Vec<Step>>,
+    for_the_way: &BTreeSet<String>,
+) -> BTreeMap<usize, Vec<Step>> {
+    if for_the_way.is_empty() {
+        return due;
+    }
+    // Each trigger's effect list under its root pointer, and the pointers of
+    // its opening lines — from the same two walks the replay and the region
+    // model read, so the pointers agree.
+    let mut roots: BTreeMap<&str, (String, &[QuestEffect])> = BTreeMap::new();
+    for_each_effect_root(campaign, &mut |site, list| {
+        if let EffectRoot::Trigger(t) = site.root {
+            roots.insert(t.id.as_str(), (site.path.clone(), list));
+        }
+    });
+    let mut openings: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        if let EffectRoot::Trigger(t) = site.root
+            && opens_a_way(e)
+        {
+            openings
+                .entry(t.id.as_str())
+                .or_default()
+                .push(site.path.clone());
+        }
+    });
+    let mut out: BTreeMap<usize, Vec<Step>> = BTreeMap::new();
+    let mut walk = flow.walk_performing();
+    for (si, step) in path.steps.iter().enumerate() {
+        for performed in due.get(&si).into_iter().flatten() {
+            let Step::Trigger { trigger_id, .. } = performed else {
+                out.entry(si).or_default().push(performed.clone());
+                continue;
+            };
+            if for_the_way.contains(trigger_id)
+                && let Some((base, effs)) = roots.get(trigger_id.as_str())
+            {
+                let (fired, undecided) = walk.probe(trigger_id, effs, base);
+                let opens = openings.get(trigger_id.as_str()).is_some_and(|lines| {
+                    lines
+                        .iter()
+                        .any(|l| fired.contains(l) && !undecided.contains(l))
+                });
+                if !opens {
+                    continue;
+                }
+            }
+            walk.perform(trigger_id);
+            out.entry(si).or_default().push(performed.clone());
+        }
+        walk.take(step);
     }
     out
 }
