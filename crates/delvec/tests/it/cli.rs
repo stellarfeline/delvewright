@@ -756,7 +756,8 @@ fn a_wave_fired_only_by_a_trigger_in_two_areas_exits_3_with_dw0310() {
         v["content"]["triggers"] = serde_json::json!([{
             "id": "trigger/ambush", "at": "anchor/keeper-stand",
             "on": { "on": "approach", "range": 3 },
-            "effects": [{ "type": "spawn-wave", "wave": "wave/ambush" }]
+            "effects": [{ "type": "spawn-wave", "wave": "wave/ambush",
+                "happening": { "verb": "arrives", "text": "A sheep wanders into the vault." } }]
         }]);
     });
     let pf = common::shown_prefabs_dir("first-leg");
