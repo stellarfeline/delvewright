@@ -29,7 +29,7 @@ registry's own `scaling` field). Mojang publishes **no** per-entity default
 attributes, so mob base health is genuinely unknowable at build time — the
 numeric bound therefore runs only where `attributes.max_health` is declared, and
 `DW0475` says so rather than inventing a health table (the same refusal as
-`nav::DEFAULT_FOLLOW_RANGE` and `clearance::MODEL_MARGIN`).
+`clearance::MODEL_MARGIN`).
 
 **The Easy-halving trap, stated once.** `WorldDifficulty`'s doc comment gives the
 Easy formula `min(dmg/2+1, dmg)`, and applying it here would be wrong by 2× in

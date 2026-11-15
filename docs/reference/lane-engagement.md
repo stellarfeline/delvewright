@@ -12,3 +12,8 @@ Reader: the engine work on a wave's `lane` (spec-0016 §6), deciding what a raid
 
 - **[cited]** `attribute <target> <attribute> base reset` (`AttributeCommand.resetAttributeBase` → `AttributeMap.resetBaseValue`) sets the base to the value of the entity type's own `AttributeSupplier`, not the attribute's global default. **[measured]** On a pillager summoned with `follow_range` 8 it answered `reset to default 32.0`.
 - **[measured]** `execute on attacker` selects the entity that last hurt the executing mob (the game keeps it 100 ticks); after `damage <pillager> 1 minecraft:mob_attack by <villager>`, `execute as <pillager> if function <f>` with `f` = `execute on target run return 1` / `execute on attacker if entity @s[type=minecraft:villager] run return 1` / `return 0` passed, and failed on the same pillager before the hit.
+
+## 3. The reach the proofs read, and the check that the game gives it
+
+- **[cited]** Every species' `follow_range` base is read from the pinned jar into `crates/delvec/data/entity-engagement-1.21.11.json` (`tools/maintenance/extract-entity-engagement.py`, two methods that agree on all 89 types that carry it). A released lane mob reaches the wider of that value and the lane's `aggro_radius`; `nav::follow::mob_reach` is that reading, and every proof over a fight's range takes it.
+- The generated PackTest `engage_<wave>` stands each hostile kind at `reach − 2` from the dummy on a pad above the world, has the dummy strike it once, runs the lane clock, and asserts after 20 ticks that every body holds the dummy as its target. A lane pillager on an 8-block lane is stood 30 blocks off: held at the radius, as before the release reset, it drops the target, as §1's measurement shows.
