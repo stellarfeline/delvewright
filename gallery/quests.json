@@ -3943,6 +3943,17 @@
                 ]
               }
             }
+          ],
+          "obj/walk-the-long-gallery": [
+            {
+              "happening": {
+                "subject": "wave/loft-bat",
+                "text": "A bat drops from the rafters and keeps the loft's lamps.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/loft-bat"
+            }
           ]
         },
         "trigger": {
@@ -6251,6 +6262,39 @@
         "respawns_on_rest": false,
         "summon": "anchor",
         "tier": "elite"
+      },
+      {
+        "anchor": "anchor/rafters",
+        "id": "wave/loft-bat",
+        "mobs": [
+          {
+            "attributes": {
+              "follow_range": 1.0
+            },
+            "count": 1,
+            "entity": "minecraft:bat",
+            "name": "The Loft Bat"
+          }
+        ],
+        "on_kill": {
+          "effects": [
+            {
+              "line": "We brought down the bat that kept the loft's lamps, and the mezzanine stayed dark to us.",
+              "objective": "obj/climb-the-loft",
+              "type": "record-outcome"
+            },
+            {
+              "objective": "obj/climb-the-loft",
+              "type": "fail-objective"
+            },
+            {
+              "style": "chat",
+              "text": "The bat falls, and up on the mezzanine the lamps it kept go out.",
+              "type": "narrate"
+            }
+          ]
+        },
+        "tier": "ordinary"
       }
     ]
   },

@@ -99,6 +99,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A place's side takes `sheer` beside `wall` and `open`: no wall stands there and the ground beyond is left as the terrain has it. Every other unwalled side of a ground place is met by the land in steps, at the place's `grade: {rise, run}` (one block per two columns when absent).
 - Every objective kind takes `limit {ticks, from, on_expire}`: a window in game ticks, started at the objective's activation, its quest's start or an earlier objective's activation, whose expiry fires `on_expire` in place of the completion.
 - The `despawn-wave` verb removes a wave's standing bodies unseen.
+- The `fail-objective` verb settles a task as failed from any effect bundle — a goat killed fails the goats task, and the day goes on.
 - Every objective kind takes `record`, what the task was, and the `record-outcome` verb — in any effect bundle and on a dialogue option — writes a way the task went; the journal keeps a finished task with every line its play wrote.
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
@@ -117,3 +118,4 @@ The entry leaves out the release machinery itself, which changes nothing in what
 
 - The `damage-players` verb is named `damage`.
 - `play-sound` `at: {"at": "actor"}`, which every build refused, is replaced by `at: {"at": "bodies"}`.
+- A limited task's clock settles it when it runs out whatever the task's own gate says, so a task whose gate a lost body holds shut no longer hangs.
