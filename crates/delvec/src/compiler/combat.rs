@@ -1654,6 +1654,36 @@ pub fn seat_ticks(c: &Campaign, steps: &[Step]) -> Vec<Option<u32>> {
         .collect()
 }
 
+/// **What a fight's own bodies may fire while the party is away from it**:
+/// of `unattended` ([`crate::compiler::plan::PathFiring::unattended`] at the
+/// fight's step), the triggers whose census may count a body `wave` seats
+/// ([`delvewright_dsl::CensusOf::may_count_wave`]), in `unattended`'s order. A
+/// death takes the party off the fight and leaves those bodies free; the
+/// die-retry stage takes none where this is not empty.
+pub fn fight_may_fire(c: &Campaign, wave: &str, unattended: &BTreeSet<String>) -> Vec<String> {
+    let content = &c.quests.content;
+    let Some(w) = content.waves.iter().find(|w| w.id.as_str() == wave) else {
+        return Vec::new();
+    };
+    unattended
+        .iter()
+        .filter(|id| {
+            content
+                .triggers
+                .iter()
+                .find(|t| t.id.as_str() == id.as_str())
+                .and_then(|t| match &t.on {
+                    delvewright_dsl::TriggerOn::BodyEnters { state } => content
+                        .state_decl(state.as_str())
+                        .and_then(|d| d.counts.as_ref()),
+                    _ => None,
+                })
+                .is_some_and(|k| k.of.may_count_wave(w))
+        })
+        .cloned()
+        .collect()
+}
+
 /// The checkpoint that governs a death at step `i`: of `(fire_step, index)`
 /// rows in any order, the one fired latest strictly before `i` (the later row
 /// of two fired at one step).

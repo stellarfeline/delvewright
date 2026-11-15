@@ -589,6 +589,7 @@ async function main(): Promise<number> {
       trials,
       executor.dieRetryPreconditionAdvisories().length,
       executor.dieRetryPreconditionFindings().length,
+      executor.dieRetryUnattendedAdvisories().length,
     );
     if (retryBinding.unbound) {
       process.stderr.write(
@@ -838,6 +839,9 @@ async function main(): Promise<number> {
           // restart, which is a content staging fact the compiler's retry-cost and
             // checkpoint rules judge, not this stage.
             ...executor.dieRetryPreconditionAdvisories(),
+            // …and every fight whose own bodies may fire a story trigger this
+            // world never performs: a death there would leave the world.
+            ...executor.dieRetryUnattendedAdvisories(),
             // …and every re-seat reading the return leg's own defence confounded.
             // Named here so a stage that judged no health reading can never be
             // read as one that judged them all and found the wave whole.

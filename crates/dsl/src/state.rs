@@ -154,6 +154,31 @@ impl CensusOf {
             CensusOf::Riders(_) => "riders",
         }
     }
+
+    /// Whether the set this census counts is the party's own: a vehicle's
+    /// riders, or every body of the kind `minecraft:player`. Any other set —
+    /// a wave, an actor, an NPC, a mob kind — is bodies that walk into the box
+    /// on their own, whatever the party is doing.
+    pub fn counts_the_party(&self) -> bool {
+        match self {
+            CensusOf::Riders(_) => true,
+            CensusOf::Kind(k) => k == "minecraft:player",
+            CensusOf::Wave(_) | CensusOf::Actor(_) | CensusOf::Npc(_) => false,
+        }
+    }
+
+    /// Whether a body `wave` seats may be one this census counts: the census
+    /// is of that wave, or of a kind one of its mobs (or a mob's mount) is.
+    pub fn may_count_wave(&self, wave: &crate::Wave) -> bool {
+        match self {
+            CensusOf::Wave(w) => *w == wave.id,
+            CensusOf::Kind(k) => wave
+                .mobs
+                .iter()
+                .any(|m| m.entity == *k || m.mount.as_ref().is_some_and(|x| x.entity == *k)),
+            CensusOf::Actor(_) | CensusOf::Npc(_) | CensusOf::Riders(_) => false,
+        }
+    }
 }
 
 /// The vanilla display slot a named datum stands in (spec-0076).

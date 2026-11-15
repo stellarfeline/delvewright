@@ -626,9 +626,17 @@ fn choices_before(
 ///   bot would refuse the key, and one that ignored it would put every body on
 ///   the box's centre course — inside a block, or onto one another.
 ///
+/// * `13` — a `kill` step may carry `unattended`: the world-writing triggers
+///   this path never performs that a body other than the party may fire while
+///   the fight is taken ([`PathFiring::unattended`]). The die-retry stage takes
+///   no death at such a fight: the party away, the fight's own bodies may fire
+///   one, and the run leaves the world it is judged against. A format change
+///   for `4`'s reason: a format-12 bot would refuse the key, and one that
+///   ignored it would die there and judge a world the run left.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 12;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 13;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1003,6 +1011,15 @@ pub(crate) struct PathFiring {
     /// path's steps; empty for a step that stands nowhere. Read by `DW0863`
     /// through [`RegionEvents::armed`].
     pub armed: Vec<BTreeSet<String>>,
+    /// Per step, every trigger this path does not perform by then whose bundle writes
+    /// the world (a flag, a datum, a recorded outcome) and whose event a body
+    /// other than the party raises — a `body-enters` on a census of a wave,
+    /// an actor, an NPC or a mob kind — with its gate possibly holding while
+    /// the step is taken ([`crate::compiler::flow::Walk::unattended_triggers`]).
+    /// A party away from the step, as a death takes it, leaves those bodies
+    /// free to fire one, and the run then leaves this path's world. Aligned
+    /// 1:1 with the path's steps; exported on a `kill` step as `unattended`.
+    pub unattended: Vec<BTreeSet<String>>,
 }
 
 impl PathFiring {
@@ -1057,6 +1074,10 @@ pub(super) fn build_critical_path(
     // ([`crate::compiler::flow::Walk::gate_open_triggers`]): what a trigger
     // keep-out is read from, once the path's own triggers are known.
     let mut triggers_open_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+    // The same for the triggers a body other than the party may fire
+    // ([`crate::compiler::flow::Walk::unattended_triggers`]): what a step's
+    // `unattended` is read from, once the path's own triggers are known.
+    let mut unattended_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
     let mut guaranteed = flow.walk_for_performing(path);
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
@@ -1224,6 +1245,8 @@ pub(super) fn build_critical_path(
                 .collect();
             let before_triggers: BTreeSet<String> =
                 guaranteed.gate_open_triggers().into_iter().collect();
+            let before_unattended: BTreeSet<String> =
+                guaranteed.unattended_triggers().into_iter().collect();
             for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
                 guaranteed = guaranteed.performing(t);
             }
@@ -1236,6 +1259,10 @@ pub(super) fn build_critical_path(
             triggers_open_at.push((
                 before_triggers,
                 ahead.gate_open_triggers().into_iter().collect(),
+            ));
+            unattended_at.push((
+                before_unattended,
+                ahead.unattended_triggers().into_iter().collect(),
             ));
             guaranteed.take(st);
         }
@@ -1852,6 +1879,24 @@ pub(super) fn build_critical_path(
         })
         .collect();
     let mut armed_ids_by_step: Vec<BTreeSet<String>> = per_step(&armed_open_at);
+    // Per step, the world-writing triggers a body other than the party may
+    // fire while the step is taken — every one of them, until the path's own
+    // are dropped below.
+    let mut unattended_by_step: Vec<BTreeSet<String>> = per_step(&unattended_at)
+        .into_iter()
+        .map(|ts| {
+            ts.into_iter()
+                .filter(|id| {
+                    campaign
+                        .quests
+                        .content
+                        .triggers
+                        .iter()
+                        .any(|t| t.id.as_str() == id && writes_the_world(t))
+                })
+                .collect()
+        })
+        .collect();
 
     // ---- the legs the party must cross ----
     //
@@ -2062,6 +2107,7 @@ pub(super) fn build_critical_path(
         let mut new_live = Vec::with_capacity(n);
         let mut new_armed = Vec::with_capacity(n);
         let mut new_armed_ids = Vec::with_capacity(n);
+        let mut new_unattended = Vec::with_capacity(n);
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
         for (k, step) in steps.into_iter().enumerate() {
@@ -2077,6 +2123,7 @@ pub(super) fn build_critical_path(
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());
                 new_armed_ids.push(armed_ids_by_step[k].clone());
+                new_unattended.push(unattended_by_step[k].clone());
             }
             for &(li, stand) in takes.spliced.get(&k).into_iter().flatten() {
                 let Some(l) = links.get(li) else { continue };
@@ -2098,6 +2145,7 @@ pub(super) fn build_critical_path(
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());
                 new_armed_ids.push(armed_ids_by_step[k].clone());
+                new_unattended.push(unattended_by_step[k].clone());
             }
             if let Some(r) = takes.rides.get(&k)
                 && let Some(v) = vehicles.get(r.vehicle)
@@ -2108,6 +2156,7 @@ pub(super) fn build_critical_path(
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());
                 new_armed_ids.push(armed_ids_by_step[k].clone());
+                new_unattended.push(unattended_by_step[k].clone());
             }
             moved.push(new_steps.len());
             new_steps.push(step);
@@ -2116,6 +2165,7 @@ pub(super) fn build_critical_path(
             new_live.push(std::mem::take(&mut live_links_by_step[k]));
             new_armed.push(std::mem::take(&mut armed_by_step[k]));
             new_armed_ids.push(std::mem::take(&mut armed_ids_by_step[k]));
+            new_unattended.push(std::mem::take(&mut unattended_by_step[k]));
         }
         for idx in obj_step.values_mut() {
             *idx = moved[*idx];
@@ -2140,6 +2190,7 @@ pub(super) fn build_critical_path(
         live_links_by_step = new_live;
         armed_by_step = new_armed;
         armed_ids_by_step = new_armed_ids;
+        unattended_by_step = new_unattended;
     }
 
     // A trigger performed in front of an objective is walked as part of the
@@ -2197,6 +2248,18 @@ pub(super) fn build_critical_path(
             _ => None,
         })
         .collect();
+    // A trigger the path performs is the path's to fire from the step that
+    // performs it on; before that step a body other than the party could
+    // still fire it first, out of the order the path walks.
+    let mut first_performed: BTreeMap<&str, usize> = BTreeMap::new();
+    for (k, s) in steps.iter().enumerate() {
+        if let Step::Trigger { trigger_id: t, .. } | Step::Mock { act: t, .. } = s {
+            first_performed.entry(t.as_str()).or_insert(k);
+        }
+    }
+    for (k, u) in unattended_by_step.iter_mut().enumerate() {
+        u.retain(|t| first_performed.get(t.as_str()).is_none_or(|&at| k < at));
+    }
     let keep_out: Vec<Vec<crate::compiler::reach::KeepOut>> = steps
         .iter()
         .zip(armed_by_step)
@@ -2236,6 +2299,7 @@ pub(super) fn build_critical_path(
             branch_excluded,
             keep_out,
             armed: armed_ids_by_step,
+            unattended: unattended_by_step,
         },
         loops: spliced,
     })

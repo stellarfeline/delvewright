@@ -6,6 +6,7 @@ import {
   CONTROLLED_GAMEMODE,
   deathPhases,
   checkpointPrecondition,
+  unattendedPrecondition,
   observationOf,
   openTrial,
   describeStanding,
@@ -118,6 +119,18 @@ export const methods = {
       );
       this.preconditionWaves.add(enc.wave);
       process.stderr.write(`[die-retry] ${precondition.finding}\n`);
+      return;
+    }
+    // PRECONDITION: the run stays in the world it is judged against. A death
+    // leaves the fight's bodies unattended; where the compiler shows they may
+    // fire a story trigger this world never performs, the trial would carry
+    // the run into another world and every later reading would judge it
+    // against the wrong one. Take no death.
+    const away = unattendedPrecondition(enc.wave, step.unattended);
+    if (away !== undefined) {
+      this.unattendedAdvisories.push(away);
+      this.preconditionWaves.add(enc.wave);
+      process.stderr.write(`[die-retry] ${away}\n`);
       return;
     }
     this.dieRetryEngaged.add(enc.wave);
@@ -587,6 +600,12 @@ export const methods = {
    * this stage's. Reported, never graded — and never silent. */
   dieRetryPreconditionAdvisories(this: MineflayerExecutor): readonly string[] {
     return this.preconditionAdvisories;
+  },
+
+  /** Encounters whose scripted deaths were skipped because the fight's own
+   * bodies may fire a story trigger the walked world never performs. Advisory. */
+  dieRetryUnattendedAdvisories(this: MineflayerExecutor): readonly string[] {
+    return this.unattendedAdvisories;
   },
 
   /** The waves those findings name. Coverage stays silent about them: the

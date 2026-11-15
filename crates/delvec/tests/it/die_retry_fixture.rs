@@ -189,3 +189,145 @@ fn the_fixture_stays_the_smallest_thing_that_binds() {
          assertion; {steps} steps means something else got added"
     );
 }
+
+/// The fixture with one story trigger the guard's own bodies may fire: a
+/// census of `of` at the stone the party respawns at, and a trigger on it that
+/// writes a flag no step of the path performs. `extra` patches the trigger.
+fn fixture_with_an_unattended_trigger(
+    tag: &str,
+    of: serde_json::Value,
+    extra: impl FnOnce(&mut serde_json::Value),
+) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("die-retry-unattended")
+        .join(format!("{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&fixture_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |q| {
+        let content = q["content"].as_object_mut().unwrap();
+        content.insert(
+            "state".into(),
+            serde_json::json!([{
+                "id": "state/guards-at-the-stone", "scope": "party", "initial": 0,
+                "counts": {"region": {"anchor": "anchor/keeper-stand", "extent": [2, 2, 2]},
+                           "of": of}
+            }]),
+        );
+        let mut trigger = serde_json::json!({
+            "id": "trigger/stone-overrun",
+            "on": {"on": "body-enters", "state": "state/guards-at-the-stone"},
+            "requires_state": [{"state": "state/guards-at-the-stone", "op": "at-least", "value": 1}],
+            "forbids_flags": ["flag/stone-overrun"],
+            "effects": [
+                {"type": "set-flag", "flag": "flag/stone-overrun"},
+                {"type": "narrate", "style": "chat", "text": "The guard reaches the Keeper's stone."}
+            ]
+        });
+        extra(&mut trigger);
+        content.insert("triggers".into(), serde_json::json!([trigger]));
+    });
+    dir
+}
+
+/// The fixture's one `kill` step, from its exported path.
+fn kill_step(dir: &std::path::Path) -> serde_json::Value {
+    let campaign = parse_dir(dir);
+    let out = build(&campaign, dir);
+    json(&out, "critical-path.json")["steps"]
+        .as_array()
+        .expect("the path has steps")
+        .iter()
+        .find(|s| s["action"] == "kill")
+        .cloned()
+        .expect("the fixture's path fights its guard")
+}
+
+/// **A fight whose own bodies may fire a story trigger the world never
+/// performs says so on its `kill` step** (critical-path format 13). A
+/// die-retry death takes the party back to the stone; the guard follows, the
+/// census counts it, and the run is no longer in the world the path walks. So
+/// the step names the trigger as `unattended`, and the die-retry stage takes no
+/// death there. Perturbations, each of which only the binding to the fight's
+/// own bodies can tell apart: a census of a kind the guard is not carries
+/// nothing, and a trigger whose gate the path never opens carries nothing.
+#[test]
+fn a_fight_whose_bodies_may_fire_an_unperformed_trigger_names_it() {
+    let planted = fixture_with_an_unattended_trigger(
+        "zombie",
+        serde_json::json!({"kind": "minecraft:zombie"}),
+        |_| {},
+    );
+    let kill = kill_step(&planted);
+    assert_eq!(
+        kill["unattended"],
+        serde_json::json!(["trigger/stone-overrun"]),
+        "the guard may walk onto the stone while the party is away: {kill:#}"
+    );
+    let by_wave = fixture_with_an_unattended_trigger(
+        "wave",
+        serde_json::json!({"wave": "wave/guards"}),
+        |_| {},
+    );
+    assert_eq!(
+        kill_step(&by_wave)["unattended"],
+        serde_json::json!(["trigger/stone-overrun"]),
+        "a census of the fight's own wave counts its bodies too"
+    );
+    let sheep = fixture_with_an_unattended_trigger(
+        "sheep",
+        serde_json::json!({"kind": "minecraft:sheep"}),
+        |_| {},
+    );
+    let kill = kill_step(&sheep);
+    assert!(
+        kill.get("unattended").is_none(),
+        "no body of the fight is counted there: {kill:#}"
+    );
+    let shut = fixture_with_an_unattended_trigger(
+        "shut",
+        serde_json::json!({"kind": "minecraft:zombie"}),
+        |t| {
+            t["requires_flags"] = serde_json::json!(["flag/never"]);
+        },
+    );
+    let kill = kill_step(&shut);
+    assert!(
+        kill.get("unattended").is_none(),
+        "a trigger whose gate the path never opens cannot fire: {kill:#}"
+    );
+    // The fight reads the trigger's flag, so the path performs it in front of
+    // the fight: by the fight it is the path's own, spent.
+    let spent = fixture_with_an_unattended_trigger(
+        "spent",
+        serde_json::json!({"kind": "minecraft:zombie"}),
+        |t| {
+            // Its gate stays open once it has fired: only its being the
+            // path's own act takes it off the fight's step.
+            t.as_object_mut().unwrap().remove("requires_state");
+            t.as_object_mut().unwrap().remove("forbids_flags");
+        },
+    );
+    common::patch_file(&spent.join("quests.json"), |q| {
+        q["content"]["quests"][1]["objectives"][0]["requires_flags"] =
+            serde_json::json!(["flag/summoned", "flag/stone-overrun"]);
+    });
+    let campaign = parse_dir(&spent);
+    let out = build(&campaign, &spent);
+    let steps = json(&out, "critical-path.json")["steps"].clone();
+    let steps = steps.as_array().unwrap();
+    let at = |a: &str| {
+        steps
+            .iter()
+            .position(|s| s["action"] == a || s["trigger"] == a)
+    };
+    let (trigger, kill) = (
+        at("trigger/stone-overrun").expect("the path performs the trigger"),
+        at("kill").unwrap(),
+    );
+    assert!(trigger < kill, "{steps:#?}");
+    assert!(
+        steps[kill].get("unattended").is_none(),
+        "a trigger the path performed before the fight is not left to the fight's bodies: {:#}",
+        steps[kill]
+    );
+}

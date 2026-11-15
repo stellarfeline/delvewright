@@ -482,6 +482,10 @@ export class MineflayerExecutor implements StepExecutor {
   /** Encounters whose scripted deaths were skipped because the campaign fires NO
    * checkpoint before them — a content fact, reported and not graded. */
   readonly preconditionAdvisories: string[] = [];
+  /** Encounters whose scripted deaths were skipped because the fight's own
+   * bodies may fire a story trigger the walked world never performs — reported,
+   * not graded. */
+  readonly unattendedAdvisories: string[] = [];
   readonly preconditionWaves = new Set<string>();
   /** The newest census summary the chat channel has delivered FOR EACH WAVE, and
    * the mob lines that closed each census, keyed by the server's own sequence

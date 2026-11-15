@@ -5,7 +5,9 @@ use super::*;
 /// `vehicle_<s>_seated` runs the seat function `setup_finish` and
 /// `seat-vehicle` run, and asserts exactly one body carries the vehicle's tag
 /// and stands within two blocks of the mark — a stripped summon or a removal
-/// that missed the old body reds it. `vehicle_<s>_reseats` seats it, moves the
+/// that missed the old body reds it. `vehicle_<s>_reseats` seats it, sets
+/// every passenger down (the seat mounts a declared `rider` that stands
+/// anywhere, and a ridden body is in use, never re-seated), moves the
 /// body outside `bounds`, runs the re-seat once, and asserts the one body is
 /// back at the mark and the re-seat re-armed itself (one schedule cleared) —
 /// a stripped bounds test or a stripped `schedule` reds it. Calling the re-seat
@@ -13,7 +15,8 @@ use super::*;
 /// function and not the clock.
 ///
 /// A vehicle that stays where its rider left it (`left: where-left`) has
-/// `vehicle_<s>_stays` in place of `_reseats`: seated, its body moved off its
+/// `vehicle_<s>_stays` in place of `_reseats`: seated, its passengers set
+/// down, its body moved off its
 /// mark and — for a mount — given its AI back as boarding gives it, the
 /// re-seat run once leaves the one body where it was moved, a mount without
 /// its AI again, and re-arms itself. A re-seat that brings it home, or one
@@ -94,6 +97,13 @@ pub(super) fn emit_vehicle_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
         let (lo, _) = v.bounds;
         let cleared = format!("#vhc_{s} dw.sys");
+        // Both templates judge a body nobody rides: a ridden body is in use, and
+        // the re-seat leaves it where it is by design. The seat mounts the
+        // vehicle's declared `rider` when that actor stands anywhere in the
+        // world, which another test of the suite may have left standing, so
+        // the template sets every passenger down before it moves the body,
+        // rather than inheriting whichever state the suite's order left.
+        let riderless = format!("execute as @e[tag={tag}] on passengers run ride @s dismount");
         if v.left == delvewright_dsl::VehicleLeft::WhereLeft {
             let left = [lo[0] - 3, v.seat[1], v.seat[2]];
             let lc = crate::compiler::nav::cell_center(left);
@@ -108,6 +118,7 @@ pub(super) fn emit_vehicle_packtests(plan: &Plan, out: &mut BuildOutput) {
                 v.id
             ));
             r.push(format!("function {ns}:vehicle_seat_{s}"));
+            r.push(riderless.clone());
             r.push(format!(
                 "tp @e[tag={tag}] {} {} {}",
                 fmt_f64(lc[0]),
@@ -151,6 +162,7 @@ pub(super) fn emit_vehicle_packtests(plan: &Plan, out: &mut BuildOutput) {
             v.id
         ));
         r.push(format!("function {ns}:vehicle_seat_{s}"));
+        r.push(riderless);
         r.push(format!(
             "tp @e[tag={tag}] {} {} {}",
             lo[0] - 3,

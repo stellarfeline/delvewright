@@ -3835,6 +3835,44 @@ test("i18n v2: a translate-component name is read through its fallback", () => {
   assert.equal(displayNameOf({ customName: { translate: "x", fallback: "" } }), undefined);
 });
 
+test("a fight whose own bodies may fire a story trigger this world never performs takes no death", async () => {
+  // The festival town, reduced: the captain's raiders walk a lane to the stage,
+  // where a census of pillagers fires `trigger/cake-taken-pillager`. The
+  // mainline world keeps the cake; a die-retry death sent the bot to the
+  // checkpoint for ~40 s, a pillager reached the cake, and the journal judge
+  // then compared the run with a world it had left. The compiler now names that
+  // trigger on the kill step (`unattended`, format 13), and the stage takes no
+  // death there: advisory, named, and coverage silent about it.
+  //
+  // Control first, the same encounter without the field: both deaths taken.
+  {
+    const bot = new CombatFakeBot();
+    const executor = attach(bot);
+    executor.useCampaign("the-drowned-bell");
+    executor.useCombatPlan(combatPlan(), true);
+    await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+    assert.equal(executor.deathTrials().length, 2, "the control takes both deaths");
+    assert.deepEqual([...executor.dieRetryUnattendedAdvisories()], []);
+  }
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  const step: KillStep = { ...KILL_STEP, unattended: ["trigger/cake-taken-pillager"] };
+  await within("executor.kill(step)", executor.kill(step));
+
+  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
+  assert.equal(bot.calls.filter((c) => c === SCRIPTED_DEATH).length, 0);
+  assert.deepEqual([...executor.dieRetryPreconditionFindings()], [], "nothing reds the stage");
+  assert.deepEqual([...executor.dieRetryPreconditionAdvisories()], [], "not a checkpoint gap");
+  const advisories = executor.dieRetryUnattendedAdvisories();
+  assert.equal(advisories.length, 1);
+  assert.match(advisories[0]!, /`trigger\/cake-taken-pillager`/);
+  assert.match(advisories[0]!, /No death was taken/);
+  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
+  assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared", "the fight itself still happened");
+});
+
 test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
   // With `fire_step < i`, souls-bonfire's encounter truthfully reports no
   // governing checkpoint: the only fire is armed by the very kill this encounter
