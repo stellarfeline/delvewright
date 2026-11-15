@@ -465,7 +465,16 @@ fn a_served_limited_objective_that_can_fail_is_driven_clear_of_both() {
         "packtest-datapack/data/{NS}/test/env_trigger_crank.mcfunction"
     )))
     .expect("the press's template");
-    let guard = func(&out, "trig_crank");
+    // The line that dispatches the press, wherever the emitter puts it.
+    let fns = out.join(format!("datapack/data/{NS}/function"));
+    let guard: String = std::fs::read_dir(&fns)
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.unwrap().path()).ok())
+        .flat_map(|b| b.lines().map(str::to_string).collect::<Vec<_>>())
+        .filter(|l| l.contains(&format!("run function {NS}:trig_crank")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!guard.is_empty(), "something dispatches the press");
     for score in ["dw.x_exit", "dw.of_exit"] {
         assert!(
             guard.contains(&format!("unless score #party {score} matches 1")),

@@ -309,6 +309,13 @@ fn the_wither_twin_charges_up() {
             for (k, x) in extra.as_object().unwrap() {
                 a[k] = x.clone();
             }
+            // A wither keeps a target to its species' 40 blocks, and the
+            // vantage is 22.6 from the lectern's respawn point (`DW0478`); the
+            // case judges the twin's charge, so the twin is staged to reach 20.
+            if a.get("attributes").is_none() {
+                a["attributes"] = json!({});
+            }
+            a["attributes"]["follow_range"] = json!(20.0);
             v["content"]["actors"].as_array_mut().unwrap().push(a);
             let q = v["content"]["quests"]
                 .as_array_mut()
