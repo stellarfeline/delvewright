@@ -312,7 +312,8 @@ fn quota(
         let head = run.map_or(if terminal { &t[..] } else { &t[..0] }, |r| &t[..r]);
         let sources: u64 = (0..head.len().saturating_sub(1))
             .filter(|&i| {
-                matches!(head[i], "as" | "at") || (head[i] == "entity" && i > 0 && head[i - 1] == "facing")
+                matches!(head[i], "as" | "at")
+                    || (head[i] == "entity" && i > 0 && head[i - 1] == "facing")
             })
             .map(|i| fan(head[i + 1]))
             .chain(

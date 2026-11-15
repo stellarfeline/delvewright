@@ -733,11 +733,7 @@ impl Paged {
         });
         alive(1);
         hold(tally, bytes);
-        store()
-            .pages
-            .lock()
-            .expect("pages")
-            .push(Listed::of(&p));
+        store().pages.lock().expect("pages").push(Listed::of(&p));
         relieve(tally);
         p
     }
@@ -773,11 +769,7 @@ impl Paged {
                 });
                 alive(1);
                 drop(g);
-                store()
-                    .pages
-                    .lock()
-                    .expect("pages")
-                    .push(Listed::of(&p));
+                store().pages.lock().expect("pages").push(Listed::of(&p));
                 p
             }
         }
@@ -2154,8 +2146,14 @@ mod tests {
         relieved.wait();
         other.join().expect("the other store's thread");
         eprintln!("relief: passed {passed} listed array(s) of another store, took {taken}");
-        assert!(passed >= 32, "the other store's arrays were not listed: {passed}");
-        assert_eq!(taken, 0, "the relief took {taken} strong reference(s) to another store's array");
+        assert!(
+            passed >= 32,
+            "the other store's arrays were not listed: {passed}"
+        );
+        assert_eq!(
+            taken, 0,
+            "the relief took {taken} strong reference(s) to another store's array"
+        );
     }
 
     /// **A copy shares its arrays until one side writes**: the copy's sections

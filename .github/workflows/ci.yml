@@ -1992,9 +1992,11 @@ jobs:
     needs: [changes, delvec-binary, gallery-baseline]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
-    # The ladder's own budget is derived from the build (`harness/src/run-budget.ts`);
-    # this bound is the job's, so a hung compose cannot hold a runner for six hours.
-    timeout-minutes: 60
+    # The ladder's own budget is derived from the build (`harness/src/run-budget.ts`,
+    # printed by the run: about 85 minutes for the gallery); this bound is the job's,
+    # above it, so the bot's own verdict lands first and a hung compose still cannot
+    # hold a runner for six hours.
+    timeout-minutes: 120
     env:
       # The same standing acceptance as tier 2's: whoever runs this workflow
       # accepts the Minecraft EULA (https://aka.ms/MinecraftEULA) for that run.

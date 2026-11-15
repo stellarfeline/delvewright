@@ -1006,7 +1006,8 @@ mod tests {
         );
         assert_eq!(plain.own(PARTY), 1);
         let forked =
-            line_cost("execute if score #a dw.sys matches 1 as @a at @s run function dw:f").unwrap();
+            line_cost("execute if score #a dw.sys matches 1 as @a at @s run function dw:f")
+                .unwrap();
         assert_eq!(
             forked,
             LineCost {
@@ -1016,7 +1017,11 @@ mod tests {
             }
         );
         assert_eq!(forked.own(1), 4, "one player: the stages and one call");
-        assert_eq!(forked.own(PARTY), 3 + PARTY, "the stages once, the call per player");
+        assert_eq!(
+            forked.own(PARTY),
+            3 + PARTY,
+            "the stages once, the call per player"
+        );
         assert_eq!(
             line_cost("execute if block 1 2 3 minecraft:stone")
                 .unwrap()
@@ -1025,7 +1030,9 @@ mod tests {
             "a terminal condition is the command itself"
         );
         assert_eq!(
-            line_cost("execute as @a if entity @s[tag=x]").unwrap().own(PARTY),
+            line_cost("execute as @a if entity @s[tag=x]")
+                .unwrap()
+                .own(PARTY),
             1 + PARTY,
             "a terminal condition runs once per source"
         );
@@ -1052,15 +1059,27 @@ mod tests {
             ("execute as @a[tag=x,limit=2] run say hi", 1, 2),
             ("execute at @p run say hi", 1, 1),
             ("execute as @r[limit=3] run say hi", 1, 3),
-            ("execute as @e[type=minecraft:player,tag=x] run say hi", 1, PARTY),
+            (
+                "execute as @e[type=minecraft:player,tag=x] run say hi",
+                1,
+                PARTY,
+            ),
             ("execute as @e[type=player] run say hi", 1, PARTY),
             ("execute as @e[tag=x,limit=3] run say hi", 3, 3),
             ("execute as @n[type=minecraft:zombie] run say hi", 1, 1),
             ("execute as @s at @s run say hi", 1, 1),
             ("execute as Alex run say hi", 1, 1),
             ("execute as @a at @a run say hi", 1, PARTY * PARTY),
-            ("execute positioned as @a rotated as @a run say hi", 1, PARTY * PARTY),
-            ("execute as @e[tag=x,limit=1] facing entity @a feet run say hi", 1, PARTY),
+            (
+                "execute positioned as @a rotated as @a run say hi",
+                1,
+                PARTY * PARTY,
+            ),
+            (
+                "execute as @e[tag=x,limit=1] facing entity @a feet run say hi",
+                1,
+                PARTY,
+            ),
             ("execute if entity @e[tag=x] run say hi", 1, 1),
             ("execute on vehicle run say hi", 1, 1),
             ("execute summon minecraft:marker run say hi", 1, 1),
@@ -1081,7 +1100,11 @@ mod tests {
             "$execute as $(who) run say hi",
         ] {
             let l = line_cost(line).unwrap();
-            assert_eq!(l.sources(1), MOST_SOURCES, "{line}: the fork limit bounds it");
+            assert_eq!(
+                l.sources(1),
+                MOST_SOURCES,
+                "{line}: the fork limit bounds it"
+            );
             assert!(l.at_the_fork_limit().is_some(), "{line} names why");
         }
     }
@@ -1131,13 +1154,23 @@ mod tests {
         assert_eq!(l.chains["dw:tick"], Chain::Bounded(1 + 1 + MOST_SOURCES));
         assert_eq!(l.fork_limited.len(), 1);
         assert_eq!(l.fork_limited[0].0, "dw:tick");
-        assert!(l.fork_limited[0].1.contains("states no `limit`"), "{:?}", l.fork_limited);
+        assert!(
+            l.fork_limited[0].1.contains("states no `limit`"),
+            "{:?}",
+            l.fork_limited
+        );
         assert_eq!(check(&out).unwrap_err().code.id(), "DW0984");
         assert_eq!(declare(&mut out), Some(1 + 1 + MOST_SOURCES));
         assert!(check(&out).is_ok());
 
-        let limited = tree(&[("each", "execute as @e[tag=dw_thing,limit=8] run say hi".to_string())]);
-        assert_eq!(measure(&limited).chains["dw:each"], Chain::Bounded(1 + 1 + 8));
+        let limited = tree(&[(
+            "each",
+            "execute as @e[tag=dw_thing,limit=8] run say hi".to_string(),
+        )]);
+        assert_eq!(
+            measure(&limited).chains["dw:each"],
+            Chain::Bounded(1 + 1 + 8)
+        );
         assert!(measure(&limited).fork_limited.is_empty());
 
         // Every source a fork leaves runs a callee of 40 000: past the `int`
