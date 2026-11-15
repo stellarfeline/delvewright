@@ -748,16 +748,30 @@ fn a_wave_anchor_no_prefab_provides_is_refused_at_analyze() {
 fn a_wave_fired_only_by_a_trigger_in_two_areas_exits_3_with_dw0310() {
     let camp = tmp("dw0310-two-areas");
     common::copy_dir_all(&common::compiler_fixtures_dir().join("first-leg"), &camp);
+    // The vault on a piece a party is put down in (first_leg.rs's arrivable
+    // variant), its objective at that piece's `anchor/exit`.
+    common::patch_file(&camp.join("world.json"), |w| {
+        for a in w["content"]["areas"].as_array_mut().unwrap() {
+            if a["id"] == "area/vault" {
+                a["prefab"] = serde_json::json!("prefab/cave-shore");
+            }
+        }
+    });
     common::patch_file(&camp.join("quests.json"), |v| {
+        for x in v["content"]["quests"].as_array_mut().unwrap() {
+            if x["id"] == "quest/vault" {
+                x["objectives"][0]["anchor"] = serde_json::json!("anchor/exit");
+            }
+        }
         v["content"]["waves"] = serde_json::json!([{
-            "id": "wave/ambush", "anchor": "anchor/npc-stand",
+            "id": "wave/ambush", "anchor": "anchor/exit",
             "mobs": [{ "entity": "minecraft:sheep", "count": 1 }]
         }]);
         v["content"]["triggers"] = serde_json::json!([{
             "id": "trigger/ambush", "at": "anchor/keeper-stand",
             "on": { "on": "approach", "range": 3 },
             "effects": [{ "type": "spawn-wave", "wave": "wave/ambush",
-                "happening": { "verb": "arrives", "text": "A sheep wanders into the vault." } }]
+                "happening": { "verb": "arrives", "text": "A sheep wanders onto the shore." } }]
         }]);
     });
     let pf = common::shown_prefabs_dir("first-leg");
