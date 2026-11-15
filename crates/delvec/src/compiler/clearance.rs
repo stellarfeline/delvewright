@@ -717,6 +717,7 @@ mod tests {
         let world = World::from_solid_cells(solid);
         let mut v = giant_at([3, 69, 3]);
         v.entity = "minecraft:mannequin".to_string();
+        v.dims = entity_dims(&v.entity);
         let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
     }
@@ -775,6 +776,7 @@ mod tests {
         let world = World::from_solid_cells(solid);
         let mut v = giant_at([3, 69, 3]);
         v.entity = "minecraft:mannequin".to_string();
+        v.dims = entity_dims(&v.entity);
         let (w, h) = v.dims;
         assert_eq!(w, 0.6);
         assert!(verdict(&world, &v, w, h).is_none());

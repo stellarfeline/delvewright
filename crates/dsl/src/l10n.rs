@@ -880,6 +880,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         // spec-0135: a vehicle's nameplate.
         "vehicle" if n == 3 && last == "name" => Name,
+        // spec-0135 §13: a board's heading over the sidebar.
+        "board" if n == 3 && last == "title" => Title,
         "loot" if n == 5 && last == "name" => ItemName,
         "sign" if n == 4 && matches!(segs[2], "front" | "back") => Sign,
         "lethal" if n == 3 && last == "message" => Narration,
