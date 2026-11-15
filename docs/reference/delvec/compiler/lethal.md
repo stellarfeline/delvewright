@@ -88,8 +88,7 @@ floor lantern, from its top onto the well's curb, along the curb over the shut
 gate, and into the water. A mob in water is taken to reach all of that water —
 the undead sink and a drowned dives — which is wider than the truth for a mob
 that floats and can only refuse more. The flood is bounded by the stack's
-pursuit, its follow range (the reach the emitted stack has once it fights (`nav::follow::mob_reach`: a released lane mob's species `follow_range`, never narrower than the lane's `aggro_radius`; else the declared `follow_range`; else the species' own, from `crates/delvec/data/entity-engagement-1.21.11.json`)) — the radius `DW0478` measures
-a force by — around the seats the seating pass chose; idle wandering beyond it is
+pursuit, its follow range (the reach the emitted stack has once it fights (`nav::follow::mob_reach`: a released lane mob's species `follow_range`, never narrower than the lane's `aggro_radius`; else the declared `follow_range`; else the species' own, from `crates/delvec/data/entity-engagement-1.21.11.json`)) — around the seats the seating pass chose; idle wandering beyond it is
 not modelled. As with `DW0478`, the remedy is never a shorter `follow_range`:
 that retunes the fight to hide the placement. A fall off an edge inside
 that range is followed to whatever stops it at any depth, and a body that falls

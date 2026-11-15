@@ -14,6 +14,12 @@
 //!   value;
 //! - an actor likewise, from the body it wears.
 //!
+//! A fight not yet begun is noticed at a different distance: a marching lane
+//! mob takes up a fight only within its radius ([`mob_perception`]). A proof
+//! about a fight under way (where its bodies chase, fall, burn, stand in
+//! water) reads the reach; a proof about a body the party meets fresh (a
+//! respawn point, a way around, a fight found) reads the perception.
+//!
 //! The species' value is read from the pinned jar
 //! (`crates/delvec/data/entity-engagement-1.21.11.json`, written by
 //! `tools/maintenance/extract-entity-engagement.py`): pillager 32, vindicator
@@ -112,17 +118,45 @@ pub fn mob_reach(w: &delvewright_dsl::Wave, mob: &delvewright_dsl::WaveMob) -> (
     }
 }
 
-/// **A wave's reach**: the widest [`mob_reach`] of its stacks — a fight that
-/// starts within this distance of the party finds the party.
+/// **The distance at which one emitted mob of `w` takes up a fight** it is
+/// not yet in: a lane mob marches with its follow range held at the lane's
+/// `aggro_radius` and is released only by a player inside it, a target it
+/// holds or a player who hurt it, so it notices at the radius; any other mob
+/// at its [`mob_reach`]. The reading of a proof about a body the party meets
+/// fresh — a respawn point (`DW0478`), a way around an optional fight
+/// (`DW0380`), a fight found by reach (`DW0863`), where a lapse waits.
+pub fn mob_perception(
+    w: &delvewright_dsl::Wave,
+    mob: &delvewright_dsl::WaveMob,
+) -> (f64, &'static str) {
+    match &w.lane {
+        Some(l) => (
+            f64::from(l.aggro_radius),
+            "the lane's `aggro_radius`, at which a marching lane mob notices",
+        ),
+        None => mob_reach(w, mob),
+    }
+}
+
+/// **A wave's perception**: the widest [`mob_perception`] of its stacks — a
+/// fight not yet begun that the party comes within this distance of finds
+/// the party.
+pub fn wave_perception(w: &delvewright_dsl::Wave) -> (f64, &'static str) {
+    widest(w.mobs.iter().map(|m| mob_perception(w, m)))
+}
+
+fn widest(it: impl Iterator<Item = (f64, &'static str)>) -> (f64, &'static str) {
+    it.fold(None::<(f64, &'static str)>, |acc, r| match acc {
+        Some(a) if a.0 >= r.0 => Some(a),
+        _ => Some(r),
+    })
+    .unwrap_or((0.0, "no mob"))
+}
+
+/// **A wave's reach**: the widest [`mob_reach`] of its stacks — how far a
+/// fight under way carries its bodies after the party.
 pub fn wave_reach(w: &delvewright_dsl::Wave) -> (f64, &'static str) {
-    w.mobs
-        .iter()
-        .map(|m| mob_reach(w, m))
-        .fold(None::<(f64, &'static str)>, |acc, r| match acc {
-            Some(a) if a.0 >= r.0 => Some(a),
-            _ => Some(r),
-        })
-        .unwrap_or((0.0, "no mob"))
+    widest(w.mobs.iter().map(|m| mob_reach(w, m)))
 }
 
 /// **An actor's reach**: its declared `follow_range`, else the species' value
@@ -179,5 +213,10 @@ mod tests {
         assert_eq!(wave_reach(&w).0, 32.0);
         let w = wave(None, "minecraft:pillager", Some(10.0));
         assert_eq!(wave_reach(&w).0, 10.0);
+        // A marching lane mob notices at its radius; a plain one at its reach.
+        let w = wave(Some(8), "minecraft:pillager", None);
+        assert_eq!((wave_perception(&w).0, wave_reach(&w).0), (8.0, 32.0));
+        let w = wave(None, "minecraft:spider", None);
+        assert_eq!(wave_perception(&w).0, 16.0);
     }
 }

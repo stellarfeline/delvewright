@@ -13,8 +13,9 @@ use std::collections::BTreeMap;
 pub struct AggroSource {
     /// What the message calls it (`wave/gate-assault`, `actor/barrow-warden`).
     pub id: String,
-    /// The reach, in blocks — what the emitted body keeps a target at once it
-    /// fights ([`super::follow::wave_reach`], [`super::follow::actor_reach`]).
+    /// The perception radius, in blocks — the distance at which the emitted
+    /// body takes up a fight ([`super::follow::wave_perception`],
+    /// [`super::follow::actor_reach`]).
     pub radius: f64,
     /// Why this radius is the number it is, for the message.
     pub radius_source: &'static str,
@@ -61,10 +62,11 @@ pub struct AggroSource {
 ///   (the same rule `DW0469` is built on), so the compiler cannot and does not
 ///   ask whether `minecraft:sheep` is a monster.
 ///
-/// Radius per force: the reach its emitted bodies keep a target at once they
-/// fight ([`super::follow`]) — a released lane mob's species range, never
-/// narrower than the lane's `aggro_radius`; else the declared `follow_range`;
-/// else the species' own, read from the pinned jar.
+/// Radius per force: the distance at which its emitted bodies take up a
+/// fight ([`super::follow::wave_perception`]) — a marching lane mob's
+/// `aggro_radius`; else the declared `follow_range`; else the species' own,
+/// read from the pinned jar. A respawned player is met fresh: a lane mob that
+/// was fighting the dead is released no longer once its target is gone.
 ///
 /// A campaign with no respawn point at all, or with no hostile force at all,
 /// proves nothing here — and [`RespawnSafetyLedger`] says so out loud rather than
@@ -490,7 +492,7 @@ pub(crate) fn aggro_sources(
             .flatten()
             .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
-        let (radius, radius_source) = super::follow::wave_reach(w);
+        let (radius, radius_source) = super::follow::wave_perception(w);
         if let Some(wps) = lanes.get(w.id.as_str()) {
             cells.extend(
                 lane_march_cells(plan, world, w, wps)

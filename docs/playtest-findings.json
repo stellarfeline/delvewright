@@ -4246,7 +4246,7 @@
       "round": null,
       "triage": "capability",
       "finding": "the proofs over the raiders' range (respawn safety, a wave's reach into a lethal volume, a body stranded out of reach) read a released raider's reach as its lane's radius, and an undeclared stack's as 16 whatever its species",
-      "general_form": "every proof over a fight's range reads one function, `nav::follow::mob_reach` (a lane mob the wider of its species' `follow_range` and the radius; any other stack its declared `follow_range`, else its species'), the species' value read from the pinned jar (`entity-engagement-1.21.11.json`)",
+      "general_form": "every proof over a fight under way reads one module, `nav::follow::mob_reach` (a lane mob the wider of its species' `follow_range` and the radius; any other stack its declared `follow_range`, else its species'), and every proof about a body met fresh its perception (`mob_perception`: a marching lane mob's radius), the species' value read from the pinned jar (`entity-engagement-1.21.11.json`)",
       "carrier": {
         "kind": "invariant",
         "test": "a_lane_mob_reaches_its_species_range_once_released"

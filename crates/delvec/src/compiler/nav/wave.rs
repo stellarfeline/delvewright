@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 ///
 /// A wave is **optional** when no `kill` objective on the critical path names it —
 /// the party is never required to fight it. For each such wave, its mobs' aggro
-/// spheres (the wave's reach, [`super::follow::wave_reach`]) are
+/// spheres (the wave's perception, [`super::follow::wave_perception`]) are
 /// forced solid around the wave anchor and the forced critical path is re-routed:
 /// if a leg that routed before no longer does, every way forward runs through the
 /// fight and "optional" is a lie.
@@ -36,7 +36,7 @@ pub(in crate::compiler::nav) fn optional_elite_lint(plan: &Plan, world: &World) 
         .filter(|w| !required.contains(w.id.as_str()))
         .filter_map(|w| {
             let centre = crate::compiler::plan::point_any(&plan.anchors, w.anchor.as_str())?;
-            let radius = super::follow::wave_reach(w).0.max(0.0) as i32;
+            let radius = super::follow::wave_perception(w).0.max(0.0) as i32;
             Some((w.id.as_str().to_string(), centre, radius))
         })
         .collect();
