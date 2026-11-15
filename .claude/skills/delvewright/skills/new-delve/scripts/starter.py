@@ -1615,12 +1615,25 @@ class Plot(Place):
         for v in self.a.get("voids", []) or []:
             (vx0, vy0, vz0), (vx1, vy1, vz1) = v["cells"]
             voids |= {(vx, vy, vz) for vx in range(vx0, vx1 + 1) for vy in range(vy0, vy1 + 1) for vz in range(vz0, vz1 + 1)}
+        # A void the whole's fixed ground stands in (`ground.fixed`) is that
+        # ground in the world: read as its block, so a body stands on it (the
+        # sill under a seam's opening, a bank the plot meets) and no air
+        # pocket opens under it. Any other void is a cell whose owner writes
+        # it and reads as air. The ground is the whole's: its blocks are
+        # never the program's to be refused.
+        fixed = {tuple(g["cell"]): g["block"] for g in self.a["ground"].get("fixed", []) or []
+                 if g["block"] != "minecraft:air"}
+        ground_cells: set = set()
         blocks = []
         for x in range(self.ex):
             for y in range(self.ey):
                 for z in range(self.ez):
                     if (x, y, z) in voids:
-                        blocks.append([x, y, z, "minecraft:structure_void"])
+                        if (x, y, z) in fixed:
+                            blocks.append([x, y, z, fixed[(x, y, z)]])
+                            ground_cells.add((x, y, z))
+                        else:
+                            blocks.append([x, y, z, "minecraft:structure_void"])
                         continue
                     b = self.block_of(self.cell(x, y, z))
                     if b != "minecraft:air":
@@ -1655,12 +1668,18 @@ class Plot(Place):
             "palette": palette,
         }
         answer = ask_engine(type(self).DELVEC, request)
+        # The states the program writes, and their blocks: what a refusal is
+        # the program's for.
+        own_states = {c[3] for c in blocks if (c[0], c[1], c[2]) not in ground_cells} | set(palette)
+        own = {b.split("[")[0] for b in own_states}
         problems = []
         for b in answer["malformed"]:
-            problems.append(f"  {b['block']}: {b['why']}")
+            if b["block"] in own_states:
+                problems.append(f"  {b['block']}: {b['why']}")
         for u in answer["unsupported"]:
-            problems.append(f"  {u['block']} at {tuple(u['cell'])}: the server drops it; it needs {u['needs']}")
-        for rf in answer["refused"]:
+            if tuple(u["cell"]) not in ground_cells:
+                problems.append(f"  {u['block']} at {tuple(u['cell'])}: the server drops it; it needs {u['needs']}")
+        for rf in (rf for rf in answer["refused"] if rf["block"].split("[")[0] in own):
             route = f" — {rf['route']}" if rf.get("route") else ""
             problems.append(f"  {rf['block']}: the palette refuses it (DW0730){route}")
         if problems:

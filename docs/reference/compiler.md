@@ -4391,7 +4391,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   face, `openable`, `met` (`at a face`, or `by_the_eye_from` a cell),
   `junction`, `branch_length`, `branch_rise`, `branch_cut` (where the branch
   ground is cut: `at: path` one body wide, or the declared way's station with
-  its `width`), `learned`, `confirmed`, and each word's finding), and one
+  its `width`; `null` on a way declared `hidden`, whose verdict reads no
+  branch ground), `learned`, `confirmed`, and each word's finding — the
+  `rewarded` finding `null` on a hidden way), and one
   `hidden_rows` entry per (hidden way, configuration it is shut in):
   `reach`, `targets`, `eye_lines`, `eye` (`hidden`, or `seen_from`/`reaches`/
   `what`), `shots` (each opening list and its shot) and `text` (`DW1060`'s

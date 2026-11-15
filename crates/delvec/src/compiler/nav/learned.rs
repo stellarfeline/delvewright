@@ -61,6 +61,11 @@ pub(crate) struct OpeningList {
     pub(crate) list: String,
     /// The index in the list of the `cutscene` that shows the seam.
     pub(crate) shot: Option<usize>,
+    /// The indices after the shot whose effect fires only in a firing of the
+    /// list that played the shot: the shot is unguarded, or the effect carries
+    /// the shot's own guard and nothing between them writes a flag or a state.
+    /// A line there is read after the shot, whenever the list fires.
+    pub(crate) after: BTreeSet<usize>,
 }
 
 impl OpeningList {
@@ -113,15 +118,39 @@ pub(crate) fn opening_lists(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<
                 |(_, e)| matches!(e.gate_region_write(), Some((a, false)) if a.as_str() == anchor),
             )
         })
-        .map(|(list, effs)| OpeningList {
-            shot: effs
+        .map(|(list, effs)| {
+            let shot = effs
                 .iter()
                 .filter(|(_, e)| shows(e, anchor))
                 .map(|(i, _)| *i)
-                .min(),
-            list,
+                .min();
+            let after = shot.map_or_else(BTreeSet::new, |s| after_shot(&effs, s));
+            OpeningList { list, shot, after }
         })
         .collect()
+}
+
+/// The indices of `effs` (one list, by index) after the shot at `s` whose
+/// effect fires only when the shot has fired in the same firing of the list.
+fn after_shot(effs: &[(usize, &delvewright_dsl::QuestEffect)], s: usize) -> BTreeSet<usize> {
+    let by: BTreeMap<usize, &delvewright_dsl::QuestEffect> = effs.iter().copied().collect();
+    let Some(shot) = by.get(&s) else {
+        return BTreeSet::new();
+    };
+    fn writes(e: &delvewright_dsl::QuestEffect) -> bool {
+        e.set_flag().is_some()
+            || e.writes_state().is_some()
+            || e.nested_effect_lists().iter().any(|l| l.iter().any(writes))
+    }
+    let mut out = BTreeSet::new();
+    let mut written = writes(shot);
+    for (&j, e) in by.range(s + 1..) {
+        if shot.when.is_none() || (!written && e.when == shot.when) {
+            out.insert(j);
+        }
+        written |= writes(e);
+    }
+    out
 }
 
 /// One gated connection declared `learned: hidden`, as the text check reads
@@ -237,8 +266,10 @@ struct Met {
     length: usize,
     rise: i32,
     seen: SeenFinding,
-    reward: RewardFinding,
-    cut: Cut,
+    /// What the branch ground holds, and where it is cut off the route;
+    /// `None` for a way declared `hidden`, whose verdict and words read no
+    /// branch ground.
+    reward: Option<(RewardFinding, Cut)>,
 }
 
 /// Where the branch ground is cut off the open route (spec-0118 §5.2).
@@ -745,7 +776,10 @@ fn cut_branch(
     let path: Vec<[i32; 3]> = std::iter::once(junction)
         .chain(branch.iter().copied())
         .collect();
-    let ground = branch_ground(w, face, route, &path, &BTreeSet::new());
+    // The closure from the face is the cut's to subtract from, the same for
+    // every cut tried.
+    let behind = w.body_flood(face, &Confinement::none());
+    let ground = branch_ground(w, &behind, route, &path, &BTreeSet::new());
     if !ground.is_empty() {
         return (ground, Cut::Path);
     }
@@ -761,7 +795,7 @@ fn cut_branch(
         (a.0, a.1, &a.2.way, &a.2.station).cmp(&(b.0, b.1, &b.2.way, &b.2.station))
     });
     for (_, _, s) in walked {
-        let ground = branch_ground(w, face, route, &path, &s.cells);
+        let ground = branch_ground(w, &behind, route, &path, &s.cells);
         if !ground.is_empty() {
             return (
                 ground,
@@ -779,7 +813,7 @@ fn cut_branch(
 /// **The ground behind one cut**: the cells a body reaches from the shut
 /// way's face that it cannot reach from the open route without passing the
 /// cut — the junction, the branch path, and the cross-section `across` when
-/// one is given. The open side is the reach graph's closure of the route cells
+/// one is given — out of `behind`, the closure from the face. The open side is the reach graph's closure of the route cells
 /// ([`World::body_flood`]) over the world with the cut walled up
 /// ([`World::walls_over`], the one rule a walk over the graph takes floor out
 /// of a body's reach by); the ground is the unconfined closure
@@ -791,7 +825,7 @@ fn cut_branch(
 /// an open floor is not a branch, and nothing on it pays for one.
 fn branch_ground(
     w: &World,
-    face: &[[i32; 3]],
+    behind: &BTreeSet<[i32; 3]>,
     route: &BTreeSet<[i32; 3]>,
     path: &[[i32; 3]],
     across: &BTreeSet<[i32; 3]>,
@@ -818,8 +852,9 @@ fn branch_ground(
             .iter()
             .any(|e| (leaps || e.yaw.is_none()) && open.contains(&e.to))
     };
-    w.body_flood(face, &Confinement::none())
-        .into_iter()
+    behind
+        .iter()
+        .copied()
         .filter(|c| !open.contains(c) && !route.contains(c) && !beside(*c))
         .collect()
 }
@@ -951,31 +986,67 @@ fn judge_hidden(
     };
     let reached_low = order.iter().any(|c| inside(low_box, c));
     let reached_high = order.iter().any(|c| inside(high_box, c));
+    // `Some(true)`: the eye looks for the high side's place.
+    let looks: Vec<Option<bool>> = order
+        .iter()
+        .map(|e| {
+            if inside(low_box, e) {
+                Some(true)
+            } else if inside(high_box, e) {
+                Some(false)
+            } else if reached_low != reached_high {
+                Some(reached_low)
+            } else {
+                side_of(*e, region, axis).map(|high| !high)
+            }
+        })
+        .collect();
+    let eye_cells: Vec<[i32; 3]> = order
+        .iter()
+        .map(|e| cell_of(eye_of(*e, eye_height)))
+        .collect();
+    // The runs are flooded from the targets some eye looks for, and from no
+    // other: the gate's cells, and each side's place where an eye looks there.
+    let wants = |high: bool| looks.iter().any(|l| *l != Some(!high));
+    let empty: Vec<[i32; 3]> = Vec::new();
+    let low_t = if wants(false) { &low_cells } else { &empty };
+    let high_t = if wants(true) { &high_cells } else { &empty };
+    let flooded: Vec<[i32; 3]> = gate.iter().chain(low_t).chain(high_t).copied().collect();
+    let rooms = SightRooms::new(w, &eye_cells, &flooded);
+    let gate_runs: Vec<Vec<u32>> = gate.iter().map(|t| rooms.runs_around(*t)).collect();
+    let low_runs: Vec<Vec<u32>> = low_t.iter().map(|t| rooms.runs_around(*t)).collect();
+    let high_runs: Vec<Vec<u32>> = high_t.iter().map(|t| rooms.runs_around(*t)).collect();
     let mut lines = 0usize;
-    for e in order {
+    for ((e, ec), looks_high) in order.iter().zip(&eye_cells).zip(&looks) {
         let eye = eye_of(*e, eye_height);
-        // `Some(true)`: the eye looks for the high side's place.
-        let looks_high: Option<bool> = if inside(low_box, e) {
-            Some(true)
-        } else if inside(high_box, e) {
-            Some(false)
-        } else if reached_low != reached_high {
-            Some(reached_low)
-        } else {
-            side_of(*e, region, axis).map(|high| !high)
-        };
-        let far: Vec<(&[i32; 3], bool)> = match looks_high {
-            Some(true) => high_cells.iter().map(|c| (c, true)).collect(),
-            Some(false) => low_cells.iter().map(|c| (c, false)).collect(),
-            None => low_cells
+        let run = rooms.run(*ec);
+        let may = |t: [i32; 3], runs: &[u32]| SightRooms::may_see(*ec, run, t, runs);
+        let far: Vec<(&[i32; 3], &[u32], bool)> = match looks_high {
+            Some(true) => high_t
                 .iter()
-                .map(|c| (c, false))
-                .chain(high_cells.iter().map(|c| (c, true)))
+                .zip(&high_runs)
+                .map(|(c, r)| (c, r.as_slice(), true))
+                .collect(),
+            Some(false) => low_t
+                .iter()
+                .zip(&low_runs)
+                .map(|(c, r)| (c, r.as_slice(), false))
+                .collect(),
+            None => low_t
+                .iter()
+                .zip(&low_runs)
+                .map(|(c, r)| (c, r.as_slice(), false))
+                .chain(
+                    high_t
+                        .iter()
+                        .zip(&high_runs)
+                        .map(|(c, r)| (c, r.as_slice(), true)),
+                )
                 .collect(),
         };
-        for t in &gate {
+        for (t, runs) in gate.iter().zip(&gate_runs) {
             lines += 1;
-            if eye_meets(w, eye, *t).is_none() {
+            if may(*t, runs) && eye_meets(w, eye, *t).is_none() {
                 return (
                     targets,
                     lines,
@@ -988,9 +1059,9 @@ fn judge_hidden(
                 );
             }
         }
-        for (t, high) in far {
+        for (t, runs, high) in far {
             lines += 1;
-            if eye_meets(w, eye, *t).is_none() {
+            if may(*t, runs) && eye_meets(w, eye, *t).is_none() {
                 return (
                     targets,
                     lines,
@@ -1005,6 +1076,125 @@ fn judge_hidden(
         }
     }
     (targets, lines, None)
+}
+
+/// The cell a point stands in.
+fn cell_of(p: [f64; 3]) -> [i32; 3] {
+    [
+        p[0].floor() as i32,
+        p[1].floor() as i32,
+        p[2].floor() as i32,
+    ]
+}
+
+/// **Which eye cells can possibly see which targets** — an exact cull for
+/// [`eye_meets`], never a second sight rule. A sight line
+/// (`walk_cells`) visits a face-connected run of cells from
+/// the eye's own cell to its target, and is clear only when no cell of the
+/// run but the target hides. So an eye whose cell hides sees nothing, and an
+/// eye sees a target only when its cell lies in the same run of cells that
+/// do not hide (joined across faces, edges and corners) as some cell that
+/// does not hide around the target (the target and its 26 neighbours, which
+/// also covers a walk float error stops one boundary short). The runs are
+/// flooded from the targets only, inside the box of every eye cell and
+/// target (a walk never leaves the box of its two end cells), so a place
+/// walled in by blocks that hide is flooded at its own size and every eye
+/// outside it is answered without a line. Answers "no" only where every line
+/// is blocked; the lines it lets through are asked of [`eye_meets`].
+struct SightRooms {
+    lo: [i32; 3],
+    dims: [usize; 3],
+    /// The run each cell of the box belongs to, `0` for a cell no run from a
+    /// target reached (or one that hides).
+    label: Vec<u32>,
+}
+
+impl SightRooms {
+    fn new(w: &World, eyes: &[[i32; 3]], targets: &[[i32; 3]]) -> SightRooms {
+        let mut lo = [i32::MAX; 3];
+        let mut hi = [i32::MIN; 3];
+        for c in eyes.iter().chain(targets) {
+            for a in 0..3 {
+                lo[a] = lo[a].min(c[a] - 1);
+                hi[a] = hi[a].max(c[a] + 1);
+            }
+        }
+        if targets.is_empty() {
+            return SightRooms {
+                lo: [0; 3],
+                dims: [0; 3],
+                label: Vec::new(),
+            };
+        }
+        let dims = [0, 1, 2].map(|a| (hi[a] - lo[a] + 1) as usize);
+        let mut rooms = SightRooms {
+            lo,
+            dims,
+            label: vec![0; dims[0] * dims[1] * dims[2]],
+        };
+        let mut next = 0u32;
+        let mut stack: Vec<[i32; 3]> = Vec::new();
+        for t in targets {
+            for n in around(*t) {
+                let Some(i) = rooms.index(n) else { continue };
+                if rooms.label[i] != 0 || w.hides(n) {
+                    continue;
+                }
+                next += 1;
+                rooms.label[i] = next;
+                stack.push(n);
+                while let Some(c) = stack.pop() {
+                    for m in around(c) {
+                        let Some(j) = rooms.index(m) else { continue };
+                        if rooms.label[j] == 0 && !w.hides(m) {
+                            rooms.label[j] = next;
+                            stack.push(m);
+                        }
+                    }
+                }
+            }
+        }
+        rooms
+    }
+
+    fn index(&self, c: [i32; 3]) -> Option<usize> {
+        let mut idx = 0usize;
+        for ((&v, &lo), &dim) in c.iter().zip(&self.lo).zip(&self.dims) {
+            let d = i64::from(v) - i64::from(lo);
+            if d < 0 || d as u64 >= dim as u64 {
+                return None;
+            }
+            idx = idx * dim + d as usize;
+        }
+        Some(idx)
+    }
+
+    fn run(&self, c: [i32; 3]) -> u32 {
+        self.index(c).map_or(0, |i| self.label[i])
+    }
+
+    /// The runs around a target: of the target and its 26 neighbours, the
+    /// runs of those that do not hide, each once.
+    fn runs_around(&self, t: [i32; 3]) -> Vec<u32> {
+        let mut out: Vec<u32> = around(t).map(|n| self.run(n)).filter(|r| *r != 0).collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Whether some line from an eye standing in cell `eye`, of run `run`,
+    /// may reach `t`, whose runs around it are `runs` ([`Self::runs_around`]):
+    /// `false` only where every line is blocked.
+    fn may_see(eye: [i32; 3], run: u32, t: [i32; 3], runs: &[u32]) -> bool {
+        eye == t || (run != 0 && runs.contains(&run))
+    }
+}
+
+/// A cell and its 26 neighbours.
+fn around(c: [i32; 3]) -> impl Iterator<Item = [i32; 3]> {
+    (-1..=1).flat_map(move |dx| {
+        (-1..=1).flat_map(move |dy| (-1..=1).map(move |dz| [c[0] + dx, c[1] + dy, c[2] + dz]))
+    })
 }
 
 fn manhattan(a: [i32; 3], b: [i32; 3]) -> i32 {
@@ -1176,12 +1366,16 @@ fn verify_with_eye(
                         .max()
                         .map_or(0, |y| y - junction[1]);
                     // A way met by the eye alone pays for no walk: its ground
-                    // is empty.
-                    let (ground, cut) = if how == How::Face {
-                        cut_branch(w, &face, &route_set, junction, branch, sections)
-                    } else {
-                        (BTreeSet::new(), Cut::Path)
-                    };
+                    // is empty. A hidden way's verdict and words read no
+                    // branch ground, so none is measured for it.
+                    let reward = (ways[gi].learned != Some(Learned::Hidden)).then(|| {
+                        let (ground, cut) = if how == How::Face {
+                            cut_branch(w, &face, &route_set, junction, branch, sections)
+                        } else {
+                            (BTreeSet::new(), Cut::Path)
+                        };
+                        (reward_on(&ground, rewards), cut)
+                    });
                     out.push(Met {
                         way: gi,
                         config: *ci,
@@ -1192,8 +1386,7 @@ fn verify_with_eye(
                         length: branch.len(),
                         rise,
                         seen: sight(w, junction, region, eye_height),
-                        reward: reward_on(&ground, rewards),
-                        cut,
+                        reward,
                     });
                 }
             }
@@ -1262,7 +1455,7 @@ fn verify_with_eye(
                     }
                     Learned::Rewarded => {
                         binding.rewarded += 1;
-                        matches!(m.reward, RewardFinding::Rewarded(..))
+                        matches!(m.reward, Some((RewardFinding::Rewarded(..), _)))
                     }
                     Learned::Hidden => {
                         binding.hidden += 1;
@@ -1427,11 +1620,14 @@ fn told_words(way: &ShutWay) -> String {
 
 fn reward_words(m: &Met) -> String {
     match &m.reward {
-        RewardFinding::Rewarded(a, kind) => format!("`{a}` ({kind}) stands on the branch"),
-        RewardFinding::Bare(n, nearest) => {
+        None => "the branch ground is not measured for a hidden way".to_string(),
+        Some((RewardFinding::Rewarded(a, kind), _)) => {
+            format!("`{a}` ({kind}) stands on the branch")
+        }
+        Some((RewardFinding::Bare(n, nearest), cut)) => {
             let mut s = format!(
                 "no pickup, interaction or fight within the branch's {n} cell(s) behind {}",
-                cut_words(&m.cut)
+                cut_words(cut)
             );
             if let Some((a, d)) = nearest {
                 s.push_str(&format!(" (the nearest is `{a}`, {d} block(s) from it)"));
@@ -1611,8 +1807,11 @@ fn row(
         None => serde_json::json!({ "answered_by": null, "at": way.seam }),
     };
     let reward = match &m.reward {
-        RewardFinding::Rewarded(a, kind) => serde_json::json!({ "rewarded_by": a, "kind": kind }),
-        RewardFinding::Bare(n, nearest) => serde_json::json!({
+        None => serde_json::Value::Null,
+        Some((RewardFinding::Rewarded(a, kind), _)) => {
+            serde_json::json!({ "rewarded_by": a, "kind": kind })
+        }
+        Some((RewardFinding::Bare(n, nearest), _)) => serde_json::json!({
             "rewarded_by": null,
             "ground_cells": n,
             "nearest": nearest.as_ref().map(|(a, d)| serde_json::json!({ "anchor": a, "distance": d })),
@@ -1635,7 +1834,7 @@ fn row(
         "junction": m.junction,
         "branch_length": m.length,
         "branch_rise": m.rise,
-        "branch_cut": cut_json(&m.cut),
+        "branch_cut": m.reward.as_ref().map(|(_, cut)| cut_json(cut)),
         "learned": way.learned.map(Learned::word),
         "confirmed": confirmed,
         "seen": seen,
@@ -2024,6 +2223,29 @@ mod learned_tests {
             "{}",
             err.message
         );
+    }
+
+    /// A way declared `hidden`, met at a face down a branch, measures no
+    /// branch ground — its verdict and its words read none — and its row
+    /// says so with `null`; the same way declared `rewarded` measures it.
+    #[test]
+    fn a_hidden_way_measures_no_branch_ground() {
+        let region = ([5, 1, 8], [5, 2, 8]);
+        let (base, shut) = (branch(7, 2, false, &[]), branch(7, 2, true, &[]));
+        let chest = [Reward {
+            anchor: "anchor/chest".to_string(),
+            kind: "a loot holder",
+            pos: [6, 1, 6],
+        }];
+        for (learned, measured) in [(Learned::Hidden, false), (Learned::Rewarded, true)] {
+            let ways = [way(region, 2, Some(learned))];
+            let (b, _) = judge(&shut, &base, &ways, &chest, PLAYER_EYE);
+            assert!(!b.rows.is_empty(), "the way is met at its face");
+            for r in &b.rows {
+                assert_eq!(!r["branch_cut"].is_null(), measured, "{r}");
+                assert_eq!(!r["rewarded"].is_null(), measured, "{r}");
+            }
+        }
     }
 
     /// Acceptance 6: a `reach-anchor` is not a reward; a `collect`, an
@@ -2549,6 +2771,7 @@ mod learned_tests {
             shots: vec![OpeningList {
                 list: "/content/quests/0/objectives/1/on_complete".to_string(),
                 shot,
+                after: BTreeSet::new(),
             }],
             ..way(([5, 1, 7], [5, 2, 7]), 2, learned)
         }
@@ -2822,5 +3045,82 @@ mod learned_tests {
             met_any += learned.met_triples.len();
         }
         assert!(met_any > 0, "the generator meets some face");
+    }
+
+    /// **The sight cull agrees with the sight rule**: over generated worlds of
+    /// scattered blocks that hide, an eye the cull ([`SightRooms::may_see`])
+    /// answers "no" for is one every line of [`eye_meets`] finds blocked — so
+    /// the hidden-way judgment, which skips exactly those lines and counts
+    /// them, reaches the verdict and the count it reaches with every line
+    /// cast. Bound: the cull answers "no" for some pairs, and some pairs it
+    /// lets through are seen.
+    #[test]
+    fn the_sight_cull_answers_no_only_where_every_line_is_blocked() {
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = |n: u64| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 33) % n
+        };
+        let (mut culled, mut seen, mut pairs) = (0usize, 0usize, 0usize);
+        for case in 0..40 {
+            let density = 15 + next(50);
+            let mut solid = BTreeSet::new();
+            for x in 0..9 {
+                for y in 0..6 {
+                    for z in 0..9 {
+                        if next(100) < density {
+                            solid.insert([x, y, z]);
+                        }
+                    }
+                }
+            }
+            // A walled cell now and then, so a run sealed from the eyes exists.
+            if case % 3 == 0 {
+                for c in around([6, 3, 6]) {
+                    if c != [6, 3, 6] {
+                        solid.insert(c);
+                    }
+                }
+                solid.remove(&[6, 3, 6]);
+            }
+            let w = World::from_solid_cells(solid);
+            let cells: Vec<[i32; 3]> = (0..9)
+                .flat_map(|x| (0..6).flat_map(move |y| (0..9).map(move |z| [x, y, z])))
+                .collect();
+            let eyes: Vec<[i32; 3]> = cells.iter().copied().step_by(7).collect();
+            let targets: Vec<[i32; 3]> = cells
+                .iter()
+                .copied()
+                .filter(|c| !w.hides(*c))
+                .step_by(5)
+                .chain([[6, 3, 6]])
+                .collect();
+            let eye_cells: Vec<[i32; 3]> = eyes
+                .iter()
+                .map(|e| cell_of(eye_of(*e, PLAYER_EYE)))
+                .collect();
+            let rooms = SightRooms::new(&w, &eye_cells, &targets);
+            for (e, ec) in eyes.iter().zip(&eye_cells) {
+                for t in &targets {
+                    pairs += 1;
+                    let clear = eye_meets(&w, eye_of(*e, PLAYER_EYE), *t).is_none();
+                    if SightRooms::may_see(*ec, rooms.run(*ec), *t, &rooms.runs_around(*t)) {
+                        seen += usize::from(clear);
+                    } else {
+                        culled += 1;
+                        assert!(
+                            !clear,
+                            "case {case}: the cull refuses eye {e:?} -> {t:?}, and a line is clear"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            culled > 0 && seen > 0,
+            "bound: {culled} culled, {seen} seen of {pairs} pair(s)"
+        );
     }
 }
