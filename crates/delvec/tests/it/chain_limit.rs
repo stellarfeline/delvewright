@@ -215,7 +215,11 @@ fn a_world_build_over_the_chain_limit_runs_in_steps_and_finishes() {
             .unwrap();
     assert_eq!(ledger["steps"], serde_json::json!(steps));
     assert_eq!(ledger["refused"], serde_json::json!([]));
-    assert!(ledger["longest"]["chain"].as_u64().unwrap() <= LIMIT as u64);
+    // Every source within the quota its context holds: the declared one when
+    // the build declares one (the creator overlay's forks may need it), the
+    // default otherwise.
+    let quota = ledger["declared_limit"].as_u64().unwrap_or(LIMIT as u64);
+    assert!(ledger["longest"]["chain"].as_u64().unwrap() <= quota);
 }
 
 /// The v06-edits fixture with its reach objective repeated `n` times: one
