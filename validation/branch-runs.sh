@@ -310,13 +310,20 @@ reports=()
 # different fact from a red run and from a tier skip, and must render as one.
 # Entries are `branch=exit-code`.
 infra=()
+# Branches whose run wrote a report and still exited non-zero: a run-level
+# check outside the report's stages (the sculk ear's verdict) failed it, and
+# the exit code is the verdict. Entries are `branch=exit-code`.
+exited=()
 # Every verdict, in the plan's order.
 while IFS= read -r branch; do
   [ -n "$branch" ] || continue
   slug="$(printf '%s' "$branch" | tr '/' '-')"
   report="$RUN_OUT/run-report-$slug.json"
   rc="$(cat "$RUN_OUT/$slug.rc" 2>/dev/null || echo 1)"
-  if [ -f "$report" ]; then reports+=("$report"); fi
+  if [ -f "$report" ]; then
+    reports+=("$report")
+    [ "$rc" -eq 0 ] || exited+=("$branch=$rc")
+  fi
   if [ -f "$RUN_OUT/$slug.infra" ]; then infra+=("$(cat "$RUN_OUT/$slug.infra")"); fi
   lag="$(grep -c . "$RUN_OUT/$slug.lag" 2>/dev/null || true)"
   lag_note=""
@@ -344,6 +351,7 @@ echo "==> merging per-branch reports into $MERGED"
 # (the bot walked and failed a step) and from a tier skip (never attempted) —
 # and no other session's "skipped" row may paper over them.
 DW_INFRA="$(printf '%s\n' ${infra[@]+"${infra[@]}"})" \
+DW_EXITED="$(printf '%s\n' ${exited[@]+"${exited[@]}"})" \
 python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
 import json, os, sys
 sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/ci/check-python-shell-newlines.py
@@ -370,6 +378,11 @@ rows = {
     }
     for b in plan["branches"]
 }
+exited = dict(
+    line.split("=", 1)
+    for line in os.environ.get("DW_EXITED", "").splitlines()
+    if "=" in line
+)
 for branch, rc in infra.items():
     if branch in rows:
         rows[branch]["infra_failed"] = True
@@ -390,6 +403,10 @@ for p in report_paths:
         # lists it as unrun, and those rows must not overwrite the real result —
         # nor an infra-failure row, whose absence of a report is the finding.
         current = rows[row["branch"]]
+        if row["ran"]:
+            # The build the run walked, as the bot stamped it: what the staging
+            # gate binds this row to (`--branch-runs`).
+            row = dict(row, manifest_sha256=(report.get("build") or {}).get("manifest_sha256"))
         if row["ran"] or (not current["ran"] and not current.get("infra_failed")):
             rows[row["branch"]] = row
 
@@ -405,6 +422,17 @@ for bid in plan.get("branches_unrealized", []):
         "endings": [],
         "entry_commands": [],
     }
+# A run that walked its branch and still exited non-zero failed on a check
+# its report does not carry as a stage: the exit code is the verdict, so the
+# row is never a pass (the staging gate reads `passed`).
+for branch, rc in exited.items():
+    row = rows.get(branch)
+    if row is not None and row.get("passed"):
+        rows[branch] = dict(
+            row,
+            passed=False,
+            reason=f"the run exited {rc} after its walk: a run-level check failed (see its log)",
+        )
 order = [b["id"] for b in plan["branches"]] + list(plan.get("branches_unrealized", []))
 merged = {"version": 1, "campaign_id": plan["campaign_id"], "tier": tier,
           "branches": [rows[i] for i in order]}

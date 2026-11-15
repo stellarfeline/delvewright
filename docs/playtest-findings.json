@@ -4101,6 +4101,64 @@
         }
       },
       "note": "The bar and the clock appeared together; what was late was activation. The objective was announced at the clerk's word (its presses serve it), while activate_<obj> was driven under the pending guard, which holds the objective's own gate (three hits), so the clock timed only the bell's use. Paired with the expiry reading the open guard rather than the gate: a served objective's clock can now run out before its gate holds."
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "answers"
+          ]
+        }
+      },
+      "binding": {
+        "glob": "packtest-datapack/**/answer_heard_*.mcfunction",
+        "kind": "out"
+      },
+      "campaign": "the-hush-garden",
+      "carrier": {
+        "kind": "packtest",
+        "template": "answer_heard"
+      },
+      "finding": "with several players in the delve, the sound a refused press makes was heard only by the player who pressed; a player standing beside them heard nothing",
+      "general_form": "a sound the engine plays at a place is heard by every player near that place, as the pinned game plays a block's own sound; only a line of text is the presser's alone",
+      "id": "hg-01",
+      "note": "Direction: it can let something ship and cannot turn a proof red — no check read who a sound reached. Cause: `press::refusal_cue_line` emitted `execute at @s run playsound minecraft:block.chest.locked player @s`, a target selector of the presser alone (`playsound`'s targets are its audience, `docs/reference/sound-audience.md`). The pinned game's own refused use plays at the container to every player within 16 blocks and writes its line to the presser only. Closed by the cue playing at the pressed body's cell centre, `block` category, to `@a`, and storing the count it reached in its own `#heard_<answer>`; `answer_heard_<k>`, one per press answer, stands the presser and a second player by the cue's origin and asserts the count `2..`. The binding counts the emitted `answer_heard_` templates; a campaign whose quests declare `answers` with none emitted is UNBOUND.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "in": {
+            "type": [
+              "cutscene"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "glob": "packtest-datapack/**/cutscene_return_*.mcfunction",
+        "kind": "out"
+      },
+      "campaign": "the-hush-garden",
+      "carrier": {
+        "kind": "packtest",
+        "template": "cutscene_return"
+      },
+      "finding": "with several players in the delve, two story beats that set a respawn point and played a short scene moved every player to one place — the court where the key was taken, the drawbridge where the gate was wound — wherever each of them stood",
+      "general_form": "a cutscene moves nobody: its end puts each player back where that player stood, facing where they faced; a checkpoint records where the party respawns and moves nobody; a teleport is only the author's own declared `teleport` effect, and moves exactly whom it declares",
+      "id": "hg-02",
+      "note": "Direction: it can let something ship and cannot turn a proof red — the solo bot always stood on the one marker it was returned to. Cause: the cutscene bracket, not the checkpoint (`set-checkpoint` lowers to `spawnpoint @a`, the `dw:cp` mirror and the marker score, and moves no body). `cs_<bare>` summoned one marker at `@p` and `cs_end_<bare>` ran `tp @a @e[tag=dw_csmark_<bare>,limit=1]`, gathering the party onto one player's place; both beats in the campaign play a cutscene, and neither declares a teleport. Closed by `cutscene::CS_ID`: each player in play saves their own `Pos` and `Rotation` (copied whole into storage under the player's own number) at the start, and the end returns each to it (`cs_return`), the marker serving only a player with none. `cutscene_return_<n>` stands two players apart facing apart, runs the real start and end, and asserts each back on its own cell and yaw; `a_checkpoint_moves_nobody` holds every checkpoint line to `spawnpoint`/`data`/`scoreboard`; the teleport template stands one player inside its volume (arrives) and one outside (stays). The template covers each cutscene with an empty `then` (a `then` would fire the author's effects in the template); a campaign whose every cutscene has a `then` measures UNBOUND. The binding counts the emitted `cutscene_return_` templates.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
