@@ -268,6 +268,10 @@ const STAGES: [&str; 13] = [
 /// into is counted this many times.
 const PARTY: u64 = 4;
 
+/// The most sources a stage leaves: one fewer than the pinned game's default
+/// `max_command_forks`.
+const FORK_SOURCES: u64 = 65_535;
+
 /// How many sources the entity argument `sel` forks into at a full party.
 fn fan(sel: &str) -> u64 {
     let limit = sel
@@ -280,7 +284,7 @@ fn fan(sel: &str) -> u64 {
         "@p" | "@r" => limit.unwrap_or(1).min(PARTY),
         "@a" => limit.map_or(PARTY, |l| l.min(PARTY)),
         "@e" if player => limit.map_or(PARTY, |l| l.min(PARTY)),
-        "@e" => limit.unwrap_or_else(|| panic!("an unbounded fork in the fixture: {sel}")),
+        "@e" => limit.unwrap_or(FORK_SOURCES),
         _ => 1,
     }
 }
@@ -311,11 +315,12 @@ fn quota(
                 matches!(head[i], "as" | "at") || (head[i] == "entity" && i > 0 && head[i - 1] == "facing")
             })
             .map(|i| fan(head[i + 1]))
-            .product();
-        assert!(
-            !head.windows(2).any(|w| w == ["on", "passengers"]),
-            "an unbounded fork in the fixture: {l}"
-        );
+            .chain(
+                head.windows(2)
+                    .filter(|w| *w == ["on", "passengers"])
+                    .map(|_| FORK_SOURCES),
+            )
+            .fold(1, |n: u64, k| (n * k).min(FORK_SOURCES));
         if terminal {
             // Its last stage is the command itself, once per source.
             q += (t.iter().filter(|w| STAGES.contains(w)).count() as u64).saturating_sub(1)

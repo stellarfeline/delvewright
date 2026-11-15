@@ -26,11 +26,12 @@
 //! function's chain, once per source its forks leave. The chain is measured at
 //! a full party ([`PARTY`]): a fork over the players (`execute as @a …`) runs
 //! its tail once per player, a fork over other entities once per entity its
-//! selector's `limit` admits, and a fork nothing bounds (`@e` with no `limit`,
-//! `on passengers`) leaves the chain unbounded. A function whose chain exceeds
-//! the limit — or that reaches a call cycle no count bounds, or a fork nothing
-//! bounds — refuses the build ([`check`]); since a caller's chain contains its
-//! callee's, refusing every function refuses every root.
+//! selector's `limit` admits, and a fork whose selector states no bound (`@e`
+//! with no `limit`, `on passengers`) once per source the game's fork limit
+//! lets a stage leave ([`MOST_SOURCES`]). A function whose chain exceeds the
+//! limit — or that reaches a call cycle no count bounds — refuses the build
+//! ([`check`]); since a caller's chain contains its callee's, refusing every
+//! function refuses every root.
 //!
 //! One cycle has a bound the bytes state: a **counted loop**, a function that
 //! calls itself only under `if score <h> <o> matches ..<n>`, adds one to that
@@ -158,6 +159,17 @@ static EXECUTE_STAGES: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
 /// for ([`MAX_PARTY`]), so a quota measured here holds for every party.
 pub const PARTY: u64 = MAX_PARTY as u64;
 
+/// The pinned game's default `max_command_forks`: a stage that would leave
+/// this many sources or more stops the line with `command.forkLimit` instead
+/// [cited — `BuildContexts.execute` compares the sources gathered so far plus
+/// the next source's against `ExecutionContext.forkLimit` before it adds them;
+/// `GameRules.MAX_COMMAND_FORKS`, `ldc 65536`].
+pub const MAX_COMMAND_FORKS: u64 = 65_536;
+
+/// The most sources any `execute` stage leaves: one fewer than the fork
+/// limit, whatever the selectors answer with.
+pub const MOST_SOURCES: u64 = MAX_COMMAND_FORKS - 1;
+
 /// How many executing sources a forking `execute` stage leaves for the rest
 /// of the line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,28 +183,29 @@ pub enum Fork {
     /// Over at most this many entities, whatever the party: a selector's
     /// stated `limit`.
     AtMost(u64),
-    /// Over a count no reading of the bytes bounds, with why.
-    Unbounded(String),
+    /// Over a count no reading of the bytes bounds, with why: the game's
+    /// fork limit bounds it ([`MOST_SOURCES`]).
+    AtTheForkLimit(String),
 }
 
 impl Fork {
-    /// The sources the fork leaves at a party of `party` players; `None`
-    /// when nothing bounds it.
-    pub fn at(&self, party: u64) -> Option<u64> {
+    /// The sources the fork makes of one source at a party of `party`.
+    pub fn at(&self, party: u64) -> u64 {
         match self {
-            Fork::Players { limit } => Some(limit.map_or(party, |l| l.min(party))),
-            Fork::AtMost(n) => Some(*n),
-            Fork::Unbounded(_) => None,
+            Fork::Players { limit } => limit.map_or(party, |l| l.min(party)),
+            Fork::AtMost(n) => *n,
+            Fork::AtTheForkLimit(_) => MOST_SOURCES,
         }
     }
 }
 
 /// The fork an entity argument makes: a name or a UUID is one entity, `@s`
 /// the source itself, a player selector at most the party, any other
-/// selector its stated `limit`.
+/// selector its stated `limit`, and a selector that states none the game's
+/// fork limit.
 pub fn selector_fork(token: &str) -> Option<Fork> {
     if token.contains("$(") {
-        return Some(Fork::Unbounded(format!(
+        return Some(Fork::AtTheForkLimit(format!(
             "`{token}` is a macro argument, which names its entities at run time"
         )));
     }
@@ -218,12 +231,12 @@ pub fn selector_fork(token: &str) -> Option<Fork> {
         "@e" if player => Fork::Players { limit },
         "@e" => match limit {
             Some(n) => Fork::AtMost(n),
-            None => Fork::Unbounded(format!(
+            None => Fork::AtTheForkLimit(format!(
                 "`{token}` states no `limit` and no player `type`, so any number of entities may \
                  answer it"
             )),
         },
-        _ => Fork::Unbounded(format!("`{token}` is no selector the pinned game knows")),
+        _ => Fork::AtTheForkLimit(format!("`{token}` is no selector the pinned game knows")),
     };
     (fork != Fork::AtMost(1)).then_some(fork)
 }
@@ -243,7 +256,7 @@ fn forks_of(subs: &[String]) -> Vec<Fork> {
             }
             (Some("as" | "at"), _) => (at(j + 1), 2),
             (Some("on"), Some("passengers")) => {
-                forks.push(Fork::Unbounded(
+                forks.push(Fork::AtTheForkLimit(
                     "`on passengers` forks over every passenger, which no reading bounds"
                         .to_string(),
                 ));
@@ -278,22 +291,28 @@ pub struct LineCost {
 }
 
 impl LineCost {
-    /// The sources the line's tail runs for at a party of `party`, or why no
-    /// count bounds them.
-    pub fn sources(&self, party: u64) -> Result<u64, &str> {
-        self.forks.iter().try_fold(1u64, |n, f| match f.at(party) {
-            Some(k) => Ok(n.saturating_mul(k)),
-            None => match f {
-                Fork::Unbounded(why) => Err(why.as_str()),
-                _ => unreachable!("only an unbounded fork has no count"),
-            },
-        })
+    /// The sources the line's tail runs for at a party of `party`: the
+    /// forks multiplied, and never more than the game's fork limit leaves
+    /// after any stage.
+    pub fn sources(&self, party: u64) -> u64 {
+        self.forks
+            .iter()
+            .fold(1u64, |n, f| n.saturating_mul(f.at(party)).min(MOST_SOURCES))
     }
 
     /// The quota the line spends itself at a party of `party` — its stages,
     /// and its final command once per source — a call's callee excepted.
-    pub fn own(&self, party: u64) -> Result<u64, &str> {
-        Ok(self.stages.saturating_add(self.sources(party)?))
+    pub fn own(&self, party: u64) -> u64 {
+        self.stages.saturating_add(self.sources(party))
+    }
+
+    /// Why the line's count is bounded by the game's fork limit alone, when
+    /// it is.
+    pub fn at_the_fork_limit(&self) -> Option<&str> {
+        self.forks.iter().find_map(|f| match f {
+            Fork::AtTheForkLimit(why) => Some(why.as_str()),
+            _ => None,
+        })
     }
 }
 
@@ -360,9 +379,7 @@ pub fn steps(lines: &[String], budget: u64) -> Vec<Vec<String>> {
     for line in lines {
         let cost = line_cost(line).map_or(0, |c| {
             debug_assert!(c.calls.is_none(), "a packed line calls nothing: {line}");
-            // A line no count bounds takes a step of its own; the check
-            // refuses it wherever it stands.
-            c.own(PARTY).unwrap_or(budget)
+            c.own(PARTY)
         });
         if !cur.is_empty() && spent + cost > budget {
             out.push(std::mem::take(&mut cur));
@@ -385,14 +402,6 @@ pub enum Chain {
     Bounded(u64),
     /// The function reaches itself through calls in the same tick.
     Recursive,
-    /// A line it runs forks over a count no reading bounds: the function
-    /// that line is in, and why.
-    Unbounded {
-        /// The function whose line forks.
-        at: String,
-        /// Why nothing bounds the fork.
-        why: String,
-    },
 }
 
 impl Chain {
@@ -420,6 +429,9 @@ pub struct ChainLedger {
     /// The longest bounded chain at one player, for the binding to set
     /// beside the party's.
     pub solo_longest: Option<(String, u64)>,
+    /// The lines whose fork only the game's fork limit bounds, as
+    /// `(function, why)`, in the functions' order.
+    pub fork_limited: Vec<(String, String)>,
     /// The quota the delve's `load` declares for every later context
     /// (`gamerule max_command_sequence_length <n>`), if it declares one.
     pub declared: Option<u64>,
@@ -471,7 +483,7 @@ impl ChainLedger {
             .iter()
             .filter(|(f, c)| match c {
                 Chain::Bounded(n) => *n > self.limit_of(f),
-                Chain::Recursive | Chain::Unbounded { .. } => true,
+                Chain::Recursive => true,
             })
             .map(|(f, c)| (f.as_str(), c))
             .collect()
@@ -496,10 +508,11 @@ impl ChainLedger {
                 "chain": match c {
                     Chain::Bounded(n) => serde_json::json!(n),
                     Chain::Recursive => serde_json::json!("recursive"),
-                    Chain::Unbounded { at, why } => serde_json::json!({ "unbounded_at": at, "why": why }),
                 },
             })).collect::<Vec<_>>(),
-            "quantifier": "per root, at a full party: a fork over the players multiplies its tail by the party, a fork over entities by its selector's limit",
+            "at_the_fork_limit": self.fork_limited.len(),
+            "fork_limit": MAX_COMMAND_FORKS,
+            "quantifier": "per root, at a full party: a fork over the players multiplies its tail by the party, a fork over other entities by its selector's limit, or by the game's fork limit when it states none",
         })
     }
 
@@ -520,13 +533,16 @@ impl ChainLedger {
         format!(
             "chain binding: {} shipped function(s) measured, {} counted loop(s), {} world-build \
              step(s); longest chain {n} (`{f}`) at a party of {} ({sn} (`{sf}`) at one player), \
-             against {limit}, and {} function(s) a `load` runs against {}; {} refused (DW0984).",
+             against {limit}, and {} function(s) a `load` runs against {}; {} line(s) fork over \
+             entities only the game's fork limit of {MAX_COMMAND_FORKS} bounds; {} refused \
+             (DW0984).",
             self.functions,
             self.counted_loops,
             self.build_steps,
             self.party,
             self.load_rooted.len(),
             self.limit().min(MAX_COMMAND_SEQUENCE_LENGTH),
+            self.fork_limited.len(),
             self.refused().len()
         )
     }
@@ -734,6 +750,16 @@ pub fn measure_at(out: &BuildOutput, party: u64) -> ChainLedger {
         party,
         chains: m.chains,
         solo_longest: None,
+        fork_limited: bodies
+            .iter()
+            .flat_map(|(f, body)| {
+                body.iter().filter_map(move |l| {
+                    l.cost
+                        .at_the_fork_limit()
+                        .map(|why| (f.clone(), why.to_string()))
+                })
+            })
+            .collect(),
         declared: declared(out, &bodies),
         load_rooted: load_rooted(&bodies, &tags),
         delve,
@@ -871,16 +897,7 @@ impl Measurer<'_> {
             let Chain::Bounded(p) = pass else {
                 break;
             };
-            let sources = match line.cost.sources(self.party) {
-                Ok(n) => n,
-                Err(why) => {
-                    pass = Chain::Unbounded {
-                        at: id.to_string(),
-                        why: why.to_string(),
-                    };
-                    break;
-                }
-            };
+            let sources = line.cost.sources(self.party);
             // The stages once; the tail once per source: the command the
             // line ends in, or the call, whose own unit the callee's chain
             // holds.
@@ -941,11 +958,6 @@ pub fn check(out: &BuildOutput) -> Result<ChainLedger, ChainRefusal> {
             Chain::Recursive => {
                 "reaches a call cycle in the same tick, so no bound on its chain exists".to_string()
             }
-            Chain::Unbounded { at, why } => format!(
-                "runs a line of `{at}` that forks for every entity a selector answers with: \
-                 {why}, so no bound on its chain exists at a party of {}",
-                ledger.party
-            ),
         };
         return Err(ChainRefusal {
             code: DW_CHAIN_OVER_LIMIT,
@@ -992,7 +1004,7 @@ mod tests {
                 calls: None
             }
         );
-        assert_eq!(plain.own(PARTY), Ok(1));
+        assert_eq!(plain.own(PARTY), 1);
         let forked =
             line_cost("execute if score #a dw.sys matches 1 as @a at @s run function dw:f").unwrap();
         assert_eq!(
@@ -1003,18 +1015,18 @@ mod tests {
                 calls: Some("dw:f".to_string())
             }
         );
-        assert_eq!(forked.own(1), Ok(4), "one player: the stages and one call");
-        assert_eq!(forked.own(PARTY), Ok(3 + PARTY), "the stages once, the call per player");
+        assert_eq!(forked.own(1), 4, "one player: the stages and one call");
+        assert_eq!(forked.own(PARTY), 3 + PARTY, "the stages once, the call per player");
         assert_eq!(
             line_cost("execute if block 1 2 3 minecraft:stone")
                 .unwrap()
                 .own(PARTY),
-            Ok(1),
+            1,
             "a terminal condition is the command itself"
         );
         assert_eq!(
             line_cost("execute as @a if entity @s[tag=x]").unwrap().own(PARTY),
-            Ok(1 + PARTY),
+            1 + PARTY,
             "a terminal condition runs once per source"
         );
         assert_eq!(
@@ -1034,7 +1046,7 @@ mod tests {
     /// selector, a stated `limit` any other, and nothing bounds the rest.
     #[test]
     fn a_fork_is_bounded_by_the_party_or_the_selectors_limit() {
-        let sources = |l: &str, party: u64| line_cost(l).unwrap().sources(party).map_err(str::to_string);
+        let sources = |l: &str, party: u64| line_cost(l).unwrap().sources(party);
         for (line, solo, full) in [
             ("execute as @a run say hi", 1, PARTY),
             ("execute as @a[tag=x,limit=2] run say hi", 1, 2),
@@ -1053,9 +1065,14 @@ mod tests {
             ("execute on vehicle run say hi", 1, 1),
             ("execute summon minecraft:marker run say hi", 1, 1),
             ("return run execute as @a run say hi", 1, PARTY),
+            (
+                "execute as @e[tag=x] as @e[tag=y] run say hi",
+                MOST_SOURCES,
+                MOST_SOURCES,
+            ),
         ] {
-            assert_eq!(sources(line, 1), Ok(solo), "{line} at one player");
-            assert_eq!(sources(line, PARTY), Ok(full), "{line} at a full party");
+            assert_eq!(sources(line, 1), solo, "{line} at one player");
+            assert_eq!(sources(line, PARTY), full, "{line} at a full party");
         }
         for line in [
             "execute as @e[tag=x] run say hi",
@@ -1063,7 +1080,9 @@ mod tests {
             "execute on passengers run say hi",
             "$execute as $(who) run say hi",
         ] {
-            assert!(sources(line, 1).is_err(), "{line} is bounded");
+            let l = line_cost(line).unwrap();
+            assert_eq!(l.sources(1), MOST_SOURCES, "{line}: the fork limit bounds it");
+            assert!(l.at_the_fork_limit().is_some(), "{line} names why");
         }
     }
 
@@ -1098,23 +1117,43 @@ mod tests {
         assert!(check(&out).is_ok());
     }
 
-    /// A fork no count bounds refuses, naming the line's function and why.
+    /// A fork whose selector states no bound is held to the game's fork
+    /// limit: the build declares that worst case, the ledger names the line,
+    /// and a need past the gamerule's `int` refuses.
     #[test]
-    fn dw0984_refuses_a_fork_no_count_bounds() {
-        let out = tree(&[
-            ("root", "function dw:each".to_string()),
-            ("each", "execute as @e[tag=dw_thing] run say hi".to_string()),
-        ]);
-        let err = check(&out).unwrap_err();
-        assert_eq!(err.code.id(), "DW0984");
-        assert!(err.message.contains("`dw:each`"), "{}", err.message);
-        assert!(err.message.contains("states no `limit`"), "{}", err.message);
-        assert!(matches!(
-            measure(&out).chains["dw:root"],
-            Chain::Unbounded { ref at, .. } if at == "dw:each"
-        ));
+    fn a_fork_no_selector_bounds_is_held_to_the_fork_limit() {
+        let mut out = delve(0, "function dw:setup");
+        out.insert(
+            "datapack/data/dw/function/tick.mcfunction".to_string(),
+            b"execute as @e[tag=dw_thing] run say hi".to_vec(),
+        );
+        let l = measure(&out);
+        assert_eq!(l.chains["dw:tick"], Chain::Bounded(1 + 1 + MOST_SOURCES));
+        assert_eq!(l.fork_limited.len(), 1);
+        assert_eq!(l.fork_limited[0].0, "dw:tick");
+        assert!(l.fork_limited[0].1.contains("states no `limit`"), "{:?}", l.fork_limited);
+        assert_eq!(check(&out).unwrap_err().code.id(), "DW0984");
+        assert_eq!(declare(&mut out), Some(1 + 1 + MOST_SOURCES));
+        assert!(check(&out).is_ok());
+
         let limited = tree(&[("each", "execute as @e[tag=dw_thing,limit=8] run say hi".to_string())]);
         assert_eq!(measure(&limited).chains["dw:each"], Chain::Bounded(1 + 1 + 8));
+        assert!(measure(&limited).fork_limited.is_empty());
+
+        // Every source a fork leaves runs a callee of 40 000: past the `int`
+        // the gamerule holds, so no declaration states it, and it refuses.
+        let mut past = delve(0, "function dw:setup");
+        past.insert(
+            "datapack/data/dw/function/tick.mcfunction".to_string(),
+            b"execute as @e[tag=dw_thing] run function dw:each".to_vec(),
+        );
+        past.insert(
+            "datapack/data/dw/function/each.mcfunction".to_string(),
+            "say hi\n".repeat(40_000).into_bytes(),
+        );
+        assert!(MOST_SOURCES * 40_000 > RULE_MAX);
+        assert_eq!(declare(&mut past), None);
+        assert_eq!(check(&past).unwrap_err().code.id(), "DW0984");
     }
 
     #[test]
