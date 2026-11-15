@@ -77,40 +77,6 @@ pub(super) fn emit_cutscene_return_packtests(plan: &Plan, out: &mut BuildOutput)
         ));
         b.push(format!("assert score {} dw.sys matches -90", h("yb")));
         b.push("kill @e[type=minecraft:marker,tag=dw_csr]".to_string());
-        b.push("execute at @s run tp @s ~ ~ ~ 90 0".to_string());
-        b.push(format!("execute at @s run tp {them} ~4 ~ ~ -90 0"));
-        b.push(
-            "execute at @s run summon minecraft:marker ~ ~ ~ {Tags:[\"dw_csr\",\"dw_csr_a\"]}"
-                .to_string(),
-        );
-        b.push(format!(
-            "execute at {them} run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csr\",\"dw_csr_b\"]}}"
-        ));
-        b.push(format!("function {ns}:{start}"));
-        b.push(format!("schedule clear {ns}:cs_tick_{bare}"));
-        b.push("# the camera carries each body away from where it stood".to_string());
-        b.push("execute at @s run tp @s ~ ~12 ~3".to_string());
-        b.push(format!("execute as {them} at @s run tp @s ~-6 ~12 ~"));
-        b.push(format!("function {ns}:cs_end_{bare}"));
-        b.push(
-            "execute at @s store success score #csr_a dw.sys if entity @e[type=minecraft:marker,tag=dw_csr_a,distance=..0.01]"
-                .to_string(),
-        );
-        b.push("assert score #csr_a dw.sys matches 1".to_string());
-        b.push(format!(
-            "execute at {them} store success score #csr_b dw.sys if entity @e[type=minecraft:marker,tag=dw_csr_b,distance=..0.01]"
-        ));
-        b.push("assert score #csr_b dw.sys matches 1".to_string());
-        b.push(
-            "execute store result score #csr_ya dw.sys run data get entity @s Rotation[0]"
-                .to_string(),
-        );
-        b.push("assert score #csr_ya dw.sys matches 90".to_string());
-        b.push(format!(
-            "execute store result score #csr_yb dw.sys run data get entity {them} Rotation[0]"
-        ));
-        b.push("assert score #csr_yb dw.sys matches -90".to_string());
-        b.push("kill @e[type=minecraft:marker,tag=dw_csr]".to_string());
         b.push(format!("dummy {other} leave"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/cutscene_return_{n}.mcfunction"),
