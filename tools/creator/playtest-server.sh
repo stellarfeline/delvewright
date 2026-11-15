@@ -7,6 +7,7 @@
 #                                [--delvec BIN] [--name NAME] [--out DIR]
 #                                [--memory SIZE]
 #                                [--run-report FILE --written-world FILE]
+#                                [--branch-runs FILE]
 #                                [--stage-anyway "REASON" [--acknowledge-red N]]
 #   tools/creator/playtest-server.sh down [--name NAME] [--prune]
 #   tools/creator/playtest-server.sh status [--name NAME]
@@ -101,7 +102,9 @@
 # list. The gate admits only with the two machine proofs of that build:
 # `--run-report` (the bot ladder's `run-report.json`, critical path green) and
 # `--written-world` (`tools/ci/check-written-world.py --record`, the server's
-# world equal to the engine's model), each named by the build's manifest, so the
+# world equal to the engine's model), and for a build that plans story worlds
+# `--branch-runs` (`validation/branch-runs.sh`'s `branch-runs.json`, every world
+# walked to a pass), each named by the build's manifest, so the
 # build this script makes must be the one the ladder ran on — a deterministic
 # rebuild of the same campaign is. `--stage-anyway "<reason>"`
 # overrides every refusal the gate makes — ledger reds, a missing or red proof,
@@ -240,6 +243,7 @@ STAGE_ANYWAY=""
 ACK_RED=""
 RUN_REPORT=""
 WRITTEN_WORLD=""
+BRANCH_RUNS=""
 RCON_PW="playtest"
 # Empty = the shared default (`dw_server_heap_env`, versions.toml
 # `[server].heap_max` as the ceiling). `--memory` is the escape hatch for a
@@ -681,6 +685,7 @@ while [ $# -gt 0 ]; do
     # The two machine proofs the gate admits on, handed straight to it.
     --run-report)      RUN_REPORT="$2"; shift 2;;
     --written-world)   WRITTEN_WORLD="$2"; shift 2;;
+    --branch-runs)     BRANCH_RUNS="$2"; shift 2;;
     # `down` only: also remove the kept playtest images.
     --prune)           PRUNE=1; shift;;
     *) [ -z "$CAMPAIGN" ] && CAMPAIGN="$1" || die "unexpected arg: $1"; shift;;
@@ -700,8 +705,8 @@ case "$cmd" in
   up) ;;
   *)
     [ -z "$CAMPAIGN" ] || die "$cmd takes no path (got '$CAMPAIGN')"
-    [ -z "$LANG_ARG$PREFABS_ARG$DELVEC$OUT_DIR$STAGE_ANYWAY$ACK_RED$RUN_REPORT$WRITTEN_WORLD" ] \
-      || die "--lang/--prefabs/--delvec/--out/--stage-anyway/--acknowledge-red/--run-report/--written-world belong to up"
+    [ -z "$LANG_ARG$PREFABS_ARG$DELVEC$OUT_DIR$STAGE_ANYWAY$ACK_RED$RUN_REPORT$WRITTEN_WORLD$BRANCH_RUNS" ] \
+      || die "--lang/--prefabs/--delvec/--out/--stage-anyway/--acknowledge-red/--run-report/--written-world/--branch-runs belong to up"
     if [ -n "$MEMORY_ARG" ] && [ "$cmd" != "restore" ]; then die "--memory belongs to up and restore"; fi
     ;;
 esac
@@ -1224,7 +1229,7 @@ if [ "$SUBJECT_KIND" = "prefab" ]; then
   [ -z "$PREFABS_ARG" ] || die "--prefabs names the library a CAMPAIGN builds from; $CAMPAIGN is already the prefab to show — pass it as the path"
   [ -z "$STAGE_ANYWAY" ] || die "--stage-anyway overrides the staging gate, which judges a campaign; $CAMPAIGN is a prefab and the gate does not run on it (see this script's header)"
   [ -z "$ACK_RED" ] || die "--acknowledge-red belongs to --stage-anyway, which does not apply to a prefab"
-  [ -z "$RUN_REPORT$WRITTEN_WORLD" ] || die "--run-report and --written-world are the staging gate's proofs of a campaign; $CAMPAIGN is a prefab and the gate does not run on it"
+  [ -z "$RUN_REPORT$WRITTEN_WORLD$BRANCH_RUNS" ] || die "--run-report, --written-world and --branch-runs are the staging gate's proofs of a campaign; $CAMPAIGN is a prefab and the gate does not run on it"
 fi
 echo "subject: $CAMPAIGN  ->  $SUBJECT_KIND"
 else
@@ -1300,7 +1305,7 @@ $FOUND"
     PLAYTEST_IMAGE="$FOUND"
     echo "kept image: $PLAYTEST_IMAGE carries these inputs — no build, no staging gate, no placement"
     [ -z "$OUT_DIR" ] || echo "  --out $OUT_DIR is not written: nothing is built"
-    [ -z "$RUN_REPORT$WRITTEN_WORLD$STAGE_ANYWAY" ] || echo "  --run-report/--written-world/--stage-anyway are not read: this build was admitted when the image was made, and its token is checked below"
+    [ -z "$RUN_REPORT$WRITTEN_WORLD$BRANCH_RUNS$STAGE_ANYWAY" ] || echo "  --run-report/--written-world/--branch-runs/--stage-anyway are not read: this build was admitted when the image was made, and its token is checked below"
   else
     echo "kept image: none for these inputs — building, gating and placing"
   fi

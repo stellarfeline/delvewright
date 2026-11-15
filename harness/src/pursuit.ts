@@ -37,7 +37,8 @@ export interface PursuitStepRecord {
   readonly label: string;
   readonly pursuers: readonly PursuerRow[];
   readonly readings: readonly PursuitReading[];
-  /** Set when the bot died during the step: who the server named, or a stated other. */
+  /** Set when the bot died during this attempt at the step: who the server
+   * named, or a stated other. A measurement, never a refusal (spec-0132 §5.2). */
   readonly died?: { readonly attacker: string };
   /** Bodies the harness staged away during the step (asserted zero). */
   readonly staged: number;
@@ -62,6 +63,8 @@ export interface PursuitMeasurement {
   /** The bot's lowest health read. */
   readonly lowestHealth: number | undefined;
   readonly readings: number;
+  /** Whether the bot died during this attempt, and who killed it. */
+  readonly died?: string | undefined;
 }
 
 /** The verdict on one pursued step. */
@@ -84,8 +87,10 @@ function fmt(n: number): string {
  * a body sets its arrival cell and tick; an undated pursuer not yet arrived is not lost).
  *
  * The refusals, each a `pursuit` failure naming the step and the pursuer:
- * `died`, `staged`, `restored`, `pursuer_lost` (absent or dead at a reading),
- * `unread` (no reading). Displacement is a measurement, never a refusal.
+ * `staged`, `restored`, `pursuer_lost` (absent or dead at a reading), `unread`
+ * (no reading). A death is a measurement, never a refusal (spec-0132 §5.2):
+ * whether a body survives a pursuer is the designer's call, and the bot
+ * respawns and carries on as a player does. Displacement is a measurement too.
  */
 export function judgePursuedStep(
   rec: PursuitStepRecord,
@@ -93,9 +98,6 @@ export function judgePursuedStep(
 ): PursuitVerdict {
   const failures: string[] = [];
   const at = `step ${rec.step} (${rec.label})`;
-  if (rec.died !== undefined) {
-    failures.push(`${at}: died — the bot was killed on a pursued step by ${rec.died.attacker}`);
-  }
   if (rec.staged > 0) {
     failures.push(
       `${at}: staged — ${rec.staged} body(ies) were staged away on a pursued step, where the ` +
@@ -153,6 +155,7 @@ export function judgePursuedStep(
       displacement,
       lowestHealth: lowest,
       readings: rec.readings.length,
+      died: rec.died?.attacker,
     },
   };
 }
@@ -169,6 +172,8 @@ export interface PursuitBinding {
   readonly readings: number;
   /** The least bot–pursuer distance read over the run. */
   readonly closestApproach: number | undefined;
+  /** Deaths on pursued steps over the run: a measurement. */
+  readonly deaths: number;
 }
 
 /** The binding over every pursued step's record and measurement. */
@@ -190,19 +195,22 @@ export function pursuitBinding(
     pursuers: actors.size,
     readings: records.reduce((n, r) => n + r.readings.length, 0),
     closestApproach: closest,
+    deaths: records.filter((r) => r.died !== undefined).length,
   };
 }
 
 /**
  * The run's closing line: `[pursuit] <n> pursued step(s) of <N>, <m>
- * pursuer(s), <k> reading(s); closest approach <d>` — `<N>` the exported steps
- * walked, so a zero states its denominator.
+ * pursuer(s), <k> reading(s); closest approach <d>; <x> death(s)` — `<N>` the
+ * exported steps walked, so a zero states its denominator, and `<n>` counts one
+ * per attempt (a step the bot died on and walked again counts twice).
  */
 export function pursuitLine(b: PursuitBinding): string {
   return (
     `[pursuit] ${b.pursued} pursued step(s) of ${b.walked}, ${b.pursuers} pursuer(s), ` +
     `${b.readings} reading(s); closest approach ` +
-    `${b.closestApproach === undefined ? "none" : `${fmt(b.closestApproach)} block(s)`}`
+    `${b.closestApproach === undefined ? "none" : `${fmt(b.closestApproach)} block(s)`}; ` +
+    `${b.deaths} death(s)`
   );
 }
 

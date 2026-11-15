@@ -15,6 +15,7 @@ mod cast;
 mod checkpoint;
 mod class;
 mod creator;
+mod cutscene;
 mod dialogue;
 mod economy;
 pub(super) mod ending;
@@ -159,6 +160,7 @@ pub(super) fn emit_packtest(
     // nothing for a campaign that declares no hop.
     moves::emit_hop_packtests(plan, out);
     standin::emit_standin_packtest(plan, out);
+    cutscene::emit_cutscene_return_packtests(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -260,6 +262,7 @@ pub(super) fn emit_packtest(
     // the gallery the suite never executed at ANY depth — not driven, not even
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
+    trigger::emit_answer_heard_packtests(plan, out);
     loot::emit_loot_packtests(plan, out, containers);
     // spec-0111 §5.3: every filled holder entity's own body, driven.
     holders::emit_holder_packtests(plan, out, holders);

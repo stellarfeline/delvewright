@@ -266,6 +266,12 @@ fn is_runtime_holder(h: &str) -> bool {
         // watcher per suite it was unshared by accident, and a talkable NPC
         // watching by default made two.
         || h == "#cs_live"
+        // A cutscene's own re-entry latch. `cs_<bare>` sets it and `cs_end_<bare>`
+        // clears it; a template that drives the real bracket (`cutscene_music_<n>`,
+        // `cutscene_return_<n>`) clears it on entry so a scene a sibling left
+        // running cannot refuse the start, and asserts only on its own suffixed
+        // holders. Same reading as `#cs_live`: the pack owns it.
+        || h.starts_with("#run_")
 }
 
 /// Root cause of the round-6 island flake (`v06_spawn_idempotent` expected 1,

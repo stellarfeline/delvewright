@@ -187,6 +187,11 @@ fi
 export DELVE_OUTPUT="$build_dir"
 export DELVE_DOCKERFILE="$dockerfile"
 dw_export_delve_image "$project"
+# Compose builds through buildx bake, which refuses to read a file outside the
+# working directory without an `fs.read` entitlement; the engine's
+# Dockerfile.delve lies outside any caller's directory but the engine root's,
+# and every path above is absolute, so the compose session runs from there.
+cd "$here/.."
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile play --profile validate)
 
 cleanup() {

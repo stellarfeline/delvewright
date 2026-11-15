@@ -457,14 +457,14 @@ test("the pursuit line states its binding with its denominator, with one pursued
   const none = new RunReport("gallery", "normal");
   assert.equal(
     none.recordPursuit([], 34),
-    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none",
+    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none; 0 death(s)",
   );
   assert.deepEqual(none.redStages(), []);
   const row = (none.toJSON()["stages"] as { stage: string; findings: string[] }[]).find(
     (s) => s.stage === "pursuit",
   );
   assert.deepEqual(row?.findings, [
-    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none",
+    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none; 0 death(s)",
   ]);
 
   const one = new RunReport("gallery", "normal");
@@ -494,7 +494,7 @@ test("the pursuit line states its binding with its denominator, with one pursued
   };
   assert.equal(
     one.recordPursuit([{ record, verdict }], 34),
-    "[pursuit] 1 pursued step(s) of 34, 1 pursuer(s), 2 reading(s); closest approach 12.00 block(s)",
+    "[pursuit] 1 pursued step(s) of 34, 1 pursuer(s), 2 reading(s); closest approach 12.00 block(s); 0 death(s)",
   );
   const pursuit = one.toJSON()["pursuit"] as { walked_steps: number; pursued_steps: number };
   assert.equal(pursuit.walked_steps, 34);

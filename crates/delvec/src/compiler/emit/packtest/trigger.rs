@@ -660,3 +660,46 @@ fn answer_drive(plan: &Plan, a: &crate::compiler::pressable::AnswerPlan, sel: &s
     }
     v
 }
+
+/// **A refusal is heard by everyone near the thing pressed** (spec-0117 §5.2, as
+/// the pinned game plays its own refused use). One template `answer_heard_<id>`
+/// per press answer: the presser and a second player stand a block either side
+/// of where the cue plays — the pressed body's cell, or the presser for a body
+/// with no cell — the answer's real bundle runs as the presser, and the cue's
+/// own count (`#heard_<answer>`, what `playsound` reports it reached) must be at
+/// least two. A cue addressed to the presser alone reaches one.
+pub(super) fn emit_answer_heard_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for (k, a) in plan.answers().iter().enumerate() {
+        let heard = super::super::press::cue_heard_holder(a);
+        let id = plan::safe_local(&a.id());
+        let (pin, sel) = pin_dummy(&format!("dw_t_ah_{k}"));
+        let other = format!("dwah{k}");
+        let them = format!("@a[name={other},limit=1]");
+        let mut b = packtest_header(&format!(
+            "{title}: answer `{}` is heard by every player near what was pressed, not by \
+             the presser alone",
+            a.id()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("dummy {other} spawn"));
+        match a.press.and_then(|i| plan.presses().get(i)) {
+            Some(p) => {
+                let [x, y, z] = p.cell;
+                b.push(format!("tp {sel} {} {} {}", center(x + 1), y, center(z)));
+                b.push(format!("tp {them} {} {} {}", center(x - 1), y, center(z)));
+            }
+            None => b.push(format!("execute at {sel} run tp {them} ~1 ~ ~")),
+        }
+        b.push(format!("scoreboard players set {heard} dw.sys 0"));
+        b.push(format!("execute as {sel} run function {ns}:trig_{id}"));
+        b.push(format!("assert score {heard} dw.sys matches 2.."));
+        b.push(format!("dummy {other} leave"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/answer_heard_{k}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}

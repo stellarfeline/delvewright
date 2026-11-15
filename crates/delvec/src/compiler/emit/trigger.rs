@@ -666,7 +666,7 @@ pub(super) fn env_trigger_fns(
         }
         // spec-0117 §5.2: an answer writes its trace and plays the refusal cue.
         if let Some(a) = crate::compiler::pressable::answer_of(plan, t.id.as_str()) {
-            body.extend(super::press::answer_body_tail(a));
+            body.extend(super::press::answer_body_tail(plan, a));
         }
         out.push((format!("trig_{id}"), lines(&body)));
     }

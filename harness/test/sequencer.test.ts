@@ -725,3 +725,73 @@ test("a pursued step is performed inside `pursue`; one against an executor witho
     err instanceof StepExecutionError && /cannot walk a pursued step/.test(String((err as Error).message)),
   );
 });
+
+// --- spec-0132 §5.2: a death on a pursued step is a measurement ---
+
+function pursuedPath(): CriticalPath {
+  const pursuedReach: ReachStep = {
+    ...reach,
+    pursuers: [
+      {
+        actor: "actor/the-sleeper",
+        kind: "minecraft:warden",
+        census: "hello-world:actor_census_the_sleeper",
+        entranceTicks: 133,
+        undated: false,
+      },
+    ],
+  };
+  return {
+    version: "0.2.0",
+    formatVersion: 6,
+    campaignId: "hello-world",
+    nonCombatants: { kinds: new Set(), ambiguous: [], examined: 0, unbound: false },
+    steps: [selectClass, pursuedReach, assertComplete],
+    watchers: [],
+  } as unknown as CriticalPath;
+}
+
+class PursuedDying extends DyingExecutor {
+  readonly resumed: number[] = [];
+  loopAfter = Infinity;
+  async pursue(_index: number, _step: Step, act: () => Promise<void>): Promise<void> {
+    await act();
+  }
+  resumePursuedStep(index: number, label: string): void {
+    this.calls.push("resume");
+    this.resumed.push(index);
+    if (this.resumed.length > this.loopAfter) throw new Error(`step ${index} (${label}): death loop`);
+  }
+}
+
+test("a death on a pursued step respawns in place and walks the step again, with no retry option", async () => {
+  const ex = new PursuedDying(3);
+  await runSequence(pursuedPath(), ex);
+  assert.deepEqual(ex.calls, [
+    "select-class",
+    "reach",
+    "recover",
+    "rearm",
+    "resume",
+    "reach",
+    "recover",
+    "rearm",
+    "resume",
+    "reach",
+    "recover",
+    "rearm",
+    "resume",
+    "reach",
+    "assert-complete",
+  ]);
+  assert.deepEqual(ex.resumed, [1, 1, 1]);
+});
+
+test("a death loop on a pursued step fails the step by name", async () => {
+  const ex = new PursuedDying(5);
+  ex.loopAfter = 1;
+  await assert.rejects(
+    runSequence(pursuedPath(), ex),
+    (err: unknown) => err instanceof StepExecutionError && err.index === 1 && /death loop/.test(String(err.message)),
+  );
+});
