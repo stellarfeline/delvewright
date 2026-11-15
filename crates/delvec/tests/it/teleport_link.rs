@@ -151,6 +151,29 @@ fn reach_after_carry(path: &Value) -> Value {
 }
 
 #[test]
+fn a_trigger_in_front_of_a_stealth_objective_is_walked_sneaking() {
+    // The carrying press is performed in front of `obj/far-shore`, so it is
+    // walked as part of the walk to it: a `stealth` far shore makes the press a
+    // `sneak` step as well as the reach, and the primary leaves both plain.
+    let run = build(&campaign("stealth-after-carry", |q| {
+        q["content"]["quests"][0]["objectives"][1]["stealth"] = json!(true);
+    }));
+    run.green();
+    let path = run.json("critical-path.json");
+    let carry = carrying_step(&path).expect("a trigger step carries the party");
+    assert_eq!(carry["sneak"], json!(true), "{carry}");
+    let reach = reach_after_carry(&path);
+    assert_eq!(reach["objective"], "obj/far-shore");
+    assert_eq!(reach["sneak"], json!(true), "{reach}");
+
+    let run = build(&campaign("plain-after-carry", |_| {}));
+    run.green();
+    let path = run.json("critical-path.json");
+    let carry = carrying_step(&path).expect("a trigger step carries the party");
+    assert!(carry.get("sneak").is_none(), "{carry}");
+}
+
+#[test]
 fn a_reach_the_landing_puts_the_party_inside_completes_on_the_landing() {
     // The far beat moved onto the landing itself: the carry sets the party down
     // inside its completion volume, so the server completes it on arrival,

@@ -3,6 +3,7 @@
 // turns off, and the verdict written before a death ends the run.
 
 import type { Step, Vec3Tuple } from "../critical-path.ts";
+import { nearestIndex } from "../waypoints.ts";
 import { pursuersOf } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import {
@@ -22,6 +23,7 @@ const PURSUIT_CLOCK_POLL_MS = 250;
 
 /** How long (ms) a named hit stays the explanation of a death that follows it. */
 const DEATH_ATTRIBUTION_MS = 3_000;
+
 
 /** The pursuit rule in force for the step being walked. */
 export interface PursuedStep {
@@ -47,6 +49,46 @@ export const methods = {
     return true;
   },
 
+  /** Note that the current step walks the proven leg `leg`. */
+  noteStepLeg(this: MineflayerExecutor, leg: number): void {
+    this.stepLegs.add(leg);
+  },
+
+  /**
+   * **Walk a pursued step again after a death on it** (spec-0132 §5.2), the
+   * respawn already taken where the game put the bot. The step is walked from
+   * there: the leg cursor goes back to where the step began, and its first leg
+   * resumes from the proven waypoint nearest the bot. The bound guards
+   * termination, never survival: a step may take at most as many deaths as its
+   * proven legs have waypoints, and the death past that is a death loop that
+   * fails the step by name. Whether a life got further than the last is not
+   * asked — that is the vanilla will of the pursuer, the designer's call.
+   */
+  resumePursuedStep(this: MineflayerExecutor, index: number, label: string): void {
+    const deaths = (this.pursuedDeaths.get(index) ?? 0) + 1;
+    this.pursuedDeaths.set(index, deaths);
+    const legs = [...this.stepLegs].sort((a, b) => a - b);
+    const bound = legs.reduce((n, l) => n + (this.waypoints?.legs[l]?.waypoints.length ?? 0), 0);
+    if (deaths > bound) {
+      throw new Error(
+        `step ${index} (${label}): death loop — death ${deaths} on this pursued step, past its bound ` +
+          `of ${bound}: the proven waypoints of the leg(s) it walks (${legs.length === 0 ? "none" : legs.join(", ")})`,
+      );
+    }
+    this.legCursor = this.stepStartCursor;
+    const leg = this.waypoints?.legs[this.legCursor];
+    const feet = this.feetCell();
+    if (leg !== undefined && feet !== undefined) {
+      this.legResume = { leg: this.legCursor, from: nearestIndex(leg.waypoints, feet) };
+    }
+    process.stderr.write(
+      `[pursuit] step ${index} (${label}): death ${deaths} of at most ${bound}; respawned at ` +
+        `[${feet?.join(", ") ?? "?"}], walking the step again` +
+        (leg === undefined ? "" : ` from proven waypoint ${this.legResume?.from}`) +
+        `\n`,
+    );
+  },
+
   /** One census of every pursuer, in one bracketed turn on the server's clock. */
   async readPursuers(this: MineflayerExecutor, step: Step): Promise<PursuitReading[]> {
     const rows = pursuersOf(step);
@@ -67,6 +109,17 @@ export const methods = {
         })
         .find((c) => c !== undefined && c.actor === row.actor && c.campaignId === this.campaignId);
       if (census === undefined) continue; // not answered: no reading, never a zero
+      // spec-0132 §5.7: a warden's darkness is judged on the server's
+      // positions — this reading — never on the client's entity table.
+      if (row.kind.replace(/^minecraft:/, "") === "warden") {
+        const f = census.feet;
+        this.sculk.onWardenReading(
+          row.actor,
+          census.alive && f !== undefined && Number.isFinite(botFeet[0])
+            ? Math.hypot(f[0] - botFeet[0], f[1] - botFeet[1], f[2] - botFeet[2])
+            : undefined,
+        );
+      }
       out.push({
         actor: row.actor,
         tick: reading.tick,

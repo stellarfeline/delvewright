@@ -71,10 +71,14 @@ test("a pursuer that stands at every reading passes, with the closest approach s
   assert.equal(v.measurement.lowestHealth, 20);
 });
 
-test("a death reds `died`, naming the attacker", () => {
-  const v = judge(step(walked(), { died: { attacker: "warden#12 (the server named it)" } }));
-  assert.equal(v.failures.length, 1);
-  assert.match(v.failures[0]!, /died — .*warden#12/);
+test("a death on a pursued step is a measurement naming the attacker, never a failure", () => {
+  const rec = step(walked(), { died: { attacker: "warden#12 (the server named it)" } });
+  const v = judge(rec);
+  assert.deepEqual(v.failures, []);
+  assert.equal(v.measurement.died, "warden#12 (the server named it)");
+  const b = pursuitBinding([rec, step(walked())], [v.measurement, judge(step(walked())).measurement], 34);
+  assert.equal(b.deaths, 1);
+  assert.match(pursuitLine(b), /; 1 death\(s\)$/);
 });
 
 test("a missing pursuer reds `pursuer_lost`", () => {
@@ -124,11 +128,11 @@ test("the `[pursuit]` line states its binding with its denominator", () => {
   const line = pursuitLine(pursuitBinding([rec], [v.measurement], 34));
   assert.equal(
     line,
-    "[pursuit] 1 pursued step(s) of 34, 1 pursuer(s), 5 reading(s); closest approach 23.09 block(s)",
+    "[pursuit] 1 pursued step(s) of 34, 1 pursuer(s), 5 reading(s); closest approach 23.09 block(s); 0 death(s)",
   );
   assert.equal(
     pursuitLine(pursuitBinding([], [], 34)),
-    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none",
+    "[pursuit] 0 pursued step(s) of 34, 0 pursuer(s), 0 reading(s); closest approach none; 0 death(s)",
   );
 });
 

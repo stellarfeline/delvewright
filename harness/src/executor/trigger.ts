@@ -238,7 +238,7 @@ export const methods = {
       throw new Error(`${label}: the step names no stance to loose from (\`stand\`)`);
     }
     if (step.stand) {
-      await this.walkTo(step.stand, 0, `${label} — to its stand cell`);
+      await this.walkTo(step.stand, 0, `${label} — to its stand cell`, step.sneak);
       process.stderr.write(
         step.transport
           ? `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
@@ -263,26 +263,26 @@ export const methods = {
       await this.atStance();
     } else if (step.on === "approach") {
       if (!step.stand) {
-        await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label);
+        await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label, step.sneak);
       }
       await this.atStance();
     } else if (step.on === "step") {
       // The tick fires on a body in the plate's own cell: a block goal on it.
       if (!step.stand) {
-        await this.walkTo(step.pos, 0, label);
+        await this.walkTo(step.pos, 0, label, step.sneak);
       }
       await this.atStance();
     } else if (step.block !== undefined) {
       // spec-0093 §6.5: a `use` trigger whose prop a hand presses has no
       // hitbox; the bot right-clicks the block itself.
       if (!step.stand) {
-        await this.walkTo(step.pos, INTERACT_RANGE, label);
+        await this.walkTo(step.pos, INTERACT_RANGE, label, step.sneak);
       }
       await this.atStance();
       await this.pressBlock(step.pos, step.block, label);
     } else {
       if (!step.stand) {
-        await this.walkTo(step.pos, INTERACT_RANGE, label);
+        await this.walkTo(step.pos, INTERACT_RANGE, label, step.sneak);
       }
       await this.atStance();
       const acquired = this.requireCrosshair(step.pos, label, INTERACT_RANGE);

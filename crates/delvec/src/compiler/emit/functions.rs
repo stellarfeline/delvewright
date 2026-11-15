@@ -317,6 +317,8 @@ pub(super) fn emit_functions(
         setup.push("scoreboard objectives add dw.st_grace dummy".to_string());
         setup.push("scoreboard objectives add dw.st_safe dummy".to_string());
     }
+    // Each player's own place across a cutscene (`cutscene::CS_ID`).
+    setup.extend(cutscene_place_objectives(plan));
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
     // straddling chunk z=-1) are not reliably loaded within the same tick, so
@@ -1361,6 +1363,7 @@ pub(super) fn emit_functions(
 
     // --- cs_repair: rejoin-after-cutscene repair (see the `tick` driver above) ---
     fns.extend(cutscene_repair_fns(plan));
+    fns.extend(cutscene_place_fns(plan));
 
     // --- join_place: first-join placement (see the `tick` driver above) ---
     //

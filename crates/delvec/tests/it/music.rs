@@ -1019,7 +1019,10 @@ fn the_score_is_painted_and_restored_by_the_bracket() {
             < at(&start, "gamemode spectator @a").unwrap()
     );
     let end = function(&out, &format!("cs_end_{bare}"));
-    let tp = end.iter().position(|l| l.starts_with("tp @a ")).unwrap();
+    let tp = end
+        .iter()
+        .position(|l| l.ends_with("run function hello-world:cs_return"))
+        .unwrap();
     assert!(at(&end, &format!("function hello-world:cs_unpaint_{bare}")).unwrap() > tp);
     let tick = function(&out, "tick");
     assert!(tick.contains(&"function hello-world:cs_unpaint_tick".to_string()));
@@ -1223,7 +1226,10 @@ fn a_scored_cutscene_with_a_then_emits_the_score_and_the_world_change() {
             < at(&start, "gamemode spectator @a").unwrap()
     );
     let end = function(&out, &format!("cs_end_{bare}"));
-    let tp = end.iter().position(|l| l.starts_with("tp @a ")).unwrap();
+    let tp = end
+        .iter()
+        .position(|l| l.ends_with("run function hello-world:cs_return"))
+        .unwrap();
     let unpaint = at(&end, &format!("function hello-world:cs_unpaint_{bare}")).unwrap();
     let change = end
         .iter()
