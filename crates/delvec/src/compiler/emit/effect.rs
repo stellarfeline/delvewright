@@ -815,6 +815,10 @@ pub(super) fn emit_quest_effect(
             let k = outcome_ordinal(plan, objective.as_str(), line, |s| s.is_effect(eff));
             body.extend(super::guidance::record_lines(objective.as_str(), k));
         }
+        // The objective settled failed, unless it has settled already.
+        Verb::FailObjective { objective } => {
+            body.extend(super::limit::fail_lines(ns, objective.as_str()));
+        }
         // spec-0133 §2: the removal the wave's re-seat performs, alone.
         Verb::DespawnWave { wave } => {
             if let Some(w) = plan

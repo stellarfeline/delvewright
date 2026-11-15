@@ -100,6 +100,7 @@ fn open_and_close(
         format!("scoreboard players set {latch} dw.sys 0"),
         format!("scoreboard players set {} dw.sys 0", ran_out_latch(oid)),
     ];
+    open.extend(super::super::limit::failure_clear_lines(c, oid));
     let mut close = vec![
         format!("scoreboard players set {p} {qa} 0"),
         format!("scoreboard players set {p} {} 0", obj_score(oid)),
@@ -112,6 +113,7 @@ fn open_and_close(
         format!("scoreboard players set {latch} dw.sys 0"),
         format!("scoreboard players set {} dw.sys 0", ran_out_latch(oid)),
     ];
+    close.extend(super::super::limit::failure_clear_lines(c, oid));
     for a in ancestors(q, oid) {
         open.push(format!(
             "scoreboard players set {p} {} 1",

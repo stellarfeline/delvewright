@@ -664,6 +664,16 @@ fn validate_loaded_with(
                 }
                 diags.extend(rd);
             }
+            // A task the story loses is lost where a story world dates it
+            // (`DW1112`). Bound in the one funnel; the binding line prints
+            // whenever the campaign fails an objective.
+            {
+                let (fd, fbind) = delvec::compiler::loss::check(&campaign);
+                if fbind.sites > 0 {
+                    examined.push(fbind.line());
+                }
+                diags.extend(fd);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares

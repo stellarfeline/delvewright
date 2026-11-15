@@ -301,7 +301,7 @@ export interface RecordObjective {
 /** How one recorded objective ends in one world. */
 export interface RecordRow {
   readonly objective: string;
-  readonly settles: "done" | "expired" | "open";
+  readonly settles: "done" | "expired" | "failed" | "open";
   /** The ordinals the walk leaves written; `null` where the build cannot say. */
   readonly written: readonly number[] | null;
 }
@@ -358,8 +358,8 @@ export function parseRecordsLedger(raw: unknown): RecordsLedger {
       (fin as unknown[]).map((f, j): RecordRow => {
         const x = f as Record<string, unknown>;
         const settles = x["settles"];
-        if (settles !== "done" && settles !== "expired" && settles !== "open") {
-          badR(`/worlds/${i}/finished/${j}/settles is not done, expired or open`);
+        if (settles !== "done" && settles !== "expired" && settles !== "failed" && settles !== "open") {
+          badR(`/worlds/${i}/finished/${j}/settles is not done, expired, failed or open`);
         }
         const written = x["written"];
         if (written !== null && !(Array.isArray(written) && written.every((n) => typeof n === "number"))) {

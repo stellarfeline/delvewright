@@ -170,6 +170,19 @@ pub enum Verb {
         /// The sentence: what the party did, in the span grammar.
         line: String,
     },
+    /// **Settles an objective as failed** (spec-0133 §1 as amended): the
+    /// story lost the task — a goat the party was to pen was killed. The
+    /// objective is settled at once, whatever its own gates say and whether or
+    /// not it has opened: its `after`-dependents and its quest go on as for any
+    /// settlement, nothing of its completion bundle or its `on_expire` fires,
+    /// its clock stops, and its journal entry shows the lines the story wrote
+    /// (the bundle carrying this verb writes the way it was lost). An objective
+    /// already settled — done, expired, lapsed or failed — is left alone. An
+    /// objective no quest declares is `DW0112`; one in a quorum is `DW1111`.
+    FailObjective {
+        /// The objective to fail (any quest's).
+        objective: ObjectiveId,
+    },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string. The payload is the
     /// one [`Narration`] type every player-facing line declares.
@@ -1223,6 +1236,7 @@ impl Verb {
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
             Verb::RecordOutcome { .. } => "record-outcome",
+            Verb::FailObjective { .. } => "fail-objective",
             Verb::Narrate(..) => "narrate",
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
@@ -1322,6 +1336,8 @@ impl Verb {
             | Verb::ApplyEdits { .. }
             // spec-0137: the journal's page is the party's.
             | Verb::RecordOutcome { .. }
+            // A task is the party's.
+            | Verb::FailObjective { .. }
             | Verb::SetBlock { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
@@ -1412,6 +1428,8 @@ impl Verb {
             | Verb::AddState { .. }
             | Verb::ClearState { .. }
             | Verb::DropStake { .. }
+            // A settled task is a score a proof reads after the scene.
+            | Verb::FailObjective { .. }
             | Verb::SetCheckpoint { .. }
             | Verb::Bonfire { .. }
             | Verb::BeginStealth { .. }

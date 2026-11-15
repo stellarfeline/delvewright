@@ -91,7 +91,8 @@ pub(super) struct Watched {
     pub record: Option<String>,
     /// Its outcome sites' ordinals, in display order (spec-0137 §4).
     pub outcomes: Vec<usize>,
-    /// It carries a `limit`: it settles done or expired (spec-0133).
+    /// It carries a `limit` or a `fail-objective` names it: it settles done,
+    /// expired or failed (spec-0133).
     pub limited: bool,
     /// Tracked: its ordinal on the compass, from 1, in document order.
     pub ordinal: Option<usize>,
@@ -379,7 +380,7 @@ pub(super) fn guide(
                 outcomes: recorded
                     .map(|r| r.order.iter().map(|&s| records.sites[s].ordinal).collect())
                     .unwrap_or_default(),
-                limited: o.limit().is_some(),
+                limited: o.limit().is_some() || super::limit::failable(c, o.id().as_str()),
                 ordinal: ord,
                 target,
                 line: Vec::new(),
@@ -412,8 +413,8 @@ pub(super) fn record_lines(oid: &str, ordinal: usize) -> Vec<String> {
 }
 
 /// The score a journaled objective's finished pages are written under: its
-/// settled score when it is limited (done or expired, spec-0133), else its
-/// completion score.
+/// settled score when it can settle other than done (expired or failed,
+/// spec-0133), else its completion score.
 pub(super) fn settle_score(w: &Watched) -> String {
     if w.limited {
         super::limit::settled_score(&w.id)

@@ -212,10 +212,13 @@ chrome! {
     /// The line a party reads when a quorum holds and an objective it no
     /// longer needs is settled lapsed (spec-0134 §7). `%s` is its title.
     LIMIT_LAPSED = 30, "delvewright.ui.limit.lapsed", 1, "Objective lapsed: %s";
+    /// The line a party reads when the story fails an objective it was told
+    /// of (`fail-objective`). `%s` is its title.
+    LIMIT_FAILED = 31, "delvewright.ui.limit.failed", 1, "Objective failed: %s";
 }
 
 /// One language's rendition of [`ALL`], in slot order.
-type Table = [&'static str; 31];
+type Table = [&'static str; 32];
 
 // --- the tables ------------------------------------------------------------
 // Slot order is ALL's: objective.new, objective.complete, campaign.complete,
@@ -225,7 +228,7 @@ type Table = [&'static str; 31];
 // compass.nothing, journal.title, journal.compass.heading,
 // journal.compass.follows, journal.compass.switch, journal.compass.spin,
 // journal.compass.pages, journal.open, journal.done, journal.following,
-// compass.choose, limit.countdown, limit.expired, limit.lapsed.
+// compass.choose, limit.countdown, limit.expired, limit.lapsed, limit.failed.
 
 const ZH_HANS: Table = [
     "新目标：%s",
@@ -259,6 +262,7 @@ const ZH_HANS: Table = [
     "%s —— %s",
     "目标超时：%s",
     "目标已作罢：%s",
+    "目标失败：%s",
 ];
 
 const ZH_HANT: Table = [
@@ -293,6 +297,7 @@ const ZH_HANT: Table = [
     "%s —— %s",
     "目標超時：%s",
     "目標已作罷：%s",
+    "目標失敗：%s",
 ];
 
 const JA: Table = [
@@ -327,6 +332,7 @@ const JA: Table = [
     "%s —— %s",
     "目標の期限切れ：%s",
     "目標は不要になった：%s",
+    "目標失敗：%s",
 ];
 
 const KO: Table = [
@@ -361,6 +367,7 @@ const KO: Table = [
     "%s — %s",
     "목표 시간 초과: %s",
     "목표가 필요 없어짐: %s",
+    "목표 실패: %s",
 ];
 
 const DE: Table = [
@@ -395,6 +402,7 @@ const DE: Table = [
     "%s — %s",
     "Ziel abgelaufen: %s",
     "Ziel entfallen: %s",
+    "Ziel gescheitert: %s",
 ];
 
 const FR: Table = [
@@ -429,6 +437,7 @@ const FR: Table = [
     "%s — %s",
     "Objectif expiré : %s",
     "Objectif abandonné : %s",
+    "Objectif manqué : %s",
 ];
 
 const ES: Table = [
@@ -463,6 +472,7 @@ const ES: Table = [
     "%s — %s",
     "Objetivo expirado: %s",
     "Objetivo descartado: %s",
+    "Objetivo fallido: %s",
 ];
 
 const PT_BR: Table = [
@@ -497,6 +507,7 @@ const PT_BR: Table = [
     "%s — %s",
     "Objetivo expirado: %s",
     "Objetivo dispensado: %s",
+    "Objetivo fracassado: %s",
 ];
 
 const PT_PT: Table = [
@@ -531,6 +542,7 @@ const PT_PT: Table = [
     "%s — %s",
     "Objetivo expirado: %s",
     "Objetivo dispensado: %s",
+    "Objetivo falhado: %s",
 ];
 
 const RU: Table = [
@@ -565,6 +577,7 @@ const RU: Table = [
     "%s — %s",
     "Срок цели истёк: %s",
     "Цель больше не нужна: %s",
+    "Цель провалена: %s",
 ];
 
 const IT: Table = [
@@ -599,6 +612,7 @@ const IT: Table = [
     "%s — %s",
     "Obiettivo scaduto: %s",
     "Obiettivo decaduto: %s",
+    "Obiettivo fallito: %s",
 ];
 
 const NL: Table = [
@@ -633,6 +647,7 @@ const NL: Table = [
     "%s — %s",
     "Doel verlopen: %s",
     "Doel vervallen: %s",
+    "Doel mislukt: %s",
 ];
 
 const PL: Table = [
@@ -667,6 +682,7 @@ const PL: Table = [
     "%s — %s",
     "Cel wygasł: %s",
     "Cel przestał być potrzebny: %s",
+    "Cel nieudany: %s",
 ];
 
 const TR: Table = [
@@ -701,6 +717,7 @@ const TR: Table = [
     "%s — %s",
     "Görevin süresi doldu: %s",
     "Görev artık gerekmiyor: %s",
+    "Görev başarısız: %s",
 ];
 
 const UK: Table = [
@@ -735,6 +752,7 @@ const UK: Table = [
     "%s — %s",
     "Термін цілі минув: %s",
     "Ціль більше не потрібна: %s",
+    "Ціль провалено: %s",
 ];
 
 const CS: Table = [
@@ -769,6 +787,7 @@ const CS: Table = [
     "%s — %s",
     "Cíl vypršel: %s",
     "Cíl odpadl: %s",
+    "Cíl selhal: %s",
 ];
 
 const SK: Table = [
@@ -803,6 +822,7 @@ const SK: Table = [
     "%s — %s",
     "Cieľ vypršal: %s",
     "Cieľ odpadol: %s",
+    "Cieľ zlyhal: %s",
 ];
 
 const SV: Table = [
@@ -837,6 +857,7 @@ const SV: Table = [
     "%s — %s",
     "Målet har gått ut: %s",
     "Målet har bortfallit: %s",
+    "Målet misslyckades: %s",
 ];
 
 const DA: Table = [
@@ -871,6 +892,7 @@ const DA: Table = [
     "%s — %s",
     "Mål udløbet: %s",
     "Mål bortfaldet: %s",
+    "Mål mislykket: %s",
 ];
 
 const NB: Table = [
@@ -905,6 +927,7 @@ const NB: Table = [
     "%s — %s",
     "Mål utløpt: %s",
     "Mål bortfalt: %s",
+    "Mål mislyktes: %s",
 ];
 
 const FI: Table = [
@@ -939,6 +962,7 @@ const FI: Table = [
     "%s — %s",
     "Tavoite vanheni: %s",
     "Tavoite raukesi: %s",
+    "Tavoite epäonnistui: %s",
 ];
 
 const HU: Table = [
@@ -973,6 +997,7 @@ const HU: Table = [
     "%s — %s",
     "Lejárt cél: %s",
     "Okafogyott cél: %s",
+    "Sikertelen cél: %s",
 ];
 
 const RO: Table = [
@@ -1007,6 +1032,7 @@ const RO: Table = [
     "%s — %s",
     "Obiectiv expirat: %s",
     "Obiectiv renunțat: %s",
+    "Obiectiv ratat: %s",
 ];
 
 const EL: Table = [
@@ -1041,6 +1067,7 @@ const EL: Table = [
     "%s — %s",
     "Ο στόχος έληξε: %s",
     "Ο στόχος δεν χρειάζεται πια: %s",
+    "Ο στόχος απέτυχε: %s",
 ];
 
 const BG: Table = [
@@ -1075,6 +1102,7 @@ const BG: Table = [
     "%s — %s",
     "Целта изтече: %s",
     "Целта отпадна: %s",
+    "Целта е провалена: %s",
 ];
 
 const TH: Table = [
@@ -1109,6 +1137,7 @@ const TH: Table = [
     "%s — %s",
     "วัตถุประสงค์หมดเวลา: %s",
     "วัตถุประสงค์ไม่จำเป็นแล้ว: %s",
+    "วัตถุประสงค์ล้มเหลว: %s",
 ];
 
 const VI: Table = [
@@ -1143,6 +1172,7 @@ const VI: Table = [
     "%s — %s",
     "Mục tiêu đã hết hạn: %s",
     "Mục tiêu không còn cần: %s",
+    "Mục tiêu thất bại: %s",
 ];
 
 const ID: Table = [
@@ -1177,6 +1207,7 @@ const ID: Table = [
     "%s — %s",
     "Tujuan kedaluwarsa: %s",
     "Tujuan tidak diperlukan lagi: %s",
+    "Tujuan gagal: %s",
 ];
 
 const MS: Table = [
@@ -1211,6 +1242,7 @@ const MS: Table = [
     "%s — %s",
     "Objektif tamat tempoh: %s",
     "Objektif tidak diperlukan lagi: %s",
+    "Objektif gagal: %s",
 ];
 
 const AR: Table = [
@@ -1245,6 +1277,7 @@ const AR: Table = [
     "%s — %s",
     "انتهت مهلة الهدف: %s",
     "لم يعد الهدف مطلوبًا: %s",
+    "فشل الهدف: %s",
 ];
 
 const HE: Table = [
@@ -1279,6 +1312,7 @@ const HE: Table = [
     "%s — %s",
     "זמן המטרה פג: %s",
     "המטרה כבר לא נדרשת: %s",
+    "המטרה נכשלה: %s",
 ];
 
 const HI: Table = [
@@ -1313,6 +1347,7 @@ const HI: Table = [
     "%s — %s",
     "उद्देश्य का समय समाप्त: %s",
     "उद्देश्य की अब ज़रूरत नहीं: %s",
+    "उद्देश्य विफल: %s",
 ];
 
 const CA: Table = [
@@ -1347,6 +1382,7 @@ const CA: Table = [
     "%s — %s",
     "Objectiu caducat: %s",
     "Objectiu descartat: %s",
+    "Objectiu fallit: %s",
 ];
 
 const FIL: Table = [
@@ -1381,6 +1417,7 @@ const FIL: Table = [
     "%s — %s",
     "Nag-expire ang layunin: %s",
     "Hindi na kailangan ang layunin: %s",
+    "Nabigo ang layunin: %s",
 ];
 
 /// Which Minecraft language file gets which table. Keyed on the client's own file
@@ -1623,7 +1660,7 @@ mod tests {
             );
             assert!(seen.insert(c.key), "duplicate chrome key `{}`", c.key);
         }
-        assert_eq!(ALL.len(), 31, "the chrome inventory changed size");
+        assert_eq!(ALL.len(), 32, "the chrome inventory changed size");
     }
 
     /// **The binding that makes `%s` safe.** Every language table renders every
@@ -1668,7 +1705,7 @@ mod tests {
     /// Chinese story is the exact defect this module exists to close.
     #[test]
     fn zh_cn_is_complete() {
-        assert_eq!(coverage("zh_cn"), (31, 31));
+        assert_eq!(coverage("zh_cn"), (32, 32));
         assert_eq!(lang_entries("zh_cn")[CLASS_TITLE.key], "选择你的职业");
     }
 
@@ -1676,9 +1713,9 @@ mod tests {
     /// masquerading as a translation.
     #[test]
     fn untabled_language_ships_no_chrome() {
-        assert_eq!(coverage("tlh_aa"), (0, 31));
+        assert_eq!(coverage("tlh_aa"), (0, 32));
         assert!(lang_entries("en_us").is_empty());
-        assert_eq!(english_entries().len(), 31);
+        assert_eq!(english_entries().len(), 32);
     }
 
     /// The multi-language build puts English on the component (the pack carries the

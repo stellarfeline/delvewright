@@ -205,6 +205,83 @@ pub(crate) fn limit_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
+crate::dw_code! {
+    /// (spec-0133 §1 as amended) **A failure that never takes**: a
+    /// `fail-objective` in a bundle that can only fire once its objective is
+    /// already settled — the objective's own completion bundle, its own
+    /// `on_expire`, or its quest's `on_complete` — so it can fail nothing.
+    /// Validation-tier (exit 1).
+    pub const FAIL_NEVER_TAKES: DwCode = DwCode::new("DW1111", ExitTier::Build);
+}
+
+/// The document-tier `fail-objective` refusals: `DW0112` for an objective no
+/// quest declares, `DW1111` for a failure in a bundle that fires only once its
+/// objective has settled.
+pub(crate) fn failure_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::EffectRootOwner as O;
+    let mut quest_of: BTreeMap<&str, &str> = BTreeMap::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            quest_of.insert(o.id().as_str(), q.id.as_str());
+        }
+    }
+    crate::for_each_effect_root(c, &mut |site, list| {
+        let mut sites: Vec<(String, &crate::ObjectiveId)> = Vec::new();
+        fn walk<'e>(
+            list: &'e [QuestEffect],
+            base: &str,
+            out: &mut Vec<(String, &'e crate::ObjectiveId)>,
+        ) {
+            for (i, e) in list.iter().enumerate() {
+                let path = format!("{base}/{i}");
+                if let Some(o) = e.fail_objective() {
+                    out.push((path.clone(), o));
+                }
+                for (label, _, nested) in e.nested_effect_lists_labeled() {
+                    walk(nested, &format!("{path}/{label}"), out);
+                }
+            }
+        }
+        walk(list, &site.path, &mut sites);
+        for (path, objective) in sites {
+            let oid = objective.as_str();
+            let Some(&quest) = quest_of.get(oid) else {
+                d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    site.stage,
+                    format!("{path}/objective"),
+                    format!(
+                        "`fail-objective` names `{oid}`, which no quest declares as an objective. Name the objective the story loses."
+                    ),
+                ));
+                continue;
+            };
+            let why = match &site.owner {
+                O::ObjectiveComplete { objective, .. } if *objective == oid => {
+                    Some("its own completion bundle, which fires only once it is done")
+                }
+                O::ObjectiveExpire { objective, .. } if *objective == oid => {
+                    Some("its own `on_expire`, which fires only once it has expired")
+                }
+                O::QuestComplete { quest: q } if q.id.as_str() == quest => Some(
+                    "its quest's `on_complete`, which fires only once every objective of the quest is settled",
+                ),
+                _ => None,
+            };
+            if let Some(why) = why {
+                d.push(Diagnostic::error(
+                    FAIL_NEVER_TAKES,
+                    site.stage,
+                    path,
+                    format!(
+                        "`fail-objective` on `{oid}` sits in {why}, so it can fail nothing. Put it in the bundle of the event that loses the task — a kill, a trigger, another objective's completion — or remove it."
+                    ),
+                ));
+            }
+        }
+    });
+}
+
 /// Every objective `id` is transitively `after`, inside quest `q`.
 pub(crate) fn after_ancestors<'a>(q: &'a crate::Quest, id: &str) -> BTreeSet<&'a str> {
     let mut seen: BTreeSet<&'a str> = BTreeSet::new();

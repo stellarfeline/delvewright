@@ -838,6 +838,22 @@ impl<'a> RawOwner<'a> {
     }
 }
 
+/// Every objective some `fail-objective` names, in any effect root and at any
+/// depth — the objectives that can settle **failed**.
+pub fn failed_objectives(c: &Campaign) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for_each_effect_root(c, &mut |_, list| {
+        for e in list {
+            e.visit_deep(&mut |x| {
+                if let Some(o) = x.fail_objective() {
+                    out.insert(o.as_str().to_string());
+                }
+            });
+        }
+    });
+    out
+}
+
 /// Visit **every effect root the compiler can lower**, in one fixed deterministic
 /// order, as `f(&site, list)`.
 ///

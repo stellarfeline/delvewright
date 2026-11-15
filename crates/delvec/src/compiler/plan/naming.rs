@@ -64,6 +64,11 @@ pub fn expired_marker_line(campaign_id: &str, objective: &str) -> String {
 pub fn obj_score(objective_id: &str) -> String {
     format!("dw.o_{}", safe_local(objective_id))
 }
+/// Scoreboard objective marking a DSL objective **failed** (party holder): set
+/// when a `fail-objective` settles it.
+pub fn failed_score(objective_id: &str) -> String {
+    format!("dw.of_{}", safe_local(objective_id))
+}
 /// Scoreboard objective marking a quest complete.
 pub fn quest_score(quest_id: &str) -> String {
     format!("dw.q_{}", safe_local(quest_id))

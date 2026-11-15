@@ -87,6 +87,7 @@ mod equipment_fit;
 mod equipment_tables;
 mod exported_coordinates;
 mod face_contract;
+mod fail_objective;
 mod first_leg;
 mod fixture_class;
 mod flag_objective_roots;

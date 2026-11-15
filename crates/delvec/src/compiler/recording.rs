@@ -83,6 +83,8 @@ pub enum Firing {
 pub enum Settles {
     Done,
     Expired,
+    /// Lost to a `fail-objective` the walk fired.
+    Failed,
     Open,
 }
 
@@ -91,6 +93,7 @@ impl Settles {
         match self {
             Settles::Done => "done",
             Settles::Expired => "expired",
+            Settles::Failed => "failed",
             Settles::Open => "open",
         }
     }
@@ -246,6 +249,7 @@ impl<'a> Records<'a> {
         for (i, step) in pt.steps.iter().enumerate() {
             if let Some(opt) = step.talk_option
                 && !pt.expires(&step.objective)
+                && !run.failed.contains(&step.objective)
                 && let Some(Objective::TalkTo { npc, .. }) = c
                     .quests
                     .content
@@ -365,6 +369,8 @@ impl<'a> Records<'a> {
                 .map(|(oi, o)| {
                     let settles = if !pt.steps.iter().any(|s| s.objective == o.id()) {
                         Settles::Open
+                    } else if run.failed.contains(o.id()) {
+                        Settles::Failed
                     } else if pt.expires(o.id()) {
                         Settles::Expired
                     } else {

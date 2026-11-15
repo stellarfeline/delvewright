@@ -85,6 +85,9 @@ pub(super) struct Acts<'a> {
     /// The data a story world dates: every datum this set excludes stays
     /// undatable in a story world.
     story_undatable: BTreeSet<String>,
+    /// Per elective ambient act, the objectives a `fail-objective` in its
+    /// bundle names — the tasks performing it loses.
+    fails: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Where a story world came from.
@@ -102,6 +105,10 @@ pub enum WorldOrigin {
     /// The all world with one quorum settled by a subset of its members other
     /// than the default's (spec-0134 §7) — enumerated for every such subset.
     Quorum,
+    /// The all world with one elective act performed that fails an objective
+    /// (`fail-objective`) — enumerated for every such act, whether or not an
+    /// ending reads it.
+    Failure,
 }
 
 impl WorldOrigin {
@@ -113,6 +120,7 @@ impl WorldOrigin {
             WorldOrigin::Witness => "witness",
             WorldOrigin::Expiry => "expiry",
             WorldOrigin::Quorum => "quorum",
+            WorldOrigin::Failure => "failure",
         }
     }
 }
@@ -150,6 +158,8 @@ pub struct StoryRun {
     pub flags: BTreeSet<String>,
     /// The quests that complete in it.
     pub completed: BTreeSet<String>,
+    /// The objectives a `fail-objective` its walk fired has failed.
+    pub failed: BTreeSet<String>,
     /// Elective ambient acts the world performs whose gate never held before
     /// the path ended — named, never silently dropped.
     pub unperformed: Vec<String>,
@@ -536,6 +546,23 @@ impl<'a> Flow<'a> {
             .collect()
     }
 
+    /// The objectives a participation fails: every objective a `fail-objective`
+    /// in a performed elective act's bundle names.
+    fn failed_in(&self, performs: &BTreeSet<String>) -> BTreeSet<String> {
+        let acts = self.acts();
+        performs
+            .iter()
+            .filter_map(|a| acts.fails.get(a))
+            .flatten()
+            .cloned()
+            .collect()
+    }
+
+    /// The elective acts that fail an objective, by id.
+    pub(crate) fn failing_acts(&self) -> Vec<String> {
+        self.acts().fails.keys().cloned().collect()
+    }
+
     /// The optional quests a participation does not perform.
     fn barred(&self, performs: &BTreeSet<String>) -> BTreeSet<String> {
         self.c
@@ -887,12 +914,14 @@ impl<'a> Flow<'a> {
         let credit = |g: &GatedFlag| self.story_credit(g, performs);
         let expired = self.expired_in(performs);
         let lapsed = lapsed_in(self.c, performs);
+        let failed = self.failed_in(performs);
         let sol = self.solve_with(
             &self.worlds[w.selection],
             &credit,
             &barred,
             &expired,
             &lapsed,
+            &failed,
         );
         let flags = sol.flags.clone();
         let completed = sol.completed.clone();
@@ -902,8 +931,14 @@ impl<'a> Flow<'a> {
         // The ambient electives this world performs that write what an ending
         // reads — its entry deeds — in act-id order.
         let relevant = self.relevant_acts();
+        // An act that fails an objective is a deed wherever it is performed:
+        // what it loses is the story's, whether or not an ending reads it.
+        let fails = &self.acts().fails;
         let pending: Vec<String> = relevant
             .iter()
+            .chain(fails.keys())
+            .collect::<BTreeSet<&String>>()
+            .into_iter()
             .filter(|a| performs.contains(*a) && self.acts().bundles.contains_key(*a))
             .cloned()
             .collect();
@@ -934,6 +969,16 @@ impl<'a> Flow<'a> {
                 if !dry.scene_at.is_empty() {
                     break;
                 }
+            }
+        }
+        // An act that fails an objective is performed in front of the first
+        // step of an objective it fails — the last moment the task is still
+        // open, so the loss takes it from the party rather than finding it
+        // already done.
+        for act in &pending {
+            let Some(objs) = fails.get(act) else { continue };
+            if let Some(i) = pt.steps.iter().position(|s| objs.contains(&s.objective)) {
+                at.insert(act.clone(), i);
             }
         }
         // What the path owes beyond those deeds, and the acts that pay it.
@@ -1026,6 +1071,7 @@ impl<'a> Flow<'a> {
             fired,
             fired_in_order,
             undecided,
+            failed: st.failed.clone(),
             scene_at: st.scene_at,
             incoherent,
             flags,
@@ -1368,12 +1414,32 @@ impl<'a> Flow<'a> {
         electives.sort_by(|a, b| a.id.cmp(&b.id));
         let elective_ids: BTreeSet<String> = electives.iter().map(|e| e.id.clone()).collect();
         let story_undatable = self.story_undatable(&elective_ids);
+        let mut fails: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (id, b) in &bundles {
+            let Some((_, list)) = &b.effects else {
+                continue;
+            };
+            if !elective_ids.contains(id) {
+                continue;
+            }
+            for e in *list {
+                e.visit_deep(&mut |x| {
+                    if let Some(o) = x.fail_objective() {
+                        fails
+                            .entry(id.clone())
+                            .or_default()
+                            .insert(o.as_str().to_string());
+                    }
+                });
+            }
+        }
         Acts {
             electives,
             elective_ids,
             forced,
             bundles,
             story_undatable,
+            fails,
         }
     }
 
@@ -1432,10 +1498,15 @@ impl<'a> Flow<'a> {
         let acts = self.acts();
         // The all world completes every objective: it performs every elective
         // but an expiry (spec-0133 §5).
+        // Nor an act that fails an objective: the all world completes
+        // everything.
         let all: BTreeSet<String> = acts
             .elective_ids
             .iter()
-            .filter(|a| delvewright_dsl::producers::expiry_objective(a).is_none())
+            .filter(|a| {
+                delvewright_dsl::producers::expiry_objective(a).is_none()
+                    && !acts.fails.contains_key(*a)
+            })
             .cloned()
             .collect();
         // One expiry witness per limited objective, in document order: the all
@@ -1525,6 +1596,16 @@ impl<'a> Flow<'a> {
                 let mut p = all.clone();
                 p.insert(x.clone());
                 let i = run_of(p, WorldOrigin::Expiry, &mut local);
+                if !expiry_runs.contains(&i) {
+                    expiry_runs.push(i);
+                }
+            }
+            // One failure witness per act that fails an objective, by act id:
+            // the all world with that act performed.
+            for x in acts.fails.keys() {
+                let mut p = all.clone();
+                p.insert(x.clone());
+                let i = run_of(p, WorldOrigin::Failure, &mut local);
                 if !expiry_runs.contains(&i) {
                     expiry_runs.push(i);
                 }
