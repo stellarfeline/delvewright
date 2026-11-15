@@ -489,10 +489,10 @@ impl Listed {
     }
 }
 
-/// Strong references a relief took on this thread to an array of a store it
-/// was not relieving: what [`Listed`] exists to keep at zero.
 #[cfg(test)]
 thread_local! {
+    /// Strong references a relief took on this thread to an array of a
+    /// store it was not relieving: what [`Listed`] exists to keep at zero.
     static FOREIGN_TAKEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Listed arrays of another store a test's relief on this thread passed.
     static FOREIGN_LISTED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
