@@ -1011,7 +1011,7 @@ pub(crate) struct PathFiring {
     /// path's steps; empty for a step that stands nowhere. Read by `DW0863`
     /// through [`RegionEvents::armed`].
     pub armed: Vec<BTreeSet<String>>,
-    /// Per step, every trigger this path never performs whose bundle writes
+    /// Per step, every trigger this path does not perform by then whose bundle writes
     /// the world (a flag, a datum, a recorded outcome) and whose event a body
     /// other than the party raises — a `body-enters` on a census of a wave,
     /// an actor, an NPC or a mob kind — with its gate possibly holding while
@@ -2248,10 +2248,17 @@ pub(super) fn build_critical_path(
             _ => None,
         })
         .collect();
-    // A trigger the path performs is the path's to fire; the ones it never
-    // performs are what a body other than the party could fire in its stead.
-    for u in &mut unattended_by_step {
-        u.retain(|t| !performed.contains(t.as_str()));
+    // A trigger the path performs is the path's to fire from the step that
+    // performs it on; before that step a body other than the party could
+    // still fire it first, out of the order the path walks.
+    let mut first_performed: BTreeMap<&str, usize> = BTreeMap::new();
+    for (k, s) in steps.iter().enumerate() {
+        if let Step::Trigger { trigger_id: t, .. } | Step::Mock { act: t, .. } = s {
+            first_performed.entry(t.as_str()).or_insert(k);
+        }
+    }
+    for (k, u) in unattended_by_step.iter_mut().enumerate() {
+        u.retain(|t| first_performed.get(t.as_str()).is_none_or(|&at| k < at));
     }
     let keep_out: Vec<Vec<crate::compiler::reach::KeepOut>> = steps
         .iter()

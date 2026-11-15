@@ -295,4 +295,39 @@ fn a_fight_whose_bodies_may_fire_an_unperformed_trigger_names_it() {
         kill.get("unattended").is_none(),
         "a trigger whose gate the path never opens cannot fire: {kill:#}"
     );
+    // The fight reads the trigger's flag, so the path performs it in front of
+    // the fight: by the fight it is the path's own, spent.
+    let spent = fixture_with_an_unattended_trigger(
+        "spent",
+        serde_json::json!({"kind": "minecraft:zombie"}),
+        |t| {
+            // Its gate stays open once it has fired: only its being the
+            // path's own act takes it off the fight's step.
+            t.as_object_mut().unwrap().remove("requires_state");
+            t.as_object_mut().unwrap().remove("forbids_flags");
+        },
+    );
+    common::patch_file(&spent.join("quests.json"), |q| {
+        q["content"]["quests"][1]["objectives"][0]["requires_flags"] =
+            serde_json::json!(["flag/summoned", "flag/stone-overrun"]);
+    });
+    let campaign = parse_dir(&spent);
+    let out = build(&campaign, &spent);
+    let steps = json(&out, "critical-path.json")["steps"].clone();
+    let steps = steps.as_array().unwrap();
+    let at = |a: &str| {
+        steps
+            .iter()
+            .position(|s| s["action"] == a || s["trigger"] == a)
+    };
+    let (trigger, kill) = (
+        at("trigger/stone-overrun").expect("the path performs the trigger"),
+        at("kill").unwrap(),
+    );
+    assert!(trigger < kill, "{steps:#?}");
+    assert!(
+        steps[kill].get("unattended").is_none(),
+        "a trigger the path performed before the fight is not left to the fight's bodies: {:#}",
+        steps[kill]
+    );
 }

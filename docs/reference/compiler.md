@@ -3202,7 +3202,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   version**; `format_version` is the **contract's own** version, `13`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. **A `kill` step may
-  carry `unattended`** (format 13): the triggers this path never performs whose
+  carry `unattended`** (format 13): the triggers this path has not performed by that step (a trigger it performs later is still listed: a body may fire it first) whose
   bundle writes the world (a flag, a datum, a recorded outcome), whose event is a
   `body-enters` on a census that may count a body the fight's wave seats (the
   wave itself, or a kind one of its mobs or mounts is; `CensusOf::may_count_wave`),
