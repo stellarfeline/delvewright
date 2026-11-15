@@ -145,7 +145,7 @@ fn open_and_close(
 
 /// The test-environment directive and its document that run a template
 /// alone.
-fn alone(ns: &str, name: &str, out: &mut BuildOutput) -> String {
+pub(super) fn alone(ns: &str, name: &str, out: &mut BuildOutput) -> String {
     let mut env = serde_json::to_vec_pretty(&json!({
         "type": "minecraft:all_of",
         "definitions": [],

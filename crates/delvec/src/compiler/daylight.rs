@@ -42,7 +42,8 @@
 //! (`crates/dsl/data/entity-tags-1.21.11.json`, `data/PROVENANCE.md`), so the question "does
 //! this species burn?" is answered by the game, not by a species table the
 //! compiler invented — the refusal this codebase already makes for mob health
-//! (`DW0475`) and aggro range ([`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`]).
+//! (`DW0475`), and the reason a stack's reach is read from the pinned jar's own
+//! table ([`crate::compiler::nav::follow`]).
 //!
 //! For 1.21.11 the tag holds `skeleton`, `stray`, `bogged`, `wither_skeleton`,
 //! `zombie`, `zombie_villager`, `zombie_horse`, `drowned`, `zombie_nautilus`,
@@ -89,10 +90,10 @@
 //! compiler has already proven walkable. A longer lure works too, so this
 //! *under*-fires by construction and never invents a defect.
 //!
-//! * **Radius** — the stack's declared `attributes.follow_range`, else
-//!   [`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`]: one documented number, never a
-//!   per-species table, exactly as `DW0380`'s optional-elite spheres and
-//!   `DW0478`'s bonfire aggro test read it.
+//! * **Radius** — the reach the emitted stack has once it fights
+//!   ([`crate::compiler::nav::follow::mob_reach`]: a released lane mob's species
+//!   range, else the declared `follow_range`, else the species' own), exactly as
+//!   `DW0380`'s optional-elite spheres and `DW0478`'s bonfire aggro test read it.
 //! * **Walkable** — [`crate::compiler::nav::World::walk_region`] from the seated
 //!   spawn cells over the assembled (and stage-7 edited) world, unbounded: getting
 //!   there is a question about geometry, not about perception. Bounding the *walk*
@@ -180,7 +181,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use delvewright_dsl::{Campaign, Objective, QuestEffect, Verb, WorldTime, WorldWeather};
 
 use crate::compiler::light::LightModel;
-use crate::compiler::nav::{DEFAULT_FOLLOW_RANGE, World};
+use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -728,15 +729,6 @@ fn sky_within_reach(
         .min_by_key(|&cell| (d2(cell), cell))
 }
 
-/// The aggro radius of a mob stack: its declared `attributes.follow_range`, else
-/// [`DEFAULT_FOLLOW_RANGE`]. The same reading `DW0380` and `DW0478` take.
-fn stack_radius(attributes: Option<delvewright_dsl::MobAttributes>) -> u32 {
-    attributes
-        .and_then(|a| a.follow_range)
-        .map(|r| r.max(0.0) as u32)
-        .unwrap_or(DEFAULT_FOLLOW_RANGE)
-}
-
 /// Every wave id a `kill` objective adjudicates — the waves the party is asked to
 /// put down, wherever in the quest graph the objective sits.
 fn killed_waves(c: &Campaign) -> BTreeSet<&str> {
@@ -936,7 +928,7 @@ pub(crate) fn collect_staged(
                 kind: "wave",
                 entity: m.entity.clone(),
                 cells: mine,
-                radius: stack_radius(m.attributes),
+                radius: crate::compiler::nav::follow::mob_reach(w, m).0.max(0.0) as u32,
                 helmeted: m.equipment.as_ref().is_some_and(|e| e.head.is_some()),
                 beats: beats.clone(),
                 dead_after: dead_after.clone(),
@@ -972,7 +964,7 @@ pub(crate) fn collect_staged(
             kind: "actor",
             entity: a.entity.clone(),
             cells: vec![pos],
-            radius: stack_radius(a.attributes),
+            radius: crate::compiler::nav::follow::actor_reach(a).0.max(0.0) as u32,
             helmeted: a.equipment.as_ref().is_some_and(|e| e.head.is_some()),
             beats,
             dead_after: Vec::new(),
@@ -1140,21 +1132,5 @@ mod tests {
             });
             assert!(!hour_burns(t), "{} burns", t.keyword());
         }
-    }
-
-    /// The radius is the declared `follow_range` or the one documented default —
-    /// never a per-species table.
-    #[test]
-    fn the_radius_is_declared_or_the_one_default() {
-        assert_eq!(stack_radius(None), DEFAULT_FOLLOW_RANGE);
-        assert_eq!(
-            stack_radius(Some(delvewright_dsl::MobAttributes {
-                max_health: None,
-                attack_damage: None,
-                movement_speed: None,
-                follow_range: Some(24.0),
-            })),
-            24
-        );
     }
 }

@@ -159,21 +159,6 @@ pub(super) fn member_completion_lines(plan: &Plan, oid: &str) -> Vec<String> {
     out
 }
 
-/// The guard term a quorum member gains (spec-0134 §7): once lapsed, nothing
-/// completes it. A limited member's settled score is its expiry's and its
-/// lapse's at once, so the one term covers both.
-pub(super) fn lapsed_term(c: &delvewright_dsl::Campaign, o: &Objective) -> String {
-    if is_member(c, o.id().as_str()) && o.limit().is_none() {
-        format!(
-            " unless score {} {} matches 1",
-            plan::PARTY,
-            settled_score(o.id().as_str())
-        )
-    } else {
-        String::new()
-    }
-}
-
 /// `setup` lines: the settled score every quorum member owns (a limited one
 /// owns it already).
 pub(super) fn quorum_setup_lines(plan: &Plan) -> Vec<String> {

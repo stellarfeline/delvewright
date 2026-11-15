@@ -10,6 +10,7 @@ import {
   parseCriticalPathJson as parseStrictJson,
   pursuersOf,
   reachGoal,
+  parseCensus,
 } from "../src/critical-path.ts";
 import type { KeepOut, ReachCompletion } from "../src/critical-path.ts";
 
@@ -824,6 +825,26 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a census row placed by teleport must carry its cells, and a riders row none", () => {
+  const row = {
+    state: "state/muster-mustered",
+    objective: "dw.s_muster_mustered",
+    select: "tag=dw_wave_muster",
+    region: [
+      [12, 66, 16],
+      [18, 68, 22],
+    ],
+    count: 1,
+  };
+  assert.throws(() => parseCensus([row], "/census"), /carries its cells/);
+  assert.deepEqual(parseCensus([{ ...row, cells: [[15, 66, 19]] }], "/census")[0]!.cells, [[15, 66, 19]]);
+  const { select: _s, ...rest } = row;
+  assert.throws(
+    () => parseCensus([{ ...rest, riders: "dw_vehicle_gull", cells: [] }], "/census"),
+    /carries no cells/,
+  );
+});
+
 test("a body-enters deed names no anchor and is performed by its census, which it must carry", () => {
   const census = [
     {
@@ -835,6 +856,7 @@ test("a body-enters deed names no anchor and is performed by its census, which i
         [18, 68, 22],
       ],
       count: 1,
+      cells: [[15, 66, 19]],
     },
   ];
   const deed = {
@@ -1518,10 +1540,10 @@ test("a kill step carries the compiler's seat date when one is exported, and not
   }
 });
 
-test("format 11: the constant moved, and a format-10 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 11);
+test("format 12: the constant moved, and a format-11 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 12);
   const raw = validRaw();
-  raw["format_version"] = 10;
+  raw["format_version"] = 11;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

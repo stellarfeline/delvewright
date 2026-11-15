@@ -158,3 +158,79 @@ pub(super) fn census_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(
     out.insert(0, (CENSUS_TICK_FN.to_string(), lines(&tick)));
     out
 }
+
+/// **Each body a step's census places stands on a cell of its own**
+/// (spec-0134 §1): every census row of every step that the harness performs
+/// by teleport (`select`) gains `cells`, `count` of them, taken in order from
+/// its datum's standable cells (`nav::census_cells`) and never one an earlier
+/// row of the same step took — two data counted over one box (three goats'
+/// pen) share it, and a body put onto another is pushed out of the box or into
+/// a wall. A datum whose box holds fewer such cells than the row places hands
+/// over what it holds; the harness refuses a row short of its count by name.
+pub(super) fn annotate_census_cells(cp: &mut Value, cells: &BTreeMap<String, Vec<[i32; 3]>>) {
+    let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for step in steps {
+        let Some(rows) = step.get_mut("census").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        let mut taken: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for row in rows {
+            if row.get("select").is_none() {
+                continue;
+            }
+            let count = row["count"].as_u64().unwrap_or(0) as usize;
+            let state = row["state"].as_str().unwrap_or("");
+            let mine: Vec<[i32; 3]> = cells
+                .get(state)
+                .into_iter()
+                .flatten()
+                .filter(|c| !taken.contains(*c))
+                .take(count)
+                .copied()
+                .collect();
+            taken.extend(mine.iter().copied());
+            if let Some(o) = row.as_object_mut() {
+                o.insert("cells".to_string(), json!(mine));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Three goats counted into one pen by three data, one body each: three
+    /// cells, no two alike. The rows carried none before, and every body was
+    /// put on the box's centre.
+    #[test]
+    fn three_data_over_one_box_take_three_cells() {
+        let row = |s: &str| json!({"state": s, "objective": "o", "select": "tag=t", "count": 1});
+        let mut cp = json!({"steps": [{"action": "interact", "census": [
+            row("state/a"), row("state/b"), row("state/c"),
+            {"state": "state/r", "objective": "o", "riders": "dw_vehicle_v", "count": 1}
+        ]}]});
+        let pen = vec![[1, 65, 1], [2, 65, 1], [1, 65, 2]];
+        let cells: BTreeMap<String, Vec<[i32; 3]>> = ["state/a", "state/b", "state/c"]
+            .iter()
+            .map(|s| (s.to_string(), pen.clone()))
+            .collect();
+        annotate_census_cells(&mut cp, &cells);
+        let rows = cp["steps"][0]["census"].as_array().unwrap();
+        let got: Vec<Value> = rows[..3].iter().map(|r| r["cells"].clone()).collect();
+        assert_eq!(
+            got,
+            vec![
+                json!([[1, 65, 1]]),
+                json!([[2, 65, 1]]),
+                json!([[1, 65, 2]])
+            ]
+        );
+        assert!(
+            rows[3].get("cells").is_none(),
+            "a riders row is boarded, not placed"
+        );
+    }
+}

@@ -25,9 +25,9 @@
 //! (`registry::ItemCombatRegistry`); whether a damage type is reduced by armour
 //! or scaled by difficulty comes from the vendored damage-type registry
 //! (`registry::DamageTypeRegistry`). Mojang publishes **no** per-entity default
-//! attributes, so a mob's base health simply is not knowable at build time — and
+//! attributes, so a mob's base health is not in any vendored table — and
 //! rather than invent a health table (the "invented precision" this codebase
-//! refuses for `nav::DEFAULT_FOLLOW_RANGE` and `clearance::MODEL_MARGIN`), the
+//! refuses for `clearance::MODEL_MARGIN`), the
 //! numeric TTK bound runs only where the campaign declares
 //! `attributes.max_health`, and [`DW_TTK_UNPROVEN`] names every stack that opted
 //! out. That is the whole reason "the bound failed" and "the bound could not be

@@ -440,3 +440,50 @@ fn dw1112_a_failure_no_world_dates() {
         "{log}"
     );
 }
+
+/// **A drive holds an objective pending by every settlement its guard
+/// reads.** A press that serves a limited objective which a loss can also
+/// fail is dispatched under the objective's serving guard, which reads the
+/// expired score and the failed score both; the press's PackTest drives the
+/// objective pending, so it clears both — a sibling that left the objective
+/// failed would otherwise shut the press it means to prove. The drive
+/// cleared the expired score alone.
+#[test]
+fn a_served_limited_objective_that_can_fail_is_driven_clear_of_both() {
+    let out = built(&fixture("served", |v| {
+        v["content"]["triggers"] = json!([{
+            "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
+            "once": false,
+            "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+            "effects": [{ "type": "narrate", "text": "The crank turns.",
+                          "happening": happening("the crank turns", "opens") }],
+            "answers": { "not_yet": "The crank is stiff.", "done": "The crank is wound." },
+            "serves": { "objective": "obj/exit" }
+        }]);
+    }));
+    let test = std::fs::read_to_string(out.join(format!(
+        "packtest-datapack/data/{NS}/test/env_trigger_crank.mcfunction"
+    )))
+    .expect("the press's template");
+    // The line that dispatches the press, wherever the emitter puts it.
+    let fns = out.join(format!("datapack/data/{NS}/function"));
+    let guard: String = std::fs::read_dir(&fns)
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.unwrap().path()).ok())
+        .flat_map(|b| b.lines().map(str::to_string).collect::<Vec<_>>())
+        .filter(|l| l.contains(&format!("run function {NS}:trig_crank")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!guard.is_empty(), "something dispatches the press");
+    for score in ["dw.x_exit", "dw.of_exit"] {
+        assert!(
+            guard.contains(&format!("unless score #party {score} matches 1")),
+            "the serving guard reads `{score}`:\n{guard}"
+        );
+        assert!(
+            test.lines()
+                .any(|l| l == format!("scoreboard players set #party {score} 0")),
+            "the drive clears `{score}`:\n{test}"
+        );
+    }
+}

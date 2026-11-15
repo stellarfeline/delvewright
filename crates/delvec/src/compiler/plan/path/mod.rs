@@ -620,9 +620,15 @@ fn choices_before(
 ///   format-10 bot would refuse the key, and one that ignored `aboard` would
 ///   walk from a seat no walk starts from.
 ///
+/// * `12` — a `census` row the harness places by teleport carries `cells`,
+///   one standable cell of the box per body it places, no two rows of a step
+///   sharing one (spec-0134 §1). A format change for `4`'s reason: a format-11
+///   bot would refuse the key, and one that ignored it would put every body on
+///   the box's centre course — inside a block, or onto one another.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 11;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 12;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1327,9 +1333,11 @@ pub(super) fn build_critical_path(
                 _ => Vec::new(),
             };
             let aggro = match obj {
-                Objective::Kill { wave, .. } => wave_of(campaign, wave.as_str())
-                    .and_then(|w| point_of(anchors, area, w.anchor.as_str()).ok())
-                    .map(|at| (at, f64::from(crate::compiler::nav::DEFAULT_FOLLOW_RANGE))),
+                Objective::Kill { wave, .. } => wave_of(campaign, wave.as_str()).and_then(|w| {
+                    point_of(anchors, area, w.anchor.as_str())
+                        .ok()
+                        .map(|at| (at, crate::compiler::nav::follow::wave_perception(w).0))
+                }),
                 _ => None,
             };
             steps.push(Step::Expire {

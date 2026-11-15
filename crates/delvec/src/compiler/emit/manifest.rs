@@ -844,6 +844,24 @@ pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value
 /// harness performs by command — `select` is the selector's body terms,
 /// `region` the box's corners, `count` the bodies the term needs. In
 /// declaration order; empty for a step whose gate reads no census.
+/// **One census per datum a step reads**, with the bodies it places: a
+/// `body-enters` deed's own term and the trigger's gate on the same datum are
+/// one census, and two rows would put two bodies in a box whose gate counts
+/// one. The row places the most any of its terms needs.
+fn census_needs<'a>(
+    terms: impl Iterator<Item = &'a delvewright_dsl::StateCompare>,
+) -> Vec<(&'a delvewright_dsl::StateCompare, i32)> {
+    let mut need: Vec<(&delvewright_dsl::StateCompare, i32)> = Vec::new();
+    for cmp in terms {
+        let n = cmp.census_bodies();
+        match need.iter_mut().find(|(c, _)| c.state == cmp.state) {
+            Some((_, m)) => *m = (*m).max(n),
+            None => need.push((cmp, n)),
+        }
+    }
+    need
+}
+
 pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
     let q = &plan.campaign.quests.content;
     // A `body-enters` deed (a story world's entry deed, spec-0134 §1) is
@@ -876,24 +894,59 @@ pub(super) fn step_census(plan: &Plan, s: &plan::Step) -> Vec<Value> {
     } else {
         &[]
     };
-    terms
-        .iter()
-        .chain(entered.iter())
-        .filter_map(|cmp| {
+    census_needs(terms.iter().chain(entered.iter()))
+        .into_iter()
+        .filter_map(|(cmp, count)| {
             let decl = q.state_decl(cmp.state.as_str())?;
             let k = decl.counts.as_ref()?;
             let (lo, hi) = plan.zone_box(&k.region)?;
             // A vehicle's riders are placed by no teleport: the count is
             // raised by a body that boards, which the ride step does.
             let select = super::census::census_terms(plan, &k.of)?;
-            let count = cmp.census_bodies();
-            Some(json!({
+            let mut row = json!({
                 "state": cmp.state.as_str(),
                 "objective": plan::state_score(cmp.state.as_str()),
                 "select": select,
                 "region": [lo, hi],
                 "count": count,
-            }))
+            });
+            // A census of a kind declares no body of its own: every body of
+            // the kind in the world is some other object's (a wave's, an
+            // actor's), and one taken out of its fight leaves the fight short
+            // — a named elite included. The harness places bodies of the kind
+            // it summons for the act and removes after.
+            if let delvewright_dsl::CensusOf::Kind(kind) = &k.of
+                && let Some(o) = row.as_object_mut()
+            {
+                o.insert("stand_in".to_string(), json!(kind));
+            }
+            Some(row)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod census_need_tests {
+    use super::*;
+
+    /// The cake's census: the trigger's gate (at least 1) and its own entry
+    /// deed (at least 1) on one datum are one row of one body; before, they
+    /// were two rows, two pillagers were put on the stage and the game read 2.
+    #[test]
+    fn a_deed_and_its_gate_on_one_datum_place_one_census() {
+        let cmp = |state: &str, value: i32| -> delvewright_dsl::StateCompare {
+            serde_json::from_value(json!({"state": state, "op": "at-least", "value": value}))
+                .expect("a term")
+        };
+        let (a, b, c) = (
+            cmp("state/cake", 1),
+            cmp("state/cake", 1),
+            cmp("state/pen", 3),
+        );
+        let need = census_needs([&a, &c, &b].into_iter());
+        let got: Vec<(&str, i32)> = need.iter().map(|(x, n)| (x.state.as_str(), *n)).collect();
+        assert_eq!(got, vec![("state/cake", 1), ("state/pen", 3)]);
+        let d = cmp("state/cake", 2);
+        assert_eq!(census_needs([&a, &d].into_iter())[0].1, 2);
+    }
 }

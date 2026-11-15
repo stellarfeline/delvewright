@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { CensusRow, ReachStep } from "../src/critical-path.ts";
 import { parseCensus } from "../src/critical-path.ts";
-import { censusCentre, censusCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../src/census.ts";
+import { censusCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../src/census.ts";
 import { methods as censusMethods } from "../src/executor/census.ts";
 import { methods as walkMethods } from "../src/executor/walk.ts";
 import { runSequence } from "../src/sequencer.ts";
@@ -17,24 +17,52 @@ const row: CensusRow = {
     [12, 65, 22],
   ],
   count: 3,
+  cells: [
+    [11, 64, 21],
+    [10, 64, 21],
+    [12, 64, 21],
+  ],
 };
 
-test("a census puts the needed bodies of the set in the box's centre, nearest first, and holds them", () => {
-  assert.deepEqual(censusCentre(row), [11.5, 64, 21.5]);
-  assert.deepEqual(censusCommands(row), [
-    "/tag @e[tag=dw_wave_goats,limit=3,sort=nearest] add dw_census_placed",
+test("a census puts each needed body of the set on a cell of its own, nearest first, and holds them", () => {
+  const cmds = censusCommands(row);
+  const tps = cmds.filter((c) => c.startsWith("/tp "));
+  assert.deepEqual(tps, [
+    "/tp @e[tag=dw_census_placed] 11.5 64 21.5",
+    "/tp @e[tag=dw_census_placed] 10.5 64 21.5",
+    "/tp @e[tag=dw_census_placed] 12.5 64 21.5",
+  ]);
+  assert.equal(new Set(tps).size, row.count, "no two bodies share a cell");
+  assert.deepEqual(cmds.slice(0, 5), [
+    "/tag @e[tag=dw_wave_goats,tag=!dw_census_taken,limit=1,sort=nearest] add dw_census_placed",
     "/tp @e[tag=dw_census_placed] 11.5 64 21.5",
     "/execute as @e[tag=dw_census_placed,nbt=!{NoAI:1b}] run tag @s add dw_census_held",
-    "/execute as @e[tag=dw_census_held] run data merge entity @s {NoAI:1b}",
+    "/tag @e[tag=dw_census_placed] add dw_census_taken",
     "/tag @e[tag=dw_census_placed] remove dw_census_placed",
   ]);
+  assert.equal(cmds.at(-1), "/execute as @e[tag=dw_census_held] run data merge entity @s {NoAI:1b}");
   assert.deepEqual(censusCommands({ ...row, count: 0 }), []);
   // Only the bodies the census stilled are woken: a puppet placed already
   // without its AI never carried the held tag.
   assert.deepEqual(censusReleaseCommands(), [
     "/execute as @e[tag=dw_census_held] run data merge entity @s {NoAI:0b}",
     "/execute as @e[tag=dw_census_held] run tag @s remove dw_census_held",
+    "/execute as @e[tag=dw_census_standin] run kill @s",
+    "/execute as @e[tag=dw_census_taken] run tag @s remove dw_census_taken",
   ]);
+});
+
+test("a box that holds fewer standable cells than the bodies it places is refused by name", () => {
+  assert.throws(() => censusCommands({ ...row, cells: row.cells!.slice(0, 2) }), /holds 2 cell\(s\).*places 3/);
+});
+
+test("a census of a kind summons its own bodies and takes none some fight owns", () => {
+  const kind: CensusRow = { ...row, select: "type=minecraft:pillager", standIn: "minecraft:pillager", count: 1 };
+  const cmds = censusCommands(kind);
+  assert.deepEqual(cmds, [
+    '/summon minecraft:pillager 11.5 64 21.5 {Tags:["dw_census_standin","dw_census_taken"],NoAI:1b,PersistenceRequired:1b}',
+  ]);
+  assert.ok(!cmds.some((c) => c.includes("@e[type=minecraft:pillager")), "no existing pillager is taken");
 });
 
 test("the count read back is the party's, and exactly the bodies placed", () => {
@@ -127,6 +155,7 @@ const penReach = {
   pos: [11, 64, 21],
   radius: 2,
   completion: { kind: "sphere", pos: [11, 64, 21], radius: 2 },
+  // Five bodies on five cells, five lines each, and each row's hold: 27 lines.
   census: [row, { ...row, state: "state/hens-home", objective: "dw.s_hens_home", select: "tag=dw_wave_hens", count: 2 }],
 };
 
@@ -168,7 +197,7 @@ test("a census is placed at the act's stance — after the walk, every body at o
   // Before the fix the census ran before the step was dispatched, so the
   // bodies were placed while the bot still stood a walk away: place, read,
   // place, read, walk, act.
-  assert.deepEqual(log, ["walk", "place 10", "read", "read", "act", "release"]);
+  assert.deepEqual(log, ["walk", "place 27", "read", "read", "act", "release"]);
 });
 
 test("a census-gated act that ends without reaching its stance is refused by name", async () => {
@@ -189,7 +218,7 @@ test("the held bodies are let go when the act fails after its stance", async () 
     throw new Error("the latch never answered");
   });
   await assert.rejects(runSequence(pathOf(penReach), self as never), /latch never answered/);
-  assert.deepEqual(log, ["place 10", "read", "read", "act", "release"]);
+  assert.deepEqual(log, ["place 27", "read", "read", "act", "release"]);
 });
 
 test("the executor's reach places its census after its walk and before its completion is read", async () => {
