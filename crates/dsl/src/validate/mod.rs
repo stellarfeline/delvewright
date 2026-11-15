@@ -65,6 +65,7 @@ pub fn validate_campaign_with(
     crate::quest::check::quorum_checks(c, &mut d);
     // spec-0133: an objective's window — its bounds, its announcement, its start.
     crate::quest::check::limit_checks(c, &mut d);
+    crate::quest::check::failure_checks(c, &mut d);
     crate::trigger::press_answer_checks(c, &mut d);
     d.extend(crate::trigger::press_checks(c).0);
     crate::world::horizon_param_checks(c, &mut d);

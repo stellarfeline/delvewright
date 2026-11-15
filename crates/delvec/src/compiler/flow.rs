@@ -334,6 +334,10 @@ struct ReplayState {
     /// The quorum members this walk has lapsed (spec-0134 §7): settled the
     /// moment their quorum held, their completion bundle never fired.
     lapsed: BTreeSet<String>,
+    /// The objectives a `fail-objective` this walk fired has failed: settled
+    /// by the story, their completion bundle and their `on_expire` never
+    /// fired. Their step is a step the party does not perform.
+    failed: BTreeSet<String>,
     /// What the party held the moment each final scene began to fire
     /// (spec-0108 §4.2), keyed by the scene list's pointer — the flags and
     /// every datum's value, read before the scene's own lines run.
@@ -753,6 +757,11 @@ impl Walk<'_, '_> {
     /// Has `campaign-complete` fired? Nothing is walked after it.
     pub fn ended(&self) -> bool {
         self.complete_at.is_some()
+    }
+
+    /// Has a `fail-objective` this walk fired failed `objective`?
+    pub fn failed(&self, objective: &str) -> bool {
+        self.st.failed.contains(objective)
     }
 
     /// Has `objective` been completed on this walk?
@@ -1521,6 +1530,11 @@ impl<'a> Flow<'a> {
         else {
             return Some("it is not an objective of its quest".to_string());
         };
+        // A failed objective's step is no act of the party's: the story has
+        // already settled it, so nothing about the step can be blocked.
+        if st8.failed.contains(&st.objective) {
+            return None;
+        }
         if !st8.active.contains(&st.quest) {
             return Some(format!(
                 "its quest `{}` is not active yet — nothing earlier on the path completes the \
@@ -1537,7 +1551,10 @@ impl<'a> Flow<'a> {
                 .unwrap_or_else(|| "its `after` quorum does not hold at this point — too few of its members are done".to_string());
             return Some(missing);
         }
-        for f in obj.requires_flags() {
+        // spec-0133 §3 as amended: a clock settles its objective whatever the
+        // objective's gate says, so an expiry is never held by the gate.
+        let gated = !st8.expired.contains(&st.objective);
+        for f in obj.requires_flags().iter().filter(|_| gated) {
             if !st8.flags.contains(f.as_str()) {
                 return Some(format!(
                     "it requires `{}`, which nothing earlier on the path sets (a mutually \
@@ -1546,7 +1563,7 @@ impl<'a> Flow<'a> {
                 ));
             }
         }
-        for f in obj.forbids_flags() {
+        for f in obj.forbids_flags().iter().filter(|_| gated) {
             if st8.flags.contains(f.as_str()) {
                 return Some(format!(
                     "it forbids `{}`, which an earlier step on the path has already set",
@@ -2038,12 +2055,16 @@ impl<'a> Flow<'a> {
         complete_at: &mut Option<(usize, String)>,
         allow: &dyn Fn(&GatedFlag) -> bool,
     ) {
+        // A failed objective's step settles nothing new and fires nothing:
+        // the bundle that failed it was the story's account (`fail-objective`).
+        let fails = st.failed.contains(&step.objective);
         st.done_obj.insert(step.objective.clone());
         st.fired.clear();
         st.undecided.clear();
-        let expires = st.expired.contains(&step.objective);
+        let expires = st.expired.contains(&step.objective) && !fails;
         if let Some(n) = step.talk_option
             && !expires
+            && !fails
         {
             for f in self.option_sets(&step.objective, n) {
                 st.flags.insert(f);
@@ -2051,7 +2072,8 @@ impl<'a> Flow<'a> {
         }
         // spec-0133 §5: an objective this world expires settles here by the
         // clock — its `on_expire` fires, its completion bundle does not.
-        if expires {
+        if fails {
+        } else if expires {
             if let Some((qi, oi, o)) = self.objective_site(&step.objective)
                 && let Some(l) = o.limit()
             {
@@ -2618,6 +2640,12 @@ impl<'a> Flow<'a> {
                         *complete_at = Some((pos, objective.to_string()));
                     }
                 }
+                // The objective is lost here, unless it has already settled.
+                Verb::FailObjective { objective: o } => {
+                    if !st.done_obj.contains(o.as_str()) {
+                        st.failed.insert(o.as_str().to_string());
+                    }
+                }
                 Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
                     continue;
                 }
@@ -2666,6 +2694,7 @@ impl<'a> Flow<'a> {
             &BTreeSet::new(),
             &BTreeSet::new(),
             &default_lapsed(self.c),
+            &BTreeSet::new(),
         )
     }
 
@@ -2679,6 +2708,7 @@ impl<'a> Flow<'a> {
         barred: &BTreeSet<String>,
         expired: &BTreeSet<String>,
         lapsed: &BTreeSet<String>,
+        failed: &BTreeSet<String>,
     ) -> Solution {
         let mut s = Solution {
             lapsed: lapsed.clone(),
@@ -2740,33 +2770,44 @@ impl<'a> Flow<'a> {
                     if s.completable.contains(oid) {
                         continue;
                     }
-                    if !obj.after_holds(&|a| s.completable.contains(a), &|a| {
-                        s.completable.contains(a) && !expired.contains(a) && !lapsed.contains(a)
-                    }) {
+                    let by_act = |a: &str| {
+                        s.completable.contains(a)
+                            && !expired.contains(a)
+                            && !lapsed.contains(a)
+                            && !failed.contains(a)
+                    };
+                    if !obj.after_holds(&|a| s.completable.contains(a), &by_act) {
                         continue;
                     }
                     // spec-0134 §7: a member this world lapses settles when its
                     // quorum holds, with no act — and produces nothing.
                     if lapsed.contains(oid) {
-                        if self.quorum_holds_for(oid, &|a| {
-                            s.completable.contains(a) && !expired.contains(a) && !lapsed.contains(a)
-                        }) {
+                        if self.quorum_holds_for(oid, &by_act) {
                             s.completable.insert(oid.to_string());
                             changed = true;
                         }
                         continue;
                     }
-                    if !obj
-                        .requires_flags()
-                        .iter()
-                        .all(|f| s.flags.contains(f.as_str()))
-                    {
+                    // A failed objective is settled by the story's
+                    // `fail-objective`, with no act and nothing produced.
+                    if failed.contains(oid) {
+                        s.completable.insert(oid.to_string());
+                        changed = true;
                         continue;
                     }
                     // spec-0133 §5: an objective this world expires settles by
-                    // the clock, with no act — no option needed, and its
-                    // `on_expire` producers credited instead of its completion's.
+                    // the clock, with no act — no option needed, its gate not
+                    // read (§3 as amended), and its `on_expire` producers
+                    // credited instead of its completion's.
                     let expires = expired.contains(oid);
+                    if !expires
+                        && !obj
+                            .requires_flags()
+                            .iter()
+                            .all(|f| s.flags.contains(f.as_str()))
+                    {
+                        continue;
+                    }
                     if let Objective::TalkTo { .. } = obj
                         && !expires
                     {
@@ -3397,10 +3438,13 @@ pub fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {
     order
 }
 
-/// Whether `id` is done by its own act in `st`: settled, and neither expired
-/// nor lapsed (spec-0134 §7) — what a quorum counts.
+/// Whether `id` is done by its own act in `st`: settled, and neither expired,
+/// lapsed (spec-0134 §7) nor failed — what a quorum counts.
 fn completed(st: &ReplayState, id: &str) -> bool {
-    st.done_obj.contains(id) && !st.expired.contains(id) && !st.lapsed.contains(id)
+    st.done_obj.contains(id)
+        && !st.expired.contains(id)
+        && !st.lapsed.contains(id)
+        && !st.failed.contains(id)
 }
 
 /// Every quorum of the campaign with the objective that waits on it, in

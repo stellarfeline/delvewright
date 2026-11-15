@@ -1,0 +1,16 @@
+{
+  "code": "DW1111",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1climb-the-loft/-",
+      "value": {
+        "type": "fail-objective",
+        "objective": "obj/climb-the-loft"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the climb's own completion bundle fails the climb. That bundle fires only once the climb is done, so the loss can fail nothing. Refused at validation, naming the objective and the bundle it sits in. It declares no unit: `fail-objective` is bound by the loft bat's kill; what the engine refuses is a loss that never takes."
+}

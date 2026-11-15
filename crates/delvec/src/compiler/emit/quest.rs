@@ -222,6 +222,7 @@ pub(super) fn serving_guard(
     ));
     g.push_str(&expired_term(o));
     g.push_str(&super::quorum::lapsed_term(c, o));
+    g.push_str(&super::limit::failed_term(c, o));
     g
 }
 
@@ -277,6 +278,7 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
     ));
     g.push_str(&expired_term(o));
     g.push_str(&super::quorum::lapsed_term(plan.campaign, o));
+    g.push_str(&super::limit::failed_term(plan.campaign, o));
     g
 }
 
@@ -446,6 +448,7 @@ pub(super) fn quest_completion_fns(
             // it re-summed — the members not done lapse the moment it holds,
             // after this completion's own bundle and before its quest is asked.
             body.extend(super::quorum::member_completion_lines(plan, oid));
+            body.extend(super::limit::failure_completion_lines(c, oid));
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
             // area's entry spawn (areas are AREA_SPACING apart across void). Runs

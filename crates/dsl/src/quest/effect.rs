@@ -439,6 +439,14 @@ impl QuestEffect {
         }
     }
 
+    /// The objective if this is `fail-objective`.
+    pub fn fail_objective(&self) -> Option<&crate::ObjectiveId> {
+        match &self.verb {
+            Verb::FailObjective { objective } => Some(objective),
+            _ => None,
+        }
+    }
+
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match &self.verb {
@@ -576,6 +584,7 @@ impl QuestEffect {
             | Verb::ApplyEdits { .. }
             // spec-0137's `record-outcome`.
             | Verb::RecordOutcome { .. }
+            | Verb::FailObjective { .. }
             // spec-0136's moves.
             | Verb::Hop { .. }
             | Verb::Pose { .. }

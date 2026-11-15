@@ -240,6 +240,9 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
                     settled_score(o.id().as_str())
                 ));
             }
+            // A failable objective's failure starts clear, as a fresh
+            // delve's does.
+            b.extend(super::super::limit::failure_clear_lines(c, o.id().as_str()));
         }
     }
     for qid in campaign_start_quests(c) {

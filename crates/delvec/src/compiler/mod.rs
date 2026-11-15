@@ -202,6 +202,7 @@ pub mod link;
 pub mod load;
 pub mod r#loop;
 pub mod loot;
+pub mod loss;
 pub mod mark;
 pub mod massing;
 pub mod music;

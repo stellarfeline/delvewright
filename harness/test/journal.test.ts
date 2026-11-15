@@ -144,6 +144,7 @@ const records = parseRecordsLedger({
     { world: "world/0", finished: [{ objective: "obj/horse", settles: "done", written: [1] }] },
     { world: "world/1", finished: [{ objective: "obj/horse", settles: "open", written: [] }] },
     { world: "world/2", finished: [{ objective: "obj/horse", settles: "done", written: null }] },
+    { world: "world/3", finished: [{ objective: "obj/horse", settles: "failed", written: [2] }] },
   ],
 });
 const horse = records.objectives[0]!;
@@ -164,6 +165,27 @@ test("a settled row shows the record and exactly the lines its world wrote", () 
   );
   assert.equal(sibling.outcome, "missing");
   assert.match(sibling.detail, /line 2 .* never wrote it/);
+});
+
+test("a failed task is a finished entry: its record and the lines its world wrote", () => {
+  const row = records.worlds.get("world/3")![0]!;
+  assert.equal(row.settles, "failed");
+  const ok = judgeRecordRow("world/3", page(horse.recordKey!, horse.outcomes[1]!.key!), horse, row);
+  assert.equal(ok.outcome, "shown");
+  assert.equal(judgeRecordRow("world/3", [], horse, row).outcome, "missing");
+});
+
+test("a settles token outside the four is refused", () => {
+  assert.throws(
+    () =>
+      parseRecordsLedger({
+        party: "#party",
+        mainline: "world/0",
+        objectives: [],
+        worlds: [{ world: "world/0", finished: [{ objective: "obj/horse", settles: "lost", written: [] }] }],
+      }),
+    /not done, expired, failed or open/,
+  );
 });
 
 test("an open hidden task has no page", () => {
