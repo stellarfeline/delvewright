@@ -349,7 +349,7 @@ fn every_answer_plays_the_refusal_cue() {
         );
         assert!(
             cue[0].ends_with("run playsound minecraft:block.chest.locked block @a ~ ~ ~")
-                && cue[0].contains("store result score #ans_heard dw.sys"),
+                && cue[0].contains("store result score #heard_dw_answer_"),
             "`{n}`'s cue reaches every player near it and counts them: {}",
             cue[0]
         );
@@ -513,7 +513,7 @@ fn every_answer_is_heard_by_two_players_in_a_packtest() {
             "`{n}` stands a second player: {body}"
         );
         assert!(
-            body.contains("assert score #ans_heard dw.sys matches 2.."),
+            body.contains("assert score #heard_dw_answer_") && body.contains(" dw.sys matches 2.."),
             "`{n}` asks that both heard: {body}"
         );
         templates += 1;

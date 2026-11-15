@@ -667,13 +667,13 @@ fn answer_drive(plan: &Plan, a: &crate::compiler::pressable::AnswerPlan, sel: &s
 /// per press answer: the presser and a second player stand a block either side
 /// of where the cue plays — the pressed body's cell, or the presser for a body
 /// with no cell — the answer's real bundle runs as the presser, and the cue's
-/// own count (`#ans_heard`, what `playsound` reports it reached) must be at
+/// own count (`#heard_<answer>`, what `playsound` reports it reached) must be at
 /// least two. A cue addressed to the presser alone reaches one.
 pub(super) fn emit_answer_heard_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let heard = super::super::press::CUE_HEARD;
     for (k, a) in plan.answers().iter().enumerate() {
+        let heard = super::super::press::cue_heard_holder(a);
         let id = plan::safe_local(&a.id());
         let (pin, sel) = pin_dummy(&format!("dw_t_ah_{k}"));
         let other = format!("dwah{k}");

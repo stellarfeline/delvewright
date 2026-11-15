@@ -5587,11 +5587,11 @@ at the presser, `execute at @s`, for a body with no cell — a creature, a step,
 a shortcut's far side), in the `block` category, to `@a`, so every player within
 the sound's 16 blocks hears it while the line stays on the presser's action bar
 (`docs/reference/sound-audience.md`). The line is `execute … store result score
-#ans_heard dw.sys run playsound minecraft:block.chest.locked block @a ~ ~ ~`:
-`#ans_heard` holds the number of players the cue reached. Generated PackTest
+#heard_<answer> dw.sys run playsound minecraft:block.chest.locked block @a ~ ~ ~`:
+`#heard_<answer>` (`<answer>` the answer trigger's safe id, one holder per answer) holds the number of players the cue reached. Generated PackTest
 `answer_heard_<k>`, one per answer: the presser and a second player
 (`dummy dwah<k> spawn`) a block either side of the cue's origin, the answer's
-real `trig_<id>` run as the presser, `#ans_heard` asserted `2..`. Its dispatch `press_dw_answer_<owner>_<state>` runs the
+real `trig_<id>` run as the presser, `#heard_<answer>` asserted `2..`. Its dispatch `press_dw_answer_<owner>_<state>` runs the
 owner's state function `pst_<owner>` (writing `#pst_<owner>` 0 shut, 1 open,
 2 settled from the owner's own gate authorities) and calls the answer only in its
 state; the answer writes the trace `#ans_<owner>` (1 not yet, 2 missing item,

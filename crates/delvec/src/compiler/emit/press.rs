@@ -28,10 +28,13 @@ use crate::compiler::pressable::{AnswerPlan, Owner, PressPlan, State, box_tags};
 /// presser's alone; the sound is the place's.
 pub(super) const CUE_REFUSED: &str = "minecraft:block.chest.locked";
 
-/// The `dw.sys` holder the refusal cue writes the number of players it reached
-/// to — `playsound`'s own result — so a PackTest with several players can read
-/// who heard a refusal; no game state records a sound.
-pub(super) const CUE_HEARD: &str = "#ans_heard";
+/// The `dw.sys` holder answer `a`'s refusal cue writes the number of players it
+/// reached to (`#heard_<answer>`) — `playsound`'s own result — so a PackTest with
+/// several players can read who heard a refusal; no game state records a sound.
+/// One per answer, so two templates never share it.
+pub(super) fn cue_heard_holder(a: &AnswerPlan) -> String {
+    format!("#heard_{}", plan::safe_local(&a.id()))
+}
 
 /// The line the refusal cue is played by: at the centre of the pressed body's
 /// cell, in the `block` category, to `@a` — every player within the sound's
@@ -48,7 +51,8 @@ pub(super) fn refusal_cue_line(plan: &Plan, a: &AnswerPlan) -> String {
         None => "at @s ".to_string(),
     };
     format!(
-        "execute {at}store result score {CUE_HEARD} dw.sys run playsound {CUE_REFUSED} block @a ~ ~ ~"
+        "execute {at}store result score {} dw.sys run playsound {CUE_REFUSED} block @a ~ ~ ~",
+        cue_heard_holder(a)
     )
 }
 

@@ -718,10 +718,10 @@ fn the_cutscene_return_is_judged_with_two_players() {
     let t = String::from_utf8(out.get(&key).expect("the template is emitted").clone()).unwrap();
     for want in [
         "dummy dwcsr0 spawn",
-        "assert score #csr_a dw.sys matches 1",
-        "assert score #csr_b dw.sys matches 1",
-        "assert score #csr_ya dw.sys matches 90",
-        "assert score #csr_yb dw.sys matches -90",
+        "assert score #csr0_a dw.sys matches 1",
+        "assert score #csr0_b dw.sys matches 1",
+        "assert score #csr0_ya dw.sys matches 90",
+        "assert score #csr0_yb dw.sys matches -90",
         "dummy dwcsr0 leave",
     ] {
         assert!(t.contains(want), "`{want}` in the template: {t}");

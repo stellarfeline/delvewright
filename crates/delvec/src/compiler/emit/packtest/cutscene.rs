@@ -55,6 +55,43 @@ pub(super) fn emit_cutscene_return_packtests(plan: &Plan, out: &mut BuildOutput)
         b.push("execute at @s run tp @s ~ ~12 ~3".to_string());
         b.push(format!("execute as {them} at @s run tp @s ~-6 ~12 ~"));
         b.push(format!("function {ns}:cs_end_{bare}"));
+        let h = |k: &str| format!("#csr{n}_{k}");
+        b.push(format!(
+            "execute at @s store success score {} dw.sys if entity @e[type=minecraft:marker,tag=dw_csr_a,distance=..0.01]",
+            h("a")
+        ));
+        b.push(format!("assert score {} dw.sys matches 1", h("a")));
+        b.push(format!(
+            "execute at {them} store success score {} dw.sys if entity @e[type=minecraft:marker,tag=dw_csr_b,distance=..0.01]",
+            h("b")
+        ));
+        b.push(format!("assert score {} dw.sys matches 1", h("b")));
+        b.push(format!(
+            "execute store result score {} dw.sys run data get entity @s Rotation[0]",
+            h("ya")
+        ));
+        b.push(format!("assert score {} dw.sys matches 90", h("ya")));
+        b.push(format!(
+            "execute store result score {} dw.sys run data get entity {them} Rotation[0]",
+            h("yb")
+        ));
+        b.push(format!("assert score {} dw.sys matches -90", h("yb")));
+        b.push("kill @e[type=minecraft:marker,tag=dw_csr]".to_string());
+        b.push("execute at @s run tp @s ~ ~ ~ 90 0".to_string());
+        b.push(format!("execute at @s run tp {them} ~4 ~ ~ -90 0"));
+        b.push(
+            "execute at @s run summon minecraft:marker ~ ~ ~ {Tags:[\"dw_csr\",\"dw_csr_a\"]}"
+                .to_string(),
+        );
+        b.push(format!(
+            "execute at {them} run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csr\",\"dw_csr_b\"]}}"
+        ));
+        b.push(format!("function {ns}:{start}"));
+        b.push(format!("schedule clear {ns}:cs_tick_{bare}"));
+        b.push("# the camera carries each body away from where it stood".to_string());
+        b.push("execute at @s run tp @s ~ ~12 ~3".to_string());
+        b.push(format!("execute as {them} at @s run tp @s ~-6 ~12 ~"));
+        b.push(format!("function {ns}:cs_end_{bare}"));
         b.push(
             "execute at @s store success score #csr_a dw.sys if entity @e[type=minecraft:marker,tag=dw_csr_a,distance=..0.01]"
                 .to_string(),
