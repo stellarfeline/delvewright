@@ -200,6 +200,9 @@
         "facing": "south",
         "id": "actor/hall-usher",
         "mount": {
+          "attributes": {
+            "movement_speed": 0.2
+          },
           "entity": "minecraft:pig",
           "equipment": {
             "saddle": {
