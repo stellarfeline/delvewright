@@ -128,14 +128,25 @@ export const methods = {
           await delay(CLIMB_TICK_MS);
         }
       } else {
-        // 2. Hold nothing and slide down to the let-go height.
+        // 2. Off the brink. Aligned within COLUMN_ALIGN, a body entered from
+        //    above can still stand on the edge of the floor beside the column
+        //    (its hitbox is 0.6 wide), and then it has not taken hold at all:
+        //    the walk ended at the top and left the descent to the next hop.
+        //    Keep stepping to the column's centre until the body drops into it.
+        while (bot.entity.onGround && bot.entity.position.y > climb.to[1] + 0.5) {
+          if (Date.now() > deadline) fail("did not drop off the brink into the column");
+          await face(cx, bot.entity.position.y + 1.6, cz);
+          bot.setControlState("forward", horiz(cx, cz) > 0.05);
+          await delay(CLIMB_TICK_MS);
+        }
+        // 3. Hold nothing and slide down to the let-go height.
         bot.clearControlStates();
         while (bot.entity.position.y > climb.to[1] + 0.05 && !bot.entity.onGround) {
           if (Date.now() > deadline) fail("did not slide down to the let-go height");
           await delay(CLIMB_TICK_MS);
         }
       }
-      // 3. Step onto the let-go cell.
+      // 4. Step onto the let-go cell.
       while (horiz(tx, tz) > LET_GO_REACH || !bot.entity.onGround) {
         if (Date.now() > deadline) fail("did not step onto the let-go cell");
         await face(tx, bot.entity.position.y + 1.6, tz);

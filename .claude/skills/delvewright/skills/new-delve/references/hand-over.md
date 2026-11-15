@@ -76,14 +76,15 @@ The floor is 60 seconds; below it the server refuses to start.
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
     --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
-    --written-world .out/written-world.json
+    --written-world .out/written-world.json \
+    --branch-runs "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/branch-runs.json"
 ```
 
 `up` needs `CREATOR_NAME=<the creator's Minecraft name>` in the environment and refuses without it; that name is opped on the served world, everyone else joins as a player. The resource pack is served on port 25580 beside the game port, at this machine's address as other machines reach it (`DELVEWRIGHT_PLAYTEST_HOST` names it when it cannot be found, or when players are across the internet); a player outside the local network needs 25580 forwarded as well as 25565, and joins at that same address instead of `localhost`.
 
 A reference level is served with `--prefabs campaigns/references/<id>/prefabs`.
 
-**`--run-report` and `--written-world` are step 10's two records**, and the gate admits only on them: the bot's critical path green, and the server's world equal to the engine's model, each for a build with this build's manifest. The build this command makes is that build when nothing changed since step 10 — the build is deterministic. A record of another build, a red one, or none is refused, unless `--stage-anyway` overrides it (printed and recorded as an overridden refusal).
+**`--run-report`, `--written-world` and `--branch-runs` are step 10's records**, and the gate admits only on them: the bot's critical path green, the server's world equal to the engine's model, and — for a build that emitted `validation/branch-plan.json` — every story world the plan names walked to a pass, each for a build with this build's manifest. A build with no branch plan owes no `--branch-runs`. The build this command makes is that build when nothing changed since step 10 — the build is deterministic. A record of another build, a red one, or none is refused, unless `--stage-anyway` overrides it (printed and recorded as an overridden refusal).
 
 **`--delvec` is optional; this prints it so the command is exact.** Without it the script uses the `delvec` already on `PATH` when that binary IS this engine — its `--version` equal to the engine checkout's `versions.toml` `[engine].version`, which is what Init I3a installed — and otherwise builds from source. Either way it prints, in one line, which binary it chose and why, before it builds anything. Read that line: if it says it is building from source, the `delvec` on `PATH` is a different engine from the checkout at `$ENGINE_REF`, and that disagreement is worth stopping for.
 
@@ -101,7 +102,9 @@ The **second path** is the compose pair, for a tree step 8 already left at `"$DE
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
     --build "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
-    --written-world .out/written-world.json --report .out/round-1-gate.md
+    --written-world .out/written-world.json \
+    --branch-runs "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/branch-runs.json" \
+    --report .out/round-1-gate.md
 EULA=TRUE docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \
     -f "$DELVEWRIGHT_ENGINE/validation/owner-play.yaml" --profile play up
 ```
@@ -155,7 +158,8 @@ It prints every refusal it overrode, one line each, records them and the reason,
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
     --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$DELVE_OUTPUT" \
     --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
-    --written-world .out/written-world.json
+    --written-world .out/written-world.json \
+    --branch-runs "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/branch-runs.json"
 
 # playtest, with in-game notes
 EULA=TRUE CREATOR_NAME=<mc name> docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \

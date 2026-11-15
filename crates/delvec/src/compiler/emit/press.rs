@@ -22,13 +22,38 @@ use super::*;
 use crate::compiler::pressable::{AnswerPlan, Owner, PressPlan, State, box_tags};
 
 /// The engine's refusal cue: the sound the pinned game pairs with its own
-/// refused use (a locked container pressed without its key), played to the one
-/// player whose press was refused (spec-0117 §5.2).
+/// refused use (a locked container pressed without its key), played where the
+/// thing pressed stands, to every player near it, as the pinned game plays it
+/// (`docs/reference/sound-audience.md`). The line on the action bar is the
+/// presser's alone; the sound is the place's.
 pub(super) const CUE_REFUSED: &str = "minecraft:block.chest.locked";
 
-/// The line the refusal cue is played by: at the presser, to the presser.
-pub(super) fn refusal_cue_line() -> String {
-    format!("execute at @s run playsound {CUE_REFUSED} player @s")
+/// The `dw.sys` holder answer `a`'s refusal cue writes the number of players it
+/// reached to (`#heard_<answer>`) — `playsound`'s own result — so a PackTest with
+/// several players can read who heard a refusal; no game state records a sound.
+/// One per answer, so two templates never share it.
+pub(super) fn cue_heard_holder(a: &AnswerPlan) -> String {
+    format!("#heard_{}", plan::safe_local(&a.id()))
+}
+
+/// The line the refusal cue is played by: at the centre of the pressed body's
+/// cell, in the `block` category, to `@a` — every player within the sound's
+/// range hears it there. A press whose body is a creature, a step or a far
+/// side has no cell of its own and sounds at the presser.
+pub(super) fn refusal_cue_line(plan: &Plan, a: &AnswerPlan) -> String {
+    let at = match a.press.and_then(|i| plan.presses().get(i)) {
+        Some(p) => format!(
+            "positioned {} {} {} ",
+            center(p.cell[0]),
+            center(p.cell[1]),
+            center(p.cell[2])
+        ),
+        None => "at @s ".to_string(),
+    };
+    format!(
+        "execute {at}store result score {} dw.sys run playsound {CUE_REFUSED} block @a ~ ~ ~",
+        cue_heard_holder(a)
+    )
 }
 
 /// The `dw.sys` holder of an owner's state (`#pst_<owner>`).
@@ -448,14 +473,14 @@ pub(super) fn answer_guard_of(plan: &Plan, a: &AnswerPlan) -> (String, String) {
 
 /// The two lines an answer's own bundle carries after its line: the trace and
 /// the refusal cue.
-pub(super) fn answer_body_tail(a: &AnswerPlan) -> Vec<String> {
+pub(super) fn answer_body_tail(plan: &Plan, a: &AnswerPlan) -> Vec<String> {
     vec![
         format!(
             "scoreboard players set {} dw.sys {}",
             ans_holder(&a.owner_safe),
             a.state.trace()
         ),
-        refusal_cue_line(),
+        refusal_cue_line(plan, a),
     ]
 }
 

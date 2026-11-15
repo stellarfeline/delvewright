@@ -198,6 +198,7 @@ dw_playtest_build_and_gate() {
   GATE_ARGS=(--campaign "$CAMPAIGN" --build "$OUT_DIR" --report "$GATE_REPORT")
   [ -n "$RUN_REPORT" ]    && GATE_ARGS+=(--run-report "$RUN_REPORT")
   [ -n "$WRITTEN_WORLD" ] && GATE_ARGS+=(--written-world "$WRITTEN_WORLD")
+  [ -n "$BRANCH_RUNS" ]   && GATE_ARGS+=(--branch-runs "$BRANCH_RUNS")
   if [ -n "$STAGE_ANYWAY" ]; then
     GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY")
     [ -z "$ACK_RED" ] || GATE_ARGS+=(--acknowledge-red "$ACK_RED")

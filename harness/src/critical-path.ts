@@ -1493,6 +1493,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "keep_out",
           "block",
           "item",
+          "sneak",
         ],
         pointer,
       );
