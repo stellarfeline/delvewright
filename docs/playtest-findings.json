@@ -4159,6 +4159,158 @@
       "note": "Direction: it can let something ship and cannot turn a proof red — the solo bot always stood on the one marker it was returned to. Cause: the cutscene bracket, not the checkpoint (`set-checkpoint` lowers to `spawnpoint @a`, the `dw:cp` mirror and the marker score, and moves no body). `cs_<bare>` summoned one marker at `@p` and `cs_end_<bare>` ran `tp @a @e[tag=dw_csmark_<bare>,limit=1]`, gathering the party onto one player's place; both beats in the campaign play a cutscene, and neither declares a teleport. Closed by `cutscene::CS_ID`: each player in play saves their own `Pos` and `Rotation` (copied whole into storage under the player's own number) at the start, and the end returns each to it (`cs_return`), the marker serving only a player with none. `cutscene_return_<n>` stands two players apart facing apart, runs the real start and end, and asserts each back on its own cell and yaw; `a_checkpoint_moves_nobody` holds every checkpoint line to `spawnpoint`/`data`/`scoreboard`; the teleport template stands one player inside its volume (arrives) and one outside (stays). The template covers each cutscene with an empty `then` (a `then` would fire the author's effects in the template); a campaign whose every cutscene has a `then` measures UNBOUND. The binding counts the emitted `cutscene_return_` templates.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "id": "fotm-05",
+      "campaign": "foot-of-the-mountain",
+      "round": null,
+      "triage": "capability",
+      "finding": "the machine proof of the dusk fight ran without the raiders' captain: the census that stands a raider on the stage put him inside its floor, where he suffocated, and the goats' census put three goats on one cell, where one suffocated",
+      "general_form": "a census puts each body it places on a cell of its own that a body of the set stands in at its footprint, handed over by the compiler (`cells`, `nav::census_cells`), and a census of a kind summons its own bodies for the act rather than take one out of a fight; a row short of cells is refused by name",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_census_places_on_standable_cells_only_and_never_in_the_floor"
+      },
+      "binding": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "state/"
+          },
+          "has": [
+            "counts"
+          ]
+        }
+      },
+      "applies_when": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "state/"
+          }
+        }
+      },
+      "note": "The harness placed every body on the box's centre at its lowest course; the stage's box takes in the floor course under the cake. The census of a kind (`type=minecraft:pillager`) took the nearest pillager, a named elite whose fight followed. The direction is a proof made easier, never a ship: a captain who died in a wall left his fight short."
+    },
+    {
+      "id": "fotm-06",
+      "campaign": "foot-of-the-mountain",
+      "round": null,
+      "triage": "capability",
+      "finding": "the machine proofs of the dusk raid passed while its raiders did not fight: the bot clears a wave by scripted blows and its die-retry deaths are scripted, so nothing it ran asked whether a raider takes the party as its target",
+      "general_form": "every wave with a stack of the game's `monster` category has a generated PackTest (`engage_<wave>`) that stands each hostile kind at its reach from the dummy, has the dummy strike it, and asserts every body holds the dummy as its target; difficulty and survival are never asked",
+      "carrier": {
+        "kind": "packtest",
+        "template": "engage_{safe}"
+      },
+      "binding": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          },
+          "has": [
+            "mobs"
+          ]
+        }
+      },
+      "applies_when": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "note": "A lane mob held at the lane's radius after its release drops a target past it; the template stands a lane pillager 30 blocks off on an 8-block lane, so the emission before the release reset reds it."
+    },
+    {
+      "id": "fotm-07",
+      "campaign": "foot-of-the-mountain",
+      "round": null,
+      "triage": "capability",
+      "finding": "the proofs over the raiders' range (respawn safety, a wave's reach into a lethal volume, a body stranded out of reach) read a released raider's reach as its lane's radius, and an undeclared stack's as 16 whatever its species",
+      "general_form": "every proof over a fight's range reads one function, `nav::follow::mob_reach` (a lane mob the wider of its species' `follow_range` and the radius; any other stack its declared `follow_range`, else its species'), the species' value read from the pinned jar (`entity-engagement-1.21.11.json`)",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_lane_mob_reaches_its_species_range_once_released"
+      },
+      "binding": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          },
+          "has": [
+            "lane"
+          ]
+        }
+      },
+      "applies_when": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "note": "The jar's values: pillager 32, vindicator 12, zombie 35, skeleton 16. A wider reach only finds more contact, so the direction is a proof turned red, never a ship."
+    },
+    {
+      "id": "fotm-08",
+      "campaign": "foot-of-the-mountain",
+      "round": null,
+      "triage": "capability",
+      "finding": "the PackTest of a press that serves a timed task which a loss can also fail cleared the task's expiry and not its failure, so a sibling test that failed the task could shut the press it proves",
+      "general_form": "every PackTest drive that holds an objective pending clears every settlement score its guard reads, from one list (`quest::settlement_scores`) the guard terms are written from",
+      "carrier": {
+        "kind": "invariant",
+        "test": "a_served_limited_objective_that_can_fail_is_driven_clear_of_both"
+      },
+      "binding": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          },
+          "has": [
+            "limit"
+          ]
+        }
+      },
+      "applies_when": {
+        "kind": "dsl",
+        "files": [
+          "quests.json"
+        ],
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "note": "The guidance drive had the same omission and takes the same list."
     }
   ],
   "ledger_version": "2026-08-11"
