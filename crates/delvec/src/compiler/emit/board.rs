@@ -30,7 +30,7 @@ pub(crate) fn board_holder(key: &BodyKey) -> String {
 }
 
 /// The function that places the player it runs as on board `id`.
-fn place_player_fn(id: &str) -> String {
+pub(super) fn place_player_fn(id: &str) -> String {
     format!("board_place_{}", plan::safe_local(id))
 }
 
@@ -107,7 +107,7 @@ pub(super) fn placed_bodies(c: &delvewright_dsl::Campaign, id: &str) -> Vec<Body
 }
 
 /// Whether some `place-on-board` of board `id` places players.
-fn places_players(c: &delvewright_dsl::Campaign, id: &str) -> bool {
+pub(super) fn places_players(c: &delvewright_dsl::Campaign, id: &str) -> bool {
     all_campaign_effects(c).into_iter().any(|e| {
         matches!(&e.verb, Verb::PlaceOnBoard { board } if board.as_str() == id)
             && delvewright_dsl::place_rows(e) == PlaceRows::Players
