@@ -1,6 +1,6 @@
 //! spec-0138 over a built world: the assembled ground is the graded ground,
 //! a declared-open side over a drop stands open, and a campaign with nothing
-//! to grade emits what it emitted.
+//! to grade moves no byte by its grade.
 //!
 //! The fixture is the blockout campaign (`tests/fixtures/blockout`): an open
 //! fill, flat, its surface at y 63, every place walled. Its corners, read off
