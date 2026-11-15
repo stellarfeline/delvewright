@@ -873,6 +873,10 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "wave" | "actor" => match last {
+            // spec-0074 × spec-0137: a fight's `on_kill` bundle says what an
+            // effect root's bundle says.
+            "narrate" | "outcome" if segs.contains(&"on_kill") => Narration,
+            "give" if segs.contains(&"on_kill") => ItemName,
             "name" if segs.contains(&"drop") || segs.contains(&"equipment") => ItemName,
             "name" => Name,
             "title" if segs[n - 2] == "health_bar" => Title,
