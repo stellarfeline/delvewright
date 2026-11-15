@@ -102,15 +102,24 @@ impl Mode {
     }
 }
 
-/// Which backend draws a frame. `auto` takes the GPU wgpu finds and falls back
-/// to the CPU, saying so; a named backend that is not available is refused.
+/// Which backend draws a frame. `auto` takes the first Lumenwright's
+/// `auto_order` opens for the frame's mode (HQ: CUDA, the best wgpu adapter,
+/// the CPU; quick: the best wgpu adapter, the CPU), saying what it passed over
+/// and why; a named backend that is not available is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Backend {
     Auto,
     Cpu,
+    /// Metal through wgpu (macOS).
     Metal,
+    /// Vulkan through wgpu (Linux, Windows).
     Vulkan,
+    /// DX12 through wgpu (Windows).
     Dx12,
+    /// OpenGL / OpenGL ES through wgpu (Linux, Windows).
+    Gl,
+    /// CUDA on an NVIDIA GPU (HQ; quick mode draws on the CPU rasterizer).
+    Cuda,
 }
 
 impl Backend {
@@ -121,6 +130,8 @@ impl Backend {
             Backend::Metal => BackendKind::Metal,
             Backend::Vulkan => BackendKind::Vulkan,
             Backend::Dx12 => BackendKind::Dx12,
+            Backend::Gl => BackendKind::Gl,
+            Backend::Cuda => BackendKind::Cuda,
         }
     }
 
@@ -132,6 +143,8 @@ impl Backend {
             Backend::Metal => "metal",
             Backend::Vulkan => "vulkan",
             Backend::Dx12 => "dx12",
+            Backend::Gl => "gl",
+            Backend::Cuda => "cuda",
         }
     }
 }
@@ -407,7 +420,7 @@ pub struct Drawn {
     pub rgba: Vec<u8>,
     /// The backend that drew it, in the renderer's words (`cpu (10 threads)`).
     pub backend: String,
-    /// Set when `auto` took the CPU: why no GPU was used.
+    /// Set when `auto` passed over a backend: each one and why, in order.
     pub fallback: Option<String>,
     /// Seconds per stage, in order.
     pub timings: Vec<(&'static str, f64)>,
@@ -655,6 +668,22 @@ pub fn mean_luma(rgba: &[u8]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    /// `--backend` offers every backend Lumenwright has, each spelled as the
+    /// command line spells it and handed to the renderer as that kind.
+    #[test]
+    fn every_backend_is_offered_by_its_own_name() {
+        use clap::ValueEnum;
+        let names: Vec<_> = Backend::value_variants().iter().map(|b| b.name()).collect();
+        assert_eq!(
+            names,
+            ["auto", "cpu", "metal", "vulkan", "dx12", "gl", "cuda"]
+        );
+        for b in Backend::value_variants() {
+            assert_eq!(b.to_possible_value().unwrap().get_name(), b.name());
+            assert_eq!(lumenwright::render::backend_name(b.kind()), b.name());
+        }
+    }
+
     /// The sea plane's one rule: an ocean horizon states the level above its
     /// topmost water block; every other horizon, and none, state nothing.
     #[test]

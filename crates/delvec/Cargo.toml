@@ -105,10 +105,13 @@ blake3 = { version = "1", features = ["pure"] }
 # `versions.toml [render].lumenwright_version` records (ADR-0023 §5, as
 # Nucleation), held equal to this requirement and to the version every frame
 # states (`frames::RENDERER_VERSION`) by validation/check-versions.sh.
-# `gpu` adds the Metal, Vulkan and DX12 backends through wgpu, which the
-# engine's lock already holds; no C build script is reached with this feature
-# set. `glam` is used through `lumenwright::glam`.
-lumenwright = { version = "=0.4.1", default-features = false, features = ["gpu"] }
+# Every backend Lumenwright has (ADR-0023: no capability is gated): `gpu` adds
+# Metal, Vulkan, DX12 and GL through wgpu; `cuda` adds CUDA, the kernel's PTX
+# packaged in the crate and libcuda loaded at run time, so a machine without
+# the driver still runs and `auto` passes it over saying why. No C build
+# script is reached with this feature set. `glam` is used through
+# `lumenwright::glam`.
+lumenwright = { version = "=0.4.1", default-features = false, features = ["gpu", "cuda"] }
 
 # The thread pool a CPU frame runs on (`delvec frames --threads`): the same
 # rayon Lumenwright draws with, so a frame's thread count is the caller's to

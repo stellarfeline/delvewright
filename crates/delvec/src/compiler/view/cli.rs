@@ -57,9 +57,10 @@ pub const DEFAULT_SIZE: u32 = 1024;
 /// thread count, and the client jar.
 #[derive(Debug, Clone, clap::Args)]
 pub struct DrawArgs {
-    /// Which backend draws: `auto` takes the GPU wgpu finds (Metal, Vulkan,
-    /// DX12) and falls back to the CPU, saying so on the first line; a named
-    /// backend that is not available is refused (`DW0723`).
+    /// Which backend draws: `auto` takes the first that opens (HQ: CUDA, then
+    /// the best of Metal, Vulkan, DX12 and GL, then the CPU; quick: the best
+    /// wgpu adapter, then the CPU) and names each it passed over and why on the
+    /// first line; a named backend that is not available is refused (`DW0723`).
     #[arg(long, value_enum, default_value_t = Backend::Auto)]
     pub backend: Backend,
     /// Threads the CPU backend draws with (default: every core). The CPU

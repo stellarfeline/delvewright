@@ -201,14 +201,14 @@ fn draw_frame_in(
 }
 
 /// The first line of every run that draws: the renderer and the backend that
-/// drew, and whether `auto` fell back to the CPU.
+/// drew, and which backends `auto` passed over, each with why.
 pub fn renderer_line(d: &Drawn, asked: Backend) -> String {
     format!(
         "renderer: {}, backend {} ({})",
         frames::renderer(),
         d.backend,
         match (&d.fallback, asked) {
-            (Some(why), _) => format!("auto: fell back to cpu — {why}"),
+            (Some(why), _) => format!("auto: passed over {why}"),
             (None, Backend::Auto) => "auto".to_string(),
             (None, _) => "named".to_string(),
         }
@@ -737,6 +737,32 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The renderer line names the backend that drew and, under `auto`, each
+    /// backend it passed over with the renderer's reason.
+    #[test]
+    fn the_renderer_line_names_what_auto_passed_over() {
+        let drawn = |backend: &str, fallback: Option<&str>| frames::Drawn {
+            width: 1,
+            height: 1,
+            rgba: vec![0; 4],
+            backend: backend.to_string(),
+            fallback: fallback.map(str::to_string),
+            timings: Vec::new(),
+            chunks_loaded: 0,
+            stats: frames::Stats::default(),
+        };
+        let passed = "cuda: CUDA driver library (libcuda) not found";
+        let line = renderer_line(&drawn("apple m2 pro (metal)", Some(passed)), Backend::Auto);
+        assert!(
+            line.contains("backend apple m2 pro (metal) (auto: passed over cuda: CUDA driver"),
+            "{line}"
+        );
+        let line = renderer_line(&drawn("cpu (4 threads)", None), Backend::Cpu);
+        assert!(line.ends_with("backend cpu (4 threads) (named)"), "{line}");
+        let line = renderer_line(&drawn("x (cuda)", None), Backend::Auto);
+        assert!(line.ends_with("backend x (cuda) (auto)"), "{line}");
+    }
 
     fn body(kind: &str) -> Value {
         json!({"id": format!("dw_{kind}@1,2,3"), "kind": "body", "body": kind,
