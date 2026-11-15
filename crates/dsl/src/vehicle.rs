@@ -75,6 +75,15 @@ pub struct Vehicle {
     /// and inside `bounds` as the first one's is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<[i32; 3]>,
+    /// The actor seated on this vehicle (DSL v0.78, spec-0135 §13): placed
+    /// aboard by the pinned game's `ride <actor> mount <vehicle>` whenever
+    /// both stand — when the vehicle is seated and when the actor is
+    /// spawned, unleashed or stood up again — so a `move-actor` of it walks
+    /// this body with the actor aboard. It takes one of the kind's seats. A
+    /// vehicle of one body, standing on the actor's own mark (`DW1114`).
+    /// Absent = a vehicle only players board, byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rider: Option<crate::ActorId>,
 }
 
 fn one_body() -> crate::MobCount {
@@ -92,6 +101,18 @@ impl Vehicle {
         let k = k as i32;
         [s[0] * k, s[1] * k, s[2] * k]
     }
+}
+
+/// **The vehicle actor `actor` is seated on** (spec-0135 §13): the first
+/// vehicle whose `rider` names it, or `None` for an actor that stands on its
+/// own feet. The one answer every reader of a rider asks (a second vehicle
+/// naming the same actor is `DW1114`).
+pub fn vehicle_of_rider<'c>(c: &'c crate::envelope::Campaign, actor: &str) -> Option<&'c Vehicle> {
+    c.quests
+        .content
+        .vehicles
+        .iter()
+        .find(|v| v.rider.as_ref().is_some_and(|r| r.as_str() == actor))
 }
 
 /// When a vehicle's body is first placed (spec-0135 §2).
@@ -254,6 +275,179 @@ crate::dw_code! {
     /// is built. Validation-tier (exit 1). Prescription: a count of one or
     /// more, a `spacing`, and `seated: by-story` for a count per player.
     pub const VEHICLE_COUNT_UNSEATABLE: DwCode = DwCode::new("DW1115", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0135 §13) **A seat an actor cannot take, or an act a seated
+    /// actor cannot do**: a vehicle's `rider` on a vehicle of several bodies
+    /// (one actor sits one body), an actor named the rider of two vehicles,
+    /// or a rider whose own mark is not its vehicle's `at` (it is placed
+    /// aboard where the vehicle stands, and every proof of the actor reads
+    /// its mark); an `entrance` on a seated actor (the kind's own arrival is a
+    /// lone body's); a `hop` of one (the hop moves its body by `tp`, and the
+    /// pinned game's teleport of a rider stops its riding — `Entity.teleport`,
+    /// `docs/reference/vehicles-animals-and-targets.md` §16); a `move-actor`
+    /// of an actor seated on a boat or a minecart (the walk is proven on
+    /// ground, and neither kind moves there); and a ride the party is
+    /// declared to take on a vehicle whose every seat its actor fills.
+    /// Validation-tier (exit 1). Prescription: one body per seated actor, the
+    /// actor's mark written as the vehicle's `at`, `move-actor` to move a
+    /// seated actor, or the act given to a body on its own feet.
+    pub const RIDER_CANNOT: DwCode = DwCode::new("DW1114", ExitTier::Build);
+}
+
+/// Stage-5 rider checks (spec-0135 §13): the actor a vehicle seats is a
+/// declared actor (`DW0112`) and one it can hold, and nothing asks it what a
+/// seated body cannot do (`DW1114`).
+fn rider_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let q = &c.quests.content;
+    if q.vehicles.iter().all(|v| v.rider.is_none()) {
+        return;
+    }
+    let mut seated: BTreeMap<&str, &str> = BTreeMap::new();
+    for (i, v) in q.vehicles.iter().enumerate() {
+        let Some(r) = &v.rider else {
+            continue;
+        };
+        let at = format!("/content/vehicles/{i}/rider");
+        let Some(a) = q.actors.iter().find(|a| a.id.as_str() == r.as_str()) else {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                at,
+                format!(
+                    "vehicle `{}` seats unknown actor `{r}` — declare it in the stage-5 `actors` \
+                     list, or fix the reference",
+                    v.id
+                ),
+            ));
+            continue;
+        };
+        if let Some(first) = seated.insert(r.as_str(), v.id.as_str()) {
+            seated.insert(r.as_str(), first);
+            d.push(Diagnostic::error(
+                RIDER_CANNOT,
+                "quests",
+                at.clone(),
+                format!(
+                    "actor `{r}` is the rider of vehicle `{first}` and of vehicle `{}`: a body \
+                     sits one seat. Seat it on one of them",
+                    v.id
+                ),
+            ));
+        }
+        if v.count.max() > 1 {
+            d.push(Diagnostic::error(
+                RIDER_CANNOT,
+                "quests",
+                at.clone(),
+                format!(
+                    "vehicle `{}` stands up to {} bodies and seats actor `{r}`: one actor sits \
+                     one body. Declare a vehicle of one body for the actor — a vehicle each, \
+                     where several actors ride",
+                    v.id,
+                    v.count.max()
+                ),
+            ));
+        }
+        let mark = crate::BodyRef::Actor(a).mark();
+        if mark != v.at {
+            d.push(Diagnostic::error(
+                RIDER_CANNOT,
+                "quests",
+                at.clone(),
+                format!(
+                    "actor `{r}` stands at `{}` and its vehicle `{}` at `{}`: a seated actor is \
+                     placed aboard where its vehicle stands, and every proof of the actor reads \
+                     its own mark. Write the actor's `anchor` and `offset` as the vehicle's `at`",
+                    mark.display(),
+                    v.id,
+                    v.at.display()
+                ),
+            ));
+        }
+        if let Some(ai) = q.actors.iter().position(|x| x.id == a.id)
+            && a.entrance.is_some()
+        {
+            d.push(Diagnostic::error(
+                RIDER_CANNOT,
+                "quests",
+                format!("/content/actors/{ai}/entrance"),
+                format!(
+                    "actor `{r}` is seated on vehicle `{}` and declares an `entrance`: an \
+                     entrance is the kind's own arrival, a lone body's (a warden digging out of \
+                     the ground), and a seated actor arrives aboard. Drop the `entrance`, or the \
+                     `rider`",
+                    v.id
+                ),
+            ));
+        }
+        if v.steering().is_some_and(|s| s.seats <= 1) {
+            for (qi, quest) in q.quests.iter().enumerate() {
+                for (oi, o) in quest.objectives.iter().enumerate() {
+                    if o.ride().is_some_and(|id| id == &v.id) {
+                        d.push(Diagnostic::error(
+                            RIDER_CANNOT,
+                            "quests",
+                            format!("/content/quests/{qi}/objectives/{oi}/ride"),
+                            format!(
+                                "objective `{}` is ridden on vehicle `{}`, whose one seat actor \
+                                 `{r}` sits: the party has no seat on it. Ride a vehicle with a \
+                                 seat free, or take the `rider` off this one",
+                                o.id(),
+                                v.id
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    crate::for_each_campaign_effect(c, &mut |path, _site, e| match &e.verb {
+        crate::Verb::Hop { .. } => {
+            for k in e.bodies() {
+                if let crate::BodyKey::Actor(a) = &k
+                    && let Some(v) = vehicle_of_rider(c, a.actor.as_str())
+                {
+                    d.push(Diagnostic::error(
+                        RIDER_CANNOT,
+                        "quests",
+                        path.to_string(),
+                        format!(
+                            "`hop` lifts actor `{}`, which is seated on vehicle `{}`: a hop \
+                             moves its body by teleport, and the pinned game's teleport of a \
+                             rider sets it down off its seat. Walk the vehicle with \
+                             `move-actor` (it carries the rider aboard), or give the hop to a \
+                             body that stands on its own feet",
+                            a.actor, v.id
+                        ),
+                    ));
+                }
+            }
+        }
+        crate::Verb::MoveActor { actor, .. } => {
+            if let Some(v) = vehicle_of_rider(c, actor.as_str())
+                && let Some(k) = v.kind()
+                && k != VehicleKind::Mount
+            {
+                d.push(Diagnostic::error(
+                    RIDER_CANNOT,
+                    "quests",
+                    path.to_string(),
+                    format!(
+                        "`move-actor` walks actor `{actor}`, which is seated on vehicle `{}`, a \
+                         {}: a seated actor's walk carries its vehicle over ground, and a {} does \
+                         not move there. Seat the actor on a mount to walk it, or leave it \
+                         standing aboard",
+                        v.id,
+                        k.token(),
+                        k.token()
+                    ),
+                ));
+            }
+        }
+        _ => {}
+    });
 }
 
 /// The entities that carry a rider, by kind, for a diagnostic.
@@ -425,6 +619,8 @@ pub(crate) fn vehicle_checks(
             ));
         }
     }
+    // spec-0135 §13: the actor a vehicle seats.
+    rider_checks(c, d);
     // Every objective's `ride` names a declared vehicle.
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         for (oi, o) in q.objectives.iter().enumerate() {

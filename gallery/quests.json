@@ -198,18 +198,7 @@
         "anchor": "anchor/usher",
         "entity": "minecraft:villager",
         "facing": "south",
-        "id": "actor/hall-usher",
-        "mount": {
-          "attributes": {
-            "movement_speed": 0.2
-          },
-          "entity": "minecraft:pig",
-          "equipment": {
-            "saddle": {
-              "item": "minecraft:saddle"
-            }
-          }
-        }
+        "id": "actor/hall-usher"
       },
       {
         "anchor": "anchor/usher",
@@ -5611,6 +5600,10 @@
             "style": "actionbar",
             "text": "The flagstone dips under you, and only you feel it.",
             "type": "narrate"
+          },
+          {
+            "board": "board/hall-race",
+            "type": "place-on-board"
           }
         ],
         "id": "trigger/step-on-the-plate",
@@ -6175,6 +6168,31 @@
           0,
           1
         ]
+      },
+      {
+        "at": {
+          "anchor": "anchor/usher"
+        },
+        "attributes": {
+          "movement_speed": 0.2
+        },
+        "bounds": {
+          "anchor": "anchor/usher",
+          "extent": [
+            1,
+            2,
+            1
+          ]
+        },
+        "entity": "minecraft:pig",
+        "equipment": {
+          "saddle": {
+            "item": "minecraft:saddle"
+          }
+        },
+        "facing": "south",
+        "id": "vehicle/usher-pig",
+        "rider": "actor/hall-usher"
       }
     ],
     "waves": [
@@ -6217,7 +6235,15 @@
               }
             },
             "mount": {
-              "entity": "minecraft:chicken"
+              "attributes": {
+                "movement_speed": 0.3
+              },
+              "entity": "minecraft:pig",
+              "equipment": {
+                "saddle": {
+                  "item": "minecraft:saddle"
+                }
+              }
             }
           },
           {

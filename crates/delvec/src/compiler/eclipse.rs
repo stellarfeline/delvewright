@@ -426,7 +426,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
             kind: "actor",
             id: a.id.as_str().to_string(),
             entity,
-            dims: crate::compiler::nav::actor_body_dims(a),
+            dims: crate::compiler::nav::actor_body_dims(plan.campaign, a),
             anchor: delvewright_dsl::BodyRef::Actor(a).mark().display(),
             pos,
             path: format!("/content/actors/{i}"),
