@@ -909,6 +909,18 @@ mod tests {
         assert!(courses_checked > cases);
     }
 
+    /// The walk speed the engine picks when a `move-npc` or `move-actor`
+    /// declares none is a body the story moves, so it is under the cap a
+    /// declared one is refused above (`DW1113`).
+    #[test]
+    fn the_default_walk_is_under_the_story_pace_cap() {
+        let cap = delvewright_dsl::metrics::story_pace_cap_blocks_per_tick();
+        assert!(
+            DEFAULT_SPEED > 0.0 && DEFAULT_SPEED <= cap,
+            "{DEFAULT_SPEED} vs {cap}"
+        );
+    }
+
     #[test]
     fn resample_honors_speed_and_lands_exactly_on_target() {
         let cells = [[0, 65, 0], [10, 65, 0]];

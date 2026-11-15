@@ -49,8 +49,25 @@ pub(super) fn lane_attributes(
     a
 }
 
-/// The per-wave lane clock (spec-0016 §6), implementing the spike's verdict
-/// verbatim:
+/// The function that answers **is this lane mob engaged?** for the wave, run
+/// as and at the mob: a player inside `aggro_radius`, a target the mob holds,
+/// or a player who hurt it in the game's attacker window. `1` when engaged.
+pub(super) fn lane_engaged_fn(wave_id: &str) -> String {
+    format!("lane_engaged_{}", plan::safe_local(wave_id))
+}
+
+/// The function that releases one lane mob to its own AI, run as the mob.
+pub(super) fn lane_release_fn(wave_id: &str) -> String {
+    format!("lane_release_{}", plan::safe_local(wave_id))
+}
+
+/// The function that puts one lane mob back on the lane, run as the mob.
+pub(super) fn lane_route_fn(wave_id: &str) -> String {
+    format!("lane_route_{}", plan::safe_local(wave_id))
+}
+
+/// The per-wave lane clock (spec-0016 §6) and the three functions it runs
+/// per mob:
 ///
 /// 1. **advance** — when any squad member is within [`LANE_ADVANCE_RADIUS`] of
 ///    the current waypoint, the shared index steps forward. Emitted in
@@ -58,15 +75,21 @@ pub(super) fn lane_attributes(
 ///    ascending emission would cascade the whole lane in a single tick), and
 ///    driven by any squad member rather than the leader alone so a dead leader
 ///    cannot strand the warband on a waypoint forever.
-/// 2. **release** — a mob with a player inside `aggro_radius` gets
-///    `Patrolling:0b` and is thereafter a plain native hostile. Vanilla's patrol
-///    goal is hard-gated on having no target, so combat-preempts-routing is
-///    engine semantics; this line just makes the handover explicit and permanent
-///    for as long as the player stays close.
-/// 3. **re-assert** — a mob with no player inside `aggro_radius` is put back on
-///    the lane. This is what defeats vanilla's random re-roll on arrival and the
-///    lone-patroller self-cancel; it is inert during combat because the goal
-///    cannot restart while the mob has a target.
+/// 2. **release** — an *engaged* mob (`lane_engaged_<wave>`: a player inside
+///    `aggro_radius`, a target it holds, or a player who hurt it) gets
+///    `Patrolling:0b` and its species' own `follow_range` (`attribute … base
+///    reset`, the entity type's default, never narrower than `aggro_radius`).
+///    While patrolling its perception is `aggro_radius`; once it fights, it
+///    keeps its target as far as its species does. With `follow_range` held at
+///    `aggro_radius`, vanilla's target goal drops a target beyond it, so a
+///    crossbow pillager (attack radius 8) on an 8-block lane lost every player
+///    who stepped back to shoot, and a mob hit from beyond the radius never
+///    answered (`docs/reference/lane-engagement.md`).
+/// 3. **re-route** — a mob that is not engaged is put back on the lane at the
+///    current waypoint and its `follow_range` back to `aggro_radius`. This is
+///    what defeats vanilla's random re-roll on arrival and the lone-patroller
+///    self-cancel; a mob that holds a target is never re-routed, so the
+///    re-assert cannot end a fight.
 /// 4. **re-arm** — reschedule while any squad member lives, so the clock stops
 ///    on its own when the wave is cleared.
 pub(super) fn lane_tick_fn(
@@ -75,10 +98,11 @@ pub(super) fn lane_tick_fn(
     lane: &delvewright_dsl::WaveLane,
     wps: &[[i32; 3]],
     guard: &str,
-) -> (String, String) {
+) -> Vec<(String, String)> {
     let safe = plan::safe_local(w.id.as_str());
-    let tag = plan::wave_tag(w.id.as_str());
-    let idx = lane_index_holder(w.id.as_str());
+    let wid = w.id.as_str();
+    let tag = plan::wave_tag(wid);
+    let idx = lane_index_holder(wid);
     let r = lane.aggro_radius;
     let adv = LANE_ADVANCE_RADIUS;
     let mut body: Vec<String> = Vec::new();
@@ -93,20 +117,47 @@ pub(super) fn lane_tick_fn(
             i + 1
         ));
     }
+    let engaged = lane_engaged_fn(wid);
     body.push(format!(
-        "execute as @e[tag={tag}] at @s if entity @a[distance=..{r}{guard}] run data merge entity @s \
-         {{Patrolling:0b}}"
+        "execute as @e[tag={tag}] at @s if function {ns}:{engaged} run function {ns}:{}",
+        lane_release_fn(wid)
     ));
-    for (i, t) in wps.iter().enumerate() {
-        body.push(format!(
-            "execute if score {idx} dw.sys matches {i} as @e[tag={tag}] at @s unless entity \
-             @a[distance=..{r}{guard}] run data merge entity @s {{Patrolling:1b,patrol_target:[I;{},{},{}]}}",
-            t[0], t[1], t[2]
-        ));
-    }
+    body.push(format!(
+        "execute as @e[tag={tag}] at @s unless function {ns}:{engaged} run function {ns}:{}",
+        lane_route_fn(wid)
+    ));
     body.push(format!(
         "execute if entity @e[tag={tag}] run schedule function {ns}:lane_tick_{safe} \
          {LANE_PERIOD_TICKS}t"
     ));
-    (format!("lane_tick_{safe}"), lines(&body))
+    let engaged_body = vec![
+        format!("execute if entity @a[distance=..{r}{guard}] run return 1"),
+        "execute on target run return 1".to_string(),
+        format!("execute on attacker if entity @s[type=minecraft:player{guard}] run return 1"),
+        "return 0".to_string(),
+    ];
+    let release_body = vec![
+        "data merge entity @s {Patrolling:0b}".to_string(),
+        "attribute @s minecraft:follow_range base reset".to_string(),
+        "execute store result score #lane_fr dw.sys run attribute @s minecraft:follow_range base get"
+            .to_string(),
+        format!(
+            "execute if score #lane_fr dw.sys matches ..{} run attribute @s minecraft:follow_range base set {r}",
+            r.saturating_sub(1)
+        ),
+    ];
+    let mut route_body = vec![format!("attribute @s minecraft:follow_range base set {r}")];
+    for (i, t) in wps.iter().enumerate() {
+        route_body.push(format!(
+            "execute if score {idx} dw.sys matches {i} run data merge entity @s \
+             {{Patrolling:1b,patrol_target:[I;{},{},{}]}}",
+            t[0], t[1], t[2]
+        ));
+    }
+    vec![
+        (format!("lane_tick_{safe}"), lines(&body)),
+        (engaged, lines(&engaged_body)),
+        (lane_release_fn(wid), lines(&release_body)),
+        (lane_route_fn(wid), lines(&route_body)),
+    ]
 }

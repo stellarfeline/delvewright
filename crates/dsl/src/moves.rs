@@ -56,6 +56,15 @@ crate::dw_code! {
     pub const CADENCE_NOT_KEPT: DwCode = DwCode::new("DW1102", ExitTier::Build);
 }
 
+crate::dw_code! {
+    /// **A body the story moves faster than twice a player's sprint.** A
+    /// `move-npc` or `move-actor` whose `speed` is above
+    /// [`crate::metrics::story_pace_cap_blocks_per_tick`].
+    ///
+    /// Error tier, validation (exit 1).
+    pub const STORY_PACE_TOO_FAST: DwCode = DwCode::new("DW1113", ExitTier::Build);
+}
+
 /// One staged body, by class and id — the document's spelling of a
 /// [`BodyRef`]: `{"npc": "npc/<id>"}` or `{"actor": "actor/<id>"}`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -383,6 +392,7 @@ pub(crate) fn moves_checks(c: &Campaign, items: &dyn ItemRegistry, d: &mut Vec<D
         d: &mut Vec<Diagnostic>,
     ) {
         moves_one(c, items, stage, &path, eff, d);
+        pace_one(stage, &path, eff, d);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
             for (j, inner) in list.iter().enumerate() {
                 descend(c, items, stage, format!("{path}/{pseg}/{j}"), inner, d);
@@ -394,6 +404,37 @@ pub(crate) fn moves_checks(c: &Campaign, items: &dyn ItemRegistry, d: &mut Vec<D
             descend(c, items, site.stage, format!("{}/{i}", site.path), eff, d);
         }
     });
+}
+
+/// `DW1113`: a walk the story sets a body on at more than
+/// [`crate::metrics::STORY_PACE_SPRINTS`] of a player's sprints. The bodies a
+/// `speed` paces are the two the story walks — an NPC (`move-npc`) and an
+/// actor's puppet (`move-actor`); every other body that moves is moved by the
+/// game (a wave, a twin an `unleash-actor` frees, a vehicle a player rides).
+fn pace_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+    let (speed, verb) = match &eff.verb {
+        Verb::MoveNpc { speed: Some(s), .. } => (*s, "move-npc"),
+        Verb::MoveActor { speed: Some(s), .. } => (*s, "move-actor"),
+        _ => return,
+    };
+    let cap = crate::metrics::story_pace_cap_blocks_per_tick();
+    if speed > cap {
+        let sprint = crate::metrics::sprint_blocks_per_tick();
+        d.push(Diagnostic::error(
+            STORY_PACE_TOO_FAST,
+            stage,
+            format!("{path}/speed"),
+            format!(
+                "`{verb}` walks its body at `speed` {speed} blocks a tick, {:.1} times a \
+                 player's sprint ({sprint:.4} blocks a tick, {:.2} blocks a second); a body the \
+                 story moves goes at most {} times a player's sprint, {cap:.4} blocks a tick. \
+                 Prescription: lower `speed` to {cap:.4} or less, or leave it out for a walk",
+                speed / sprint,
+                sprint * crate::metrics::TICKS_PER_SECOND,
+                crate::metrics::STORY_PACE_SPRINTS,
+            ),
+        ));
+    }
 }
 
 /// Where in the effect its body list is written.

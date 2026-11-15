@@ -22,6 +22,10 @@ fn num(v: f64) -> String {
 pub(crate) const HOP_OBJECTIVE: &str = "dw.hop";
 /// The objective a hopping body carries its arc's index in.
 pub(crate) const HOP_ARC_OBJECTIVE: &str = "dw.hop_arc";
+/// The objective a hopping body carries the height it took off from in, in
+/// [`delvewright_dsl::HOP_UNIT`]ths of a block: the height its landing puts it
+/// back on.
+pub(crate) const HOP_Y_OBJECTIVE: &str = "dw.hop_y";
 /// The function the root `tick` calls: it runs [`HOP_STEP_FN`] as every body
 /// in the air. One function of its own, so the hop's generated PackTest can
 /// drive the hop by the driver the pack ships and nothing else of `tick`.
@@ -133,6 +137,7 @@ pub(super) fn load_lines(c: &delvewright_dsl::Campaign) -> Vec<String> {
     vec![
         format!("scoreboard objectives add {HOP_OBJECTIVE} dummy"),
         format!("scoreboard objectives add {HOP_ARC_OBJECTIVE} dummy"),
+        format!("scoreboard objectives add {HOP_Y_OBJECTIVE} dummy"),
     ]
 }
 
@@ -147,9 +152,19 @@ pub(super) fn tick_lines(plan: &Plan) -> Vec<String> {
 
 /// The steps of one arc, one line per tick: on the tick the body has
 /// `remaining` ticks left it moves by that tick's rise or fall, relative to
-/// where it is. Each step is an exact binary fraction and the steps sum to
-/// zero ([`hop_arc`]), so the last one puts the body on the height it left.
-/// The body is `immovable` throughout: nothing here writes that field.
+/// where it is. Each step is an exact binary fraction ([`hop_arc`]).
+///
+/// **The landing is not relative**: on the last tick the body is put on the
+/// height it took off from, which [`HOP_Y_OBJECTIVE`] holds. The relative
+/// steps sum to zero, but nothing holds the body to the arc between them: the
+/// game moves a body whose box grows — a `pose` that stands it up from a
+/// crouch, a `resize` that enlarges it — by re-centring the larger box on the
+/// old one's centre (`Entity.fudgePositionAfterSizeChange`), which on the
+/// ground keeps the feet on the floor and in the air drops them by half the
+/// growth. A relative landing kept that drop, so a body hopping while it
+/// crouched and stood again sank a step with each hop
+/// (`docs/reference/npc-moves.md` §9). The body is `immovable` throughout:
+/// nothing here writes that field.
 pub(super) fn hop_arc_lines(arc: &[i32]) -> Vec<String> {
     let n = arc.len();
     let mut out = Vec::new();
@@ -157,7 +172,13 @@ pub(super) fn hop_arc_lines(arc: &[i32]) -> Vec<String> {
     for (k, h) in arc.iter().enumerate() {
         let step = h - prev;
         prev = *h;
-        if step != 0 {
+        if n - k == 1 {
+            out.push(format!(
+                "execute if score @s {HOP_OBJECTIVE} matches 1 store result entity @s Pos[1] \
+                 double {} run scoreboard players get @s {HOP_Y_OBJECTIVE}",
+                hop_decimal(1)
+            ));
+        } else if step != 0 {
             out.push(format!(
                 "execute if score @s {HOP_OBJECTIVE} matches {} run tp @s ~ ~{} ~",
                 n - k,
@@ -191,6 +212,11 @@ pub(super) fn hop_fns(plan: &Plan) -> Vec<(String, String)> {
             lines(&[
                 format!("scoreboard players set @s {HOP_OBJECTIVE} {}", arc.len()),
                 format!("scoreboard players set @s {HOP_ARC_OBJECTIVE} {i}"),
+                format!(
+                    "execute store result score @s {HOP_Y_OBJECTIVE} run data get entity @s \
+                     Pos[1] {}",
+                    delvewright_dsl::HOP_UNIT
+                ),
             ]),
         ));
     }

@@ -1019,9 +1019,13 @@ pub(super) fn emit_functions(
             {
                 continue;
             }
+            // Activation is the tick the party is told of the objective
+            // (spec-0133 §3: "the tick its told guard first holds"): for an
+            // objective a press serves, before its own gate holds — the presses
+            // are the work its clock times.
             tick.push(format!(
                 "execute{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
-                pending_guard(plan, o, &qa),
+                told_guard(plan, o, &qa),
                 activation_flag(o.id().as_str()),
                 safe_obj_fn(o.id().as_str())
             ));
