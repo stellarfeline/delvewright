@@ -25,6 +25,46 @@ use super::*;
 pub(super) fn emit_vehicle_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
+    for v in plan
+        .vehicles
+        .iter()
+        .filter(|v| v.body == 0 && v.count.scales())
+    {
+        // spec-0135 §13: the bodies a party of each size is seated — the
+        // count per player present, stepped at 1, 2, 3 and 4 players.
+        let g = v.group_safe();
+        let count = format!("#vhp_{g} dw.sys");
+        let mut t = packtest_header(&format!(
+            "{title}: vehicle `{}` seats its count for a party of 1–4 (spec-0135 §13)",
+            v.id
+        ));
+        for n in 1..=4u32 {
+            let want = (0..v.bodies)
+                .filter(|k| {
+                    crate::compiler::emit::party_threshold(v.count, *k).is_none_or(|t| n >= t)
+                })
+                .count();
+            t.push(format!(
+                "scoreboard players set {} dw.sys {n}",
+                super::super::vehicle_party(&g)
+            ));
+            t.push(format!(
+                "function {ns}:{}",
+                super::super::vehicle_party_seat_fn(&g)
+            ));
+            t.push(format!(
+                "execute store result score {count} if entity @e[tag={}]",
+                v.group_tag()
+            ));
+            t.push(format!("assert score {count} matches {want}"));
+        }
+        t.extend(super::super::vehicle_despawn_effect_lines(plan, &v.id));
+        t.push(format!("scoreboard players reset {count}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/vehicle_{g}_party.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
     for v in &plan.vehicles {
         let s = &v.safe;
         let tag = v.tag();

@@ -1,0 +1,12 @@
+{
+  "code": "DW1115",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/vehicles/5/seated"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the piglets are seated at load. Their count is one per player present, and no player is present while the world is built; the count is refused at the document. It declares no unit."
+}

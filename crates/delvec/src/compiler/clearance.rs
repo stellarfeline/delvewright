@@ -171,6 +171,9 @@ struct Volume {
     id: String,
     /// The entity whose hitbox the body wears (mannequin for a skinned body).
     entity: String,
+    /// `(width, height)` of the box the body occupies: its hitbox, or the
+    /// hitbox stacked on its mount's (spec-0135 §13, `nav::ridden_dims`).
+    dims: (f64, f64),
     /// Feet position: `[centre x, feet y, centre z]` in world coordinates —
     /// exactly what the emitted `summon` / `tp` carries.
     pos: [f64; 3],
@@ -322,6 +325,12 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
                 delvewright_dsl::BodyRef::Npc(n) => crate::compiler::nav::npc_body_entity(n),
                 delvewright_dsl::BodyRef::Actor(a) => crate::compiler::nav::actor_body_entity(a),
             },
+            dims: match s.body {
+                delvewright_dsl::BodyRef::Npc(n) => {
+                    entity_dims(&crate::compiler::nav::npc_body_entity(n))
+                }
+                delvewright_dsl::BodyRef::Actor(a) => crate::compiler::nav::actor_body_dims(a),
+            },
             pos: cell_feet(pos),
             path: s.path.clone(),
             stage: s.body.stage(),
@@ -338,10 +347,12 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
         let Some((entity, path)) = npc_body(plan, &m.npc) else {
             continue;
         };
+        let dims = entity_dims(&entity);
         for (t, wp) in m.waypoints.iter().enumerate() {
             out.push(Volume {
                 id: m.npc.clone(),
                 entity: entity.clone(),
+                dims,
                 pos: *wp,
                 path: path.clone(),
                 stage: "npcs",
@@ -358,10 +369,22 @@ fn volumes(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan]) -> Ve
         let Some((entity, path)) = actor_body(plan, &m.actor) else {
             continue;
         };
+        let dims = plan
+            .campaign
+            .quests
+            .content
+            .actors
+            .iter()
+            .find(|a| a.id.as_str() == m.actor)
+            .map_or_else(
+                || entity_dims(&entity),
+                crate::compiler::nav::actor_body_dims,
+            );
         for (t, wp) in m.waypoints.iter().enumerate() {
             out.push(Volume {
                 id: m.actor.clone(),
                 entity: entity.clone(),
+                dims,
                 pos: *wp,
                 path: path.clone(),
                 stage: "quests",
@@ -439,7 +462,7 @@ pub fn check_body_clearance(
     let mut reported_legs: std::collections::BTreeSet<(String, String)> =
         std::collections::BTreeSet::new();
     for v in volumes(plan, moves, actor_moves) {
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         let Some((cell, hit)) = verdict(world, &v, w, h) else {
             continue;
         };
@@ -591,6 +614,7 @@ mod tests {
         Volume {
             id: "actor/polyphemus-walker".to_string(),
             entity: "minecraft:warden".to_string(),
+            dims: entity_dims("minecraft:warden"),
             pos: cell_feet(cell),
             path: "/content/actors/0".to_string(),
             stage: "quests",
@@ -643,7 +667,7 @@ mod tests {
         }
         let world = World::from_solid_cells(solid);
         let v = giant_at([6, 69, 5]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(
             matches!(verdict(&world, &v, w, h), Some((_, Hit::Solid))),
             "a body summoned inside a solid column must be the error tier"
@@ -655,7 +679,7 @@ mod tests {
     fn a_warden_with_three_cells_of_headroom_is_clean() {
         let world = World::from_solid_cells(room(69));
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
     }
 
@@ -673,7 +697,7 @@ mod tests {
         }
         let world = World::from_solid_cells(solid);
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         let (cell, hit) = verdict(&world, &v, w, h).expect("2.9 tall does not fit 2 cells");
         assert_eq!(hit, Hit::Solid);
         assert_eq!(cell, [3, 71, 3]);
@@ -693,7 +717,8 @@ mod tests {
         let world = World::from_solid_cells(solid);
         let mut v = giant_at([3, 69, 3]);
         v.entity = "minecraft:mannequin".to_string();
-        let (w, h) = entity_dims(&v.entity);
+        v.dims = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
     }
 
@@ -714,7 +739,7 @@ mod tests {
         o.partial.insert([3, 68, 3], 8);
         let world = World::from_occupancy(o, crate::compiler::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
     }
 
@@ -729,7 +754,7 @@ mod tests {
         }
         let world = World::from_solid_cells(solid);
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         let (cell, hit) = verdict(&world, &v, w, h).expect("a flush wall must be measured");
         assert_eq!(hit, Hit::ModelOverhang);
         assert_eq!(cell, [4, 69, 3]);
@@ -751,7 +776,8 @@ mod tests {
         let world = World::from_solid_cells(solid);
         let mut v = giant_at([3, 69, 3]);
         v.entity = "minecraft:mannequin".to_string();
-        let (w, h) = entity_dims(&v.entity);
+        v.dims = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert_eq!(w, 0.6);
         assert!(verdict(&world, &v, w, h).is_none());
     }
@@ -773,7 +799,7 @@ mod tests {
             tick: 7,
             ticks: 40,
         };
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
         // …but rock in the body's own column still stops the build mid-leg.
         let mut walled = room(69);
@@ -794,7 +820,7 @@ mod tests {
         }
         let world = World::from_solid_cells(solid);
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         assert!(verdict(&world, &v, w, h).is_none());
     }
 
@@ -813,7 +839,7 @@ mod tests {
         o.tall.insert([3, 69, 3]);
         let world = World::from_occupancy(o, crate::compiler::nav::Premises::geometry_only());
         let v = giant_at([3, 69, 3]);
-        let (w, h) = entity_dims(&v.entity);
+        let (w, h) = v.dims;
         let (cell, hit) = verdict(&world, &v, w, h).expect("a fence in the body must be measured");
         assert_eq!(hit, Hit::Barrier);
         assert_eq!(cell, [3, 69, 3]);

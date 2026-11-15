@@ -44,6 +44,6 @@
       }
     ]
   },
-  "dsl_version": "0.77.0",
+  "dsl_version": "0.78.0",
   "stage": "dialogue"
 }

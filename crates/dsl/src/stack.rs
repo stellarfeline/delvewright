@@ -381,6 +381,23 @@ pub fn for_each_stack<'a>(c: &'a Campaign, f: &mut dyn FnMut(StackAt<'a>)) {
             worn(format!("/content/actors/{i}/equipment"), eq, f);
         }
     }
+    // spec-0135 §13: a mount's gear is a stack like any other.
+    for (i, w) in q.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if let Some(eq) = m.mount.as_ref().and_then(|m| m.equipment.as_ref()) {
+                worn(
+                    format!("/content/waves/{i}/mobs/{k}/mount/equipment"),
+                    eq,
+                    f,
+                );
+            }
+        }
+    }
+    for (i, a) in q.actors.iter().enumerate() {
+        if let Some(eq) = a.mount.as_ref().and_then(|m| m.equipment.as_ref()) {
+            worn(format!("/content/actors/{i}/mount/equipment"), eq, f);
+        }
+    }
     let dropped = |base: String, drops: &'a [crate::MobDrop], f: &mut dyn FnMut(StackAt<'a>)| {
         for (n, dr) in drops.iter().enumerate() {
             if let crate::MobDrop::Item(s) = dr {

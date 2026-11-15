@@ -158,6 +158,11 @@ pub struct QuestsContent {
     /// none, so such a campaign stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vehicles: Vec<crate::Vehicle>,
+    /// Boards of places (spec-0135 §13): a sidebar list the story shows,
+    /// fills and hides. Empty/absent for every campaign that declares none,
+    /// so such a campaign stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boards: Vec<crate::Board>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The

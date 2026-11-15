@@ -536,6 +536,9 @@ pub(super) fn wave_fns(
                     c[2],
                     plan::wave_tag(w.id.as_str())
                 );
+                // spec-0135 §13: a body that rides is summoned aboard its own
+                // mount. Absent → the summon as written.
+                let summon = wave_mob_ride_on(w, mob, summon);
                 // spec-0134 §4: a body past the stack's `base` is the party's —
                 // summoned, on its own proven cell, only when enough players
                 // are present, and counted into the countdown with it.
@@ -795,12 +798,15 @@ pub(super) fn wave_fns(
 /// any declared drop stripped first. The re-seat runs it before its spawn and a
 /// `despawn-wave` runs it alone, so the two cannot remove a wave two ways.
 pub(super) fn wave_removal_lines(ns: &str, w: &delvewright_dsl::Wave) -> Vec<String> {
-    removal_lines(
+    let mut out = removal_lines(
         ns,
         &plan::wave_tag(w.id.as_str()),
         wave_declares_drops(w),
         Exit::Unseen,
-    )
+    );
+    // spec-0135 §13: the mounts leave with the wave, after their riders.
+    out.extend(wave_mount_removal(ns, w));
+    out
 }
 
 /// The function that seats a scaling wave at the party size its spawn
@@ -852,7 +858,7 @@ pub(super) fn party_size(wave: &str) -> String {
 /// summoned, or `None` when it is one of the stack's `base` and always is.
 /// Body `base + j` belongs to the `(j / per_player + 1)`-th further player, so
 /// it needs `j / per_player + 2` players (spec-0134 §4: `base + p × (n − 1)`).
-pub(super) fn party_threshold(count: delvewright_dsl::MobCount, k: u32) -> Option<u32> {
+pub(crate) fn party_threshold(count: delvewright_dsl::MobCount, k: u32) -> Option<u32> {
     let base = count.base();
     if k < base {
         return None;

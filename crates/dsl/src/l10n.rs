@@ -614,6 +614,11 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             f(&format!("state.{sl}.name"), name);
         }
     }
+    // Stage 5 — a board's heading (spec-0135 §13), read in the sidebar.
+    for b in &mut c.quests.content.boards {
+        let bl = local(b.id.as_str()).to_string();
+        f(&format!("board.{bl}.title"), &mut b.title);
+    }
     // Stage 5 — shops (v0.10, spec-0032): the dialog's title, and each button's
     // caption and tooltip. Keyed exactly as a dialogue node's label/tooltip are,
     // because they are the same two components of the same vanilla button codec.
@@ -868,6 +873,10 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "wave" | "actor" => match last {
+            // spec-0074 × spec-0137: a fight's `on_kill` bundle says what an
+            // effect root's bundle says.
+            "narrate" | "outcome" if segs.contains(&"on_kill") => Narration,
+            "give" if segs.contains(&"on_kill") => ItemName,
             "name" if segs.contains(&"drop") || segs.contains(&"equipment") => ItemName,
             "name" => Name,
             "title" if segs[n - 2] == "health_bar" => Title,
@@ -875,6 +884,8 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         // spec-0135: a vehicle's nameplate.
         "vehicle" if n == 3 && last == "name" => Name,
+        // spec-0135 §13: a board's heading over the sidebar.
+        "board" if n == 3 && last == "title" => Title,
         "loot" if n == 5 && last == "name" => ItemName,
         "sign" if n == 4 && matches!(segs[2], "front" | "back") => Sign,
         "lethal" if n == 3 && last == "message" => Narration,

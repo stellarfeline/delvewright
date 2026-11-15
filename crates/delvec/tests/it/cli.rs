@@ -706,18 +706,15 @@ fn pool_without_entry_piece_exits_3_with_dw0301() {
     assert!(stdout.contains("DW0301"), "expected DW0301:\n{stdout}");
 }
 
-/// `DW0310`: a *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
+/// A *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
 /// objective ever drains it, exactly like `v04-showcase`'s `wave/ambush`) whose
-/// `anchor` does not resolve in any assembled area is a dangling spawn — no
-/// static DSL rule sees it (wave anchors are a build-time-only concept), so it
-/// passes validate + analyze and fails only at build. Uses hello-world's single
-/// bound prefab (not a pool): a pool area's solver collects wave anchors into
-/// its own "required anchors" set and would instead reject this earlier with
-/// `DW0302` (no pool piece provides it) — the dangling-*spawn* case this test
-/// targets only surfaces on a single-prefab area, where nothing cross-checks a
-/// wave's anchor against the bound prefab's declared anchors before build time.
+/// `anchor` no prefab of the campaign provides is refused where it is written:
+/// `DW0142` at `/content/waves/0/anchor`, at analyze. Wave anchors used to be
+/// the one anchor reference validation never asked, so this passed analyze and
+/// failed only at build; the resolver validation asks is the one the build
+/// places anchors from.
 #[test]
-fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
+fn a_wave_anchor_no_prefab_provides_is_refused_at_analyze() {
     let patch: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(common::compiler_fixtures_dir().join("dangling-spawn-wave.json"))
             .unwrap(),
@@ -727,21 +724,58 @@ fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
     let camp = tmp("dangling-spawn-wave");
     common::materialize(&patch, &camp);
     common::declare_story_dir(&camp);
-
     let a = delvec(&[
         "analyze",
         camp.to_str().unwrap(),
         "--prefabs",
         pf.to_str().unwrap(),
+        "--json",
     ]);
-    assert_eq!(
-        code(&a),
-        0,
-        "analyze should pass (wave anchors are invisible to the DSL/analysis layers): {}",
-        String::from_utf8_lossy(&a.stdout)
+    assert_eq!(code(&a), 1, "{}", String::from_utf8_lossy(&a.stdout));
+    let stdout = String::from_utf8_lossy(&a.stdout);
+    assert!(
+        stdout.contains("DW0142") && stdout.contains("/content/waves/0/anchor"),
+        "expected DW0142 at the wave's anchor:\n{stdout}"
     );
+}
 
-    let out = tmp("dw0310-out");
+/// `DW0310`: a `spawn-wave` fired only from a global root (a trigger) in a
+/// campaign of two areas. The wave's anchor is a name an area provides, so it
+/// validates, but a global root carries no area, so the build cannot say which
+/// area's assembly must place it — and refuses the dangling spawn rather than
+/// ship a `function … spawn_<wave>` with nothing behind it.
+#[test]
+fn a_wave_fired_only_by_a_trigger_in_two_areas_exits_3_with_dw0310() {
+    let camp = tmp("dw0310-two-areas");
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("first-leg"), &camp);
+    // The vault on a piece a party is put down in (first_leg.rs's arrivable
+    // variant), its objective at that piece's `anchor/exit`.
+    common::patch_file(&camp.join("world.json"), |w| {
+        for a in w["content"]["areas"].as_array_mut().unwrap() {
+            if a["id"] == "area/vault" {
+                a["prefab"] = serde_json::json!("prefab/cave-shore");
+            }
+        }
+    });
+    common::patch_file(&camp.join("quests.json"), |v| {
+        for x in v["content"]["quests"].as_array_mut().unwrap() {
+            if x["id"] == "quest/vault" {
+                x["objectives"][0]["anchor"] = serde_json::json!("anchor/exit");
+            }
+        }
+        v["content"]["waves"] = serde_json::json!([{
+            "id": "wave/ambush", "anchor": "anchor/exit",
+            "mobs": [{ "entity": "minecraft:sheep", "count": 1 }]
+        }]);
+        v["content"]["triggers"] = serde_json::json!([{
+            "id": "trigger/ambush", "at": "anchor/keeper-stand",
+            "on": { "on": "approach", "range": 3 },
+            "effects": [{ "type": "spawn-wave", "wave": "wave/ambush",
+                "happening": { "verb": "arrives", "text": "A sheep wanders onto the shore." } }]
+        }]);
+    });
+    let pf = common::shown_prefabs_dir("first-leg");
+    let out = tmp("dw0310-two-areas-out");
     let b = delvec(&[
         "build",
         camp.to_str().unwrap(),
@@ -751,8 +785,8 @@ fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
         pf.to_str().unwrap(),
         "--json",
     ]);
-    assert_eq!(code(&b), 3, "dangling kill-less spawn-wave should exit 3");
     let stdout = String::from_utf8_lossy(&b.stdout);
+    assert_eq!(code(&b), 3, "a dangling spawn should exit 3:\n{stdout}");
     assert!(stdout.contains("DW0310"), "expected DW0310:\n{stdout}");
 }
 

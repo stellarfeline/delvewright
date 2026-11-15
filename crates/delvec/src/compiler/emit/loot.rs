@@ -323,6 +323,7 @@ mod loot_emit_tests {
             health_bar: None,
             entrance: None,
             outrun: false,
+            mount: None,
         }
     }
 

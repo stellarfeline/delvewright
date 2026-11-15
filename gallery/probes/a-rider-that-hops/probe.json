@@ -1,0 +1,19 @@
+{
+  "code": "DW1114",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/on_objective_complete/obj~1ride-clover/-",
+      "value": {
+        "audience": {
+          "actor": "actor/hall-usher"
+        },
+        "height": 1,
+        "type": "hop"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the usher, who sits a pig, is told to hop. A hop moves its body by teleport, and the pinned game sets a rider down off its mount when the rider is teleported; the hop is refused where it is written. It declares no unit."
+}

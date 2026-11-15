@@ -268,6 +268,13 @@ pub struct WaveMob {
     /// every slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
+    /// The body each of this stack's bodies rides (DSL v0.78, spec-0135
+    /// §13): one mount per body, summoned with the body as its passenger.
+    /// The stack's bodies are the wave's — counted, censused and killed;
+    /// the mount is not. Absent = the body stands on its own feet,
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<crate::Mount>,
 }
 
 /// Worn/held equipment for a wave mob (DSL v0.6). Each field is a vanilla item
@@ -1446,6 +1453,52 @@ pub(crate) fn rest_reseat_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                      `tier: boss` (bill it `elite` instead) if the encounter is meant to \
                      re-seat.",
                     w.id.as_str()
+                ),
+            ));
+        }
+    }
+}
+
+/// **Every wave's spawn `anchor` resolves** (`DW0142`), and names a point
+/// (`DW0871`): asked of [`AnchorProviders`] — the set the build places
+/// anchors from — so a name that validates is a name the build places. A
+/// wave anchor that is a mark of some piece but no station the campaign binds
+/// is refused here, where it is written, and never reaches the build's
+/// resolver.
+pub(crate) fn wave_anchor_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.waves.is_empty() {
+        return;
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    for (i, w) in quests.waves.iter().enumerate() {
+        let at = format!("/content/waves/{i}/anchor");
+        if let Some(f) = station_kind_diag(
+            &providers,
+            w.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "a wave's spawn anchor",
+            "quests",
+            at.clone(),
+        ) {
+            d.push(f);
+        }
+        if !providers.resolvable(w.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                at,
+                format!(
+                    "wave `{}` spawns at anchor `{}`, which no area of this campaign provides — {}",
+                    w.id,
+                    w.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
                 ),
             ));
         }

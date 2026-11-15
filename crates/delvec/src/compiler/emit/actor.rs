@@ -619,9 +619,10 @@ pub(super) fn actor_fns(
         // its bar's max. Absent without a bar → byte-identical.
         let capture = crate::compiler::healthbar::actor_bar(plan.campaign, a.id.as_str())
             .map(|b| b.capture_call(ns));
+        // spec-0135 §13: a puppet that rides arrives aboard its mount.
         let mut spawn = vec![format!(
             "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-            actor_puppet_summon(ns, a, pos, yaw)
+            puppet_ride_on(a, actor_puppet_summon(ns, a, pos, yaw), yaw)
         )];
         spawn.extend(actor_answer_box_summon(plan.campaign, a));
         spawn.extend(capture.clone());
@@ -631,9 +632,16 @@ pub(super) fn actor_fns(
         let mut unleash: Vec<String> = actor_answer_box_kill(plan.campaign, a)
             .into_iter()
             .collect();
+        // spec-0135 §13: a rider's twin stands up on a fresh mount with its
+        // AI, where the puppet's mount stands.
+        let stands_at = if a.mount.is_some() {
+            puppet_mount_tag(a.id.as_str())
+        } else {
+            format!("dw_pup_{safe}")
+        };
         unleash.push(format!(
-            "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-            actor_twin_summon(ns, a, "~ ~ ~", TwinArrival::Arrives)
+            "execute at @e[tag={stands_at},limit=1] run {}",
+            twin_ride_on(a, actor_twin_summon(ns, a, "~ ~ ~", TwinArrival::Arrives))
         ));
         // spec-0132 §3: the unleash is the body's arrival with or without a
         // puppet. With none standing, the twin is summoned at the actor's own
@@ -650,7 +658,7 @@ pub(super) fn actor_fns(
             );
             unleash.push(format!(
                 "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                with_rotation(&summon, yaw)
+                twin_ride_on(a, with_rotation(&summon, yaw))
             ));
         }
         // The cage leaves unseen: the elite standing up is the twin, and a
@@ -663,6 +671,14 @@ pub(super) fn actor_fns(
             actor_declares_drops(a),
             Exit::Unseen,
         ));
+        if a.mount.is_some() {
+            unleash.extend(removal_lines(
+                ns,
+                &puppet_mount_tag(a.id.as_str()),
+                false,
+                Exit::Unseen,
+            ));
+        }
         unleash.extend(capture.clone());
         out.push((format!("unleash_{safe}"), lines(&unleash)));
         // spec-0132 §3.1: the arrival a click provokes — the plain one, then the
@@ -715,11 +731,15 @@ pub(super) fn actor_fns(
                 actor_declares_drops(a),
                 Exit::Unseen,
             );
-            restand.push(actor_twin_summon(
-                ns,
+            restand.extend(actor_mount_removal(ns, a));
+            restand.push(twin_ride_on(
                 a,
-                &format!("{} {} {}", p[0], p[1], p[2]),
-                TwinArrival::Reseated,
+                actor_twin_summon(
+                    ns,
+                    a,
+                    &format!("{} {} {}", p[0], p[1], p[2]),
+                    TwinArrival::Reseated,
+                ),
             ));
             restand.extend(capture.clone());
             out.push((format!("actor_restand_{safe}"), lines(&restand)));
@@ -784,13 +804,35 @@ pub(super) fn actor_fns(
             ));
             tick.push(format!("execute if {stale} run return fail"));
         }
+        // spec-0135 §13: a puppet that rides is carried — the walk moves its
+        // mount, which carries it (a `tp` of the rider would set it down),
+        // and the rider is turned with the mount.
+        let rides = plan
+            .campaign
+            .quests
+            .content
+            .actors
+            .iter()
+            .any(|a| a.id.as_str() == m.actor && a.mount.is_some());
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
-            tick.push(format!(
-                "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
-                fmt_f64(w[0]),
-                fmt_f64(w[1]),
-                fmt_f64(w[2])
-            ));
+            if rides {
+                tick.push(format!(
+                    "execute if score #at_{bare} dw.sys matches {t} as @e[tag=dw_pup_{safe}] on vehicle run tp @s {} {} {} {y} 0",
+                    fmt_f64(w[0]),
+                    fmt_f64(w[1]),
+                    fmt_f64(w[2])
+                ));
+                tick.push(format!(
+                    "execute if score #at_{bare} dw.sys matches {t} as @e[tag=dw_pup_{safe}] run rotate @s {y} 0"
+                ));
+            } else {
+                tick.push(format!(
+                    "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
+                    fmt_f64(w[0]),
+                    fmt_f64(w[1]),
+                    fmt_f64(w[2])
+                ));
+            }
         }
         // spec-0119: an actor's answer box follows its puppet along the walk.
         if actor_has_answer_box(plan.campaign, &m.actor) {

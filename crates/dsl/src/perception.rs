@@ -295,7 +295,11 @@ fn perception_one(
             ));
         }
         // spec-0136: an NPC is a body the story moves, never one it harms.
-        if eff.verb.addresses_bodies() && aud.names_an_npc() {
+        // spec-0135 §13: an NPC that races takes a place as any named body.
+        if eff.verb.addresses_bodies()
+            && aud.names_an_npc()
+            && !matches!(eff.verb, Verb::PlaceOnBoard { .. })
+        {
             d.push(Diagnostic::error(
                 PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
                 stage,

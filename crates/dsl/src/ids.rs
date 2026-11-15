@@ -200,6 +200,11 @@ prefixed_id!(
     /// ride steps.
     VehicleId, "vehicle");
 prefixed_id!(
+    /// Board id: `board/<kebab>` (stage-5 `boards` section, spec-0135 §13).
+    /// Unique within the stage-5 board namespace; it names the board's
+    /// scoreboard objective and its PackTest template.
+    BoardId, "board");
+prefixed_id!(
     /// Pulse id: `pulse/<kebab>` (stage-5 `pulses` section, spec-0102). Unique
     /// within the stage-5 pulse namespace; it names the pulse's emitted
     /// function, its latch holder, its PackTest templates and its ledger row.

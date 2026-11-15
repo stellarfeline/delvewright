@@ -587,6 +587,11 @@ pub(super) fn emit_quest_effect(
         emit_move(plan, eff, body);
         return;
     }
+    // spec-0135 §13: a named body's place is written under its own holder.
+    if is_board_verb(eff) && body_selector(plan, eff).is_some() {
+        emit_board_verb(plan, eff, "@s", body);
+        return;
+    }
     if let Some(sels) = body_selector(plan, eff) {
         // An unresolved `in` box is `DW0142` at validation.
         for sel in sels {
@@ -835,14 +840,14 @@ pub(super) fn emit_quest_effect(
         // spec-0135 §2: the vehicle's own seat function, and the removal its
         // re-seat performs.
         Verb::SeatVehicle { vehicle } => {
-            if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
-                body.extend(vehicle_seat_lines(ns, v));
-            }
+            body.extend(vehicle_seat_effect_lines(plan, vehicle.as_str()));
+        }
+        // spec-0135 §13: the board verbs.
+        Verb::ShowBoard { .. } | Verb::HideBoard { .. } | Verb::PlaceOnBoard { .. } => {
+            emit_board_verb(plan, eff, who, body);
         }
         Verb::DespawnVehicle { vehicle } => {
-            if let Some(v) = vehicle_named(plan, vehicle.as_str()) {
-                body.extend(vehicle_despawn_lines(ns, v));
-            }
+            body.extend(vehicle_despawn_effect_lines(plan, vehicle.as_str()));
         }
         // --- DSL v0.4 effects ---
         Verb::Narrate(n) => {
@@ -1063,6 +1068,17 @@ pub(super) fn emit_quest_effect(
                 body.extend(actor_answer_box_kill(plan.campaign, a));
             }
             emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
+            // spec-0135 §13: the mount leaves with its rider, unseen.
+            if let Some(a) = plan
+                .campaign
+                .quests
+                .content
+                .actors
+                .iter()
+                .find(|a| a.id.as_str() == actor.as_str())
+            {
+                body.extend(actor_mount_removal(ns, a));
+            }
         }
         Verb::MoveActor { actor, to, .. } => {
             body.push(format!(

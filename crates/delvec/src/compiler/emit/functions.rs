@@ -202,6 +202,9 @@ pub(super) fn emit_functions(
             display.slot()
         ));
     }
+    // spec-0135 §13: each board's objective, headed by its title; shown only
+    // when the story shows it. Empty without a board → byte-identical.
+    setup.extend(board_setup(plan));
     // spec-0032: a named datum's shadow score — the value it was last announced at.
     // Party-scoped ones are seeded here beside the datum itself, so a world that
     // has just loaded announces nothing.
@@ -1350,6 +1353,7 @@ pub(super) fn emit_functions(
     // --- spec-0102 pulse functions ---
     fns.extend(emit_pulse_functions(plan, pulses));
     fns.extend(emit_vehicle_functions(plan));
+    fns.extend(board_fns(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

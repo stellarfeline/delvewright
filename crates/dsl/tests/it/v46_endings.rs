@@ -249,9 +249,13 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         // A settled task is a score a proof reads after the scene.
         "fail-objective",
     ];
-    const SAYS: [&str; 10] = [
+    const SAYS: [&str; 13] = [
         // spec-0136: a hop ends where it began.
         "hop",
+        // spec-0135 §13: a board is shown to the players.
+        "show-board",
+        "hide-board",
+        "place-on-board",
         // spec-0137: a line in the journal is said, not left in the world.
         "record-outcome",
         "narrate",
@@ -268,7 +272,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
     let before = named.len();
     named.dedup();
     assert_eq!(named.len(), before, "a verb is named in both classes");
-    assert_eq!(named.len(), 59);
+    assert_eq!(named.len(), 62);
     // Every effect the gallery declares (spec-0039: one instance of every
     // surface, probes included), parsed as the engine parses it. A verb the
     // lists above do not name fails here the day its gallery element lands.
