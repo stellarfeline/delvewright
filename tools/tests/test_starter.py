@@ -426,3 +426,43 @@ def test_floor_that_reads_as_joined_through_a_corner_no_body_passes_is_refused(m
     st.Plot.BUILD = staticmethod(corner(False))
     doc = st.plot_program(_front_alloc(), "seen")
     assert doc["contract"]["edges"]
+
+
+def test_a_void_the_fixed_ground_stands_in_is_surveyed_as_that_ground(monkeypatch):
+    """A raised seam's sill lying on the whole's fixed ground (a void of the
+    allocation, its block in `ground.fixed`) is surveyed as that ground, so
+    a body stands in the opening and a stair from it reaches the room; a
+    void another place owns stays `structure_void`, read as air; and the
+    ground's own block is never the program's to be refused."""
+    st = _starter_module()
+    a = _raised_alloc()
+    sill = [[x, 2, 1] for x in range(1, 8)]
+    a["voids"] = [{"cells": [[1, 2, 1], [7, 2, 1]], "owner": "the whole's fixed ground"},
+                  {"cells": [[8, 1, 4], [8, 1, 4]], "owner": "`node/next`"}]
+    a["ground"] = {"base": "ground", "columns": [],
+                   "fixed": [{"block": "minecraft:podzol", "cell": c} for c in sill]}
+    asked: list = []
+
+    def survey(_delvec, request):
+        asked.append(request)
+        solid = {(x, y, z) for x, y, z, b in request["blocks"] if b != "minecraft:structure_void"}
+        stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
+        return {"standable": stand, "reached": stand, "sealed": [], "joined": [], "unsupported": [],
+                "refused": [{"block": b, "route": None} for b in sorted({b for *_, b in request["blocks"]})
+                            if b == "minecraft:podzol"],
+                "containers": [], "malformed": []}
+
+    def build(place):
+        m = st.Model(place)
+        m.climbs_to("edge/top-to-flight")
+        for x in range(1, 8):
+            m.set(x, 1, 2, "minecraft:stone_bricks")
+            m.set(x, 1, 3, "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
+        return m
+
+    monkeypatch.setattr(st, "ask_engine", survey)
+    st.Plot.BUILD = staticmethod(build)
+    st.plot_program(a, "seen")
+    at = {(x, y, z): b for x, y, z, b in asked[-1]["blocks"]}
+    assert all(at.get(tuple(c)) == "minecraft:podzol" for c in sill), [at.get(tuple(c)) for c in sill]
+    assert at[(8, 1, 4)] == "minecraft:structure_void"

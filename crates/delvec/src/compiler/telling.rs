@@ -1357,6 +1357,34 @@ fn before_in_list(sites: &Sites, key: &str, list: &str, shot: usize) -> bool {
         .is_some_and(|j| j < shot)
 }
 
+/// Whether the effect string `key` is read after a shot in the firing of the
+/// list that plays it, whenever that list fires: its effect stands in an
+/// opening list after the shot and fires only with it
+/// ([`crate::compiler::nav::OpeningList::after`]), or inside the shot itself.
+/// The one dating a string has against a shot that the walk cannot date — an
+/// environment trigger's list fires when the player uses it, and its lines
+/// after the shot are read after the shot.
+fn after_in_list(sites: &Sites, key: &str, lists: &[crate::compiler::nav::OpeningList]) -> bool {
+    let Some(base) = key.rfind('.').map(|i| &key[..i]) else {
+        return false;
+    };
+    let Some(path) = sites.fx.get(base) else {
+        return false;
+    };
+    lists.iter().any(|l| {
+        let Some(s) = l.shot else {
+            return false;
+        };
+        path.strip_prefix(&format!("{}/", l.list))
+            .and_then(|rest| {
+                let mut segs = rest.splitn(2, '/');
+                let j = segs.next()?.parse::<usize>().ok()?;
+                Some((j, segs.next().is_some()))
+            })
+            .is_some_and(|(j, nested)| l.after.contains(&j) || (j == s && nested))
+    })
+}
+
 /// Judge every hidden way's secret against the play order (spec-0118 §6.4).
 fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<Vec<SecretFinding>> {
     let ways = crate::compiler::nav::hidden_ways(c);
@@ -1389,9 +1417,10 @@ fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<V
     };
     let mut out = Vec::new();
     for way in ways {
-        let shot = crate::compiler::nav::opening_lists(c, &way.seam)
-            .into_iter()
-            .find_map(|l| l.shot.map(|i| (l.list, i)));
+        let lists = crate::compiler::nav::opening_lists(c, &way.seam);
+        let shot = lists
+            .iter()
+            .find_map(|l| l.shot.map(|i| (l.list.clone(), i)));
         let n = way.secret.len();
         let mut f = SecretFinding {
             way,
@@ -1406,13 +1435,18 @@ fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<V
         };
         let pointer = format!("{list}/{idx}");
         let mut told_on_every: Vec<Option<bool>> = vec![None; n];
+        // Told after a shot in its own list's firing, on any walk.
+        let mut told_in_list = vec![false; n];
         for walk in &placed.walks {
             let shot_at = walk.fires_at(&pointer);
             let mut told_here = vec![false; n];
             for (key, p) in &walk.first {
-                let before = !p.dated
-                    || shot_at.is_none_or(|s| p.at < s)
-                    || (Some(p.at) == shot_at && before_in_list(&placed.sites, key, &list, idx));
+                let in_list = after_in_list(&placed.sites, key, &lists);
+                let before = !in_list
+                    && (!p.dated
+                        || shot_at.is_none_or(|s| p.at < s)
+                        || (Some(p.at) == shot_at
+                            && before_in_list(&placed.sites, key, &list, idx)));
                 for (lang, text) in texts(key) {
                     if before {
                         f.read_before.insert((key.clone(), lang.clone()));
@@ -1433,6 +1467,7 @@ fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<V
                             }
                         } else {
                             told_here[k] = true;
+                            told_in_list[k] |= in_list;
                         }
                     }
                 }
@@ -1444,9 +1479,12 @@ fn judge_secrets(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Option<V
                 }
             }
         }
+        // A shot no walk fires (an environment trigger's) is told by a line
+        // after it in its own list's firing.
         f.told = told_on_every
             .into_iter()
-            .map(|t| t.unwrap_or(false))
+            .zip(&told_in_list)
+            .map(|(t, l)| t.unwrap_or(*l))
             .collect();
         out.push(f);
     }

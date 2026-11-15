@@ -275,3 +275,117 @@ fn an_unannounced_objectives_hint_is_not_read() {
         d[0].message
     );
 }
+
+/// The keeper's door opened by an environment trigger instead of the keeper's
+/// beat: `effects` is the trigger's list, the open, the shot and the lines.
+fn opened_by_a_trigger(effects: Value) -> Campaign {
+    campaign(&["vault"], false, |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/ask"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|e| e["type"] != "open-gate");
+        q["content"]["triggers"] = json!([{
+            "id": "trigger/lever", "at": "anchor/node-hall",
+            "on": {"on": "approach", "range": 3},
+            "effects": effects,
+        }]);
+    })
+}
+
+fn open() -> Value {
+    json!({"type": "open-gate", "anchor": "anchor/seam-hall-cell"})
+}
+
+fn shot(when: Option<Value>) -> Value {
+    let mut s = json!({
+        "type": "cutscene", "seconds": 3,
+        "path": [{"anchor": "anchor/node-hall", "offset": [0, 2, 0]}],
+        "look_at": {"anchor": "anchor/seam-hall-cell"},
+    });
+    if let Some(w) = when {
+        s["when"] = w;
+    }
+    s
+}
+
+fn line(text: &str, when: Option<Value>) -> Value {
+    let mut l = json!({"type": "narrate", "style": "chat", "text": text});
+    if let Some(w) = when {
+        l["when"] = w;
+    }
+    l
+}
+
+/// A shot an environment trigger plays is dated by the trigger's own firing:
+/// a line after the shot in the trigger's list is read after the shot and
+/// tells the word; one before the shot in the list is read before it.
+#[test]
+fn a_triggers_own_line_after_its_shot_tells_after_the_shot() {
+    let c = opened_by_a_trigger(json!([
+        open(),
+        shot(None),
+        line("The vault stands open.", None)
+    ]));
+    let (d, b) = judged(&c, &none());
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!((b.told_after, b.refused), (1, 0), "{}", b.line());
+
+    let c = opened_by_a_trigger(json!([
+        line("The vault is opening.", None),
+        open(),
+        shot(None)
+    ]));
+    let (d, _) = judged(&c, &none());
+    assert_eq!(d.len(), 2, "{d:?}");
+    assert!(
+        d[0].message
+            .contains("before the shot (undated, read as the start)"),
+        "{}",
+        d[0].message
+    );
+    assert!(
+        d[1].message
+            .contains("no string the player reads at or after the shot"),
+        "{}",
+        d[1].message
+    );
+}
+
+/// A guarded shot tells after it only through a line that fires with it: the
+/// shot's own guard, no flag written between them. An unguarded line after a
+/// guarded shot fires on a firing that plays no shot, and is read before it;
+/// so is a guarded one behind a flag the list writes after the shot.
+#[test]
+fn a_guarded_shot_tells_only_through_a_line_that_fires_with_it() {
+    let g = || Some(json!({"requires_flags": ["flag/keeper-yields"]}));
+    let c = opened_by_a_trigger(json!([
+        open(),
+        shot(g()),
+        line("The vault stands open.", g())
+    ]));
+    let (d, _) = judged(&c, &none());
+    assert!(d.is_empty(), "{d:?}");
+
+    let c = opened_by_a_trigger(json!([
+        open(),
+        shot(g()),
+        line("The vault stands open.", None)
+    ]));
+    let (d, _) = judged(&c, &none());
+    assert!(
+        d.iter().any(|x| x.message.contains("before the shot")),
+        "{d:?}"
+    );
+
+    let c = opened_by_a_trigger(json!([
+        open(),
+        shot(g()),
+        {"type": "set-flag", "flag": "flag/keeper-yields"},
+        line("The vault stands open.", g())
+    ]));
+    let (d, _) = judged(&c, &none());
+    assert!(
+        d.iter().any(|x| x.message.contains("before the shot")),
+        "{d:?}"
+    );
+}
