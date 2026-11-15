@@ -42,6 +42,20 @@
 //! is the case this exists for. [`steps`] packs such a sequence into functions
 //! each at most [`SETUP_STEP_BUDGET`], chained across ticks with `schedule
 //! function`, so no tick runs more than one of them.
+//!
+//! The work every tick repeats cannot move to a later tick, and it grows with
+//! the campaign too (its waves, actors, triggers, objectives). The quota is
+//! read from the gamerule when a context is created
+//! (`Commands.executeCommandInContext`), so the build states what its own
+//! sources need: [`declare`] measures the delve's datapack and, when a source
+//! outside `load` needs more than the default, writes `gamerule
+//! max_command_sequence_length <its longest chain>` as the first line of the
+//! delve's `load`. Every context the game creates after that line — each tick
+//! entry, each scheduled function, each reward, each command — then has that
+//! quota; the `load` context that runs the line, and everything it calls, does
+//! not, and is held to the default. [`check`] reads the declaration back off
+//! the shipped `load` and judges every function against the limit of the
+//! context it runs in.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
@@ -53,10 +67,11 @@ use crate::compiler::emit::BuildOutput;
 
 delvewright_dsl::dw_code! {
     /// `DW0984`: a shipped function's command chain — its own commands and
-    /// every function it calls in the same tick — could exceed the game's
-    /// `max_command_sequence_length`, so the server would stop it part-way. An
-    /// **engine self-check**: the emitter that wrote the function owes the
-    /// split across ticks.
+    /// every function it calls in the same tick — could exceed the
+    /// `max_command_sequence_length` of the context it runs in (the default
+    /// inside a `load`, the quota the build declares elsewhere), so the server
+    /// would stop it part-way. An **engine self-check**: the emitter that wrote
+    /// the function owes the bound.
     pub const DW_CHAIN_OVER_LIMIT: DwCode = DwCode::new("DW0984", ExitTier::Build);
 }
 
@@ -70,6 +85,15 @@ pub const MAX_COMMAND_SEQUENCE_LENGTH: u64 = 65_536;
 /// tick function's own commands; the rest is theirs, and [`check`] proves the
 /// sum on every build.
 pub const SETUP_STEP_BUDGET: u64 = MAX_COMMAND_SEQUENCE_LENGTH / 4;
+
+/// The gamerule that sets one execution context's command quota.
+pub const SEQUENCE_RULE: &str = "max_command_sequence_length";
+
+/// The most a build may declare: the gamerule is an `int`.
+const RULE_MAX: u64 = i32::MAX as u64;
+
+/// The delve's own datapack, whose `load` carries the declaration.
+const DELVE_PACK: &str = "datapack/";
 
 /// The first world-build step's function name; step `k` (from 2) is
 /// `world_build_<k>` ([`build_step_fn`]).
@@ -230,6 +254,15 @@ pub struct ChainLedger {
     pub build_steps: usize,
     /// Every function's chain, by `ns:path`.
     pub chains: BTreeMap<String, Chain>,
+    /// The quota the delve's `load` declares for every later context
+    /// (`gamerule max_command_sequence_length <n>`), if it declares one.
+    pub declared: Option<u64>,
+    /// The functions a `#minecraft:load` entry runs in its own context, with
+    /// everything they call in it: held to the limit that stands before the
+    /// declaration runs.
+    pub load_rooted: BTreeSet<String>,
+    /// The functions the delve's own datapack ships.
+    pub delve: BTreeSet<String>,
 }
 
 impl ChainLedger {
@@ -244,12 +277,43 @@ impl ChainLedger {
             .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(a.0)))
     }
 
-    /// The functions that refuse: over the limit, or recursive.
+    /// The quota of every context created after the delve's `load` ran.
+    pub fn limit(&self) -> u64 {
+        self.declared.unwrap_or(MAX_COMMAND_SEQUENCE_LENGTH)
+    }
+
+    /// The quota of the context `f` runs in: a `load` context's stands before
+    /// the declaration runs, so it is the default (or a lower declaration);
+    /// every other context is created after it.
+    pub fn limit_of(&self, f: &str) -> u64 {
+        if self.load_rooted.contains(f) {
+            self.limit().min(MAX_COMMAND_SEQUENCE_LENGTH)
+        } else {
+            self.limit()
+        }
+    }
+
+    /// The quota the delve's own sources need: the longest bounded chain of a
+    /// function its datapack ships that no `load` runs, or the default when
+    /// that is more.
+    pub fn need(&self) -> u64 {
+        self.chains
+            .iter()
+            .filter(|(f, _)| self.delve.contains(*f) && !self.load_rooted.contains(*f))
+            .filter_map(|(_, c)| match c {
+                Chain::Bounded(n) => Some(*n),
+                Chain::Recursive => None,
+            })
+            .fold(MAX_COMMAND_SEQUENCE_LENGTH, u64::max)
+    }
+
+    /// The functions that refuse: over the limit of the context they run in,
+    /// or recursive.
     pub fn refused(&self) -> Vec<(&str, &Chain)> {
         self.chains
             .iter()
-            .filter(|(_, c)| match c {
-                Chain::Bounded(n) => *n > MAX_COMMAND_SEQUENCE_LENGTH,
+            .filter(|(f, c)| match c {
+                Chain::Bounded(n) => *n > self.limit_of(f),
                 Chain::Recursive => true,
             })
             .map(|(f, c)| (f.as_str(), c))
@@ -261,6 +325,8 @@ impl ChainLedger {
         let longest = self.longest();
         serde_json::json!({
             "limit": MAX_COMMAND_SEQUENCE_LENGTH,
+            "declared_limit": self.declared,
+            "load_rooted": self.load_rooted.len(),
             "step_budget": SETUP_STEP_BUDGET,
             "examined": self.functions,
             "counted_loops": self.counted_loops,
@@ -277,13 +343,22 @@ impl ChainLedger {
     /// The one-line binding statement a build prints.
     pub fn binding(&self) -> String {
         let (f, n) = self.longest().unwrap_or(("none", 0));
+        let limit = match self.declared {
+            Some(d) => format!(
+                "a limit of {d} the delve's `load` declares (`gamerule {SEQUENCE_RULE}`; \
+                 {MAX_COMMAND_SEQUENCE_LENGTH} by default)"
+            ),
+            None => format!("the game's default limit of {MAX_COMMAND_SEQUENCE_LENGTH}"),
+        };
         format!(
             "chain binding: {} shipped function(s) measured, {} counted loop(s), {} world-build \
-             step(s); longest chain {n} (`{f}`) of a {MAX_COMMAND_SEQUENCE_LENGTH} limit, per \
-             executing source; {} refused (DW0984).",
+             step(s); longest chain {n} (`{f}`), per executing source, against {limit}, and {} \
+             function(s) a `load` runs against {}; {} refused (DW0984).",
             self.functions,
             self.counted_loops,
             self.build_steps,
+            self.load_rooted.len(),
+            self.limit().min(MAX_COMMAND_SEQUENCE_LENGTH),
             self.refused().len()
         )
     }
@@ -422,10 +497,14 @@ fn counted_loops(bodies: &BTreeMap<String, Vec<Line>>) -> BTreeMap<String, u64> 
 pub fn measure(out: &BuildOutput) -> ChainLedger {
     let mut bodies: BTreeMap<String, Vec<Line>> = BTreeMap::new();
     let mut tags: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut delve: BTreeSet<String> = BTreeSet::new();
     for (path, bytes) in out {
         if let Some(id) = function_id(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
+            if path.starts_with(DELVE_PACK) {
+                delve.insert(id.clone());
+            }
             bodies
                 .entry(id)
                 .or_default()
@@ -469,6 +548,94 @@ pub fn measure(out: &BuildOutput) -> ChainLedger {
         counted_loops: loops.len(),
         build_steps,
         chains: m.chains,
+        declared: declared(out, &bodies),
+        load_rooted: load_rooted(&bodies, &tags),
+        delve,
+    }
+}
+
+/// The functions the delve's own `#minecraft:load` tag runs, in order.
+fn delve_load(out: &BuildOutput) -> Vec<String> {
+    out.get(&format!(
+        "{DELVE_PACK}data/minecraft/tags/function/load.json"
+    ))
+    .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+    .and_then(|v| v["values"].as_array().cloned())
+    .unwrap_or_default()
+    .iter()
+    .filter_map(|e| e.as_str().or_else(|| e["id"].as_str()))
+    .map(str::to_string)
+    .collect()
+}
+
+/// The quota the delve's `load` declares: the last unconditional `gamerule
+/// max_command_sequence_length <n>` line of a function its `#minecraft:load`
+/// tag names directly, as the game runs them in order.
+fn declared(out: &BuildOutput, bodies: &BTreeMap<String, Vec<Line>>) -> Option<u64> {
+    delve_load(out)
+        .iter()
+        .filter_map(|f| bodies.get(f))
+        .flatten()
+        .filter_map(|l| match l.tokens.as_slice() {
+            [g, r, n] if g == "gamerule" && r == SEQUENCE_RULE => n.parse::<u64>().ok(),
+            _ => None,
+        })
+        .rfind(|n| *n <= RULE_MAX)
+}
+
+/// Every function a `#minecraft:load` entry (of any datapack) runs in its own
+/// context: the entries, and everything they call in the same tick.
+fn load_rooted(
+    bodies: &BTreeMap<String, Vec<Line>>,
+    tags: &BTreeMap<String, Vec<String>>,
+) -> BTreeSet<String> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut stack: Vec<String> = tags.get("#minecraft:load").cloned().unwrap_or_default();
+    while let Some(f) = stack.pop() {
+        if let Some(members) = tags.get(&f) {
+            stack.extend(members.iter().cloned());
+            continue;
+        }
+        if !seen.insert(f.clone()) {
+            continue;
+        }
+        if let Some(body) = bodies.get(&f) {
+            stack.extend(body.iter().filter_map(|l| l.cost.calls.clone()));
+        }
+    }
+    seen
+}
+
+/// State the quota the delve's own sources need: when a function its datapack
+/// ships, outside `load`, measures past the default, write `gamerule
+/// max_command_sequence_length <its chain>` as the first line of the first
+/// function the delve's `#minecraft:load` tag names. Returns the declared
+/// quota; `None` when the default holds — the tree is left byte-identical — or
+/// when no declaration can state the need (past the gamerule's `int`, or no
+/// `load` to carry it), which [`check`] then refuses.
+pub fn declare(out: &mut BuildOutput) -> Option<u64> {
+    let mut need = measure(out).need();
+    if need <= MAX_COMMAND_SEQUENCE_LENGTH || need > RULE_MAX {
+        return None;
+    }
+    let (ns, name) = delve_load(out)
+        .first()?
+        .split_once(':')
+        .map(|(a, b)| (a.to_string(), b.to_string()))?;
+    let path = format!("{DELVE_PACK}data/{ns}/function/{name}.mcfunction");
+    let original = String::from_utf8(out.get(&path)?.clone()).ok()?;
+    // The line costs one unit wherever it stands, whatever it states, so a
+    // second measure settles a `load` that some other source also calls.
+    loop {
+        out.insert(
+            path.clone(),
+            format!("gamerule {SEQUENCE_RULE} {need}\n{original}").into_bytes(),
+        );
+        let settled = measure(out).need();
+        if settled <= need {
+            return Some(need);
+        }
+        need = settled;
     }
 }
 
@@ -550,8 +717,21 @@ pub fn check(out: &BuildOutput) -> Result<ChainLedger, ChainRefusal> {
     let ledger = measure(out);
     let refused = ledger.refused();
     if let Some((f, c)) = refused.first() {
+        let limit = ledger.limit_of(f);
         let what = match c {
-            Chain::Bounded(n) => format!("costs {n} units of command quota"),
+            Chain::Bounded(n) if ledger.load_rooted.contains(*f) => format!(
+                "costs {n} units of command quota inside a `load` context, which runs before \
+                 any declared limit and holds {limit}"
+            ),
+            Chain::Bounded(n) => format!(
+                "costs {n} units of command quota against the {limit} its context holds \
+                 (the delve's `load` declares {})",
+                ledger
+                    .declared
+                    .map_or("no limit of its own".to_string(), |d| format!(
+                        "`gamerule {SEQUENCE_RULE} {d}`"
+                    ))
+            ),
             Chain::Recursive => {
                 "reaches a call cycle in the same tick, so no bound on its chain exists".to_string()
             }
@@ -560,12 +740,14 @@ pub fn check(out: &BuildOutput) -> Result<ChainLedger, ChainRefusal> {
             code: DW_CHAIN_OVER_LIMIT,
             message: format!(
                 "ENGINE SELF-CHECK FAILED — this is a defect in delvec, not in the campaign; \
-                 report it. {} shipped function(s) could run past the game's command chain \
-                 limit (`max_command_sequence_length`, {MAX_COMMAND_SEQUENCE_LENGTH} by default \
-                 on the pinned server), where the server stops the function part-way and logs \
-                 `Command execution stopped due to limit`. The first is `{f}`: one call, with \
-                 every function it calls in the same tick, {what}. The emitter that wrote it \
-                 must split the work across ticks (`chain::steps`, `schedule function`).",
+                 report it. {} shipped function(s) could run past the command chain limit of \
+                 the context they run in (`{SEQUENCE_RULE}`, {MAX_COMMAND_SEQUENCE_LENGTH} by \
+                 default on the pinned server), where the server stops the function part-way \
+                 and logs `Command execution stopped due to limit`. The first is `{f}`: one \
+                 call, with every function it calls in the same tick, {what}. The emitter that \
+                 wrote it owes the bound: one-shot work splits across ticks (`chain::steps`, \
+                 `schedule function`), and a source outside `load` is covered by the limit the \
+                 build declares (`chain::declare`).",
                 refused.len()
             ),
         });
@@ -701,6 +883,110 @@ mod tests {
         ]);
         assert_eq!(measure(&rewound).counted_loops, 0);
         assert_eq!(check(&rewound).unwrap_err().code.id(), "DW0984");
+    }
+
+    /// A delve whose tick runs `n` lines, each a separate source of `setblock`,
+    /// with a `load` the tag names.
+    fn delve(tick_lines: usize, load: &str) -> BuildOutput {
+        let mut out = tree(&[
+            ("load", load.to_string()),
+            ("setup", "say setup".to_string()),
+            (
+                "tick",
+                "setblock 0 0 0 minecraft:stone\n".repeat(tick_lines),
+            ),
+        ]);
+        out.insert(
+            "datapack/data/minecraft/tags/function/load.json".to_string(),
+            br#"{"values": ["dw:load"]}"#.to_vec(),
+        );
+        out.insert(
+            "datapack/data/minecraft/tags/function/tick.json".to_string(),
+            br#"{"values": ["dw:tick"]}"#.to_vec(),
+        );
+        out
+    }
+
+    /// A tick past the default: the build declares what it measures, the
+    /// declaration is the first line of `load`, and the check holds every
+    /// source to it — and refuses the same tree without it.
+    #[test]
+    fn a_tick_past_the_default_is_held_to_the_quota_the_build_declares() {
+        let over = (MAX_COMMAND_SEQUENCE_LENGTH as usize) + 1979;
+        let mut out = delve(over, "function dw:setup");
+        let bare = out.clone();
+        assert_eq!(check(&bare).unwrap_err().code.id(), "DW0984");
+
+        let need = declare(&mut out).expect("a declaration");
+        assert_eq!(need, over as u64 + 1, "the call and every line");
+        let load =
+            String::from_utf8(out["datapack/data/dw/function/load.mcfunction"].clone()).unwrap();
+        assert_eq!(
+            load.lines().next(),
+            Some(format!("gamerule max_command_sequence_length {need}").as_str())
+        );
+        let l = check(&out).expect("every source within its context's limit");
+        assert_eq!(l.declared, Some(need));
+        assert_eq!(l.longest(), Some(("dw:tick", need)));
+        assert!(l.load_rooted.contains("dw:load") && l.load_rooted.contains("dw:setup"));
+        assert!(!l.load_rooted.contains("dw:tick"));
+
+        // One more line than declared reds.
+        let mut grown = out.clone();
+        let tick = "datapack/data/dw/function/tick.mcfunction".to_string();
+        let mut body = grown[&tick].clone();
+        body.extend_from_slice(b"say one more\n");
+        grown.insert(tick, body);
+        assert_eq!(check(&grown).unwrap_err().code.id(), "DW0984");
+    }
+
+    /// The default holds: nothing is declared and the tree is untouched.
+    #[test]
+    fn a_tree_within_the_default_declares_nothing() {
+        let mut out = delve(1000, "function dw:setup");
+        let before = out.clone();
+        assert_eq!(declare(&mut out), None);
+        assert_eq!(out, before);
+        assert_eq!(check(&out).unwrap().declared, None);
+    }
+
+    /// The declaration does not reach the context that runs it: a `load` past
+    /// the default refuses whatever the build declares.
+    #[test]
+    fn a_load_past_the_default_refuses_whatever_is_declared() {
+        let over = (MAX_COMMAND_SEQUENCE_LENGTH as usize) + 10;
+        let mut out = delve(over, "function dw:setup");
+        declare(&mut out).unwrap();
+        let setup = "datapack/data/dw/function/setup.mcfunction".to_string();
+        out.insert(
+            setup,
+            "setblock 0 0 0 minecraft:stone\n".repeat(over).into_bytes(),
+        );
+        let err = check(&out).unwrap_err();
+        assert!(err.message.contains("`load` context"), "{}", err.message);
+        // Nor does a declaration outside a `load` entry count.
+        let mut moved = delve(over, "function dw:setup");
+        let tick = "datapack/data/dw/function/tick.mcfunction".to_string();
+        let mut body = b"gamerule max_command_sequence_length 2000000\n".to_vec();
+        body.extend_from_slice(&moved[&tick]);
+        moved.insert(tick, body);
+        assert_eq!(measure(&moved).declared, None);
+        assert_eq!(check(&moved).unwrap_err().code.id(), "DW0984");
+    }
+
+    /// A tick that also calls `load` settles on the measure with the
+    /// declaration standing.
+    #[test]
+    fn a_declaration_settles_when_a_source_also_calls_load() {
+        let over = (MAX_COMMAND_SEQUENCE_LENGTH as usize) + 5;
+        let mut out = delve(over, "say load");
+        let tick = "datapack/data/dw/function/tick.mcfunction".to_string();
+        let mut body = b"function dw:load\n".to_vec();
+        body.extend_from_slice(&out[&tick]);
+        out.insert(tick, body);
+        let need = declare(&mut out).unwrap();
+        assert!(check(&out).is_ok());
+        assert_eq!(measure(&out).longest().unwrap().1, need);
     }
 
     #[test]
