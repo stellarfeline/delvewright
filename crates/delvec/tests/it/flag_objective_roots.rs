@@ -305,6 +305,10 @@ fn a_set_flag_in_a_dialogue_respawn_bundle_gets_its_objective() {
 /// every one is written, and every one is declared. Read off the shipped pack, so
 /// a root dropped or the inventory re-hand-rolled is a diff here rather than a
 /// silent runtime hole.
+///
+/// The trigger stands at the latch, off the party's way: the path never
+/// performs it, so a party standing in its range would fire it and the build
+/// would refuse (`DW0311`).
 #[test]
 fn every_effect_root_declares_the_objectives_it_writes() {
     let quests = format!(
@@ -314,7 +318,7 @@ fn every_effect_root_declares_the_objectives_it_writes() {
   "stage": "quests",
   "content": {{
     "triggers": [
-      {{ "id": "trigger/wake", "at": "anchor/keeper-stand", "on": {{ "on": "approach", "range": 3 }},
+      {{ "id": "trigger/wake", "at": "anchor/latch", "on": {{ "on": "approach", "range": 1 }},
         "effects": [ {} ] }}
     ],
     {}

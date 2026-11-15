@@ -25,7 +25,9 @@ fn read_hw(name: &str) -> String {
 
 /// A v0.6 quests doc: the keeper's walk carries an `on_arrive` (set-flag), an
 /// effect and two objectives carry `forbids_flags`, and an approach trigger is
-/// armed by `flag/arrived` but stood down by `flag/blocked`.
+/// armed by `flag/arrived` but stood down by `flag/blocked`. The trigger stands
+/// at the latch, off the party's way: the path never performs it, so a party
+/// standing in its range would fire it and the build would refuse (`DW0311`).
 static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
     common::at_dsl_version(
         r#"{
@@ -59,8 +61,8 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
     "triggers": [
       {
         "id": "trigger/retaliate",
-        "at": "anchor/keeper-stand",
-        "on": { "on": "approach", "range": 4 },
+        "at": "anchor/latch",
+        "on": { "on": "approach", "range": 1 },
         "requires_flags": ["flag/arrived"],
         "forbids_flags": ["flag/blocked"],
         "effects": [ { "type": "set-flag", "flag": "flag/blocked" } ]
