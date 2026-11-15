@@ -38,7 +38,7 @@ const CENSUS_SILENCE_LIMIT = 6;
 const SEAT_POLL_MS = 1_000;
 
 /** How long (ms) a `kill` step may run before it is declared failed. */
-const KILL_TIMEOUT_MS = 90_000;
+export const KILL_TIMEOUT_MS = 90_000;
 
 /**
  * The slowest full-charge attack speed any vanilla melee weapon has (swings per

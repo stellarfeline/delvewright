@@ -1050,7 +1050,14 @@ fn the_score_is_painted_and_restored_by_the_bracket() {
             .iter()
             .any(|l| l.contains("cs_unpaint"))
     );
-    assert_eq!(function(&plain, "load").len(), 2);
+    // Two lines of its own, beside the quota the build declares.
+    assert_eq!(
+        function(&plain, "load")
+            .iter()
+            .filter(|l| !l.starts_with("gamerule max_command_sequence_length "))
+            .count(),
+        2
+    );
     let (shots_key, _) = bare.rsplit_once("_m").unwrap();
     function(&plain, &format!("cs_{shots_key}"));
 }
