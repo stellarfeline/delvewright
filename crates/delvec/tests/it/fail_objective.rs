@@ -451,14 +451,13 @@ fn dw1112_a_failure_no_world_dates() {
 #[test]
 fn a_served_limited_objective_that_can_fail_is_driven_clear_of_both() {
     let out = built(&fixture("served", |v| {
-        let c = &mut v["content"];
-        c["state"] = json!([{ "id": "state/turns", "initial": 0, "name": "Turns",
-                              "scope": "party", "note": "How far the crank is wound." }]);
-        c["triggers"] = json!([{
+        v["content"]["triggers"] = json!([{
             "id": "trigger/crank", "at": "anchor/latch", "on": { "on": "use" },
             "once": false,
             "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
-            "effects": [{ "type": "add-state", "state": "state/turns", "amount": 1 }],
+            "effects": [{ "type": "narrate", "text": "The crank turns.",
+                          "happening": happening("the crank turns", "opens") }],
+            "answers": { "not_yet": "The crank is stiff.", "done": "The crank is wound." },
             "serves": { "objective": "obj/exit" }
         }]);
     }));
