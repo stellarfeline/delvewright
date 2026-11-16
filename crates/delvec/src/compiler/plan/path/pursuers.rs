@@ -674,3 +674,136 @@ pub(crate) fn walk_modes(c: &Campaign, firing: &PathFiring) -> Result<ModeWalk, 
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod mode_tests {
+    use super::*;
+    use serde_json::json;
+
+    const MAIN: &str = "quest/open-the-door";
+
+    /// hello-world (`obj/talk`, then `obj/exit`) beside a second quest,
+    /// `quest/side` (`obj/side`), started as `side_trigger` says; one mode
+    /// keeping `keeps`; and `lines` in the bundle of `obj/talk`.
+    fn campaign(
+        keeps: &[&str],
+        side_trigger: serde_json::Value,
+        lines: serde_json::Value,
+    ) -> Campaign {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dsl/fixtures/valid/hello-world");
+        let loaded = crate::compiler::load::load_campaign_dir(&dir).expect("the fixture loads");
+        let mut c = crate::compiler::load::parse_loaded(&loaded).expect("the fixture parses");
+        let q = &mut c.quests.content;
+        q.quests.push(
+            serde_json::from_value(json!({
+                "id": "quest/side",
+                "trigger": side_trigger,
+                "objectives": [{"type": "reach-anchor", "id": "obj/side",
+                                "anchor": "anchor/exit", "radius": 2}],
+                "on_complete": []
+            }))
+            .unwrap(),
+        );
+        q.modes = serde_json::from_value(json!([{"id": "mode/aside", "keeps": keeps}])).unwrap();
+        let bundle: Vec<QuestEffect> = serde_json::from_value(lines).unwrap();
+        q.quests[0]
+            .on_objective_complete
+            .get_mut(&serde_json::from_value(json!("obj/talk")).unwrap())
+            .expect("the fixture's bundle")
+            .extend(bundle);
+        c
+    }
+
+    /// A path performing `order` from step 1, firing every mode line unless
+    /// `certain` is false.
+    fn firing(c: &Campaign, order: [&str; 3], certain: bool) -> PathFiring {
+        let mut f = PathFiring::default();
+        for (i, o) in order.iter().enumerate() {
+            f.obj_step.insert(o.to_string(), i + 1);
+        }
+        f.quests = c
+            .quests
+            .content
+            .quests
+            .iter()
+            .map(|q| q.id.as_str().to_string())
+            .collect();
+        if certain {
+            delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+                for (i, e) in list.iter().enumerate() {
+                    if matches!(e.verb, Verb::EnterMode { .. } | Verb::LeaveMode { .. }) {
+                        f.fired.insert(format!("{}/{i}", site.path));
+                    }
+                }
+            });
+        }
+        f
+    }
+
+    fn enter() -> serde_json::Value {
+        json!({"type": "enter-mode", "mode": "mode/aside"})
+    }
+
+    fn start() -> serde_json::Value {
+        json!({"type": "campaign-start"})
+    }
+
+    const SIDE_FIRST: [&str; 3] = ["obj/talk", "obj/side", "obj/exit"];
+    const SIDE_LAST: [&str; 3] = ["obj/talk", "obj/exit", "obj/side"];
+
+    #[test]
+    fn a_step_of_a_held_quest_under_the_mode_is_dw1124() {
+        let c = campaign(&[MAIN], start(), json!([enter()]));
+        let e = walk_modes(&c, &firing(&c, SIDE_FIRST, true)).unwrap_err();
+        assert_eq!(e.failure.code.to_string(), "DW1124");
+        for needle in [
+            "`obj/side`",
+            "`quest/side`",
+            "step 2",
+            "`mode/aside`",
+            "step 1",
+        ] {
+            assert!(e.failure.message.contains(needle), "{}", e.failure.message);
+        }
+        // The same steps the other way round: the kept quest completes, the
+        // mode is left, and the held quest's step comes after it.
+        let w = walk_modes(&c, &firing(&c, SIDE_LAST, true)).unwrap();
+        assert_eq!(w.spans, [("mode/aside".to_string(), 1, Some(2))]);
+        assert_eq!(w.judged, 1);
+    }
+
+    #[test]
+    fn a_mode_keeping_both_quests_is_left_when_the_last_completes() {
+        let c = campaign(&[MAIN, "quest/side"], start(), json!([enter()]));
+        let w = walk_modes(&c, &firing(&c, SIDE_FIRST, true)).unwrap();
+        assert_eq!(w.spans, [("mode/aside".to_string(), 1, Some(3))]);
+        assert_eq!(w.judged, 2);
+    }
+
+    #[test]
+    fn a_leave_the_path_fires_leaves_and_an_entry_it_does_not_fire_enters_nothing() {
+        let c = campaign(
+            &[MAIN],
+            start(),
+            json!([enter(), {"type": "leave-mode", "mode": "mode/aside"}]),
+        );
+        let w = walk_modes(&c, &firing(&c, SIDE_FIRST, true)).unwrap();
+        assert_eq!(w.spans, [("mode/aside".to_string(), 1, Some(1))]);
+        let c = campaign(&[MAIN], start(), json!([enter()]));
+        let w = walk_modes(&c, &firing(&c, SIDE_FIRST, false)).unwrap();
+        assert_eq!(w, ModeWalk::default());
+    }
+
+    #[test]
+    fn a_mode_whose_kept_quest_has_not_started_is_left_at_its_entry() {
+        let c = campaign(
+            &["quest/side"],
+            json!({"type": "quest-complete", "quest": MAIN}),
+            json!([enter()]),
+        );
+        let w = walk_modes(&c, &firing(&c, SIDE_LAST, true)).unwrap();
+        assert_eq!(w.spans, [("mode/aside".to_string(), 1, Some(1))]);
+        assert_eq!(w.judged, 0);
+    }
+}

@@ -298,3 +298,16 @@ pub(super) fn emit_mode_verb(plan: &Plan, eff: &QuestEffect, body: &mut Vec<Stri
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::runs;
+
+    #[test]
+    fn a_run_is_one_range_and_a_gap_starts_another() {
+        assert!(runs(&[]).is_empty());
+        assert_eq!(runs(&[2]), ["2"]);
+        assert_eq!(runs(&[1, 2, 3]), ["1..3"]);
+        assert_eq!(runs(&[1, 3, 4, 6]), ["1", "3..4", "6"]);
+    }
+}

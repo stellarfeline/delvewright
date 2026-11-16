@@ -15,6 +15,7 @@
 - [A boat, a cart, a mount](#a-boat-a-cart-a-mount)
 - [A board of places](#a-board-of-places)
 - [A race](#a-race)
+- [A mode](#a-mode)
 - [Sealed things, and pacing](#sealed-things-and-pacing)
 
 # Reference: what a quest can do
@@ -259,6 +260,15 @@ Run each of these; each names what it judges and how many objects it bound.
 - The race is over when every racer has finished, or `grace_ticks` after the first one did (600 is thirty seconds), or at an `end-race` — whichever comes first.
 - To make the race a task, put `"course": "race/<id>"` beside `"ride": "vehicle/<id>"` on an objective: the party's ride to it is proven through every checkpoint in order, and the objective completes only once the race is over — so its `on_objective_complete` is where the story says how it ended. A `start-race` must fire before it (`DW1119`). A course is proven ridden; one walked on foot is credited in play and cannot be an objective's `course` yet (`DW1117`).
 - A racing actor is walked round the course by `move-actor` with `"along": "race/<id>"`; its `to` is where it pulls up after the line. Seat it on a vehicle of its own (`rider`) to race mounted. Keep its `speed` at or under twice a player's.
+
+## A mode
+
+- `modes[]` `{"id": "mode/pig-race", "keeps": ["quest/pig-race"]}` is a state you put the map in so that the rest of the story waits. While it is on, every quest it does not keep is held: nothing of it is announced, the compass and the journal drop it, none of its objectives can be completed, and its clocks stand still. A kept quest goes on as usual. Use it for anything the party should give its whole attention to — a race, a boss fight, a dream.
+- `enter-mode` turns it on and belongs in the bundle of the beat where the party commits — the objective completed by accepting an invitation. Make that objective one of a quest the mode keeps.
+- You rarely write `leave-mode`: a mode leaves by itself the moment none of its kept quests is in progress, so completing the kept quest gives the main story back. Write `leave-mode` only for an early way out. A mode entered with no kept quest started is left at once, and entering a second mode leaves the first.
+- A mode holds tasks, not the world: NPCs, waves, races, traps and triggers go on. Gate one of those on a flag the entry sets if it should wait too.
+- Inside the mode, do not key a kept objective on a flag only a held quest sets (`DW1123`), and order the mode by the quest graph: if the main line must pause for it, give the kept quest a `quest-complete` trigger and let what follows wait on it, or the proven path walks into a held objective (`DW1124`).
+- A race run as its own event is a mode keeping the quest whose objective declares the race's `course`: the objective completes once the race is over, the quest completes, and the mode is left.
 
 ## Sealed things, and pacing
 

@@ -203,6 +203,13 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
     let party = plan::PARTY;
     let mut b: Vec<String> = Vec::new();
     b.push(format!("scoreboard players set {party} {comp_obj} 0"));
+    // spec-0140: the map in no mode, as a fresh delve's is.
+    if !c.quests.content.modes.is_empty() {
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            super::super::mode::MODE_SCORE
+        ));
+    }
     for f in declared_flags(c) {
         b.push(format!(
             "scoreboard players set {party} {} 0",
