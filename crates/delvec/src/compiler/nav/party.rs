@@ -72,8 +72,15 @@ impl World {
 /// **Fix every party carry's seats for the emitter** ([`Plan::party_seats`])
 /// from the build's final world, refusing a carry without a seat for every
 /// member (`DW1141`). Returns the seats fixed, counted over the distinct marks.
-pub fn fix_party_seats(plan: &Plan, world: &World) -> Result<usize, Failure> {
-    if plan.party_carries.is_empty() {
+///
+/// `crossings` are the compiler's own crossings (`emit::teleport::crossings`),
+/// each a party carry onto an area's entry point, as `(entry point, words)`.
+pub fn fix_party_seats(
+    plan: &Plan,
+    world: &World,
+    crossings: &[([i32; 3], String)],
+) -> Result<usize, Failure> {
+    if plan.party_carries.is_empty() && crossings.is_empty() {
         return Ok(0);
     }
     let shipped = world.seating_world(plan);
@@ -86,20 +93,7 @@ pub fn fix_party_seats(plan: &Plan, world: &World) -> Result<usize, Failure> {
         }
         let s = seating.party_seats(c.to);
         if s.len() < PARTY_SEATS {
-            let found = if s.is_empty() {
-                format!(
-                    "{:?} is not a cell a body may be put down on: it stands on no floor, is \
-                     inside a block, or meets a block that hurts a body",
-                    c.to
-                )
-            } else {
-                format!(
-                    "only {} cell(s) a body may be put down on and walks to from the mark stand \
-                     within {SNAP_RADIUS} blocks of it ({:?})",
-                    s.len(),
-                    s
-                )
-            };
+            let found = unseated(c.to, &s);
             return Err(Failure {
                 code: DW_PARTY_CARRY_UNSEATED,
                 message: format!(
@@ -115,9 +109,46 @@ pub fn fix_party_seats(plan: &Plan, world: &World) -> Result<usize, Failure> {
         }
         seats.insert(c.to, s);
     }
+    for (to, words) in crossings {
+        if seats.contains_key(to) {
+            continue;
+        }
+        let s = seating.party_seats(*to);
+        if s.len() < PARTY_SEATS {
+            return Err(Failure {
+                code: DW_PARTY_CARRY_UNSEATED,
+                message: format!(
+                    "{words} carries every member present onto the area's entry point at {to:?}, \
+                     each on a cell of their own — the entry point's, then the nearest cells \
+                     around it a body walks to — and a party is up to {PARTY_SEATS} players. {}. \
+                     Fault: no seat for every member. Remedy: put the area's entry anchor \
+                     (`\"role\": \"entry\"`) on open floor with room for {PARTY_SEATS} players \
+                     to stand side by side.",
+                    unseated(*to, &s)
+                ),
+            });
+        }
+        seats.insert(*to, s);
+    }
     let n = seats.values().map(Vec::len).sum();
     let _ = plan.party_seats.set(seats);
     Ok(n)
+}
+
+/// What a mark with too few seats has, in words.
+fn unseated(to: [i32; 3], s: &[[i32; 3]]) -> String {
+    if s.is_empty() {
+        format!(
+            "{to:?} is not a cell a body may be put down on: it stands on no floor, is inside a \
+             block, or meets a block that hurts a body"
+        )
+    } else {
+        format!(
+            "only {} cell(s) a body may be put down on and walks to from the mark stand within \
+             {SNAP_RADIUS} blocks of it ({s:?})",
+            s.len()
+        )
+    }
 }
 
 #[cfg(test)]

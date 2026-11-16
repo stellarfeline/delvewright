@@ -189,6 +189,7 @@ mod packtest_batch;
 mod packtest_campaign;
 mod packtest_own_gates;
 mod party;
+mod party_crossing;
 mod party_teleport;
 mod piece_exposure;
 mod pinned_content;

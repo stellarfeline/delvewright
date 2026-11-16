@@ -154,9 +154,10 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
         complete_arrive.contains("replace minecraft:iron_bars"),
         "arriving in the keep opens the gate"
     );
-    assert!(
-        complete_talk.contains("teleport @s 260 65 4"),
-        "talk teleports the player to the keep entry spawn:\n{complete_talk}"
+    assert_eq!(
+        crate::party_crossing::crossing_landings(&out, "keep-crawl", complete_talk),
+        vec![[260, 65, 4]],
+        "talk carries the party to the keep entry spawn:\n{complete_talk}"
     );
 
     // place_all places every pool piece; the world build clears mated sockets.

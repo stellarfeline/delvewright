@@ -524,6 +524,36 @@ fn party_class_template_path(ns: &str) -> String {
     format!("packtest-datapack/data/{ns}/test/party_class_arrives.mcfunction")
 }
 
+/// The distance within which a party template counts a body as standing on a
+/// seat. Two seats can be one cell apart, so a body midway between their
+/// centres stands half a cell from each: a reach of `..0.5` counts it on both,
+/// and one member put between two seats reads as two. A carry puts a body on
+/// the centre itself. Every count a party template makes is of its own
+/// members (a tag it puts on them): a test's dummies spawn by the world's
+/// spawn, which can be the mark, and another batch's dummy standing there is
+/// not this template's member.
+const ON_SEAT: &str = "..0.25";
+
+/// The lines that count a party template's own two members (`ours`) seated
+/// on a carry's seats, one count per seat, into `holder`, and assert two.
+///
+/// Every seat is read, not the first two: the members present are numbered in
+/// `@a`'s order, and a body another test left on the server is numbered too,
+/// so which seats this template's members take is not its to say. That they
+/// are both seated, each on a centre of its own, is.
+fn seated_members(holder: &str, ours: &str, seats: &[[i32; 3]]) -> Vec<String> {
+    let mut out = vec![format!("scoreboard players set {holder} dw.sys 0")];
+    for seat in seats {
+        let [sx, sy, sz] = super::super::coords::ent_xyz(*seat);
+        out.push(format!(
+            "execute positioned {sx} {sy} {sz} as @a[tag={ours},distance={ON_SEAT}] run \
+             scoreboard players add {holder} dw.sys 1"
+        ));
+    }
+    out.push(format!("assert score {holder} dw.sys matches 2"));
+    out
+}
+
 /// Generated **party-teleport** PackTests (DSL v0.88), one per distinct
 /// `teleport` whose subject is the party: two members standing far apart, on
 /// either side of the mark and well out of reach of it, are both carried, each
@@ -570,6 +600,9 @@ pub(super) fn emit_party_teleport_packtests(plan: &Plan, out: &mut BuildOutput) 
         b.push(format!("function {ns}:setup"));
         b.push(pin);
         b.push(format!("dummy {other} spawn"));
+        let ours = format!("dw_t_ptp{k}m");
+        b.push(format!("tag {me} add {ours}"));
+        b.push(format!("tag {other_sel} add {ours}"));
         if !plan.classes.is_empty() {
             b.push(format!("scoreboard players set {me} dw.classed 1"));
             b.push(format!("scoreboard players set {other_sel} dw.classed 1"));
@@ -580,20 +613,108 @@ pub(super) fn emit_party_teleport_packtests(plan: &Plan, out: &mut BuildOutput) 
         // Bound, not assumed: nobody stands near the mark before the move.
         b.push(format!(
             "execute positioned {} {y} {} store result score #ptp_{k}_near dw.sys if entity \
-             @a[distance=..8]",
+             @a[tag={ours},distance=..8]",
             x + 0.5,
             z + 0.5
         ));
         b.push(format!("assert score #ptp_{k}_near dw.sys matches 0"));
         b.push(format!("function {ns}:{name}"));
-        for (i, seat) in seats.iter().take(2).enumerate() {
-            let [sx, sy, sz] = super::super::coords::ent_xyz(*seat);
-            b.push(format!(
-                "execute positioned {sx} {sy} {sz} store result score #ptp_{k}_s{i} dw.sys if \
-                 entity @a[distance=..0.5]"
-            ));
-            b.push(format!("assert score #ptp_{k}_s{i} dw.sys matches 1"));
+        b.extend(seated_members(&format!("#ptp_{k}_on"), &ours, seats));
+        b.push(format!("dummy {other} leave"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{template}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// Generated **party-crossing** PackTests, one per area the exported path
+/// crosses into: the crossing an objective's completion performs carries
+/// every member, wherever they stand, and a member who was away is carried
+/// once they are back.
+///
+/// The claim a single dummy cannot make: `teleport @s` and a carry of every
+/// member are the same command to a party of one. The template spawns a
+/// second member, puts the two 48 blocks either side of the area's entry
+/// point, asserts nobody stands within 8 blocks of it, has the pinned dummy
+/// complete the first objective that crosses there through its real
+/// `complete_<obj>`, and counts one player on each of the first two seats.
+/// Then a third member, spawned after the crossing and standing far off, runs
+/// the owed function the tick runs for a member behind the party's crossings,
+/// and is found on the entry point.
+///
+/// Batch model: the crossing moves every player on the server, so the
+/// template runs alone ([`super::limit::alone`]); own members, own scratch
+/// holders (`#pcx_<k>_*`), no `await`.
+pub(super) fn emit_party_crossing_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use super::super::teleport::{CROSS_OWED_FN, crossings, party_seats};
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    for (k, x) in crossings(plan, &BTreeMap::new()).iter().enumerate() {
+        let Some(oid) = plan
+            .transport
+            .iter()
+            .find(|(_, pos)| **pos == x.to)
+            .map(|(oid, _)| oid.as_str())
+        else {
+            continue;
+        };
+        let seats = party_seats(plan, x.to);
+        let (pin, me) = pin_dummy(&format!("dw_t_pcx{k}"));
+        let other = format!("dwpcx{k}p1");
+        let late = format!("dwpcx{k}p2");
+        let other_sel = format!("@a[name={other},limit=1]");
+        let late_sel = format!("@a[name={late},limit=1]");
+        let template = format!("party_{}", x.fn_name());
+        let mut b = packtest_header(&format!(
+            "{}: completing `{oid}` carries every member of the party into `{}`, each onto a \
+             seat of their own, and a member who was away is carried once they are back",
+            artifact_title(c),
+            x.area
+        ));
+        b.insert(1, super::limit::alone(ns, &template, out));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("dummy {other} spawn"));
+        let ours = format!("dw_t_pcx{k}m");
+        b.push(format!("tag {me} add {ours}"));
+        b.push(format!("tag {other_sel} add {ours}"));
+        if !plan.classes.is_empty() {
+            b.push(format!("scoreboard players set {me} dw.classed 1"));
+            b.push(format!("scoreboard players set {other_sel} dw.classed 1"));
         }
+        let [tx, ty, tz] = x.to.map(f64::from);
+        b.push(format!("tp {me} {} {ty} {}", tx + 48.5, tz + 0.5));
+        b.push(format!("tp {other_sel} {} {ty} {}", tx - 47.5, tz + 0.5));
+        // Bound, not assumed: nobody stands near the entry point before.
+        b.push(format!(
+            "execute positioned {} {ty} {} store result score #pcx_{k}_near dw.sys if entity \
+             @a[tag={ours},distance=..8]",
+            tx + 0.5,
+            tz + 0.5
+        ));
+        b.push(format!("assert score #pcx_{k}_near dw.sys matches 0"));
+        b.push(format!(
+            "execute as {me} run function {ns}:complete_{}",
+            super::super::objective::safe_obj_fn(oid)
+        ));
+        b.extend(seated_members(&format!("#pcx_{k}_on"), &ours, seats));
+        // A member who was away: spawned after the crossing, far off.
+        b.push(format!("dummy {late} spawn"));
+        if !plan.classes.is_empty() {
+            b.push(format!("scoreboard players set {late_sel} dw.classed 1"));
+        }
+        b.push(format!("tp {late_sel} {} {ty} {}", tx - 47.5, tz + 0.5));
+        b.push(format!(
+            "execute as {late_sel} run function {ns}:{CROSS_OWED_FN}"
+        ));
+        let [sx, sy, sz] = super::super::coords::ent_xyz(seats[0]);
+        b.push(format!(
+            "execute positioned {sx} {sy} {sz} store result score #pcx_{k}_late dw.sys if entity \
+             @a[name={late},limit=1,distance={ON_SEAT}]"
+        ));
+        b.push(format!("assert score #pcx_{k}_late dw.sys matches 1"));
+        b.push(format!("dummy {late} leave"));
         b.push(format!("dummy {other} leave"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{template}.mcfunction"),

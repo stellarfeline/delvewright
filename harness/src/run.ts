@@ -546,6 +546,7 @@ async function main(): Promise<number> {
               campaignId: criticalPath.campaignId,
               schedule: partySchedule,
               seats: deathPlan?.seats ?? [],
+              transports: criticalPath.steps.map((st) => ("transport" in st ? st.transport : undefined)),
               ask: (commands) => executor.bracketed(commands),
               walker: executor.requireBot(),
               log: (line) => process.stderr.write(`${line}\n`),
