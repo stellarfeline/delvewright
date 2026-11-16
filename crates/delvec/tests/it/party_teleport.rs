@@ -484,31 +484,40 @@ fn first_leg(tag: &str, mark: serde_json::Value) -> PathBuf {
     dir
 }
 
-fn plan_first_leg(
-    dir: &Path,
-) -> Result<(Vec<Option<[i32; 3]>>, usize, Option<[i32; 3]>), (String, String)> {
+/// What the path made of the first-leg fixture: the per-step transports,
+/// the crossings, and the party carry's mark.
+struct Carried {
+    transport: Vec<Option<[i32; 3]>>,
+    crossings: usize,
+    to: Option<[i32; 3]>,
+}
+
+fn plan_first_leg(dir: &Path) -> Result<Carried, (String, String)> {
     let loaded = load_campaign_dir(dir).unwrap();
     let c = parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("first-leg")).unwrap();
     let plan = Plan::build(&c, &prefabs)
         .map_err(|e| (e.failure.code.id().to_string(), e.failure.message))?;
-    Ok((
-        plan.critical_path_transport.clone(),
-        plan.transport.len(),
-        plan.party_carries.first().map(|p| p.to),
-    ))
+    Ok(Carried {
+        transport: plan.critical_path_transport.clone(),
+        crossings: plan.transport.len(),
+        to: plan.party_carries.first().map(|p| p.to),
+    })
 }
 
 #[test]
 fn a_party_carry_a_step_fires_is_its_transport_and_replaces_the_crossing() {
     // Without it, the bell's completion carries the party across by the
     // compiler's crossing.
-    let (_, crossings, _) = plan_first_leg(&first_leg("none", serde_json::Value::Null)).unwrap();
-    assert_eq!(crossings, 1);
+    let none = plan_first_leg(&first_leg("none", serde_json::Value::Null)).unwrap();
+    assert_eq!(none.crossings, 1);
     // With it, onto a mark in the vault: the party is already where the next
     // beat stands, so no crossing; the landing is the bell step's transport.
-    let (transport, crossings, to) =
-        plan_first_leg(&first_leg("vault", json!({ "anchor": "anchor/deck-aft" }))).unwrap();
+    let Carried {
+        transport,
+        crossings,
+        to,
+    } = plan_first_leg(&first_leg("vault", json!({ "anchor": "anchor/deck-aft" }))).unwrap();
     assert_eq!(crossings, 0, "the party carry is the move");
     let to = to.expect("one party carry");
     assert_eq!(
