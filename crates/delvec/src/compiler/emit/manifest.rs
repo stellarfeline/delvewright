@@ -400,7 +400,7 @@ pub(super) fn critical_path_json(
                     }
                     v
                 }
-                Step::Collect { objective_id, item, count, pos, dropped } => {
+                Step::Collect { objective_id, item, count, pos, dropped, gathered } => {
                     let mut v = json!({
                         "action": "collect", "objective": objective_id, "item": item,
                         "count": count, "pos": pos
@@ -411,6 +411,13 @@ pub(super) fn critical_path_json(
                         && let Some(obj) = v.as_object_mut()
                     {
                         obj.insert("dropped_by".to_string(), json!(w));
+                    }
+                    // v0.81: present only on a gathered collect, so every
+                    // other `critical-path.json` is byte-identical.
+                    if *gathered
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("gathered".to_string(), json!(true));
                     }
                     v
                 }

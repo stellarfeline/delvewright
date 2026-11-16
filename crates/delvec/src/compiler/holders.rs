@@ -873,6 +873,7 @@ pub fn claims_of(plan: &Plan, blocks: &BlockMap, entities: &[PlacedHolder]) -> V
                     anchor,
                     holder: None,
                     dropped_by: None,
+                    gathered: false,
                     ..
                 } => {
                     let cell = area
