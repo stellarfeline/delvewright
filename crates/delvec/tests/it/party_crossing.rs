@@ -213,21 +213,28 @@ fn the_party_crossing_packtest_drives_the_real_completion() {
         body.contains("assert score #pcx_0_near dw.sys matches 0"),
         "{body}"
     );
+    // Both of the template's own members seated, each on a centre of its own,
+    // over every seat: another test's body numbered first takes a seat, and a
+    // body midway between two seats one cell apart reads on neither.
+    let seated: Vec<&str> = body
+        .lines()
+        .filter(|l| {
+            l.contains(" as @a[tag=dw_t_pcx0m,distance=..0.25] run scoreboard players add #pcx_0_on dw.sys 1")
+        })
+        .collect();
+    assert_eq!(seated.len(), 4, "every seat is read:\n{body}");
     assert!(
-        body.contains("assert score #pcx_0_s0 dw.sys matches 1"),
+        body.contains("assert score #pcx_0_on dw.sys matches 2"),
         "{body}"
     );
-    assert!(
-        body.contains("assert score #pcx_0_s1 dw.sys matches 1"),
-        "{body}"
-    );
+    assert!(body.contains("@a[tag=dw_t_pcx0m,distance=..8]"), "{body}");
     assert!(
         body.contains(&format!("run function {NS}:cross_owed")),
         "the owed carry is driven:\n{body}"
     );
     assert!(
         body.contains(
-            "store result score #pcx_0_late dw.sys if entity @a[name=dwpcx0p2,limit=1,distance=..0.5]"
+            "store result score #pcx_0_late dw.sys if entity @a[name=dwpcx0p2,limit=1,distance=..0.25]"
         ),
         "the late member is found on the entry point by one selector:\n{body}"
     );
