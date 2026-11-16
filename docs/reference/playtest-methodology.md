@@ -101,8 +101,11 @@ where the stake was placed.
 **Outside a scripted death, a body never kills the bot.** A hostile that lands a
 hit the server attributes to it is an enemy and is removed by a staged blow. What
 the run must read before it removes the body is decided by which wave the body is
-of, and that is asked of the server — each candidate wave's census, by tag, matched
-to where the body stands — never guessed from a radius around an anchor:
+of, and that is asked of the server, never guessed from a radius around an anchor.
+Whether a body is of the wave the die-retry stage is proving is asked by UUID:
+does the body wear the `kill` step's `tag` (an answer that cannot be read holds
+the body). Whether it is of a wave owed a reading is each candidate wave's census,
+by tag, matched to where the body stands:
 
 - a body of a wave whose current seating the run has not read (its step is ahead,
   or a rest or respawn put a cleared wave back for a run-back) is read where it

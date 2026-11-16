@@ -2247,6 +2247,13 @@ class CombatFakeBot extends InteractFakeBot {
    * body of the wave lands a hit the server names — a body that comes to the bot
    * while the re-engage probe is settling. Fires once. */
   hitOnProbeAfterDeath: number | undefined;
+  /** The body that lands {@link hitOnProbeAfterDeath}'s hit instead of the
+   * wave's first: a body of no wave, standing among it. */
+  hitOnProbeBy: number | undefined;
+  /** On the first census after this many scripted deaths, once it has answered,
+   * the world kills every body of the wave — a fall, a trap, another mob — and
+   * {@link completeOnClear}'s marker is broadcast on that tick. Fires once. */
+  worldClearsOnProbeAfterDeath: number | undefined;
   private deaths = 0;
   /**
    * The encounter's completion acts on its anchor: when a staged blow leaves
@@ -2424,7 +2431,9 @@ class CombatFakeBot extends InteractFakeBot {
         this.emit("messagestr", "No entity was found");
         return;
       }
-      if (this.matches.get(id)?.has(asked[2]!)) {
+      const wearsWaveTag =
+        asked[2] === `tag=${KILL_STEP.tag}` && (this.entities[id] as FakeMob).waveTagged === true;
+      if (this.matches.get(id)?.has(asked[2]!) || wearsWaveTag) {
         this.emit("messagestr", (JSON.parse(asked[3]!) as { text: string }).text);
       }
       return;
@@ -2518,8 +2527,19 @@ class CombatFakeBot extends InteractFakeBot {
         );
         if (this.hitOnProbeAfterDeath !== undefined && this.deaths >= this.hitOnProbeAfterDeath) {
           this.hitOnProbeAfterDeath = undefined;
-          const [body] = mobs;
+          const body =
+            this.hitOnProbeBy !== undefined ? (this.entities[this.hitOnProbeBy] as FakeMob | undefined) : mobs[0];
           if (body) setTimeout(() => this.emit("entityHurt", this.entity, body), 0);
+        }
+        if (
+          this.worldClearsOnProbeAfterDeath !== undefined &&
+          this.deaths >= this.worldClearsOnProbeAfterDeath
+        ) {
+          this.worldClearsOnProbeAfterDeath = undefined;
+          for (const m of mobs) this.worldKill(m.id);
+          if (this.completeOnClear) {
+            this.emit("messagestr", `[dw:complete the-drowned-bell ${this.completeOnClear}]`);
+          }
         }
         return;
       }
@@ -2601,6 +2621,12 @@ class CombatFakeBot extends InteractFakeBot {
   /** Park a mob-shaped entity that is NOT part of the wave: an ambush actor, a
    * neighbouring wave's straggler. Visible to `nearestEntity`, invisible to the
    * census — exactly the drowned bell's belfry. */
+  /** Give a parked body the UUID a server selector accepts, so a staged blow can
+   * name it. */
+  nameBystander(id: number): void {
+    (this.entities[id] as { uuid?: string }).uuid = `uuid-${id}`;
+  }
+
   addBystander(id: number, distance = 1, hitsToKill = 1): void {
     const self = this;
     // A re-seat clears the WAVE (`kill @e[tag=dw_wave_<id>]`) and nothing else, so
@@ -3123,28 +3149,26 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
 });
 
 /**
- * The town's castle yard, death 2, in the logged order: a wave of three that does
- * not re-seat, two of them already fallen, stands across the death with one body
- * left; the bot walks back and the
- * re-engage probe starts settling; that body comes to the bot and lands a hit the
- * server names; the hold misses it (the census places it where the client does
- * not), so the harness stages it away; the server completes the `kill` objective
- * on that tick; and the probe's last census reads the wave empty.
+ * The town's castle yard, death 2: a wave of three that does not re-seat, two of
+ * them already fallen, stands across the death with one body left; the bot walks
+ * back and the re-engage probe starts settling; the WORLD then takes that body
+ * (a fall, a trap, another mob — no harness act), the server completes the
+ * `kill` objective on that tick, and the probe's last census reads the wave
+ * empty.
  */
 function castleYardBot(completes: boolean): CombatFakeBot {
   const bot = new CombatFakeBot();
   bot.seat(3, { worldKills: 2 }); // one of three left standing
   bot.reSeat = undefined; // `respawns_on_rest: false`
   bot.keepWaveOnRespawn = true; // its bodies persist across both lives
-  bot.censusDrift = 10; // beyond CENSUS_MATCH_RADIUS: the position match misses
-  bot.hitOnProbeAfterDeath = 2;
+  bot.worldClearsOnProbeAfterDeath = 2;
   if (completes) bot.completeOnClear = ENCOUNTER.objective;
   return bot;
 }
 
 const CASTLE_YARD: KillStep = { ...KILL_STEP, count: 3 };
 
-test("a stranded verdict reads the objective the server settled after the harness's own removal", async () => {
+test("a stranded verdict reads the objective the server settled when the world cleared the wave", async () => {
   const bot = castleYardBot(true);
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
@@ -3155,7 +3179,7 @@ test("a stranded verdict reads the objective the server settled after the harnes
   const trials = executor.deathTrials();
   assert.equal(trials.length, 2);
   assert.equal(trials[0]!.outcome, "re-engaged", "death 1 found the body standing");
-  assert.equal(bot.stagedBlows.length, 1, "the harness removed the last body inside the probe");
+  assert.deepEqual(bot.stagedBlows, [], "no harness act took the body; the world did");
   const t = trials[1]!;
   assert.equal(t.reengage!.present, 0, "the probe's last census read the wave empty");
   assert.equal(t.objectiveComplete, true, "the objective is read after that census");
@@ -3175,11 +3199,81 @@ test("the same order with an objective the server never completes is still stran
   await within("executor.kill(CASTLE_YARD)", executor.kill(CASTLE_YARD));
 
   const trials = executor.deathTrials();
-  assert.equal(bot.stagedBlows.length, 1);
+  assert.deepEqual(bot.stagedBlows, []);
   assert.equal(trials[1]!.outcome, "stranded");
   const findings = dieRetryFindings(trials);
   assert.equal(findings.length, 1);
   assert.match(findings[0]!, /death 2 \(mid-fight\)[\s\S]*STRANDED/);
+});
+
+/**
+ * The castle yard's hold, in the logged order (town r14b, death 2): the wave of
+ * three does not re-seat and one body stands across the death; the bot walks
+ * back, the re-engage probe settles, and that body comes to the bot and lands a
+ * hit the server names. The census places it away from where the client sees it
+ * — the logged runs' census found no body of the wave within the match radius —
+ * and the server, asked by UUID, says it wears the step's tag.
+ */
+function castleYardHoldBot(): CombatFakeBot {
+  const bot = new CombatFakeBot();
+  bot.seat(3, { worldKills: 2 });
+  bot.reSeat = undefined;
+  bot.keepWaveOnRespawn = true;
+  bot.censusDrift = 10; // beyond CENSUS_MATCH_RADIUS: a position match finds nothing
+  bot.hitOnProbeAfterDeath = 2;
+  return bot;
+}
+
+test("a body of the protected wave is held by its tag, wherever the census puts it", async () => {
+  const bot = castleYardHoldBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(3, false), true);
+  const [standing] = bot.waveIds();
+
+  await within("executor.kill(CASTLE_YARD)", executor.kill(CASTLE_YARD));
+
+  assert.ok(
+    bot.calls.some((c) =>
+      c.startsWith(`chat(/execute as uuid-${standing} if entity @s[tag=${KILL_STEP.tag}] `),
+    ),
+    "the hold asked the server about the body by UUID and tag",
+  );
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2);
+  // Nothing was staged inside the die-retry stage: the only blow is the step's
+  // own clear after it.
+  const t = trials[1]!;
+  assert.equal(t.reengage!.present, 1, "the body the stage is proving still stands at death 2");
+  assert.equal(t.outcome, "re-engaged");
+  assert.ok(
+    !executor.stagedBodies().some((r) => /it hit the bot/.test(r.why)),
+    "the body that hit the bot was not staged away",
+  );
+});
+
+test("a body of no wave standing among the protected one is still removed when it hits", async () => {
+  // The perturbation: the same order, but the body that lands the hit wears no
+  // wave tag, and stands exactly where the census puts the wave's body — the
+  // place a position match would have held it.
+  const bot = castleYardHoldBot();
+  bot.censusDrift = 0;
+  bot.addBystander(900, 1);
+  bot.nameBystander(900);
+  bot.hitOnProbeBy = 900;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(3, false), true);
+
+  await within("executor.kill(CASTLE_YARD)", executor.kill(CASTLE_YARD));
+
+  assert.ok(bot.stagedBlows.includes(900), "the bystander that hit the bot was staged away");
+  const removed = executor.stagedBodies().filter((r) => /it hit the bot/.test(r.why));
+  assert.equal(removed.length, 1);
+  assert.equal(removed[0]!.performed, true);
+  const t = executor.deathTrials()[1]!;
+  assert.equal(t.reengage!.present, 1, "the wave's own body still stands");
+  assert.equal(t.outcome, "re-engaged");
 });
 
 // --- re-seat fidelity + the wandered-mob false negative ----------
