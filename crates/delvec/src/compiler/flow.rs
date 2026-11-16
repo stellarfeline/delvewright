@@ -107,7 +107,9 @@ use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod story;
-pub use story::{Elective, StoryModel, StoryRun, StoryWorld, Target, WorldOrigin};
+pub use story::{
+    BranchSearch, Elective, SearchedBranch, StoryModel, StoryRun, StoryWorld, Target, WorldOrigin,
+};
 
 use delvewright_dsl::{
     Campaign, CompareOp, DialogueEffect, Objective, QuestEffect, StateCompare, StateScope,
