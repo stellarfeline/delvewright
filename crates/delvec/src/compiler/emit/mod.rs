@@ -991,12 +991,18 @@ fn emit_all(
     }
     // DW0863 (spec-0104 §4): every act on a walked path is announced with a
     // hint, or in sight from where the party stands (and a kill's wave within
-    // reach). Judged here, where the acts have places and the world has
-    // blocks; the binding is printed whichever way it goes.
+    // reach) — but an act that states its clue, which DW1137 (spec-0143)
+    // judges instead: each clue a main-line act states is presented before
+    // the act. Judged here, where the acts have places and the world has
+    // blocks; both bindings are printed whichever way they go.
     {
         crate::compiler::acts::fix_walks(plan, &branch_takes);
-        let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
+        let (acts, mut refusals) = crate::compiler::promise::check_acts_found(plan, &world);
         crate::note!("{}", acts.line());
+        let (clues, clue_refusals) = crate::compiler::clue::check_presented(plan, &world);
+        crate::note!("{}", clues.line());
+        put_json(&mut out, "validation/clues.json", &clues.to_json());
+        refusals.extend(clue_refusals);
         refuse_first(refusals)?;
     }
     // spec-0117 §6: the press proof the placed world decides — a trigger at a

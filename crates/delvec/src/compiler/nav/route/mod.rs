@@ -165,6 +165,16 @@ impl World {
             .or_else(|| self.search(start, goal, &fp, &|_| false, &|_| 1, true, true))
     }
 
+    /// **The walk between two named cells**: an A* route from `from` to `to`,
+    /// each snapped to standable footing first — a step's cell is often the
+    /// block it acts on. `None` when either has no footing or no route joins
+    /// them.
+    pub(crate) fn route_between(&self, from: [i32; 3], to: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        let start = self.snap_standable(from, SNAP_RADIUS)?;
+        let goal = self.snap_standable(to, SNAP_RADIUS)?;
+        self.find_route(start, goal)
+    }
+
     /// A player body afloat or submerged with its feet in `c`: water at the
     /// feet (never lava, never a lethal volume) and water or air at the head.
     pub fn swims_in(&self, c: [i32; 3]) -> bool {

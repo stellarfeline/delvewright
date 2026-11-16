@@ -234,6 +234,7 @@ impl BodyAnswer<'_> {
             // An answer is a reply to a blow, not an act the party is guided
             // to (spec-0104 §7): nothing lights the body for it.
             highlight: None,
+            clues: Vec::new(),
             effects: vec![
                 Verb::Narrate(delvewright_dsl::Narration {
                     text: self.text.clone(),
