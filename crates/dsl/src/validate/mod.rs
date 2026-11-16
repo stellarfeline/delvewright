@@ -155,6 +155,8 @@ pub fn validate_campaign_with(
     // spec-0067: every piece is put where the pinned game shows it on the body
     // that wears it (`DW0898`).
     crate::equipment::fit_checks(c, items, &mut d);
+    // DSL v0.83: a body's variant is one its entity carries (`DW1131`, `DW1132`).
+    crate::variant::variant_checks(c, &mut d);
     // Declared drops — the subset an elite/boss leaves behind.
     crate::wave::check_drops(c, &c.quests.content, &mut d);
     crate::wave::rest_reseat_checks(c, &mut d);

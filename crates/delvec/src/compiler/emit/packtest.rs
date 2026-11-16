@@ -44,10 +44,12 @@ mod seal;
 mod sequence;
 mod shortcut;
 mod standin;
+mod standing;
 mod teleport;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod variant;
 mod vehicle;
 mod watching;
 mod wave;
@@ -189,6 +191,9 @@ pub(super) fn emit_packtest(
     // nothing for a campaign that declares no mode.
     mode::emit_mode_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
+    // spec-0076: a standing party datum's line follows the party value. Emits
+    // nothing for a campaign whose standing datum, if any, is per-player.
+    standing::emit_standing_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final
     // scene holds every change its aftermath declares. Emits nothing for an
@@ -276,6 +281,12 @@ pub(super) fn emit_packtest(
     // spec-0111 §5.3: every filled holder entity's own body, driven.
     holders::emit_holder_packtests(plan, out, holders);
     actor::emit_actor_equipment_packtest(plan, out);
+    // DSL v0.83: a body's declared variant reads back as declared. Emits
+    // nothing for a campaign that declares none; the binding is printed either way.
+    {
+        let b = variant::emit_variant_packtests(plan, out);
+        crate::note!("{}", b.line());
+    }
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits

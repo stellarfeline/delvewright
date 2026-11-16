@@ -235,7 +235,11 @@
         },
         "facing": "north",
         "id": "actor/destrier",
-        "tier": "elite"
+        "tier": "elite",
+        "variant": {
+          "variant": "black",
+          "markings": "white_dots"
+        }
       },
       {
         "anchor": "anchor/usher",
@@ -5070,11 +5074,10 @@
         "scope": "party"
       },
       {
-        "display": "sidebar",
         "id": "state/tokens",
         "initial": 0,
         "name": "Tokens",
-        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died. It is the one purse that STANDS: `display: sidebar` heads the right-hand sidebar with its name and lists every player's balance, so a forfeit is seen without waiting for the action bar.",
+        "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died.",
         "scope": "player"
       },
       {
@@ -5099,10 +5102,11 @@
         "scope": "player"
       },
       {
+        "display": "sidebar",
         "id": "state/bounty",
         "initial": 0,
         "name": "Bounty",
-        "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
+        "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid. It is the one purse that STANDS: `display: sidebar` heads the right-hand sidebar with its name over one line, the party's shared bounty, so a kill's pay is seen without waiting for the action bar.",
         "scope": "party"
       },
       {
@@ -6340,7 +6344,11 @@
         "entity": "minecraft:horse",
         "facing": "south",
         "id": "vehicle/yard-mare",
-        "name": "Bramble"
+        "name": "Bramble",
+        "variant": {
+          "variant": "chestnut",
+          "markings": "white"
+        }
       },
       {
         "at": {
@@ -6469,6 +6477,9 @@
                 "saddle": {
                   "item": "minecraft:saddle"
                 }
+              },
+              "variant": {
+                "variant": "minecraft:warm"
               }
             }
           },
@@ -6589,7 +6600,10 @@
                 "item": "minecraft:feather"
               }
             ],
-            "entity": "minecraft:chicken"
+            "entity": "minecraft:chicken",
+            "variant": {
+              "variant": "minecraft:cold"
+            }
           }
         ],
         "respawns_on_rest": false,
@@ -6631,6 +6645,6 @@
       }
     ]
   },
-  "dsl_version": "0.81.0",
+  "dsl_version": "0.83.0",
   "stage": "quests"
 }

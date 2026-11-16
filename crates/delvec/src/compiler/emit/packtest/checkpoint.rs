@@ -844,6 +844,34 @@ pub(super) fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
     let pred = kit_item_predicate(item);
     let comp = kit_item_components(item);
     let remainder = flask_remainder(item);
+    // The probe items share no item with the flask they judge: a bread flask
+    // counted with a bread probe reads the flask's stack as the probe's. Each
+    // role takes the first of its candidates the flask's item is not — a probe
+    // that shares the flask's remainder item (the found bottles) is the point,
+    // since the rest must take only the marked empties.
+    let flask_id = if item.item.contains(':') {
+        item.item.clone()
+    } else {
+        format!("minecraft:{}", item.item)
+    };
+    let probe = |candidates: &[(&'static str, u32)]| -> (&'static str, u32) {
+        *candidates
+            .iter()
+            .find(|(id, _)| *id != flask_id)
+            .expect("each probe role has a second candidate")
+    };
+    let (shield, shield_dmg) = probe(&[("minecraft:shield", 300), ("minecraft:iron_axe", 200)]);
+    let (chest, chest_dmg) = probe(&[
+        ("minecraft:iron_chestplate", 100),
+        ("minecraft:golden_chestplate", 100),
+    ]);
+    let (sword, sword_dmg) = probe(&[
+        ("minecraft:iron_sword", 200),
+        ("minecraft:stone_sword", 100),
+    ]);
+    let (bow, bow_dmg) = probe(&[("minecraft:bow", 50), ("minecraft:crossbow", 50)]);
+    let (stack, _) = probe(&[("minecraft:bread", 0), ("minecraft:cookie", 0)]);
+    let (found, _) = probe(&[("minecraft:glass_bottle", 0), ("minecraft:bowl", 0)]);
 
     let mut b = packtest_header(&format!(
         "{title}: a rest mends every carried item in place and takes back only the \
@@ -853,16 +881,22 @@ pub(super) fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("tag @s add {ctag}"));
     b.push("clear @s".to_string());
     // Gear to mend, one per kind of carried slot.
-    b.push("item replace entity @s weapon.offhand with minecraft:shield[damage=300]".to_string());
-    b.push(
-        "item replace entity @s armor.chest with minecraft:iron_chestplate[damage=100]".to_string(),
-    );
-    b.push("item replace entity @s container.1 with minecraft:iron_sword[damage=200]".to_string());
-    b.push("item replace entity @s container.35 with minecraft:bow[damage=50]".to_string());
+    b.push(format!(
+        "item replace entity @s weapon.offhand with {shield}[damage={shield_dmg}]"
+    ));
+    b.push(format!(
+        "item replace entity @s armor.chest with {chest}[damage={chest_dmg}]"
+    ));
+    b.push(format!(
+        "item replace entity @s container.1 with {sword}[damage={sword_dmg}]"
+    ));
+    b.push(format!(
+        "item replace entity @s container.35 with {bow}[damage={bow_dmg}]"
+    ));
     // What the rest must not touch.
-    b.push("item replace entity @s container.2 with minecraft:iron_sword".to_string());
-    b.push("item replace entity @s container.3 with minecraft:bread 7".to_string());
-    b.push("item replace entity @s container.4 with minecraft:glass_bottle 5".to_string());
+    b.push(format!("item replace entity @s container.2 with {sword}"));
+    b.push(format!("item replace entity @s container.3 with {stack} 7"));
+    b.push(format!("item replace entity @s container.4 with {found} 5"));
     if let Some((id, count)) = remainder {
         // The flask as the kit hands it out carries the marked remainder — read
         // back through the server's own component predicate, so a mark the game
@@ -890,10 +924,10 @@ pub(super) fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
     // The four damaged items are whole again, in the slots they were in.
     b.push("scoreboard players set #mend_bfmd dw.sys 0".to_string());
     for (slot, it) in [
-        ("weapon.offhand", "minecraft:shield"),
-        ("armor.chest", "minecraft:iron_chestplate"),
-        ("container.1", "minecraft:iron_sword"),
-        ("container.35", "minecraft:bow"),
+        ("weapon.offhand", shield),
+        ("armor.chest", chest),
+        ("container.1", sword),
+        ("container.35", bow),
     ] {
         b.push(format!(
             "execute if items entity @s {slot} {it}[damage=0] run scoreboard players add \
@@ -904,25 +938,22 @@ pub(super) fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
     // Untouched: the whole sword, the stack, and nobody re-kitted the player
     // (the kit's own sword would be a second one).
     b.push("scoreboard players set #keep_bfmd dw.sys 0".to_string());
-    b.push(
-        "execute if items entity @s container.2 minecraft:iron_sword[damage=0] run \
+    b.push(format!(
+        "execute if items entity @s container.2 {sword}[damage=0] run \
          scoreboard players add #keep_bfmd dw.sys 1"
-            .to_string(),
-    );
-    b.push(
-        "execute if items entity @s container.3 minecraft:bread run scoreboard players add \
+    ));
+    b.push(format!(
+        "execute if items entity @s container.3 {stack} run scoreboard players add \
          #keep_bfmd dw.sys 1"
-            .to_string(),
-    );
+    ));
     b.push("assert score #keep_bfmd dw.sys matches 2".to_string());
-    b.push(
-        "execute store result score #bread_bfmd dw.sys run clear @s minecraft:bread 0".to_string(),
-    );
+    b.push(format!(
+        "execute store result score #bread_bfmd dw.sys run clear @s {stack} 0"
+    ));
     b.push("assert score #bread_bfmd dw.sys matches 7".to_string());
-    b.push(
-        "execute store result score #sword_bfmd dw.sys run clear @s minecraft:iron_sword 0"
-            .to_string(),
-    );
+    b.push(format!(
+        "execute store result score #sword_bfmd dw.sys run clear @s {sword} 0"
+    ));
     b.push("assert score #sword_bfmd dw.sys matches 2".to_string());
     // The flask's empties are gone; the bottles found elsewhere are not.
     if let Some((id, _)) = remainder {
@@ -932,10 +963,9 @@ pub(super) fn emit_bonfire_mend_packtest(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push("assert score #mine_bfmd dw.sys matches 0".to_string());
     }
-    b.push(
-        "execute store result score #glass_bfmd dw.sys run clear @s minecraft:glass_bottle 0"
-            .to_string(),
-    );
+    b.push(format!(
+        "execute store result score #glass_bfmd dw.sys run clear @s {found} 0"
+    ));
     b.push("assert score #glass_bfmd dw.sys matches 5".to_string());
     // And the flask is back at its declared count.
     b.push(format!(

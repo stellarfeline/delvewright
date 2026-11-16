@@ -48,6 +48,13 @@ pub struct Npc {
     /// Non-skinned NPCs are byte-identical to v0.3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<NpcSkin>,
+    /// The body's vanilla variant (DSL v0.83, [`crate::BodyVariant`]): its
+    /// coat, colour, collar, kind or trade, by the pinned game's own property
+    /// names and values. Absent = the type's default (a summon skips the
+    /// random pick), byte-identical. A property the body does not carry is
+    /// `DW1131`; a value it does not take is `DW1132`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<crate::BodyVariant>,
     /// Deferred entrance (DSL v0.6): when `true` the NPC is **not** summoned at
     /// world init — its body and interaction hitbox only appear when a
     /// [`Verb::SpawnNpc`] fires, at this same `anchor`. The dual of

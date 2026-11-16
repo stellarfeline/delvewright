@@ -95,12 +95,13 @@ pub struct StateDecl {
     /// engine does not decide which of two named datums is the purse.
     ///
     /// Present ⇒ `setup` heads the datum's objective with its translated `name`,
-    /// paints the value gold, and puts the objective in the slot. Requires `name`
-    /// (the slot's heading is the display name, and without one it would show the
-    /// objective's id) and a `player` scope (the sidebar hides `#`-prefixed
-    /// holders, which is what a `party` datum's value lives on); one datum per
-    /// campaign may stand, because the slot holds one objective — all three are
-    /// `DW0919`. Absent ⇒ the datum announces itself and stands nowhere.
+    /// paints the value gold, and puts the objective in the slot. A `player`
+    /// datum stands as one line per player; a `party` datum as one line, the
+    /// party's shared value, labelled with its `name`. Requires `name` (the
+    /// slot's heading is the display name, and without one it would show the
+    /// objective's id); one datum per campaign may stand, because the slot holds
+    /// one objective — both are `DW0919`. Absent ⇒ the datum announces itself and
+    /// stands nowhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<StateDisplay>,
     /// **A census** (spec-0134 §1): the datum counts the bodies of a set
@@ -190,8 +191,10 @@ impl CensusOf {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum StateDisplay {
-    /// The right-hand sidebar: a heading (the datum's `name`) and one line per
-    /// player, each showing that player's own balance.
+    /// The right-hand sidebar: a heading (the datum's `name`) and, for a
+    /// `player` datum, one line per player, each showing that player's own
+    /// balance; for a `party` datum, one line under the same name showing the
+    /// party's shared value.
     Sidebar,
 }
 
@@ -311,14 +314,11 @@ crate::dw_code! {
     /// A `state[]` datum declares `display: sidebar` and the slot cannot show
     /// what it is handed: a second datum already asks for the one slot (the
     /// sidebar holds one objective, and "first wins" would hide a decision the
-    /// creator has to make); the datum has no `name` (the slot's heading is the
-    /// display name, and without one the objective's id would stand on screen);
-    /// or the datum is `party`-scoped (its value lives on `#party`, and the
-    /// sidebar hides every `#`-prefixed holder, so the display would be an empty
-    /// heading). One rule about what the slot can draw, three ways to ask for
-    /// what it cannot — the `DW0520` shape. Validation-tier (exit 1).
-    /// Prescription: keep one `display`, give the datum a `name`, or declare it
-    /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
+    /// creator has to make); or the datum has no `name` (the slot's heading is
+    /// the display name, and without one the objective's id would stand on
+    /// screen). One rule about what the slot can draw, two ways to ask for what
+    /// it cannot — the `DW0520` shape. Validation-tier (exit 1). Prescription:
+    /// keep one `display`, or give the datum a `name`.
     pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
 }
 
@@ -483,21 +483,6 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                      heading is the display name — without one the objective's internal id \
                      would stand on every player's screen. Give the datum a `name`, or take \
                      `display` off it",
-                    s.id.as_str()
-                ),
-            ));
-        }
-        if s.scope == crate::StateScope::Party {
-            d.push(Diagnostic::error(
-                STATE_DISPLAY_UNDRAWABLE,
-                "quests",
-                path.clone(),
-                format!(
-                    "`{}` is `party`-scoped and asks to stand on the {slot}, but a party \
-                     datum's value lives on the `#party` holder and the {slot} hides every \
-                     holder whose name starts with `#` — the display would be an empty \
-                     heading. Declare it `player`-scoped if each player holds their own, or \
-                     take `display` off it and keep the announcement",
                     s.id.as_str()
                 ),
             ));

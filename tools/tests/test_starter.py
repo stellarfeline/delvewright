@@ -388,6 +388,74 @@ def test_a_drawn_way_up_to_a_raised_opening_stands_no_ladder(monkeypatch):
     assert "at most one course over the walk plane" in str(e.value)
 
 
+def _lid_alloc() -> dict:
+    """A roofed 11x7x9 place whose lid (course 6) is cut by a 3x3 hole the
+    neighbour above comes down through, five courses over the walk plane:
+    a stair through a hole in a ceiling (a vault under a yard)."""
+    return {"place": "node/vault", "extent": [11, 7, 9], "space": [[1, 1, 1], [9, 6, 7]], "datum_y": 1,
+            "ground": {"base": "ground", "columns": []},
+            "seams": [{"edge": "edge/yard-to-vault", "face": "up", "cells": [[7, 6, 3], [9, 6, 5]], "bar": None,
+                       "owns_plane": False, "other": "node/yard", "answer_with": ["stair"], "rise": 0}],
+            "sides": [], "voids": [], "brief": {"kind": "roofed"}, "owed_anchors": [], "parts": []}
+
+
+def test_a_stair_up_through_a_hole_in_the_lid_stands_its_last_treads_in_the_hole(monkeypatch):
+    """A stair through a hole in a ceiling stands its last treads in the hole
+    itself, flush with the floor above. A drawing that climbs to the hole
+    (`Model.climbs_to`) writes those treads into the opening's cells, and the
+    program claims them the way's with the block in them; any other drawing's
+    write into an opening is still skipped. Bound: the three treads of the
+    hole's middle row and the three solid cells beside them."""
+    import pytest
+
+    st = _starter_module()
+    tread = "minecraft:stone_brick_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]"
+    head = [(8, 6, z) for z in (3, 4, 5)]       # the last treads, in the hole
+    sill = [(9, 6, z) for z in (3, 4, 5)]       # the floor above's own course, in the hole
+
+    def stair(climbs: bool):
+        def build(place):
+            m = st.Model(place)
+            if climbs:
+                m.climbs_to("edge/yard-to-vault")
+            for z in (3, 4, 5):
+                for i, x in enumerate(range(3, 8)):     # one course a column, up to the hole
+                    y = 1 + i
+                    for yy in range(1, y):
+                        m.set(x, yy, z, "minecraft:stone_bricks")
+                    m.set(x, y, z, tread)
+                for x in (8, 9):
+                    for yy in range(1, 6):
+                        m.set(x, yy, z, "minecraft:stone_bricks")
+                m.set(8, 6, z, tread)
+                m.set(9, 6, z, "minecraft:stone_bricks")
+            return m
+        return build
+
+    with pytest.raises(SystemExit) as e:
+        _plot_of(st, _lid_alloc(), stair(False), monkeypatch)
+    assert "Model.climbs_to(edge)" in str(e.value)
+
+    _plot_of(st, _lid_alloc(), stair(True), monkeypatch)
+    p = st.Plot(_lid_alloc())
+    for c in head:
+        kind = p.cell(*c)
+        assert kind[:2] == ("claim", "yard-to-vault-way") and p.block_of(kind) == tread, (c, kind)
+    for c in sill:
+        kind = p.cell(*c)
+        assert kind[:2] == ("claim", "yard-to-vault-way") and p.block_of(kind) == "minecraft:stone_bricks", (c, kind)
+    assert p.cell(7, 6, 4) == ("claim", "yard-to-vault-way", None), "the hole's first row stays open"
+    assert p.model.skipped == 0
+
+    def stray(place):
+        m = st.Model(place)
+        m.set(7, 6, 4, "minecraft:stone_bricks")
+        return m
+
+    _plot_of(st, _lid_alloc(), stray, monkeypatch)
+    assert st.Plot(_lid_alloc()).model.skipped == 1, "a drawing that does not climb to the hole writes nothing in it"
+
+
 def test_floor_that_reads_as_joined_through_a_corner_no_body_passes_is_refused(monkeypatch):
     """A cell a body cannot reach, diagonally beside one it does at the same
     course, with a block in each of the two cells between them, reads as a

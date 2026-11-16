@@ -1,0 +1,13 @@
+{
+  "code": "DW1131",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/vehicles/3/variant/collar",
+      "value": "red"
+    }
+  ],
+  "units": [],
+  "why": "The yard mare is given a red collar beside her chestnut coat and white markings. A horse has a coat and markings and no collar: the pinned game has no `horse/collar`, and a horse summoned with `CollarColor` saves none, so the collar the creator asked for would never be there. It declares no unit: `variant` is bound in the primary on the mare, and what the engine refuses is a property her body does not carry."
+}

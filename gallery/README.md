@@ -84,7 +84,10 @@ comes back after every rest and pays `every-kill` into the killer's `tokens`;
 `first-kill` into the party's `bounty` purse; `actor/hall-moth` pays
 `first-kill` into the killer's `keepsake`; and `wave/edge`, which nothing seats
 twice, states no `fires` and pays the killer's `relics`, with a chime gated on
-the bounty — the bounty's only reader. The generated `kill_pays_*` templates run
+the bounty — the bounty's only reader. The bounty is also the purse that
+stands (`display: sidebar`, spec-0076): a party datum, so the sidebar shows
+one line under its name, the party's shared value, which
+`state_bounty_stands` moves on the pinned server. The generated `kill_pays_*` templates run
 each one on the pinned server with a PackTest dummy credited by vanilla's own
 `player_killed_entity`, beside a death nobody is credited with, every compiler
 removal, and a rest.
@@ -259,8 +262,7 @@ holding them at once.
 | `a-kill-nobody-can-be-credited-with` | `DW0913` | `validate` | paying for the kill of the usher, who is never unleashed and not `vulnerable`, so no player can ever be credited with killing him |
 | `every-kill-on-a-fight-that-never-comes-back` | `DW0914` | `validate` | saying the bay's lone skeleton pays `every-kill`, when nothing ever seats it twice |
 | `a-fight-that-comes-back-with-no-judgement` | `DW0915` | `validate` | removing `fires` from the muster's bundle, when every rest brings the muster back |
-| `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the tokens, when the slot holds one objective |
-| `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
+| `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the bounty, when the slot holds one objective |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
 | `a-strongbox-beside-the-hatch` | `DW1047` | `build` | sinking two trapped chests in the near hall's floor beside the site-plan point's shaft hatch: opening a chest powers the closed iron trapdoor, which opens with no beat while the story still holds it shut |

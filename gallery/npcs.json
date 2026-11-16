@@ -62,7 +62,11 @@
           "motivation": "Trade for whatever the hall's visitors are carrying.",
           "speech_style": "Brisk, transactional, never impolite."
         },
-        "role": "flavor"
+        "role": "flavor",
+        "variant": {
+          "variant": "minecraft:savanna",
+          "profession": "minecraft:cartographer"
+        }
       },
       {
         "anchor": "anchor/muster",
@@ -115,18 +119,22 @@
       {
         "anchor": "anchor/long-hall-groom",
         "area": "area/long-hall",
-        "base_entity": "minecraft:villager",
+        "base_entity": "minecraft:cat",
         "id": "npc/groom",
         "name": "The Groom",
         "persona": {
-          "archetype": "groom of the yard behind the hall",
+          "archetype": "the yard cat who keeps the stable behind the long hall",
           "motivation": "Keep the animals fed and the cart oiled.",
-          "speech_style": "Short, kindly, busy with his hands."
+          "speech_style": "Short, kindly, distracted by the hay."
         },
-        "role": "flavor"
+        "role": "flavor",
+        "variant": {
+          "variant": "minecraft:tabby",
+          "collar": "blue"
+        }
       }
     ]
   },
-  "dsl_version": "0.81.0",
+  "dsl_version": "0.83.0",
   "stage": "npcs"
 }

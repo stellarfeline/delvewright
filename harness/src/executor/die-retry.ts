@@ -289,6 +289,8 @@ export const methods = {
         const after = new Set(this.completedObjectives.keys());
         trial.lostObjectives = [...before].filter((o) => !after.has(o));
         trial.objectivesIntact = trial.lostObjectives.length === 0;
+        // Provisional: a trial that never got back keeps this reading; one that
+        // did reads it again with the census it is judged by (below).
         trial.objectiveComplete = this.completedObjectives.has(enc.objective);
         // Two observations, one verdict (see RetryOutcome). A wave mob standing
         // here again means the fight is retriable. Nothing left to fight is only
@@ -316,6 +318,19 @@ export const methods = {
           const obs = await this.awaitReengage(enc, landed);
           trial.reengage = obs;
           trial.reEngaged = obs.present > 0 || (landed !== undefined && obs.credited > landed);
+          // The objective is read AFTER the census, never before it: the two
+          // observations make one verdict, so they are taken of one server state.
+          // The probe settles for seconds, and a body that comes to the bot inside
+          // them may be staged away. When it was the last one, the server completes
+          // the `kill` objective on the tick the wave's live count reaches zero,
+          // and the marker is on the chat stream ahead of any census that then
+          // reads the wave empty (a census counts a body through its death
+          // animation, so its empty answer comes ticks after the completion). Read
+          // before the probe, the objective was paired with a wave the harness
+          // had emptied after that read, and the trial called the encounter
+          // stranded (the town's castle yard). Incomplete here is incomplete on
+          // the server.
+          trial.objectiveComplete = this.completedObjectives.has(enc.objective);
           trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
           process.stderr.write(
             `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +

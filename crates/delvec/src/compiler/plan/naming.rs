@@ -18,6 +18,16 @@ use super::*;
 /// player and is deliberately NOT routed here.
 pub const PARTY: &str = "#party";
 
+/// The **standing line** of a `party` datum that stands in a display slot
+/// (spec-0076): the visible score holder the slot draws in place of [`PARTY`].
+///
+/// The pinned client draws a sidebar row only for a holder that does not start
+/// with `#` (`PlayerScoreEntry.isHidden`), so `#party` itself is never drawn. This
+/// holder carries a copy of the party value in the datum's own objective, under
+/// the datum's translated name (`scoreboard players display name`). The `.` keeps
+/// it apart from every player: a player name is `[A-Za-z0-9_]` only.
+pub const PARTY_LINE: &str = "dw.party";
+
 /// The declared mandatory party size (spec-0018 `world.min_players`), defaulting
 /// to 1 — a party of one is always legal, and every pre-0.6 campaign reads as 1.
 pub fn min_players(campaign: &Campaign) -> u8 {
