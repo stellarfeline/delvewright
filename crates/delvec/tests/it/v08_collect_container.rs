@@ -421,7 +421,10 @@ fn a_ticked_collect_template_clears_the_counted_stack_off_every_other_player() {
             .iter()
             .position(|l| l.ends_with(":tick"))
             .unwrap_or_else(|| panic!("`{name}` ticks:\n{pt}"));
-        assert!(cleared < first_tick, "`{name}` clears before it ticks:\n{pt}");
+        assert!(
+            cleared < first_tick,
+            "`{name}` clears before it ticks:\n{pt}"
+        );
     }
     assert_eq!(bound, 2, "both tick-driven collect templates are emitted");
 }
