@@ -2416,8 +2416,9 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   map's mode, another quest's scores, the gate of a trigger an effect fires,
   the guard of a fight an effect fails — is written at its value at the
   campaign's start (`packtest::start_ledger`, read back from `fresh_ledger`)
-  immediately before the body line that carries the drive (before the call of
-  a hoisted helper that holds it). A template still opens its own gate itself;
+  before the first body line that reads one of those terms or carries the
+  drive (the call of a hoisted helper that holds either counts as that line),
+  so a probe the template asks before it drives reads the start value too. A template still opens its own gate itself;
   the pass gives every other term the fresh delve's value, by the same reading
   `DW0807` judges with, so it reaches templates not yet written. The build
   prints `packtest gate ownership: J of T template(s) drive an outcome through

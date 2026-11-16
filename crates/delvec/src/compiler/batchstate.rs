@@ -626,7 +626,8 @@ impl OwnBinding {
 /// `#party` term a gate on the path from a template's drive to the outcome it
 /// asserts reads, and the template does not write before the drive, is
 /// written at its value at the campaign's start (`start`: objective → value)
-/// immediately before the template line that carries the drive.
+/// before the first template line that reads one of those terms or carries
+/// the drive.
 ///
 /// A template writes the terms of the gate it means to open; every other term
 /// a gate on its way reads — a mode, another quest, the gate of a trigger an
@@ -679,11 +680,18 @@ pub fn own_gates(
         if writes.is_empty() {
             continue;
         }
-        // The body line whose expansion holds the drive.
+        // The first body line whose expansion reads one of the terms, or
+        // holds the drive: a probe the template asks before it drives reads
+        // the term at its start value too, never at a sibling's.
+        let wanted: BTreeSet<(String, String)> = terms
+            .iter()
+            .map(|t| (PARTY.to_string(), t.clone()))
+            .collect();
         let lines: Vec<&str> = body.lines().collect();
         let (mut so_far, mut inlined) = (Vec::new(), BTreeSet::new());
         let mut at = lines.len();
         for (k, l) in lines.iter().enumerate() {
+            let from = so_far.len();
             // An empty line is a line of the flattened body too, and
             // `lines()` of it yields none.
             if l.is_empty() {
@@ -691,7 +699,10 @@ pub fn own_gates(
             } else {
                 analysis.tree.flatten_into(l, &mut so_far, &mut inlined);
             }
-            if so_far.len() > drive_at {
+            let reads = so_far[from..]
+                .iter()
+                .any(|f| !score_pairs(f).is_disjoint(&wanted));
+            if reads || so_far.len() > drive_at {
                 at = k;
                 break;
             }
@@ -939,6 +950,30 @@ mod tests {
         assert_eq!(
             body,
             "#> t\n# @dummy\n\nscoreboard players set #trig_skip dw.sys 0\nscoreboard players set #party dw.f_hall_sealed 0\nfunction g:tick\nassert score #trig_skip dw.sys matches 1\n"
+        );
+        check_tree("g", &t).expect("the owned tree passes");
+    }
+
+    /// A probe the template asks before its drive that reads the term gets
+    /// the start value too: the term lands before the probe.
+    #[test]
+    fn own_gates_writes_before_a_probe_that_reads_the_term() {
+        let mut t = gallery_like(false);
+        t.insert(
+            "packtest-datapack/data/g/test/v04_strike_npc.mcfunction".to_string(),
+            b"#> t\n# @dummy\nexecute unless score #party dw.f_hall_sealed matches 1 run scoreboard players set #p dw.sys 1\nfunction g:tick\nassert score #trig_skip dw.sys matches 1\n"
+                .to_vec(),
+        );
+        let start = BTreeMap::from([("dw.f_hall_sealed".to_string(), 0)]);
+        own_gates("g", &mut t, &start);
+        let body =
+            String::from_utf8(t["packtest-datapack/data/g/test/v04_strike_npc.mcfunction"].clone())
+                .unwrap();
+        assert!(
+            body.starts_with(
+                "#> t\n# @dummy\nscoreboard players set #party dw.f_hall_sealed 0\nexecute unless"
+            ),
+            "{body}"
         );
         check_tree("g", &t).expect("the owned tree passes");
     }
