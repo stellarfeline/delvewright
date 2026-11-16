@@ -537,14 +537,16 @@ def flight(m, place, roles: dict | None = None, step: str = "minecraft:stone_bri
     w = walk_of(m)
     b0, b1 = cols[0], cols[-1]
     for b in cols:
-        top, half_hi, mid, half_lo = rows[0], rows[1], rows[2], rows[3]
+        top, half_hi, mid = rows[0], rows[1], rows[2]
         for a, lo_, hi_ in ((top, r["kerb"], r["kerb"]), (half_hi, r["kerb"], stairs(step, face))):
             x, z = cell(a, b)
             m.set(x, w, z, lo_)
             m.set(x, w + 1, z, hi_)
-        for a in (mid, half_lo):
-            x, z = cell(a, b)
-            m.set(x, w, z, stairs(step, face))
+        # one stair row per course: `half_lo` is the foot landing, the kerb
+        # at the paving's walk plane — a second stair row at `mid`'s course
+        # would climb nothing
+        x, z = cell(mid, b)
+        m.set(x, w, z, stairs(step, face))
         for a in rows[4:]:
             x, z = cell(a, b)
             m.set(x, w - 1, z, r["verge"] if b < c0 or b > c1 else r["paving"])

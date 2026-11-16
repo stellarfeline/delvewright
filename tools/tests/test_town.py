@@ -297,6 +297,26 @@ def test_a_flight_climbs_toward_the_opening_that_rises():
         assert m.get(3, 1, step) == starter.stairs("minecraft:stone_brick", face)
 
 
+def test_a_flight_lays_one_stair_row_per_course():
+    """Each course of a flight climbs once: a second stair row at the same
+    course climbs nothing. Bound: every column of the play space, both faces."""
+    stair = starter.stairs("minecraft:stone_brick", "north")
+    for face in ("north", "south"):
+        a = flight_alloc(face)
+        m = model(a)
+        town.flight(m, starter.Place(a), {"verge": "V", "kennel": "K", "kerb": "S", "paving": "P"}, clear=3)
+        stair = starter.stairs("minecraft:stone_brick", face)
+        rows = list(range(1, 9)) if face == "north" else list(range(8, 0, -1))
+        columns = range(1, 6)
+        for y in (1, 2):
+            for x in columns:
+                held = [z for z in rows if m.get(x, y, z) == stair]
+                assert len(held) == 1, (face, x, y, held)
+        for x in columns:
+            assert m.get(x, 1, rows[3]) is None, (face, x)   # the foot landing, at the paving's walk plane
+            assert m.get(x, 0, rows[3]) == "S"
+
+
 def lane_alloc(cols) -> dict:
     a = allocation(30, 6, 7)
     a["way"] = {"axis": "x", "clear": cols[1] - cols[0] + 1, "cols": list(cols)}
@@ -672,9 +692,10 @@ def test_a_verge_bench_turns_its_back_to_the_lot():
 # equal; `stretch` re-measured when the default verge stopped standing a
 # barrel (no default is a container the census counts); `lane` re-measured
 # when its things moved onto the verge outside the clear way (`verge_life`);
-# `stretch` and `lane` re-measured when a verge cart became `handcart`
+# `stretch` and `lane` re-measured when a verge cart became `handcart`;
+# `flight` re-measured when its doubled stair row at the foot became the landing
 EXPECTED_DIGESTS = {"stretch": "0738cf0fee822b4a", "market": "1a568c6a8f4968d1", "lane": "f187118b3fddf836",
-                    "rail": "4f53cda18c2baa0c", "flight": "e9fed371a5aa6448"}
+                    "rail": "4f53cda18c2baa0c", "flight": "d0c06bfa689d34bb"}
 
 
 def test_a_cart_rests_on_its_own_ends_and_no_top_slab_floats_in_a_verge():
