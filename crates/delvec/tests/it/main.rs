@@ -187,6 +187,7 @@ mod option_width;
 mod optional_footing;
 mod packtest_batch;
 mod packtest_campaign;
+mod packtest_own_gates;
 mod party;
 mod piece_exposure;
 mod pinned_content;
