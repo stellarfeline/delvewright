@@ -891,6 +891,7 @@ impl AnswerPlan {
             release: false,
             serves: None,
             highlight: None,
+            clues: Vec::new(),
             on: self.on.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),

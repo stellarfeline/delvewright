@@ -1036,6 +1036,12 @@
               "missing_item": "The Curator gave you the case key. It only opens the case from your hand.",
               "not_yet": "The case is shut, and nothing in it is yours yet."
             },
+            "clues": [
+              {
+                "by": "record",
+                "objective": "obj/hear-the-curator"
+              }
+            ],
             "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -1072,6 +1078,12 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
+            "clues": [
+              {
+                "by": "hint",
+                "objective": "obj/take-the-emeralds"
+              }
+            ],
             "compass": "shown",
             "count": 4,
             "fill_count": 4,
@@ -1110,6 +1122,12 @@
               "obj/take-the-emeralds"
             ],
             "anchor": "anchor/stall",
+            "clues": [
+              {
+                "by": "sight",
+                "of": "anchor/pedestal"
+              }
+            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -4368,6 +4386,12 @@
             "after": [
               "obj/reach-the-hall-end"
             ],
+            "clues": [
+              {
+                "by": "hint",
+                "objective": "obj/reach-the-hall-end"
+              }
+            ],
             "course": "race/up-the-lane",
             "happening": {
               "text": "the yard's loose hen is caught",
@@ -4465,6 +4489,12 @@
           {
             "after": [
               "obj/open-the-crate"
+            ],
+            "clues": [
+              {
+                "by": "record",
+                "objective": "obj/hear-the-curator"
+              }
             ],
             "course": "race/down-the-yard",
             "happening": {
@@ -5844,6 +5874,12 @@
       },
       {
         "at": "anchor/valve-third",
+        "clues": [
+          {
+            "by": "record",
+            "objective": "obj/hear-the-curator"
+          }
+        ],
         "effects": [
           {
             "style": "actionbar",
@@ -6663,6 +6699,6 @@
       }
     ]
   },
-  "dsl_version": "0.83.0",
+  "dsl_version": "0.86.0",
   "stage": "quests"
 }

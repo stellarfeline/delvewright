@@ -587,6 +587,12 @@ fn validate_loaded_with(
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
+                // DW1136 (spec-0143 §3): a stated clue names a text that
+                // exists. Whether it is presented before its act is DW1137's,
+                // at the build.
+                let (kd, kbind) = delvec::compiler::clue::check(&campaign);
+                examined.push(kbind.line());
+                diags.extend(kd);
                 // DW1017 (spec-0104 §6.6): the compass follows only an announced
                 // objective. DW1016 (§7.5): a highlight lights a block or a body.
                 let (cd, cbind) = delvec::compiler::promise::check_compass(&campaign);

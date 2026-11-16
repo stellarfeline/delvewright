@@ -135,6 +135,6 @@
       }
     ]
   },
-  "dsl_version": "0.83.0",
+  "dsl_version": "0.86.0",
   "stage": "npcs"
 }

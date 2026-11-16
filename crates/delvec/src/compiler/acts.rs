@@ -1,6 +1,7 @@
 //! **The acts on every walked path** (spec-0104 §1): the one reading of "what
 //! the party must do, where, and from where it stands", shared by the rules
-//! that judge an act — that it can be found (`DW0863`).
+//! that judge an act — that it can be found (`DW0863`), and that a clue it
+//! states is presented before it (`DW1137`, spec-0143).
 //!
 //! An **act** is a thing the party must do at a place to advance a walked
 //! path: every objective step of every kind, and every `use`, `strike`,
@@ -69,6 +70,8 @@ pub struct Pass {
     pub step: usize,
     /// What it is, for a message: the trigger's id, or `step <i>`.
     pub name: String,
+    /// The trigger walked through, when the place is one.
+    pub trigger: Option<String>,
     /// The cell the party stands on before it; `None` as for an act.
     pub from: Option<[i32; 3]>,
     /// What [`Self::from`] is, for a message.
@@ -96,6 +99,12 @@ pub struct ActWalk {
     /// The region writes the walk's steps make, which decide what blocks a
     /// view at each act; `None` = the plan's own (the exported path's).
     pub gates: Option<WalkGates>,
+    /// Every objective step of the walk, placed or not, as `(step, id)` in
+    /// path order.
+    pub steps: Vec<(usize, String)>,
+    /// Trigger id → the objective whose flag the path performs it to pay
+    /// (`PathFiring::trigger_debts`): the step the press is for.
+    pub debts: BTreeMap<String, String>,
 }
 
 /// Every walk's acts, derived once per plan.
@@ -206,6 +215,7 @@ pub fn acts_of_from(
             None => passes.push(Pass {
                 step: i,
                 name: name.clone(),
+                trigger: step.trigger().map(str::to_string),
                 from: from.as_ref().map(|f| f.0),
                 from_what: from.as_ref().map(|f| f.1.clone()).unwrap_or_default(),
                 target: pos,
@@ -221,6 +231,12 @@ pub fn acts_of_from(
         acts,
         passes,
         gates: None,
+        steps: steps
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.objective().map(|o| (i, o.to_string())))
+            .collect(),
+        debts: BTreeMap::new(),
     }
 }
 
@@ -246,12 +262,20 @@ fn derive_walks(
     takes: &BTreeMap<String, crate::compiler::plan::LinkTakes>,
 ) -> ActWalks {
     let mut out = ActWalks::default();
-    out.walks.push(acts_of(
+    let debts_of = |f: &crate::compiler::plan::PathFiring| -> BTreeMap<String, String> {
+        f.trigger_debts
+            .iter()
+            .map(|(t, (o, _))| (t.clone(), o.clone()))
+            .collect()
+    };
+    let mut main = acts_of(
         plan,
         "the critical path",
         &plan.critical_path,
         &plan.critical_path_transport,
-    ));
+    );
+    main.debts = debts_of(&plan.path_firing);
+    out.walks.push(main);
     let realized = crate::compiler::branch::realize(plan.campaign);
     if !realized.is_empty() {
         let flow = crate::compiler::flow::Flow::new(plan.campaign);
@@ -272,6 +296,7 @@ fn derive_walks(
                 &cp.transport_by_step,
             );
             walk.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
+            walk.debts = debts_of(&cp.firing);
             out.walks.push(walk);
         }
     }

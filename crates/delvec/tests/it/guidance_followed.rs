@@ -183,6 +183,7 @@ fn one_walk(acts: Vec<Act>) -> ActWalks {
             acts,
             passes: Vec::new(),
             gates: None,
+            ..Default::default()
         }],
     }
 }
@@ -319,8 +320,10 @@ fn a_hidden_task_is_owed_nothing_by_the_act_rule() {
                 from: Some([0, 64, 0]),
                 from_what: "the previous act's cell".into(),
                 target: [3, 64, 0],
+                trigger: None,
             }],
             gates: None,
+            ..Default::default()
         }],
     };
     let wall = walls(&wall_at_x5());
@@ -421,8 +424,10 @@ fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
                 from: Some([0, 64, 0]),
                 from_what: "the previous act's cell".into(),
                 target: [3, 64, 0],
+                trigger: None,
             }],
             gates: None,
+            ..Default::default()
         }],
     };
     let (b, r) = promise::judge_acts(&plan, &walls(&wall_at_x5()), &walk(t, p));
@@ -790,7 +795,8 @@ fn every_binding_line_states_its_zeroes() {
          way and judged by sight, 0 unannounced and owed nothing (0 with a hint on their page \
          once started); 0 place(s) walked through — 0 with an announced objective armed, 0 with \
          the next act in sight, 0 toward an unannounced act; 0 refused; 0 kill(s) on no walk \
-         judged from the acts that fire their wave"
+         judged from the acts that fire their wave; 0 that state a clue and are judged by the \
+         clue rule (DW1137) instead"
     );
     assert_eq!(
         telling::HintActBinding::default().line(),

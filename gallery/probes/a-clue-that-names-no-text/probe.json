@@ -1,0 +1,21 @@
+{
+  "code": "DW1136",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/3/objectives/7/clues/0"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/objectives/7/clues/0",
+      "value": {
+        "by": "record",
+        "objective": "obj/ask-the-groom"
+      }
+    }
+  ],
+  "units": [],
+  "why": "Asking the groom made to rest on its own record - and it has none: the objective carries a title and a hint and no `record`, so its finished page holds no line of its own. A clue that names a text nobody wrote binds to nothing, and is refused where it is written, at the clue's own pointer, before any path is walked. In the gallery the step rests on the record of hearing the Curator, which is written. It declares no unit: what must not compile is a clue naming a text that does not exist."
+}

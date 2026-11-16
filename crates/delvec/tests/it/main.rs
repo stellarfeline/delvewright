@@ -56,6 +56,7 @@ mod clear_width;
 mod clearance;
 mod cli;
 mod click_box;
+mod clue_presented;
 mod codes;
 mod cohabit;
 mod combat;

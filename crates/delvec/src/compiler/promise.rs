@@ -126,6 +126,9 @@ delvewright_dsl::dw_code! {
     /// stands, or the objective's own lines say where it is. A trigger has no
     /// lines, so sight is its only arm.
     ///
+    /// An act that **states its clue** (`clues`, spec-0143) is not judged here:
+    /// the clue rule (`DW1137`, [`crate::compiler::clue`]) judges it instead.
+    ///
     /// Judged at the build, where places and blocks exist (`emit::build`).
     pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::new("DW0863", ExitTier::Build);
 }
@@ -408,6 +411,10 @@ pub struct ActBinding {
     pub passes_hidden: usize,
     /// Acts refused.
     pub refused: usize,
+    /// Acts, walked-through places and off-walk `kill`s that state a clue
+    /// (`clues`, spec-0143): judged by the clue rule (`DW1137`,
+    /// [`crate::compiler::clue`]) instead of this one, and counted here.
+    pub clued: usize,
 }
 
 impl ActBinding {
@@ -420,7 +427,7 @@ impl ActBinding {
              with a hint on their page once started); {} place(s) walked through — {} with an \
              announced objective armed, {} with the next act in sight, {} toward an \
              unannounced act; {} refused; {} kill(s) on no walk judged from the acts that fire \
-             their wave",
+             their wave; {} that state a clue and are judged by the clue rule (DW1137) instead",
             self.acts,
             self.walks,
             self.announced,
@@ -435,7 +442,8 @@ impl ActBinding {
             self.passes_in_sight,
             self.passes_hidden,
             self.refused,
-            self.kills_off_walk
+            self.kills_off_walk,
+            self.clued
         )
     }
 }
@@ -477,8 +485,11 @@ pub fn act_unfound(
     why
 }
 
-/// Why a target is not in sight from a cell, or `None` when it is.
-fn unseen(
+/// Why a target is not in sight from a cell, or `None` when it is: past
+/// [`SIGHT_BLOCKS`], or every one of the nine lines stopped, from the eye of a
+/// body standing on `from`. Asked by this rule and by the clue rule
+/// ([`crate::compiler::clue`]) of a `sight` clue.
+pub fn unseen(
     world: &crate::compiler::nav::World,
     from: [i32; 3],
     target: [i32; 3],
@@ -554,6 +565,13 @@ pub fn judge_acts(
     b.walks = walks.walks.len();
     let mut on_a_walk: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     let objective = |qi: usize, oi: usize| &c.quests.content.quests[qi].objectives[oi];
+    let trigger_states_a_clue = |id: &str| {
+        c.quests
+            .content
+            .triggers
+            .iter()
+            .any(|t| t.id.as_str() == id && !t.clues.is_empty())
+    };
     for w in &walks.walks {
         // Each act is judged in the world its walk stands in when the act is
         // next: on this walk every earlier step has happened, so the doors its
@@ -584,6 +602,19 @@ pub fn judge_acts(
             let world: &crate::compiler::nav::World = worlds[at[ai]].as_ref().unwrap_or(world);
             b.acts += 1;
             on_a_walk.insert(a.id.as_str());
+            // A step that states its clue is judged by the clue rule instead
+            // (spec-0143): where it stands is the puzzle's, not a defect.
+            let states_a_clue = match &a.what {
+                ActWhat::Objective {
+                    quest,
+                    objective: oi,
+                } => !objective(*quest, *oi).clues().is_empty(),
+                ActWhat::Trigger(t) => trigger_states_a_clue(t),
+            };
+            if states_a_clue {
+                b.clued += 1;
+                continue;
+            }
             let obj = match a.what {
                 ActWhat::Objective {
                     quest,
@@ -746,6 +777,11 @@ pub fn judge_acts(
             if p.from == Some(p.target) {
                 continue;
             }
+            // A place whose trigger states its clue is the clue rule's.
+            if p.trigger.as_deref().is_some_and(&trigger_states_a_clue) {
+                b.clued += 1;
+                continue;
+            }
             b.passes += 1;
             // A walk toward a hidden task is owed nothing, as the task is.
             if let ActWhat::Objective {
@@ -829,6 +865,10 @@ pub fn judge_acts(
                 continue;
             }
             b.kills_off_walk += 1;
+            if !o.clues().is_empty() {
+                b.clued += 1;
+                continue;
+            }
             if !o.announced(guidance) {
                 b.hidden += 1;
                 if o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
