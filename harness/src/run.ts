@@ -761,7 +761,12 @@ async function main(): Promise<number> {
       }
     }
     if (journalLedger) {
-      const b = journalBinding(journalLedger, executor.journalStarted, executor.journalVerdicts);
+      const b = journalBinding(
+        journalLedger,
+        executor.journalStarted,
+        executor.journalVerdicts,
+        executor.journalHeld,
+      );
       const line = journalBindingLine(b);
       // A ledger that owes pages and a whole path that saw no quest start is the
       // reading failing, never a pass: a campaign-start quest starts on every run.

@@ -182,6 +182,8 @@ export class MineflayerExecutor implements StepExecutor {
   journalLedger: import("./journal.ts").JournalLedger | undefined;
   /** The quests seen to start, and the verdict on every page they owed. */
   readonly journalStarted = new Set<string>();
+  /** Quests seen active while a mode held them, with the boundary first seen at (spec-0140). */
+  readonly journalHeld = new Map<string, number>();
   readonly journalVerdicts: import("./journal.ts").JournalVerdict[] = [];
   /** The framed bodies watched through every cutscene (spec-0110 §7), when the
    * build has a cutscene that frames one. Fed from connect, on the server's

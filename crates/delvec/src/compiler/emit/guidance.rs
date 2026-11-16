@@ -1900,6 +1900,11 @@ fn finished_modifiers(
 /// reads them and derives nothing. No player-facing string is written here. A
 /// `--lang` bake writes its hints as text with no key, so its `hint_key` is
 /// `null` and the bot counts the page unjudged.
+///
+/// `held` is the `#party dw.mode` ranges under which the quest is held
+/// (spec-0140), and `mode` the score they are read on — `null` for a campaign
+/// with no mode: a held quest is told nothing, so its pages are owed when the
+/// map leaves the mode, not at its start.
 pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
     if !g.journal {
         return None;
@@ -1936,10 +1941,12 @@ pub(super) fn journal_ledger(plan: &Plan, g: &Guide) -> Option<Value> {
                 "active": quest_active_score(q.id.as_str()),
                 "told": told,
                 "gated": gated,
+                "held": super::mode::held_ranges(c, q.id.as_str()),
             })
         })
         .collect();
-    Some(json!({ "party": plan::PARTY, "quests": quests }))
+    let mode = (!c.quests.content.modes.is_empty()).then_some(super::mode::MODE_SCORE);
+    Some(json!({ "party": plan::PARTY, "mode": mode, "quests": quests }))
 }
 
 /// `validation/journal-records.json` (spec-0137 §8): every recorded
