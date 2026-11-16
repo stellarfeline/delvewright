@@ -1,0 +1,21 @@
+{
+  "code": "DW0863",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/objectives/1/clues/0"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/1/clues/0",
+      "value": {
+        "by": "record",
+        "objective": "obj/clear-the-muster"
+      }
+    }
+  ],
+  "units": [],
+  "why": "Pressing the case made to rest on the record of clearing the muster. The muster is on the main line, and every run does clear it - two halls later. Its record is written when the fight is over, so the page is not there when the party stands at the case. Refused naming the walk, the step, the clue and its pointer, and that the muster is performed after the step on that walk. In the gallery the case rests on the record of hearing the Curator, which its own `after` forces first. It declares no unit: the record entry is bound in the gallery proper, and what must not compile is a clue the story presents only after the step it is for."
+}

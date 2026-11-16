@@ -1032,6 +1032,12 @@
               "missing_item": "The Curator gave you the case key. It only opens the case from your hand.",
               "not_yet": "The case is shut, and nothing in it is yours yet."
             },
+            "clues": [
+              {
+                "by": "record",
+                "objective": "obj/hear-the-curator"
+              }
+            ],
             "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -1068,6 +1074,12 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
+            "clues": [
+              {
+                "by": "hint",
+                "objective": "obj/take-the-emeralds"
+              }
+            ],
             "compass": "shown",
             "count": 4,
             "fill_count": 4,
@@ -1106,6 +1118,12 @@
               "obj/take-the-emeralds"
             ],
             "anchor": "anchor/stall",
+            "clues": [
+              {
+                "by": "sight",
+                "of": "anchor/pedestal"
+              }
+            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -2338,6 +2356,12 @@
             "after": [
               "obj/back-in-the-hall"
             ],
+            "clues": [
+              {
+                "by": "record",
+                "objective": "obj/hear-the-curator"
+              }
+            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -2359,6 +2383,12 @@
               "obj/answer-the-marshal"
             ],
             "announcement": "shown",
+            "clues": [
+              {
+                "by": "hint",
+                "objective": "obj/answer-the-marshal"
+              }
+            ],
             "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -5840,6 +5870,12 @@
       },
       {
         "at": "anchor/valve-third",
+        "clues": [
+          {
+            "by": "record",
+            "objective": "obj/hear-the-curator"
+          }
+        ],
         "effects": [
           {
             "style": "actionbar",

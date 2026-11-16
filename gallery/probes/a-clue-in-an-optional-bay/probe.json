@@ -1,0 +1,21 @@
+{
+  "code": "DW0863",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/triggers/11/clues/0"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/11/clues/0",
+      "value": {
+        "by": "hint",
+        "objective": "obj/look-into-the-well"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The third valve's clue moved from the Curator's record to the hint of looking into the well, a task of the reliquary. The reliquary is an optional quest: the finale depends on nothing in it, so a run may turn the valves with that page never opened. The valve is a main-line step - the path turns it in front of reaching the counter - and a clue only an optional detour shows does not count for it. Refused naming the walk, the valve, the clue and its pointer, and that the well is not on the main line. In the gallery the valve rests on the record of hearing the Curator, which every run has finished before it can reach the counter. It declares no unit: the hint entry is bound in the gallery proper, and what must not compile is a main-line step resting on a clue the main line never shows."
+}

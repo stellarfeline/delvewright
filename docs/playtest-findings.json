@@ -2083,26 +2083,13 @@
       "triage": "capability"
     },
     {
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "eq": {
-            "type": "kill"
-          }
-        }
-      },
       "campaign": "the-drowned-bell",
-      "carrier": {
-        "code": "DW0863",
-        "kind": "dw"
-      },
+      "carrier": null,
+      "disposition": "no-machine-form",
       "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
       "general_form": "a mandatory encounter is discoverable from the objective that requires it",
       "id": "bell-14",
-      "note": "DW0863 refuses a `kill` objective the party cannot find: one that is neither announced with a `title` and a `hint` nor found by the party — every site that fires its wave a placed act within the wave's reach of the wave's anchor (spec-0093 §5). The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for — `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists — so either the objective's own two lines say where the wave arrives, or the wave arrives where the party already stands and the bodies acquire the party by vanilla's own follow range. Weaker than the general form in one respect, stated: the announced arm proves guidance was written, not that it is sufficient; what bounds that is the sibling rule — DW0862 refuses a prompt that reaches no player — and the author's own words. Binding: `kill` objectives, the class the general form names (an encounter is mandatory when an objective requires it), identity-shaped and therefore self-measuring: a campaign that declares no `kill` objective measures INAPPLICABLE. The row used to declare `applies_when: has mobs`, a precondition over a different class — waves — which read a campaign with waves and no kill objective as UNBOUND; spec-0093 §6.4 removes it and states the loosening in those words: a wave nothing requires the party to win is not an encounter the party must find, and such a campaign's fights are judged by DW0380 and DW0376.",
+      "justification": "Whether the party can find an act is judged in play and by no check: the rule that carried this row - every act announced with a hint or in sight of where the party stands, and a fight within reach - is withdrawn (spec-0143 section 1), because a place being out of sight of the last one is not a defect and a machine cannot tell the two apart. What the engine still proves beside it: a hint that is written reaches a screen (DW0862), and a clue a main-line step states is presented before the step (DW0863 as spec-0143 states it). This row is a standing content-QC item at every staging.",
       "round": 6,
       "triage": "capability"
     },
@@ -3466,26 +3453,13 @@
       "triage": "capability"
     },
     {
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "prefix": {
-            "id": "obj/"
-          }
-        }
-      },
       "campaign": "the-stranding",
-      "carrier": {
-        "code": "DW0863",
-        "kind": "dw"
-      },
+      "carrier": null,
+      "disposition": "no-machine-form",
       "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
       "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
       "id": "str-04",
-      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (one of nine lines clear by the one sight rule, `framing::in_sight`, stopped only by a block that hides what is behind it, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
+      "justification": "Whether the party can find an act is judged in play and by no check: the rule that carried this row - every act announced with a hint or in sight of where the party stands, and a fight within reach - is withdrawn (spec-0143 section 1), because a place being out of sight of the last one is not a defect and a machine cannot tell the two apart. What the engine still proves beside it: a hint that is written reaches a screen (DW0862), and a clue a main-line step states is presented before the step (DW0863 as spec-0143 states it). This row is a standing content-QC item at every staging.",
       "round": 1,
       "triage": "capability"
     },
@@ -3559,26 +3533,13 @@
       "triage": "content"
     },
     {
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "prefix": {
-            "id": "wave/"
-          }
-        }
-      },
       "campaign": "the-stranding",
-      "carrier": {
-        "code": "DW0863",
-        "kind": "dw"
-      },
+      "carrier": null,
+      "disposition": "no-machine-form",
       "finding": "a fight's bodies were seated far from the player and out of sight, so the player did not know where the fight was",
       "general_form": "a wave's seated bodies are within sight of the party at the moment the wave is seated, or the objective's hint says where they are",
       "id": "str-18",
-      "note": "Carried by `DW0863` (spec-0104 §3): a `kill` objective is announced with a `hint`, or its wave's anchor is in sight of every act that fires the wave AND within the wave's reach of it. A kill found by reach alone, the bodies coming unseen round a wall, is no longer found.",
+      "justification": "Whether the party can find an act is judged in play and by no check: the rule that carried this row - every act announced with a hint or in sight of where the party stands, and a fight within reach - is withdrawn (spec-0143 section 1), because a place being out of sight of the last one is not a defect and a machine cannot tell the two apart. What the engine still proves beside it: a hint that is written reaches a screen (DW0862), and a clue a main-line step states is presented before the step (DW0863 as spec-0143 states it). This row is a standing content-QC item at every staging.",
       "round": 1,
       "triage": "capability"
     },

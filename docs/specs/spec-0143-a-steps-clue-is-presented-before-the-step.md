@@ -71,7 +71,7 @@ A clue that is not presented is refused with `DW0863`, naming the walk, the step
 
 The build prints `DW0863 binding: S of A act(s) state C clue(s) — M on the main line of W walk(s), J clue judgement(s): T text clue(s) and V sight clue(s) presented before their act, R refused; O optional act(s) owed nothing; N act(s) state no clue and are owed nothing`, zeroes included, and writes `validation/clues.json`: the counts (`examined` is the judgement count) and a row per stating act — its id, `main` or `optional`, the walks that judge it, and each clue's verdict with how it was presented.
 
-The gallery binds `clues` on a trigger and on an objective, with one entry of each `by`. Three probes: `a-clue-in-an-optional-chest` (the record's objective moved off the spine: `DW0863`), `a-clue-nothing-forces-first` (the `after` that forces it removed: `DW0863`), `a-clue-that-names-no-text` (the named objective's `record` removed: `DW1136`).
+The gallery binds `clues` on a trigger and on each of the five objective kinds, with every `by` entry. Three probes: `a-clue-in-an-optional-bay` (a main-line valve resting on the hint of an optional quest's objective: `DW0863`), `a-clue-read-after-the-step` (a step resting on a record the walk writes later: `DW0863`), `a-clue-that-names-no-text` (a `record` clue naming an objective with no `record`: `DW1136`).
 
 ## 7. What it leaves out, by name **[authored]**
 
