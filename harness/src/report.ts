@@ -97,6 +97,7 @@ export const STAGES = [
   "die-retry",
   "death-loop",
   "crush-death",
+  "party",
 ] as const;
 export type StageName = (typeof STAGES)[number];
 
@@ -205,6 +206,9 @@ export class RunReport {
   private watchBinding:
     | { inRecord: number; withinReach: number; asserted: number; judgements: number; line: string }
     | undefined;
+
+  /** The party run's record (spec-0141 §6); absent on a run walked alone. */
+  private party: Record<string, unknown> | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -449,6 +453,11 @@ export class RunReport {
     this.journalBinding = binding;
   }
 
+  /** What the party run established, beside its stage row. */
+  recordParty(record: Record<string, unknown>): void {
+    this.party = record;
+  }
+
   /** The resource pack the client was sent, judged against the build's manifest. */
   recordResourcePack(verdict: ResourcePackVerdict): void {
     this.resourcePack = verdict;
@@ -546,6 +555,7 @@ export class RunReport {
     // spec-0134 §1/§2: present only when the path performed one.
     const counted = this.censuses.length === 0 ? {} : { census: this.censuses };
     const shot = this.shots.length === 0 ? {} : { shots: this.shots };
+    const party = this.party === undefined ? {} : { party: this.party };
     return {
       version: 1,
       campaign_id: this.campaignId,
@@ -554,6 +564,7 @@ export class RunReport {
       ...mocked,
       ...counted,
       ...shot,
+      ...party,
       // The difficulty the run was verified AT: spec-0023 §3 proves orchestration
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.

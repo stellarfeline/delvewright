@@ -327,18 +327,11 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
 }
 
 /**
- * Validate ordering, then execute each step in order against `executor`. Resolves
- * when the terminal assert-complete step succeeds. Rejects with
- * {@link StepOrderError} for a bad sequence or {@link StepExecutionError} for a
- * failing step (naming the failed step, per the spec-0003 diagnostic requirement).
+ * The step during which the campaign's completion is due: the last step that
+ * stands for an objective, or the carry whose landing completes it. Every
+ * boundary before it gets {@link StepExecutor.afterStep}; none after it does.
  */
-export async function runSequence(
-  path: CriticalPath,
-  executor: StepExecutor,
-  options: RunOptions = {},
-): Promise<void> {
-  validateStepOrder(path.steps);
-  let deathRetryUsed = false;
+export function completionDue(steps: readonly Step[]): number {
   // The last step that stands for an objective — `assert-complete` is terminal and
   // proves nothing itself, so it is the step before it (validateStepOrder has
   // already guaranteed exactly one assert-complete, last). Campaign completion is
@@ -347,8 +340,8 @@ export async function runSequence(
   // rested at (or a wall struck) just before the finale must not be mistaken for
   // the beat the campaign marker is due at.
   const finalObjectiveIndex = (() => {
-    for (let i = path.steps.length - 2; i >= 0; i--) {
-      const action = path.steps[i]!.action;
+    for (let i = steps.length - 2; i >= 0; i--) {
+      const action = steps[i]!.action;
       if (
         action !== "rest" &&
         action !== "trigger" &&
@@ -361,18 +354,35 @@ export async function runSequence(
         return i;
       }
     }
-    return path.steps.length - 2;
+    return steps.length - 2;
   })();
   // …and when that step is a reach the previous carry's landing completes
   // (`completed_on_landing`), the campaign marker is due during the carrying
   // step: the landing is the beat, and the reach after it walks nothing.
   const completionDueIndex = (() => {
-    const last = path.steps[finalObjectiveIndex];
+    const last = steps[finalObjectiveIndex];
     if (last?.action === "reach" && last.completedOnLanding) {
-      return landingCarrier(path.steps, finalObjectiveIndex) ?? finalObjectiveIndex;
+      return landingCarrier(steps, finalObjectiveIndex) ?? finalObjectiveIndex;
     }
     return finalObjectiveIndex;
   })();
+  return completionDueIndex;
+}
+
+/**
+ * Validate ordering, then execute each step in order against `executor`. Resolves
+ * when the terminal assert-complete step succeeds. Rejects with
+ * {@link StepOrderError} for a bad sequence or {@link StepExecutionError} for a
+ * failing step (naming the failed step, per the spec-0003 diagnostic requirement).
+ */
+export async function runSequence(
+  path: CriticalPath,
+  executor: StepExecutor,
+  options: RunOptions = {},
+): Promise<void> {
+  validateStepOrder(path.steps);
+  let deathRetryUsed = false;
+  const completionDueIndex = completionDue(path.steps);
 
   for (let i = 0; i < path.steps.length; i++) {
     const step = path.steps[i]!;

@@ -285,6 +285,12 @@ services:
       # the session `bot-run.sh` starts on a fresh world when the build's
       # gate-seal ledger names a shut floor gate (harness/src/hatch-stand.ts).
       DELVEWRIGHT_STAGE:
+      # `1` makes the session a party run (spec-0141 §6, harness/src/party.ts):
+      # three more members join the server beside the walker — one idles at the
+      # entry, one joins late, one leaves mid-path and returns — and the `party`
+      # stage judges where each stands, what each was handed and what each was
+      # told. Unset: the walker is alone, and the stage says so.
+      DELVEWRIGHT_PARTY:
     volumes:
       - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
       - ${DELVE_OUTPUT:-./delve-output}/manifest.json:/delve/manifest.json:ro

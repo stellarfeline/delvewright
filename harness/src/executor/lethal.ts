@@ -232,6 +232,7 @@ export const methods = {
     // The journal at every quest this step started (`journal.ts`), read before
     // any trial moves the bot.
     await this.judgeJournalStarts(index);
+    await this.boundaryHook?.(index);
     const plan = this.deathPlan;
     if (plan === undefined) return;
     const volumesOn = this.deathLoopOnPath && !plan.binding.unbound;

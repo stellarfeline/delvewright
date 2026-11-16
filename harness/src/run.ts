@@ -30,7 +30,9 @@ import {
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
-import { runSequence, StepExecutionError } from "./sequencer.ts";
+import { completionDue, runSequence, StepExecutionError } from "./sequencer.ts";
+import { partyFromEnv, scheduleParty } from "./party.ts";
+import { PartyRun, type PartyResult } from "./party-live.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
 import { classifyNamedEntityDeaths } from "./teardown.ts";
@@ -485,6 +487,24 @@ async function main(): Promise<number> {
   const budgetMs = budget.ms;
   process.stderr.write(`${describeBudget(derivedBudget, budget)}\n`);
 
+  // spec-0141 §6: the party run — three members beside the walker, laid on the
+  // path's step boundaries. A path too short to separate their acts is a party
+  // run that binds nothing, and the stage says so rather than passing.
+  const partyOn = partyFromEnv();
+  const partySchedule = partyOn
+    ? scheduleParty(criticalPath.steps, completionDue(criticalPath.steps), deathPlan?.seats ?? [])
+    : undefined;
+  if (partyOn) {
+    process.stderr.write(
+      partySchedule === undefined
+        ? `party run: UNBOUND — the path has fewer than three step boundaries before its completion\n`
+        : `party run: ON — ${deathPlan?.seats.length ?? 0} seat(s) from the death plan\n`,
+    );
+  }
+  let party: PartyRun | undefined;
+  let partyResult: PartyResult | undefined;
+  let partyError: string | undefined;
+
   try {
     let failure: unknown;
     // Whether the critical path completed. A failure after it is the death-loop
@@ -520,6 +540,20 @@ async function main(): Promise<number> {
               throw new Error(`resource pack: ${verdict.failures.join("; ")}`);
             }
           }
+          if (partySchedule !== undefined) {
+            party = new PartyRun({
+              connection: config,
+              campaignId: criticalPath.campaignId,
+              schedule: partySchedule,
+              seats: deathPlan?.seats ?? [],
+              ask: (commands) => executor.bracketed(commands),
+              walker: executor.requireBot(),
+              log: (line) => process.stderr.write(`${line}\n`),
+            });
+            await party.start();
+            const run = party;
+            executor.boundaryHook = (index) => run.boundary(index);
+          }
           // From here the executor is the authority on which stage a crash is in.
           crashStage = "critical-path";
           // Each lethal volume is tried at the earliest step boundary from
@@ -544,6 +578,14 @@ async function main(): Promise<number> {
       );
     } catch (err) {
       failure = err;
+    }
+    // The party is judged over the whole walk, while the walker can still ask.
+    if (party !== undefined) {
+      try {
+        partyResult = await party.finish(pathProven);
+      } catch (err) {
+        partyError = err instanceof Error ? err.message : String(err);
+      }
     }
     // Staging still in flight when the stages ended — a wave being read where its
     // body stood — is finished before anything is judged, so a reading the run
@@ -862,6 +904,48 @@ async function main(): Promise<number> {
       failures: dieRetryFailures,
     });
 
+    // spec-0141 §6: the party run's verdict, beside the walk it judged.
+    if (partyResult !== undefined) {
+      process.stderr.write(`${partyResult.line}\n`);
+      report.recordParty({
+        line: partyResult.line,
+        schedule: {
+          late_join_after: partyResult.schedule.lateJoinAfter,
+          drop_after: partyResult.schedule.dropAfter,
+          rejoin_after: partyResult.schedule.rejoinAfter,
+          boundaries: partyResult.schedule.boundaries,
+        },
+        idler_readings: partyResult.idlerReadings,
+        arrival: partyResult.arrival ?? null,
+        owed: partyResult.owed,
+        tellings: partyResult.tellings,
+      });
+    }
+    report.stage({
+      stage: "party",
+      ran: partyOn,
+      passed:
+        partyOn &&
+        partySchedule !== undefined &&
+        partyError === undefined &&
+        (partyResult?.failures.length ?? 1) === 0,
+      findings: partyOn
+        ? partyResult === undefined
+          ? []
+          : [partyResult.line]
+        : ["walked alone (DELVEWRIGHT_PARTY unset): no member beside the walker"],
+      failures: [
+        ...(partyOn && partySchedule === undefined
+          ? ["the path has fewer than three step boundaries before its completion: no party act can be laid on it"]
+          : []),
+        ...(partyError === undefined ? [] : [`the party could not be judged: ${partyError}`]),
+        ...(partySchedule !== undefined && partyResult === undefined && partyError === undefined
+          ? ["the party never joined: the walker did not reach the server"]
+          : []),
+        ...(partyResult?.failures ?? []),
+      ],
+    });
+
     // The bot told the server it had loaded after every join and respawn, or the
     // stretch after it was walked by a body nothing could hurt — and every stage
     // that inferred "this did not kill the party" from the bot surviving there
@@ -961,6 +1045,7 @@ async function main(): Promise<number> {
     );
     return 0;
   } finally {
+    party?.close();
     executor.close();
   }
 }
