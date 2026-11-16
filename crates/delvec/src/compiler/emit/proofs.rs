@@ -439,6 +439,24 @@ pub(super) fn check_finished_tree(
     crate::note!("{}", census.binding());
     put_json(out, "validation/observer-census.json", &census.to_json());
 
+    // ---- the party is every member, present or not (spec-0141 §4) ----
+    // Every lasting write onto the players present on one tick, and every pick
+    // of one player among several, stands at a site `crate::compiler::absent`
+    // names with its rule, or the build is refused (`DW1126`, `DW1127`: an
+    // engine self-check). Feature-blind, read off the shipped bytes, and run on
+    // every build.
+    let absent = match crate::compiler::absent::check(out) {
+        Ok(c) => c,
+        Err(e) => {
+            return Err(BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            });
+        }
+    };
+    crate::note!("{}", absent.binding());
+    put_json(out, "validation/absent-census.json", &absent.to_json());
+
     // ---- the effect-root walk's own binding ledger ----
     // Every other proof in this compiler publishes its binding as a
     // `validation/*.json`; the walk that underpins most of them published a
