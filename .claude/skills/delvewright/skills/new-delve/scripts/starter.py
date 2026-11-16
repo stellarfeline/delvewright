@@ -1127,8 +1127,9 @@ class Model:
     A cell holds a palette role (a key of `palette`, which may be a weighted
     list) or a literal block state (`minecraft:…`, every property written).
     The cells of every seam's opening stay the connection's: a write into one
-    is skipped and counted. `part` names a column's part; `mark` stands an
-    owed name.
+    is skipped and counted — but for a hole in the lid the drawing climbs to
+    itself (`climbs_to`), whose cells hold the stair's last treads. `part`
+    names a column's part; `mark` stands an owed name.
     """
 
     def __init__(self, place: "Place") -> None:
@@ -1147,6 +1148,7 @@ class Model:
         self.shown: set[str] = set()
         self.no_touch: set[tuple[int, int, int]] = set()
         self.climbed: set[str] = set()  # `climbs_to`: raised openings the drawing climbs to itself
+        self.drawn_openings: set[tuple[int, int, int]] = set()  # a climbed hole in the lid: its cells the drawing's
         self.dx = self.dz = 0  # `shift`: where the drawing stands, moved
         for s in place.seams:
             # the ladder the starter stands up to a raised opening, bound
@@ -1167,7 +1169,12 @@ class Model:
         the plain way out the engine proves the drawing walks. `edge` is the
         seam's edge, `edge/<stem>` or `<stem>`. Without it, a drawing that
         writes where the starter stands that ladder is refused, never
-        overwritten."""
+        overwritten.
+
+        A hole in the lid is climbed through, not to: a stair up through a
+        hole in a ceiling stands its last treads in the hole itself, flush
+        with the floor above. Its cells are then the drawing's to write, and
+        what it writes there is claimed the way's with the block in it."""
         stem = edge.removeprefix("edge/")
         s = next((s for s in self.place.seams if s["stem"] == stem), None)
         if s is None:
@@ -1175,6 +1182,10 @@ class Model:
         if s.get("approach") is None or s["approach"]["ladder"] is None:
             sys.exit(f"starter.py: climbs_to(`{edge}`): that seam's opening stands at most one course over the walk plane, so the starter stands no ladder under it to replace")
         self.climbed.add(stem)
+        if s["axis"] == 1:
+            lo, hi = [b.value for b in s["lo"]], [b.value for b in s["hi"]]
+            self.drawn_openings |= {(x, y, z) for x in range(lo[0], hi[0]) for y in range(lo[1], hi[1])
+                                    for z in range(lo[2], hi[2])}
 
     def shift(self, dx: int, dz: int = 0) -> None:
         """Draw moved `(dx, dz)` from here on: every write and read through
@@ -1189,7 +1200,7 @@ class Model:
         x, z = x + self.dx, z + self.dz
         if not (0 <= x < self.ex and 0 <= y < self.ey and 0 <= z < self.ez):
             return
-        if (x, y, z) in self.no_touch:
+        if (x, y, z) in self.no_touch and (x, y, z) not in self.drawn_openings:
             self.skipped += 1
             return
         self.v[(x, y, z)] = role
@@ -1474,6 +1485,9 @@ class Plot(Place):
     def base_cell(self, x: int, y: int, z: int) -> tuple:
         kind = Place.base_cell(self, x, y, z)
         if kind[0] == "claim" and kind[1].endswith("-way"):
+            r = self.model.v.get((x, y, z))
+            if (x, y, z) in self.model.drawn_openings and r is not None and r != AIR:
+                return ("claim", kind[1], r)  # a tread the drawing stands in a hole in the lid
             return kind  # a seam's opening, kept clear
         if kind[0] == "claim" and kind[1].endswith("-ladder"):
             return kind  # the ladder up to a raised opening, the starter's
