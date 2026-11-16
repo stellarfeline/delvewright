@@ -44,6 +44,7 @@ mod seal;
 mod sequence;
 mod shortcut;
 mod standin;
+mod standing;
 mod teleport;
 mod timed_gate;
 mod trap;
@@ -189,6 +190,9 @@ pub(super) fn emit_packtest(
     // nothing for a campaign that declares no mode.
     mode::emit_mode_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
+    // spec-0076: a standing party datum's line follows the party value. Emits
+    // nothing for a campaign whose standing datum, if any, is per-player.
+    standing::emit_standing_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final
     // scene holds every change its aftermath declares. Emits nothing for an
