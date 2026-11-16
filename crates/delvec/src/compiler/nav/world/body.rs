@@ -116,22 +116,87 @@ pub fn actor_body_entity(a: &delvewright_dsl::Actor) -> String {
     delvewright_dsl::BodyRef::Actor(a).worn_entity().to_string()
 }
 
+/// **Where a carrier seats its first rider**, over the carrier's feet, at
+/// rest: `Entity.getPassengerAttachmentPoint` on the pinned jar
+/// (`docs/reference/vehicles-animals-and-targets.md` §17). A type whose
+/// builder states `passengerAttachments` seats there; a class that overrides
+/// the method seats where its rest value says (a boat at its height over 3, a
+/// raft at its height × 0.8888889, a camel standing at its height less
+/// 0.375); every other type, the strider among them, takes the attachment's
+/// fallback, `AT_HEIGHT` — the top of its box.
+fn passenger_point(carrier: &str) -> f64 {
+    let (_, h) = entity_dims(carrier);
+    let id = carrier.strip_prefix("minecraft:").unwrap_or(carrier);
+    match id {
+        "pig" => 0.868_75,
+        "horse" => 1.443_75,
+        "donkey" => 1.1125,
+        "mule" => 1.2125,
+        "skeleton_horse" | "zombie_horse" => 1.318_75,
+        "camel" | "camel_husk" => h - 0.375,
+        "minecart" => 0.1875,
+        "nautilus" | "zombie_nautilus" => 1.1375,
+        _ if id.ends_with("_raft") => h * 0.888_888_9,
+        _ if id.ends_with("_boat") => h / 3.0,
+        _ => h,
+    }
+}
+
+/// **How far over its own feet a rider is held at its carrier's passenger
+/// point**: `Entity.getVehicleAttachmentPoint` on the pinned jar (the record
+/// §17) — the player and the mannequin `Avatar.DEFAULT_VEHICLE_ATTACHMENT`
+/// (0.6); a type whose builder states `ridingOffset(f)` the attachment `-f`;
+/// a spider or cave spider on a carrier no wider than itself its override
+/// (0.3125, 0.21875); every other type the fallback, `AT_FEET` (zero).
+fn vehicle_attachment(rider: &str, carrier: &str) -> f64 {
+    let id = rider.strip_prefix("minecraft:").unwrap_or(rider);
+    let narrower = || entity_dims(carrier).0 <= entity_dims(rider).0;
+    match id {
+        "player" | "mannequin" => 0.6,
+        "zombie" | "husk" | "drowned" | "zombie_villager" | "zombified_piglin" | "piglin"
+        | "piglin_brute" | "skeleton" | "stray" | "bogged" | "parched" => 0.7,
+        "evoker" | "illusioner" | "pillager" | "vindicator" => 0.6,
+        "wither_skeleton" => 0.875,
+        "giant" => 3.75,
+        "phantom" => 0.125,
+        "allay" | "vex" => -0.04,
+        "ghast" | "happy_ghast" => -0.5,
+        "spider" if narrower() => 0.3125,
+        "cave_spider" if narrower() => 0.218_75,
+        _ => 0.0,
+    }
+}
+
+/// **Where a rider's feet stand over its carrier's feet** (spec-0135 §13):
+/// the carrier's passenger point less the rider's vehicle attachment —
+/// `Entity.positionRider` on the pinned jar (the record §15, §17). The one
+/// answer every stacked body reads: the box an actor rider routes at
+/// ([`ridden_dims`]) and the eye of a player riding a vehicle
+/// ([`player_eye_over`]).
+pub fn rider_feet_over(rider: &str, carrier: &str) -> f64 {
+    passenger_point(carrier) - vehicle_attachment(rider, carrier)
+}
+
+/// **Where the eye of a player riding `carrier` is**, over the carrier's
+/// feet: [`rider_feet_over`] plus the standing eye — a rider keeps the
+/// standing pose (the record §15). The server judges a rider's use and
+/// interaction from this eye, and hurts the rider while it is in a block
+/// (`Entity.isInWall` asks the eye alone, the record §17).
+pub fn player_eye_over(carrier: &str) -> f64 {
+    rider_feet_over("minecraft:player", carrier) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT
+}
+
 /// **The box a body occupies with the body it rides** (spec-0135 §13): the
-/// wider of the two widths, and the carrier's height plus the rider's. A
-/// bound, on the pinned jar: a rider's feet stand at the carrier's passenger
-/// point less the rider's own vehicle attachment, and the point is under the
-/// top of the carrier's box for the kinds a campaign rides (a pig's 0.86875
-/// of 0.9, a zombie horse's 1.31875 of 1.6 —
-/// `docs/reference/vehicles-animals-and-targets.md` §16), so the box
-/// over-covers a rider and never under-covers one. A body that rides nothing
-/// (`carrier` `None`) is its own [`entity_dims`].
+/// wider of the two widths, and from the carrier's feet to the higher of the
+/// carrier's top and the rider's, the rider's feet at [`rider_feet_over`].
+/// A body that rides nothing (`carrier` `None`) is its own [`entity_dims`].
 pub fn ridden_dims(entity: &str, carrier: Option<&str>) -> (f64, f64) {
     let (w, h) = entity_dims(entity);
     match carrier {
         None => (w, h),
         Some(m) => {
             let (mw, mh) = entity_dims(m);
-            (w.max(mw), mh + h)
+            (w.max(mw), mh.max(rider_feet_over(entity, m) + h))
         }
     }
 }

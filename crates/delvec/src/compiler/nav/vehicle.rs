@@ -9,7 +9,7 @@ use delvewright_dsl::{DwCode, ExitTier, VehicleKind, VehicleMedium};
 
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::world::World;
-use crate::compiler::nav::{Footprint, entity_footprint};
+use crate::compiler::nav::{Footprint, entity_footprint, player_eye_over};
 
 delvewright_dsl::dw_code! {
     /// `DW1097` (spec-0135 §8): **a vehicle seated outside its medium** — a boat
@@ -155,13 +155,11 @@ impl VehiclePlan {
     }
 
     /// **Where a seated rider's eye is** with the vehicle at medium cell `m`
-    /// (spec-0135 §5, the record §15): the vehicle's rest over the cell, plus
-    /// its passenger attachment, less the player's vehicle attachment, plus
-    /// the player's standing eye — the server judges a rider's block use and
+    /// (spec-0135 §5, the record §15): the vehicle's rest over the cell plus
+    /// [`player_eye_over`] — the server judges a rider's block use and
     /// entity interaction from this eye at the ranges a standing player has.
-    /// `None` for a kind whose rest or attachment the record does not hold —
-    /// a minecart and every mount but the pig — whose rider acts after
-    /// leaving.
+    /// `None` for a kind an act from the seat is not proven on — a minecart
+    /// and every mount but the pig — whose rider acts after leaving.
     pub fn rider_eye(&self, world: &World, m: [i32; 3]) -> Option<[f64; 3]> {
         let rest = match self.kind {
             // The record §5: where a boat rests over its water cell's floor.
@@ -169,24 +167,46 @@ impl VehiclePlan {
             VehicleKind::Mount if self.entity == "minecraft:pig" => world.feet_y(m),
             VehicleKind::Mount | VehicleKind::Minecart => return None,
         };
-        let attach = match self.kind {
-            VehicleKind::Boat => {
-                let (_, h) = crate::compiler::nav::entity_dims(&self.entity);
-                if self.entity.ends_with("_raft") {
-                    h * RAFT_PASSENGER_OVER_HEIGHT
-                } else {
-                    h * BOAT_PASSENGER_OVER_HEIGHT
-                }
-            }
-            _ => PIG_PASSENGER_ATTACHMENT,
-        };
         Some([
             f64::from(m[0]) + 0.5,
-            rest + attach - PLAYER_VEHICLE_ATTACHMENT + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
+            rest + player_eye_over(&self.entity),
             f64::from(m[2]) + 0.5,
         ])
     }
+
+    /// **The highest a seated rider's eye can be** with the vehicle at medium
+    /// cell `m`, in blocks: the vehicle's rest over the cell plus
+    /// [`player_eye_over`]. The rest is the one the record holds, or a bound
+    /// over it: a mount on the ground at its feet over the cell; a boat where
+    /// its saves rest it (§5); a cart on its rail no higher than the track's
+    /// centre on a slope, `0.0625 + 0.5` over the rail cell's floor
+    /// (`OldMinecartBehavior.getPos`, §17); a mount in water, whose rest is
+    /// not read, anywhere below the top of its water cell.
+    fn rider_eye_top(&self, world: &World, m: [i32; 3]) -> f64 {
+        let floor = f64::from(m[1]);
+        let rest = match (self.kind, self.medium) {
+            (VehicleKind::Boat, _) => boat_rest_y(m[1]),
+            (VehicleKind::Minecart, _) => floor + CART_REST_OVER_RAIL_CELL,
+            (VehicleKind::Mount, VehicleMedium::Water) => floor + 1.0,
+            (VehicleKind::Mount, _) => {
+                world.feet_16_fp(m, &self.footprint()) as f64
+                    / delvewright_dsl::metrics::FULL_16 as f64
+            }
+        };
+        rest + player_eye_over(&self.entity)
+    }
+
+    /// **The clear cells over its floor a rider of this vehicle needs at `m`**:
+    /// from the medium cell up to the cell its eye can be in.
+    pub fn rider_clear_cells(&self, world: &World, m: [i32; 3]) -> i32 {
+        (self.rider_eye_top(world, m) - 1e-9).floor() as i32 - m[1] + 1
+    }
 }
+
+/// How high over its rail cell's floor a cart can rest: the track's centre
+/// (`OldMinecartBehavior.getPos`, `0.0625`) raised half a block on a slope
+/// (the record §17).
+const CART_REST_OVER_RAIL_CELL: f64 = 0.5625;
 
 /// A source water cell's fluid height, as the game holds it: a `float`, 8/9.
 const SOURCE_WATER_HEIGHT: f32 = 8.0 / 9.0;
@@ -212,23 +232,6 @@ pub fn boat_rest_y(floor: i32) -> f64 {
     let level = floor as f32 + SOURCE_WATER_HEIGHT;
     f64::from(level) - BOAT_UNDER_WATER_LEVEL
 }
-
-/// A boat's passenger attachment over its feet, as a share of its height:
-/// `Boat.getPassengerAttachmentPoint`, `dimensions.height() / 3.0F` (the
-/// record §15).
-const BOAT_PASSENGER_OVER_HEIGHT: f64 = 1.0 / 3.0;
-
-/// A raft's: `Raft`, `dimensions.height() * 0.8888889F` (the record §15).
-const RAFT_PASSENGER_OVER_HEIGHT: f64 = 0.888_888_9;
-
-/// A pig's passenger attachment over its feet: `EntityType.PIG`'s
-/// `passengerAttachments(0.86875F)` (the record §15).
-const PIG_PASSENGER_ATTACHMENT: f64 = 0.868_75;
-
-/// The player's vehicle attachment: `Avatar.DEFAULT_VEHICLE_ATTACHMENT`,
-/// `(0, 0.6, 0)` — a rider's feet stand this far under the vehicle's
-/// passenger point (the record §15).
-const PLAYER_VEHICLE_ATTACHMENT: f64 = 0.6;
 
 /// **Whether an eye at `eye` acts on `body` at `reach`** (spec-0135 §5): the
 /// box's nearest point within `reach` of the eye, and some point of the box
@@ -392,6 +395,21 @@ impl World {
                 .all(|&[dx, dz]| !self.flooded.contains(&[c[0] + dx, c[1], c[2] + dz]))
     }
 
+    /// **Whether a rider of `v` at medium cell `m` has its eye out of every
+    /// block**: no cell of the vehicle's columns, from `m` up to the cell its
+    /// eye can be in ([`VehiclePlan::rider_clear_cells`]), is solid. The
+    /// server hurts a rider whose eye is in a block (`Entity.isInWall`, the
+    /// record §17) and nothing else stops the vehicle carrying it there: the
+    /// vehicle's own box is all its movement collides.
+    pub fn rider_fits(&self, v: &VehiclePlan, m: [i32; 3]) -> bool {
+        let clear = v.rider_clear_cells(self, m);
+        let fp = v.footprint();
+        fp.cols
+            .iter()
+            .chain(std::iter::once(&[0, 0]))
+            .all(|&[dx, dz]| (0..clear).all(|dy| !self.is_solid([m[0] + dx, m[1] + dy, m[2] + dz])))
+    }
+
     /// **Whether the seat is in the vehicle's medium** (`DW1097`).
     pub fn seat_in_medium(&self, v: &VehiclePlan) -> bool {
         let fp = v.footprint();
@@ -445,22 +463,26 @@ impl World {
     /// breadth-first order with each cell's parent — the medium graph of
     /// spec-0135 §4. A cart's is its driven run ([`crate::compiler::rail::driven_run`]).
     pub fn medium_tree(&self, v: &VehiclePlan) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
-        self.medium_tree_avoiding(v, &|_| false)
+        self.medium_tree_avoiding(v, &|_| false, true)
     }
 
     /// [`World::medium_tree`] through no cell `avoid` names — the medium a
     /// ride may take on a leg that keeps out of some volume. A cart cannot
     /// stop short of where its rails take it, so a run that meets an avoided
-    /// cell is no medium at all: the seat alone.
+    /// cell is no medium at all: the seat alone. With `headroom`, a cell its
+    /// rider does not fit at ([`World::rider_fits`]) is avoided too, and a
+    /// seat it does not fit at is no medium; without it, the medium is the
+    /// vehicle's alone — asked only to name the cell a refused ride is cut at.
     fn medium_tree_avoiding(
         &self,
         v: &VehiclePlan,
         avoid: &dyn Fn([i32; 3]) -> bool,
+        headroom: bool,
     ) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
         if !self.seat_in_medium(v) || !v.within(v.seat) {
             return BTreeMap::new();
         }
-        self.medium_tree_from(v, v.seat, avoid)
+        self.medium_tree_from(v, v.seat, avoid, headroom)
     }
 
     /// [`World::medium_tree_avoiding`] rooted at `root` — the seat, or the
@@ -470,7 +492,12 @@ impl World {
         v: &VehiclePlan,
         root: [i32; 3],
         avoid: &dyn Fn([i32; 3]) -> bool,
+        headroom: bool,
     ) -> BTreeMap<[i32; 3], Option<[i32; 3]>> {
+        if headroom && !self.rider_fits(v, root) {
+            return BTreeMap::new();
+        }
+        let avoid = |c: [i32; 3]| avoid(c) || (headroom && !self.rider_fits(v, c));
         let mut parent: BTreeMap<[i32; 3], Option<[i32; 3]>> = BTreeMap::new();
         if root != v.seat {
             // Aboard elsewhere: a mount or a boat goes on through its medium;
@@ -902,12 +929,30 @@ pub enum RideMiss {
     /// Its medium reaches no cell of a checkpoint of the course the leg
     /// runs, from the checkpoint before it (spec-0139 §6).
     OffCourse,
+    /// The vehicle alone carries the leg, and at `cell` of that ride its
+    /// rider's eye is in a block: the ride needs `clear` cells free of solid
+    /// blocks over the cell's floor there.
+    Headroom {
+        /// The first medium cell of the ride its rider does not fit at.
+        cell: [i32; 3],
+        /// The clear cells over that cell's floor the rider needs.
+        clear: i32,
+    },
 }
 
 impl RideMiss {
     /// The miss in a diagnostic's words.
-    pub fn words(self) -> &'static str {
-        match self {
+    pub fn words(self) -> std::borrow::Cow<'static, str> {
+        let fixed = match self {
+            RideMiss::Headroom { cell, clear } => {
+                return format!(
+                    "the vehicle alone fits through {cell:?}, and its rider does not: a player \
+                     riding it has its eye in a block there and suffocates. The ride needs \
+                     {clear} clear blocks over the floor at {cell:?}; raise the ceiling there, \
+                     or keep the medium out of it"
+                )
+                .into();
+            }
             RideMiss::Unseated => "its mark is outside its medium or its `bounds`",
             RideMiss::NoBoard => {
                 "the party walks from the leg's start to no cell it can be boarded from"
@@ -930,7 +975,8 @@ impl RideMiss {
                 "the party walks to the leg's end from no cell a rider stands on after leaving it, \
                  wherever in its medium the ride ends"
             }
-        }
+        };
+        fixed.into()
     }
 }
 
@@ -950,6 +996,12 @@ const RIDE_TRIES: usize = 256;
 /// vehicle — a medium cell other than the seat — and a cart is left only
 /// where its run ends, because the rails take it there. `walks(a, b)` is the
 /// leg proof's own walk.
+///
+/// The ride is proven for its rider as well as its vehicle: no medium cell
+/// it passes puts the rider's eye in a block ([`World::rider_fits`]). A ride
+/// refused where the vehicle alone would have carried the leg is refused
+/// naming the first cell of that ride its rider does not fit at
+/// ([`RideMiss::Headroom`]).
 #[allow(clippy::too_many_arguments)]
 pub fn ride_of(
     world: &World,
@@ -960,6 +1012,36 @@ pub fn ride_of(
     goal: [i32; 3],
     seat_act: Option<&dyn Fn([i32; 3]) -> bool>,
     course: &[crate::compiler::nav::race::CellBox],
+) -> Result<RideTake, RideMiss> {
+    let ride = |headroom| ride_with(world, vi, v, from, walks, goal, seat_act, course, headroom);
+    match ride(true) {
+        Err(miss @ (RideMiss::Unseated | RideMiss::NoBoard)) => Err(miss),
+        Err(miss) => Err(ride(false).ok().map_or(miss, |take| {
+            take.medium
+                .iter()
+                .find(|m| !world.rider_fits(v, **m))
+                .map_or(miss, |&cell| RideMiss::Headroom {
+                    cell,
+                    clear: v.rider_clear_cells(world, cell),
+                })
+        })),
+        ok => ok,
+    }
+}
+
+/// [`ride_of`], with the rider's headroom proven or (`headroom` false) the
+/// vehicle's body alone.
+#[allow(clippy::too_many_arguments)]
+fn ride_with(
+    world: &World,
+    vi: usize,
+    v: &VehiclePlan,
+    from: RideFrom,
+    walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
+    goal: [i32; 3],
+    seat_act: Option<&dyn Fn([i32; 3]) -> bool>,
+    course: &[crate::compiler::nav::race::CellBox],
+    headroom: bool,
 ) -> Result<RideTake, RideMiss> {
     if !world.seat_in_medium(v) || !v.within(v.seat) {
         return Err(RideMiss::Unseated);
@@ -997,9 +1079,9 @@ pub fn ride_of(
     // its course. The ride is then the run it always was.
     let staged: &[crate::compiler::nav::race::CellBox] = if v.medium == VehicleMedium::Rails {
         let tree = if boards {
-            world.medium_tree_avoiding(v, &kept)
+            world.medium_tree_avoiding(v, &kept, headroom)
         } else {
-            world.medium_tree_from(v, root, &kept)
+            world.medium_tree_from(v, root, &kept, headroom)
         };
         let run = tree
             .keys()
@@ -1022,9 +1104,9 @@ pub fn ride_of(
     };
     for b in staged {
         let tree = if boards && lead.is_empty() {
-            world.medium_tree_avoiding(v, &kept)
+            world.medium_tree_avoiding(v, &kept, headroom)
         } else {
-            world.medium_tree_from(v, root, &kept)
+            world.medium_tree_from(v, root, &kept, headroom)
         };
         let Some((_, stop)) = tree
             .keys()
@@ -1039,9 +1121,9 @@ pub fn ride_of(
         root = stop;
     }
     let tree = if boards && lead.is_empty() {
-        world.medium_tree_avoiding(v, &kept)
+        world.medium_tree_avoiding(v, &kept, headroom)
     } else {
-        world.medium_tree_from(v, root, &kept)
+        world.medium_tree_from(v, root, &kept, headroom)
     };
     // A ride from the seat moves the vehicle; one that goes on from aboard
     // — or from the last checkpoint of a course — may act, or leave, where
@@ -1059,11 +1141,13 @@ pub fn ride_of(
     if rides.is_empty() {
         // A cart whose run was refused for the volume it enters, not for
         // going nowhere.
-        return Err(if tree.len() < world.medium_tree(v).len() {
-            RideMiss::KeptOut
-        } else {
-            RideMiss::NoMedium
-        });
+        return Err(
+            if tree.len() < world.medium_tree_avoiding(v, &|_| false, headroom).len() {
+                RideMiss::KeptOut
+            } else {
+                RideMiss::NoMedium
+            },
+        );
     }
     let take = |m: [i32; 3], leave: [i32; 3], stays: bool| -> Result<RideTake, RideMiss> {
         let tail = World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?;
@@ -1338,6 +1422,150 @@ mod tests {
         let island: BTreeSet<[i32; 3]> = BTreeSet::new();
         let mut none = OffWalk::new(&w, &island);
         assert!(!none.reaches(&[[3, 1, 0]]));
+    }
+
+    /// A stone floor at y = 0 over x in -3..=15, z in -2..=2, and a lintel
+    /// one block over the floor at x = 6, across the whole width: a pig
+    /// (0.9 high) walks under it, a body standing on it does not, and a
+    /// player riding it would have its eye in the lintel.
+    fn lane_under_a_lintel(lintel: bool) -> World {
+        let mut solid = BTreeSet::new();
+        for x in -3..=15 {
+            for z in -2..=2 {
+                solid.insert([x, 0, z]);
+                if lintel && x == 6 {
+                    solid.insert([x, 2, z]);
+                }
+            }
+        }
+        World::from_solid_and_flooded(solid, BTreeSet::new())
+    }
+
+    fn mount(entity: &str, seat: [i32; 3]) -> VehiclePlan {
+        VehiclePlan {
+            entity: entity.into(),
+            kind: VehicleKind::Mount,
+            medium: VehicleMedium::Ground,
+            seats: 1,
+            steering_item: Some("minecraft:carrot_on_a_stick".into()),
+            ..boat(seat, ([-3, 0, -2], [15, 4, 2]))
+        }
+    }
+
+    /// The ride of a pig from x = 0 to the far end of the lane, past the
+    /// lintel at x = 6, leaving at x >= 10.
+    fn ride_past_the_lintel(w: &World, v: &VehiclePlan) -> Result<RideTake, RideMiss> {
+        let from = [-2, 1, 0];
+        let goal = [14, 1, 0];
+        ride_of(
+            w,
+            0,
+            v,
+            RideFrom::Foot(from),
+            // Boarded from the start; the goal walked to only from past the
+            // lintel.
+            &|a, b| (a == from && b != goal) || (b == goal && a[0] >= 10),
+            goal,
+            None,
+            &[],
+        )
+    }
+
+    /// **A ride is proven for its rider's head, not only the mount's body**:
+    /// a pig fits under a lintel one block over the floor, and the player on
+    /// it, whose eye stands 1.88875 over the pig's feet, would have that eye
+    /// in the lintel and suffocate. The ride is refused naming the cell; with
+    /// the lintel gone it is the ride it always was.
+    #[test]
+    fn a_ride_under_a_lintel_the_mount_fits_and_its_rider_does_not_is_refused() {
+        let pig = mount("minecraft:pig", [0, 1, 0]);
+        let open = lane_under_a_lintel(false);
+        let ride = ride_past_the_lintel(&open, &pig).expect("an open lane rides");
+        assert!(ride.medium.contains(&[6, 1, 0]), "{ride:?}");
+        let low = lane_under_a_lintel(true);
+        assert!(
+            low.standable_fp([6, 1, 0], &pig.footprint()),
+            "the pig itself stands under the lintel"
+        );
+        assert!(!low.is_standable([6, 1, 0]), "a standing body does not");
+        assert_eq!(
+            ride_past_the_lintel(&low, &pig),
+            Err(RideMiss::Headroom {
+                cell: [6, 1, 0],
+                clear: 2
+            })
+        );
+    }
+
+    /// **The clear cells over its floor a rider needs, per vehicle the
+    /// pinned game seats a player on** (the record §17): every row of the
+    /// steering table is named here, so a vehicle the table gains without a
+    /// reading of its passenger point reds this test rather than taking the
+    /// fallback unread. A pig's rider fits a two-block door; a horse's needs
+    /// three; a camel's four.
+    #[test]
+    fn every_vehicle_a_player_rides_names_the_clear_cells_its_rider_needs() {
+        let mut solid = BTreeSet::new();
+        for x in -3..=3 {
+            for z in -3..=3 {
+                solid.insert([x, 0, z]);
+            }
+        }
+        let w = World::from_solid_and_flooded(solid, BTreeSet::new());
+        let expected = |id: &str| -> Option<i32> {
+            Some(match id.strip_prefix("minecraft:")? {
+                "pig" | "minecart" => 2,
+                "horse" | "donkey" | "mule" | "skeleton_horse" | "zombie_horse" | "strider" => 3,
+                "camel" | "camel_husk" | "nautilus" | "zombie_nautilus" => 4,
+                "bamboo_raft" => 3,
+                b if b.ends_with("_boat") => 2,
+                _ => return None,
+            })
+        };
+        let mut named = 0;
+        for (id, row) in delvewright_dsl::steering_table() {
+            let v = VehiclePlan {
+                entity: id.clone(),
+                kind: row.kind,
+                medium: row.medium,
+                ..boat([0, 1, 0], ([-3, 0, -3], [3, 4, 3]))
+            };
+            let want = expected(id).unwrap_or_else(|| panic!("{id}: no reading"));
+            assert_eq!(v.rider_clear_cells(&w, [0, 1, 0]), want, "{id}");
+            named += 1;
+        }
+        assert_eq!(named, delvewright_dsl::steering_table().len());
+        assert!(named >= 22, "the table holds every vehicle: {named}");
+    }
+
+    /// The seat every stacked body reads, against the record's readings: a
+    /// pig's rider 0.27 over its feet (§4), a boat's 0.4125 under its own
+    /// (§15's 100.52 + 0.1875 - 0.6), the mounted spear zombie 0.61875 over
+    /// its zombie horse's (§16); and the box an actor rides in, from the
+    /// carrier's feet to the higher top.
+    #[test]
+    fn a_rider_stands_where_the_record_reads_it() {
+        use crate::compiler::nav::{ridden_dims, rider_feet_over};
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        assert!(near(
+            rider_feet_over("minecraft:player", "minecraft:pig"),
+            0.268_75
+        ));
+        assert!(near(
+            rider_feet_over("minecraft:player", "minecraft:oak_boat"),
+            -0.4125
+        ));
+        assert!(near(
+            rider_feet_over("minecraft:zombie", "minecraft:zombie_horse"),
+            0.618_75
+        ));
+        let (w, h) = ridden_dims("minecraft:mannequin", Some("minecraft:pig"));
+        assert!(near(w, 0.9) && near(h, 2.068_75), "{w} x {h}");
+        let (w, h) = ridden_dims("minecraft:zombie", Some("minecraft:zombie_horse"));
+        assert!(near(w, 1.396_484_4) && near(h, 2.568_75), "{w} x {h}");
+        // A rider wholly under its carrier's top leaves the carrier's box.
+        let (_, h) = ridden_dims("minecraft:silverfish", Some("minecraft:camel"));
+        assert!(near(h, 2.375), "{h}");
     }
 
     #[test]
