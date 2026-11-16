@@ -13,6 +13,9 @@ import {
   journalPageCommand,
   readJournalPages,
   type JournalVerdict,
+  heldCommands,
+  isHeld,
+  journalStartDue,
 } from "../src/journal.ts";
 
 // The journal names the next act at every quest start. Each reading the bot
@@ -20,6 +23,7 @@ import {
 
 const raw = {
   party: "#party",
+  mode: "dw.mode",
   quests: [
     {
       quest: "quest/the-house",
@@ -32,6 +36,7 @@ const raw = {
         },
       ],
       gated: [],
+      held: [],
     },
     {
       quest: "quest/the-boat",
@@ -44,6 +49,7 @@ const raw = {
         },
       ],
       gated: ["obj/branch"],
+      held: ["1", "3..4"],
     },
   ],
 };
@@ -56,6 +62,7 @@ test("the ledger parses strictly", () => {
   // A bake's page carries no key: `null`, never an empty string.
   const baked = parseJournalLedger({
     party: "#party",
+    mode: null,
     quests: [{ ...raw.quests[0], told: [{ objective: "obj/a", done: "dw.o_a", hint_key: null }] }],
   });
   assert.equal(baked.quests[0]!.told[0]!.hintKey, null);
@@ -63,12 +70,14 @@ test("the ledger parses strictly", () => {
     () =>
       parseJournalLedger({
         party: "#party",
+        mode: null,
         quests: [{ ...raw.quests[0], told: [{ objective: "obj/a", done: "dw.o_a", hint_key: "" }] }],
       }),
     JournalLedgerParseError,
   );
   assert.throws(
-    () => parseJournalLedger({ party: "#party", quests: [{ ...raw.quests[0], told: [{ objective: "obj/a" }] }] }),
+    () =>
+      parseJournalLedger({ party: "#party", mode: null, quests: [{ ...raw.quests[0], told: [{ objective: "obj/a" }] }] }),
     JournalLedgerParseError,
   );
 });
@@ -251,4 +260,72 @@ test("a book whose read is not answered is not read to its end", async () => {
   const read = await readJournalPages(async (cs) => cs.map(() => ({ lines: [], answered: false })));
   assert.equal(read.answered, false);
   assert.equal(read.pageCount, 0);
+});
+
+// spec-0140: a quest a mode holds is told nothing while the map is in that
+// mode, so its pages are owed when the mode is left, not at its start.
+
+test("the ledger names the mode a quest is held under, strictly", () => {
+  const l = parseJournalLedger(raw);
+  assert.equal(l.mode, "dw.mode");
+  assert.deepEqual(l.quests[0]!.held, []);
+  assert.deepEqual(l.quests[1]!.held, ["1", "3..4"]);
+  // `held` is required: a ledger that does not say is refused, never read as "no mode".
+  const { held: _h, ...noHeld } = raw.quests[0]!;
+  assert.throws(() => parseJournalLedger({ ...raw, quests: [noHeld] }), JournalLedgerParseError);
+  // Ranges of no mode score are refused.
+  assert.throws(() => parseJournalLedger({ ...raw, mode: null, quests: [raw.quests[1]] }), JournalLedgerParseError);
+  assert.throws(
+    () => parseJournalLedger({ ...raw, quests: [{ ...raw.quests[1], held: ["one"] }] }),
+    JournalLedgerParseError,
+  );
+});
+
+test("a held quest is asked one range at a time and read by its own markers", () => {
+  const l = parseJournalLedger(raw);
+  const boat = l.quests[1]!;
+  assert.deepEqual(heldCommands(l, boat), [
+    '/execute if score #party dw.mode matches 1 run tellraw @s {"text":"[dw:journal dw.mode 1]"}',
+    '/execute if score #party dw.mode matches 3..4 run tellraw @s {"text":"[dw:journal dw.mode 3..4]"}',
+  ]);
+  assert.equal(isHeld(l, boat, [[], ["[dw:journal dw.mode 3..4]"]]), true);
+  assert.equal(isHeld(l, boat, [[], []]), false);
+  // Another range's marker on the wrong reply is not this one's.
+  assert.equal(isHeld(l, boat, [["[dw:journal dw.mode 3..4]"], []]), false);
+  // A quest no mode holds asks nothing and is never held.
+  assert.deepEqual(heldCommands(l, l.quests[0]!), []);
+  assert.equal(isHeld(l, l.quests[0]!, [["[dw:journal dw.mode 1]"]]), false);
+});
+
+test("a held quest's pages are owed when the mode is left; an unheld one's at its start", () => {
+  const l = parseJournalLedger(raw);
+  // The shape the gallery walks: the quest starts as the step that enters
+  // the mode holding it completes. Held at that boundary; owed at the next,
+  // after the mode is left.
+  const boat = l.quests[1]!;
+  const atEntry = isHeld(l, boat, [["[dw:journal dw.mode 1]"], []]);
+  assert.equal(journalStartDue(true, atEntry), "held");
+  const afterLeave = isHeld(l, boat, [[], []]);
+  assert.equal(journalStartDue(true, afterLeave), "owed");
+  assert.equal(journalStartDue(false, false), "not-started");
+  // Perturbation: a quest no mode holds, active while the map is in a mode,
+  // is owed at its start — its missing page still reds the run.
+  const house = l.quests[0]!;
+  const due = journalStartDue(true, isHeld(l, house, [["[dw:journal dw.mode 1]"]]));
+  assert.equal(due, "owed");
+  const f = journalFailures([
+    { quest: house.quest, objective: "obj/hear", step: 16, outcome: "missing", detail: "the journal read nothing" },
+  ]);
+  assert.equal(f.length, 1);
+  assert.match(f[0]!, /quest\/the-house started at step 16 and obj\/hear's hint is on no page/);
+});
+
+test("the binding counts the quests a mode held at their start", () => {
+  const l = parseJournalLedger(raw);
+  const b = journalBinding(l, new Set(["quest/the-boat"]), [], new Map([["quest/the-boat", 16]]));
+  assert.equal(b.heldAtStart, 1);
+  assert.equal(b.stillHeld, 0);
+  const never = journalBinding(l, new Set(), [], new Map([["quest/the-boat", 16]]));
+  assert.equal(never.stillHeld, 1);
+  assert.match(journalBindingLine(b), /1 quest\(s\) started under a mode that held them \(judged at its leaving\), 0 never seen left/);
 });

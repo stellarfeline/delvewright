@@ -880,6 +880,8 @@ export class RunReport {
               done_before_read: this.journalBinding.doneBeforeRead,
               baked: this.journalBinding.baked,
               gated: this.journalBinding.gated,
+              held_at_start: this.journalBinding.heldAtStart,
+              still_held: this.journalBinding.stillHeld,
               line: this.journalBinding.line,
               verdicts: this.journalBinding.verdicts.map((v) => ({ ...v })),
             },
