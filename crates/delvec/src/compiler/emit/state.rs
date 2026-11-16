@@ -232,7 +232,8 @@ pub(super) fn named_states<'a>(plan: &'a Plan) -> Vec<&'a delvewright_dsl::State
 
 /// Every declared datum that **stands** on screen (spec-0076), paired with the
 /// slot it declares. At most one, by `DW0919`; empty for a campaign that declares
-/// none, which is what keeps a spec-0032 campaign byte-identical.
+/// none, which is what keeps a spec-0032 campaign byte-identical. Either scope:
+/// a `party` datum stands through its visible line ([`party_line_copy`]).
 pub(super) fn standing_states<'a>(
     plan: &'a Plan,
 ) -> Vec<(
@@ -243,6 +244,25 @@ pub(super) fn standing_states<'a>(
         .iter()
         .filter_map(|st| st.display.map(|d| (st, d)))
         .collect()
+}
+
+/// The line that copies a standing `party` datum onto its visible holder
+/// ([`plan::PARTY_LINE`]): `None` for a datum that does not stand, or that each
+/// player holds (the slot draws a `player` datum's own holders).
+///
+/// One line for the two places the copy is made: `setup`, after the party value
+/// is seeded, and the datum's announcer, which runs on every change of the value
+/// from any cause — so the line moves exactly when the purse does.
+pub(super) fn party_line_copy(st: &delvewright_dsl::StateDecl) -> Option<String> {
+    if st.display.is_none() || st.scope != StateScope::Party {
+        return None;
+    }
+    let obj = plan::state_score(st.id.as_str());
+    Some(format!(
+        "scoreboard players operation {} {obj} = {} {obj}",
+        plan::PARTY_LINE,
+        plan::PARTY
+    ))
 }
 
 /// **A named datum announces itself when it changes** (DSL v0.10, spec-0032): the
@@ -266,23 +286,28 @@ pub(super) fn standing_states<'a>(
 /// change. The shadow is seeded alongside the datum itself, so joining a world
 /// announces nothing.
 pub(super) fn named_state_tick(plan: &Plan) -> Vec<String> {
+    named_states(plan)
+        .into_iter()
+        .map(|st| named_state_driver(plan, st))
+        .collect()
+}
+
+/// One named datum's line of [`named_state_tick`]: run its announcer when the
+/// value differs from the value last announced.
+pub(super) fn named_state_driver(plan: &Plan, st: &delvewright_dsl::StateDecl) -> String {
     let ns = &plan.namespace;
-    let mut out = Vec::new();
-    for st in named_states(plan) {
-        let id = st.id.as_str();
-        let (obj, shadow) = (plan::state_score(id), state_shadow_score(id));
-        let f = format!("st_show_{}", plan::safe_local(id));
-        match st.scope {
-            StateScope::Player => out.push(format!(
-                "execute as @a unless score @s {obj} = @s {shadow} run function {ns}:{f}"
-            )),
-            StateScope::Party => out.push(format!(
-                "execute unless score {p} {obj} = {p} {shadow} run function {ns}:{f}",
-                p = plan::PARTY
-            )),
+    let id = st.id.as_str();
+    let (obj, shadow) = (plan::state_score(id), state_shadow_score(id));
+    let f = format!("st_show_{}", plan::safe_local(id));
+    match st.scope {
+        StateScope::Player => {
+            format!("execute as @a unless score @s {obj} = @s {shadow} run function {ns}:{f}")
         }
+        StateScope::Party => format!(
+            "execute unless score {p} {obj} = {p} {shadow} run function {ns}:{f}",
+            p = plan::PARTY
+        ),
     }
-    out
 }
 
 /// The `st_show_<datum>` functions: say the balance, then remember having said it.
@@ -307,13 +332,12 @@ pub(super) fn emit_named_state_functions(plan: &Plan) -> Vec<(String, String)> {
             { "text": ": " },
             { "score": { "name": holder, "objective": obj }, "color": "gold" }
         ]);
-        fns.push((
-            format!("st_show_{}", plan::safe_local(id)),
-            lines(&[
-                format!("title {who} actionbar {component}"),
-                format!("scoreboard players operation {holder} {shadow} = {holder} {obj}"),
-            ]),
+        let mut body = vec![format!("title {who} actionbar {component}")];
+        body.extend(party_line_copy(st));
+        body.push(format!(
+            "scoreboard players operation {holder} {shadow} = {holder} {obj}"
         ));
+        fns.push((format!("st_show_{}", plan::safe_local(id)), lines(&body)));
     }
     fns
 }
