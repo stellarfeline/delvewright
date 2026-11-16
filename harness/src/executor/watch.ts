@@ -3,19 +3,20 @@
 import type { Vec3Tuple } from "../critical-path.ts";
 import { echoCommand, type BracketedReply } from "../command-reply.ts";
 import {
-  WATCH_MIN_HORIZONTAL,
   WATCH_REACH_MARGIN,
   WATCH_YAW_TOLERANCE,
   WatchLedger,
+  PLAYER_MARKER,
   bearing,
-  classMarker,
   facingMarker,
   feetDistance,
-  horizontalDistance,
   mayReach,
+  parsePlayerReply,
   parsePosReply,
   parseYawReply,
+  watchTargets,
   yRotationRange,
+  type PresentPlayer,
   type Watcher,
 } from "../watch.ts";
 import { delay } from "./connection.ts";
@@ -79,16 +80,19 @@ export const methods = {
   },
 
   /**
-   * **At a waypoint, every watching body in reach faces the bot** (spec-0101
-   * §5.4). Asks nothing unless some body could be in reach from here
-   * ({@link mayReach} over where it can stand). Otherwise the bot stops, lets
-   * the game run its watch line, and reads, in one bracketed turn, its own
-   * position and each body's live position (a body walking, removed or gone
-   * reads empty, and is not judged), and whether it wears each class a class
-   * watch names. For each body within reach that it can draw, it asks whether
-   * the body's yaw is within ±2° of the game's bearing from the body's feet to
-   * the bot's. A denial is recorded as a failure of the critical-path stage —
-   * never thrown into the walk, which would read it as a stalled hop.
+   * **At a waypoint, every watching body in reach faces the nearest present
+   * player it can draw** (spec-0101 §5.4; spec-0141: the party is every member
+   * present, so in a party run that may be a member and not the bot). Asks
+   * nothing unless some body could be in reach from here ({@link mayReach}
+   * over where it can stand). Otherwise the bot stops, lets the game run its
+   * watch line, and reads, in one bracketed turn, every player in the world —
+   * name, tags and feet — and each body's live position (a body walking,
+   * removed or gone reads empty, and is not judged). A body is judged where the
+   * bot stands within its reach; whom it should face is {@link watchTargets}
+   * over that roster, and it passes when its yaw is within ±2° of the game's
+   * bearing from its feet to one of them. A denial is recorded as a failure of
+   * the critical-path stage — never thrown into the walk, which would read it
+   * as a stalled hop.
    */
   async judgeWatchers(this: MineflayerExecutor, label: string): Promise<void> {
     const ledger = this.watch;
@@ -110,9 +114,16 @@ export const methods = {
     // position it now holds for the bot. Counted in its game time, which a
     // server that falls behind does not keep in step with wall time.
     await this.waitForGameTicks(2, `${label}: the watch line's tick`);
-    const ownMarker = "[dw:watch-pos @s ";
     const reads: string[] = [
-      `/tellraw @s ${JSON.stringify([{ text: ownMarker }, { nbt: "Pos", entity: "@s" }, { text: "]" }])}`,
+      `/execute as @a run tellraw ${bot.username} ${JSON.stringify([
+        { text: PLAYER_MARKER },
+        { selector: "@s" },
+        { text: " " },
+        { nbt: "Tags", entity: "@s" },
+        { text: " " },
+        { nbt: "Pos", entity: "@s" },
+        { text: "]" },
+      ])}`,
     ];
     for (const w of near) {
       reads.push(
@@ -122,11 +133,6 @@ export const methods = {
           { text: "]" },
         ])}`,
       );
-      if (w.classTag !== undefined) {
-        reads.push(
-          `/execute if entity @s[tag=${w.classTag}] run tellraw @s ${JSON.stringify({ text: classMarker(w.classTag) })}`,
-        );
-      }
     }
     const replies = await this.bracketedReplies(reads);
     if (replies.some((r) => !r.answered)) {
@@ -134,26 +140,26 @@ export const methods = {
       return;
     }
     const all = replies.flatMap((r) => r.lines);
-    const ownLine = all.find((l) => l.includes(ownMarker));
-    const me: Vec3Tuple | undefined = ownLine ? parsePosReply(ownLine) : undefined;
+    const roster: PresentPlayer[] = replies[0]!.lines
+      .map((l) => parsePlayerReply(l))
+      .filter((p): p is PresentPlayer => p !== undefined);
+    const me: Vec3Tuple | undefined = roster.find((p) => p.name === bot.username)?.feet;
     if (!me) {
       ledger.fail(
-        `${label}: the server did not state the bot's own position (its answer: ` +
-          `${JSON.stringify(ownLine ?? all)})`,
+        `${label}: the server did not state the bot's own position among the players present ` +
+          `(its answer: ${JSON.stringify(replies[0]!.lines)})`,
       );
       return;
     }
-    const judged: { w: Watcher; body: Vec3Tuple }[] = [];
+    const judged: { w: Watcher; body: Vec3Tuple; targets: readonly PresentPlayer[] }[] = [];
     for (const w of near) {
       const line = all.find((l) => l.includes(posMarker(w.id)));
       const body = line ? parsePosReply(line) : undefined;
       if (!body) continue; // walking, removed, or not yet summoned: no live watch
-      if (w.classTag !== undefined && !all.some((l) => l.includes(classMarker(w.classTag!)))) {
-        continue; // the bot does not wear the class this body watches
-      }
-      if (feetDistance(body, me) > w.within - WATCH_REACH_MARGIN) continue;
-      if (horizontalDistance(body, me) < WATCH_MIN_HORIZONTAL) continue;
-      judged.push({ w, body });
+      if (feetDistance(body, me) > w.within - WATCH_REACH_MARGIN) continue; // the bot is not in reach
+      const t = watchTargets(w, body, roster);
+      if (!t.judged) continue;
+      judged.push({ w, body, targets: t.targets });
     }
     if (judged.length === 0) return;
     // A body is live (`dw_watch`) from the tick a walk's arrival, a summon or a
@@ -163,16 +169,23 @@ export const methods = {
     // a whole game tick later at the least — and only for a body that has not
     // moved since, so a walk that took it in between is not judged.
     await this.waitForGameTicks(2, `${label}: the watch line's tick after the bodies were seen live`);
-    for (const { w, body } of judged) {
+    for (const { w, body, targets } of judged) {
       ledger.reach(w.id);
-      const yaw = bearing(body, me);
-      const range = yRotationRange(yaw, WATCH_YAW_TOLERANCE);
-      const [facing, live, actual] = await this.bracketedReplies([
-        `/execute if entity @e[${w.selector},tag=dw_watch,y_rotation=${range}] run tellraw @s ${JSON.stringify({ text: facingMarker(w.id) })}`,
+      const asked = targets.map((p) => {
+        const yaw = bearing(body, p.feet);
+        return { p, yaw, range: yRotationRange(yaw, WATCH_YAW_TOLERANCE) };
+      });
+      const replies = await this.bracketedReplies([
+        ...asked.map(
+          (a) =>
+            `/execute if entity @e[${w.selector},tag=dw_watch,y_rotation=${a.range}] run tellraw @s ${JSON.stringify({ text: facingMarker(w.id) })}`,
+        ),
         `/tellraw @s ${JSON.stringify([{ text: posMarker(w.id) }, { nbt: "Pos", entity: liveSelector(w) }, { text: "]" }])}`,
         `/tellraw @s ${JSON.stringify([{ text: yawMarker(w.id) }, { nbt: "Rotation[0]", entity: `@e[${w.selector},limit=1]` }, { text: "]" }])}`,
       ]);
-      if (facing && lineWith(facing, facingMarker(w.id))) {
+      const facing = replies.slice(0, asked.length);
+      const [live, actual] = replies.slice(asked.length);
+      if (facing.some((r) => lineWith(r, facingMarker(w.id)))) {
         ledger.pass(w.id);
         continue;
       }
@@ -181,12 +194,21 @@ export const methods = {
       if (!stillLive || feetDistance(stillLive, body) > 0.001) continue;
       const yawLine = actual ? lineWith(actual, yawMarker(w.id)) : undefined;
       const stated = yawLine ? parseYawReply(yawLine.slice(yawLine.indexOf(yawMarker(w.id)) + yawMarker(w.id).length)) : undefined;
+      const whom = asked
+        .map(
+          (a) =>
+            `${a.p.name === bot.username ? "the bot" : `\`${a.p.name}\``} at ` +
+            `[${a.p.feet.map((c) => c.toFixed(2)).join(", ")}], ${feetDistance(body, a.p.feet).toFixed(2)} ` +
+            `block(s) away: the game's bearing is ${a.yaw.toFixed(2)}° (asked ${a.range})`,
+        )
+        .join("; or ");
+      const others = roster.length - 1;
       ledger.fail(
         `${label}: \`${w.id}\` (${w.who}, within ${w.within}) at ` +
-          `[${body.map((c) => c.toFixed(2)).join(", ")}] does not face the bot at ` +
-          `[${me.map((c) => c.toFixed(2)).join(", ")}], ${feetDistance(body, me).toFixed(2)} block(s) ` +
-          `away: the game's bearing is ${yaw.toFixed(2)}° (asked ${range}), the body's yaw is ` +
-          `${stated === undefined ? "unread" : `${stated.toFixed(2)}°`}`,
+          `[${body.map((c) => c.toFixed(2)).join(", ")}] does not face the nearest player it can ` +
+          `draw — ${whom} — the body's yaw is ` +
+          `${stated === undefined ? "unread" : `${stated.toFixed(2)}°`} ` +
+          `(the bot at [${me.map((c) => c.toFixed(2)).join(", ")}], ${others} other player(s) present)`,
       );
     }
   },

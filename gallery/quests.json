@@ -2852,6 +2852,15 @@
               },
               "seconds": 10,
               "type": "give-effect"
+            },
+            {
+              "actor": "actor/rafter-spider",
+              "happening": {
+                "subject": "actor/rafter-spider",
+                "text": "The spider lets itself down from the rafters while the muster forms up.",
+                "verb": "arrives"
+              },
+              "type": "spawn-actor"
             }
           ],
           "obj/back-in-the-hall": [

@@ -184,6 +184,79 @@ export function parseYawReply(text: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
+/** The tag the engine puts on a player a cutscene holds; the watch line draws no one wearing it. */
+export const CUTSCENE_TAG = "dw_cutscene";
+
+/** The marker each present player's roster line is echoed under. */
+export const PLAYER_MARKER = "[dw:watch-player ";
+
+/** One player in the world when the bot judges: name, tags and feet. */
+export interface PresentPlayer {
+  readonly name: string;
+  readonly tags: readonly string[];
+  readonly feet: Vec3Tuple;
+}
+
+/**
+ * A roster line — `[dw:watch-player <name> <Tags> <Pos>]`, the `Tags` list
+ * absent for a player with none — or `undefined`.
+ */
+export function parsePlayerReply(line: string): PresentPlayer | undefined {
+  const at = line.indexOf(PLAYER_MARKER);
+  if (at < 0) return undefined;
+  const rest = line.slice(at + PLAYER_MARKER.length);
+  const name = /^(\S+) /.exec(rest)?.[1];
+  const feet = parsePosReply(rest);
+  if (name === undefined || feet === undefined) return undefined;
+  const tagText = rest.slice(name.length, rest.lastIndexOf("[")); // before the Pos list
+  // The game prints every string of a list quoted (double, or single when it
+  // holds a double quote); a tag is never empty.
+  const tags = [...tagText.matchAll(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g)]
+    .map((m) => m[1] ?? m[2]!)
+    .filter((t) => t.length > 0);
+  return { name, tags, feet };
+}
+
+/** What {@link watchTargets} found: whom the body may be facing, or why it is not judged. */
+export type WatchTargets =
+  | { readonly judged: true; readonly targets: readonly PresentPlayer[] }
+  | { readonly judged: false; readonly why: string };
+
+/**
+ * **Whom a watching body faces** (spec-0101 §4.4 under spec-0141): the watch
+ * line turns it to `@p[distance=..within,tag=!dw_cutscene(,tag=<class>)]` from
+ * its feet — the nearest present player it can draw, whoever that is, the bot
+ * or a member of its party. Of `players` (everyone the server stated), the ones
+ * the body can draw — not in a cutscene, wearing its class for a class watch —
+ * within reach; the nearest, and any within {@link WATCH_REACH_MARGIN} of it,
+ * since a read that close cannot tell the server's nearest-sort apart. Not
+ * judged when nobody is in reach, when the nearest stands on the boundary of
+ * reach (the server measures from its own positions), or when it stands over
+ * the body's own column.
+ */
+export function watchTargets(
+  w: Watcher,
+  body: Vec3Tuple,
+  players: readonly PresentPlayer[],
+): WatchTargets {
+  const drawable = players
+    .filter((p) => !p.tags.includes(CUTSCENE_TAG))
+    .filter((p) => w.classTag === undefined || p.tags.includes(w.classTag))
+    .map((p) => ({ p, d: feetDistance(body, p.feet) }))
+    .filter(({ d }) => d <= w.within + WATCH_REACH_MARGIN)
+    .sort((a, b) => a.d - b.d);
+  const nearest = drawable[0];
+  if (nearest === undefined) return { judged: false, why: "nobody it can draw is in reach" };
+  if (nearest.d > w.within - WATCH_REACH_MARGIN) {
+    return { judged: false, why: `the nearest player it can draw stands on the boundary of its reach` };
+  }
+  const targets = drawable.filter(({ d }) => d <= nearest.d + WATCH_REACH_MARGIN).map(({ p }) => p);
+  if (targets.some((p) => horizontalDistance(body, p.feet) < WATCH_MIN_HORIZONTAL)) {
+    return { judged: false, why: "a player it may be facing stands over its own column" };
+  }
+  return { judged: true, targets };
+}
+
 /** The tellraw marker the server echoes when a facing check passes. */
 export function facingMarker(id: string): string {
   return `[dw:watch ${id} faces]`;
