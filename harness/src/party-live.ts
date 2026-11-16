@@ -126,6 +126,10 @@ export class PartyRun {
       respawn: true,
     });
     bot.on("messagestr", (line: string) => this.hear(m.heard, line));
+    // A member's socket error after its join is logged, never left to an
+    // emitter with no listener (which ends the process).
+    bot.on("error", (e: Error) => this.o.log(`[party] ${name}: ${e.message}`));
+    bot.on("kicked", (r: unknown) => this.o.log(`[party] ${name} was kicked: ${JSON.stringify(r)}`));
     await new Promise<void>((resolve, reject) => {
       bot.once("spawn", () => resolve());
       bot.once("error", reject);
