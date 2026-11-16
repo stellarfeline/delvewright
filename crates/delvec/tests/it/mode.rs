@@ -424,6 +424,46 @@ fn the_packtest_owes_a_mode_its_templates() {
     )));
 }
 
+/// `DW0807` across a mode: a limit template's window is the server's own
+/// clock, so every driver that can enter the mode holding its clock is shut
+/// for the whole wait. `obj/reach`'s clock is held by `mode/audience`, entered
+/// when `obj/talk` of the KEPT quest completes; a template that left
+/// `quest/greet-keeper` in progress — as `mode_audience_holds` does, by design
+/// — let a body left on the server complete the talk, enter the mode, hold the
+/// clock and never settle the expiry. The kept quest is closed before the
+/// clock starts, in each limit template that waits on it; the mode clock
+/// template opens it again on purpose, after.
+#[test]
+fn a_limit_template_shuts_every_other_quest_before_its_clock_runs() {
+    let out = build(&fixture("limit-shuts", |q| {
+        audience(q);
+        minute(q, json!("activation"));
+    }));
+    let shut = "scoreboard players set #party dw.qa_greet_keeper 0";
+    let opened = "scoreboard players set #party dw.qa_greet_keeper 1";
+    for name in [
+        "limit_o_reach_expires",
+        "limit_o_reach_done",
+        "party_limit_bar_o_reach",
+    ] {
+        let t = template(&out, name);
+        let lines: Vec<&str> = t.lines().collect();
+        let start = lines
+            .iter()
+            .position(|l| *l == format!("function {NS}:activate_o_reach"))
+            .unwrap_or_else(|| panic!("`{name}` starts the clock:\n{t}"));
+        let last_shut = lines[..start].iter().rposition(|l| *l == shut);
+        assert!(
+            last_shut.is_some(),
+            "`{name}` shuts the kept quest before the clock starts:\n{t}"
+        );
+        assert!(
+            !lines[last_shut.unwrap()..start].contains(&opened),
+            "…and nothing opens it again before the start:\n{t}"
+        );
+    }
+}
+
 #[test]
 fn the_binding_counts_what_the_build_read() {
     let dir = fixture("binding", |q| {

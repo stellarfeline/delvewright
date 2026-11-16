@@ -72,12 +72,29 @@ zero documents: a gate that matched nothing is vacuous, not a pass (CLAUDE.md).
 So is a probe that perturbs nothing — it materialises the primary unchanged and
 is then refused, or not, by whatever the primary does, which is a refusal about
 some other document wearing this probe's name.
+
+## Shards
+
+The probes' engine runs are the gate's whole cost, so they are split across
+jobs. `--shard K/N` runs only the probes whose position in the sorted probe
+listing is K-1 modulo N, judges each exactly as the whole run does, and writes
+`--shard-report`: every probe it examined, with what it declared, the phase
+that refused it and a canonical hash of the probe's committed files. It states
+no verdict. A shard that examines zero probes is a red.
+
+`--shard-reports DIR` is the aggregate: it runs no probe, reads every shard
+report in DIR, and refuses unless they declare one N, hold every K from 1 to N
+exactly once, each examined at least one probe, each examined exactly its
+partition of the listing in this checkout, and each probe's hash matches the
+committed files. Only then are the discharges computed — by the same
+`probe_discharges` the whole run uses — and the verdict stated.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -555,6 +572,90 @@ def prepare_probe(pd: Path, tmp: Path) -> dict:
     }
 
 
+def parse_shard(text: str) -> tuple[int, int]:
+    """`K/N` read as one shard of N, refused unless 1 <= K <= N."""
+    try:
+        k, n = (int(x) for x in text.split("/"))
+    except ValueError:
+        die(f"--shard `{text}` is not `K/N`")
+    if not (n >= 1 and 1 <= k <= n):
+        die(f"--shard `{text}`: K must be 1..N and N at least 1")
+    return k, n
+
+
+def shard_of(probe_dirs: list[Path], k: int, n: int) -> list[Path]:
+    """The probes shard K of N examines: every Nth of the sorted listing, from K-1.
+
+    The one partition rule; the shards and the aggregate both ask it.
+    """
+    return [pd for i, pd in enumerate(probe_dirs) if i % n == k - 1]
+
+
+def probe_digest(pd: Path) -> str:
+    """A canonical hash of a probe's committed files (relative path and bytes)."""
+    h = hashlib.sha256()
+    for f in sorted(x for x in pd.rglob("*") if x.is_file()):
+        h.update(f.relative_to(pd).as_posix().encode() + b"\0")
+        h.update(f.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def read_shard_reports(rdir: Path, probe_dirs: list[Path]) -> list[dict]:
+    """Every probe record the shards examined, in the listing's order.
+
+    Refuses a set of reports that does not together examine every probe in this
+    checkout exactly once: a missing, duplicated or empty shard, a shard that
+    examined a different partition than the rule gives it, or a probe whose
+    committed files differ from the ones the shard examined.
+    """
+    files = sorted(rdir.glob("*.json")) if rdir.is_dir() else []
+    if not files:
+        die(f"--shard-reports `{rdir}` holds no shard report: the aggregate examined nothing")
+    reports = [json.loads(f.read_text()) for f in files]
+    ns = {r.get("of") for r in reports}
+    if len(ns) != 1:
+        die(f"the shard reports declare different shard counts: {sorted(map(str, ns))}")
+    n = ns.pop()
+    ks = sorted(r.get("shard") for r in reports)
+    if ks != list(range(1, n + 1)):
+        die(
+            f"the shard reports hold shards {ks}, not each of 1..{n} exactly once: a "
+            "missing shard is a set of probes nothing examined"
+        )
+    by_name = {pd.name: pd for pd in probe_dirs}
+    records: dict[str, dict] = {}
+    for r in sorted(reports, key=lambda r: r["shard"]):
+        k = r["shard"]
+        examined = [p["name"] for p in r.get("probes") or []]
+        if not examined:
+            die(f"shard {k} of {n} examined ZERO probes: a shard that binds nothing is not a pass")
+        expected = [pd.name for pd in shard_of(probe_dirs, k, n)]
+        if examined != expected:
+            missing = sorted(set(expected) - set(examined))
+            extra = sorted(set(examined) - set(expected))
+            die(
+                f"shard {k} of {n} examined {len(examined)} probe(s) where its partition of "
+                f"this checkout's {len(probe_dirs)} holds {len(expected)} "
+                f"(not examined: {missing[:5]}; not in its partition: {extra[:5]})"
+            )
+        for p in r["probes"]:
+            got = probe_digest(by_name[p["name"]])
+            if p.get("digest") != got:
+                die(
+                    f"probe `{p['name']}` was examined by shard {k} of {n} at files hashing "
+                    f"{p.get('digest')}, and this checkout's hash {got}"
+                )
+            records[p["name"]] = p
+    if sorted(records) != sorted(by_name):
+        die("the shard reports together do not examine every probe of this checkout")
+    print(
+        f"shard reports: {n} shard(s), {len(records)} of {len(probe_dirs)} probe(s) "
+        f"examined, per shard {[len(r['probes']) for r in sorted(reports, key=lambda r: r['shard'])]}."
+    )
+    return [records[pd.name] for pd in probe_dirs]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--delvec", help="the delvec whose schema export defines the units")
@@ -571,7 +672,21 @@ def main() -> int:
     )
     ap.add_argument("--report", help="write the machine report here (JSON)")
     ap.add_argument("--index", help="write the reader-facing element index here (Markdown)")
+    ap.add_argument(
+        "--shard",
+        help="`K/N`: run only shard K of N of the probes, write `--shard-report`, state no verdict",
+    )
+    ap.add_argument("--shard-report", help="with --shard: write the shard's probe records here (JSON)")
+    ap.add_argument(
+        "--shard-reports",
+        help="a directory of every shard's report: run no probe, aggregate them and state the verdict",
+    )
     args = ap.parse_args()
+    if args.shard and args.shard_reports:
+        die("--shard runs one shard and --shard-reports aggregates them all: name one")
+    if args.shard and not args.shard_report:
+        die("--shard names no --shard-report: a shard whose records nobody reads examined nothing")
+    shard = parse_shard(args.shard) if args.shard else None
 
     delvec = resolve_delvec(args.delvec, repo=REPO, caller="check-gallery-coverage")
     prefabs = Path(args.prefabs)
@@ -658,6 +773,16 @@ def main() -> int:
     probes_patched = 0
     paths_touched = 0
     own_documents = 0
+    probe_dirs = (
+        sorted(p for p in probes_dir.iterdir() if p.is_dir()) if probes_dir.is_dir() else []
+    )
+    selected = shard_of(probe_dirs, *shard) if shard else probe_dirs
+    if shard and not selected:
+        die(
+            f"shard {shard[0]} of {shard[1]} holds ZERO of the {len(probe_dirs)} probe(s): "
+            "a shard that examines nothing is not a pass"
+        )
+    examined_records: list[dict] = []
     tmp = Path(tempfile.mkdtemp(prefix="gallery-probes-"))
     try:
         # Three passes, so the probes' engine runs — all the time this gate
@@ -674,7 +799,7 @@ def main() -> int:
         # are the serial run's.
         prepared: list[tuple] = []
         held: tuple[str, int] | None = None
-        for pd in sorted(p for p in probes_dir.iterdir() if p.is_dir()) if probes_dir.is_dir() else []:
+        for pd in [] if args.shard_reports else selected:
             said = io.StringIO()
             try:
                 with contextlib.redirect_stderr(said):
@@ -698,16 +823,58 @@ def main() -> int:
                     die(str(e))
                 name, kind, code = p["name"], p["kind"], p["code"]
                 assert_refused(name, kind, code, rc, codes, phase)
-                if kind == DEMONSTRATION:
-                    demonstrations[name] = {"code": code, "why": p["why"], "phase": phase}
-                refusal.update(
-                    probe_discharges(name, kind, code, p["claimed"], p["why"], units, bound)
+                examined_records.append(
+                    {
+                        "name": name,
+                        "kind": kind,
+                        "code": code,
+                        "claimed": p["claimed"],
+                        "why": p["why"],
+                        "phase": phase,
+                        "ops": len(p["ops"]),
+                        "own": p["own"],
+                        "digest": probe_digest(probes_dir / name),
+                    }
                 )
         if held is not None:
             sys.stderr.write(held[0])
             raise SystemExit(held[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    if shard:
+        k, n = shard
+        Path(args.shard_report).write_text(
+            json.dumps(
+                {"shard": k, "of": n, "probes_listed": len(probe_dirs), "probes": examined_records},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        print(
+            f"gallery coverage shard {k} of {n}: {len(examined_records)} of "
+            f"{len(probe_dirs)} probe(s) examined and refused with the code each names; "
+            "the verdict is the aggregate's."
+        )
+        print(parallel.admission().line())
+        return 0
+
+    if args.shard_reports:
+        examined_records = read_shard_reports(Path(args.shard_reports), probe_dirs)
+        probes_examined = len(examined_records)
+        probes_patched = sum(1 for r in examined_records if r["ops"])
+        paths_touched = sum(r["ops"] for r in examined_records)
+        own_documents = sum(r["own"] for r in examined_records)
+
+    # One discharge rule for the whole run and the aggregate: each examined
+    # probe's record, in the listing's order.
+    for r in examined_records:
+        if r["kind"] == DEMONSTRATION:
+            demonstrations[r["name"]] = {"code": r["code"], "why": r["why"], "phase": r["phase"]}
+        refusal.update(
+            probe_discharges(r["name"], r["kind"], r["code"], r["claimed"], r["why"], units, bound)
+        )
 
     # ----------------------------------------------------------------- verdict
     bound_ids = {u for u in bound if u in units}
@@ -736,7 +903,7 @@ def main() -> int:
         f"declared edit over the primary, {paths_touched} JSON path(s) touched, "
         f"{own_documents} document(s) of their own the primary does not hold."
     )
-    if probes_examined:
+    if probes_examined and not args.shard_reports:
         print(parallel.admission().line())
 
     # ------------------------------------------- compiler-stated bindings (§8.6)
