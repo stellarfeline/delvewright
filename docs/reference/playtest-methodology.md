@@ -84,6 +84,8 @@ reading and the clear. A die-retry stage that cannot finish reds on its own
 coverage and does not end the run: suppressing every measurement behind one fight
 is how a ladder learns least from a red.
 
+**A die-retry trial's verdict reads one server state.** Whether the wave re-engaged and whether the encounter's objective is complete are both read after the re-engage probe settles, from the same chat stream (`harness/src/executor/die-retry.ts`). A body staged away inside the settle can be the wave's last; the server completes the `kill` objective on the tick the live count reaches zero, and a census counts a body through its death animation, so the completion marker arrives ahead of any census that reads the wave empty. `stranded` is nothing standing and the objective still incomplete at that reading.
+
 **A walk off the path meets a re-seated wave before it starts.** The death loop's
 approach to a volume and its walk back to the stake are no legs the compiler
 measured, and the deaths before each (the die-retry stage's, then the trial's own)
