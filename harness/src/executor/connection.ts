@@ -8,6 +8,7 @@ import { createHarnessBot, type HarnessBot } from "../client-loaded.ts";
 import type { PackPush } from "../resource-pack.ts";
 import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load-window.ts";
 import { serverAge } from "./death.ts";
+import { ServerView } from "../sound-heard.ts";
 import { answersTrigger } from "./trigger.ts";
 import { chunkKey } from "../shot-subjects.ts";
 import { WARDEN_DARKNESS_RANGE } from "../sculk.ts";
@@ -279,6 +280,19 @@ export const methods = {
     });
     // The quest cues: every sound packet naming one, in arrival order beside the
     // markers above, so each is judged against the marker that owed it.
+    // Where the server holds the bot: every position the bot sends or the server
+    // sets, and the server's clock packets that bound how stale its hold can be.
+    this.serverView = new ServerView();
+    const tell = (): void => {
+      const p = bot.entity?.position;
+      if (p) this.serverView.tell(performance.now(), [p.x, p.y, p.z]);
+    };
+    bot.on("move", tell);
+    bot.on("forcedMove", tell);
+    bot.on("time", () => {
+      const age = serverAge(bot);
+      if (age !== undefined) this.serverView.clockRead(performance.now(), age);
+    });
     bot.on(
       "soundEffectHeard",
       (name: string, pos: { x: number; y: number; z: number }, volume: number, pitch: number) =>

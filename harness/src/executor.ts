@@ -37,6 +37,7 @@ import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { SculkEar, type LegStart } from "./sculk.ts";
 import type { PulsePlan } from "./pulse.ts";
 import type { CueEvent, CueLedger } from "./cues.ts";
+import { ServerView } from "./sound-heard.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
 import { ENTITY_SETTLE_TIMEOUT_MS } from "./executor/settle.ts";
@@ -168,6 +169,9 @@ export class MineflayerExecutor implements StepExecutor {
   cueLedger: CueLedger | undefined;
   /** Every cue packet and completion marker, in arrival order, from connect. */
   readonly cueLog: CueEvent[] = [];
+  /** The positions the bot told the server, bounded by the server's clock packets
+   * (`sound-heard.ts`): where a sound played at the bot may have landed. */
+  serverView = new ServerView();
   /** What the journal owes at every quest start, from the build. */
   journalLedger: import("./journal.ts").JournalLedger | undefined;
   /** The quests seen to start, and the verdict on every page they owed. */
