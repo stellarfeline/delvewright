@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "delvewright-dsl"
-version = "0.81.0"
+version = "0.83.0"
 dependencies = [
  "jsonschema",
  "linkme",

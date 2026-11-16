@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.81.0
+## delvewright-dsl 0.83.0
 
 ### Highlights
 
@@ -38,6 +38,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
 - A `collect` takes `gathered`: the party gets the item by an act the game already has — a fish off a line, a creature in a bucket — and the engine places nothing.
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
+- Every body the story places — a character, an actor, a wave's creature, its mount, a ride — takes `variant`: its coat, colour, collar, kind or trade in the game's own words (a tabby cat, a taiga librarian, a black horse with white dots), where it would otherwise always stand as the type's plain default.
 - An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
 - Every objective kind takes `ride`: the leg to it is ridden on the named vehicle.
