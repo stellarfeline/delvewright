@@ -121,6 +121,12 @@ test("the idler holds where it stood, and is red when moved, stranded or seated 
   assert.match(judgeIdler(stand, 0, reading({ mode: 3 }), seats, "after step 3")!, /stranded out of play/);
   assert.match(judgeIdler(stand, 0, reading({ observing: true }), seats, "x")!, /observation tag/);
   assert.match(judgeIdler(stand, 0, reading({ online: false, pos: undefined }), seats, "x")!, /not on the server/);
+  // A death into a declared respawn wait is the table's state, not a strand —
+  // until the path is over.
+  const waiting = reading({ deaths: 1, mode: 3, observing: true });
+  assert.equal(judgeIdler(stand, 0, waiting, seats, "after step 3"), undefined);
+  assert.match(judgeIdler(stand, 0, waiting, seats, "after the path", undefined, true)!, /stranded out of play/);
+  assert.match(judgeIdler(stand, 0, reading({ mode: 3, observing: true }), seats, "x")!, /stranded out of play/);
   // A death puts it on the seat in force, which is where the table says it stands.
   assert.equal(judgeIdler(stand, 0, reading({ deaths: 1, pos: [40.5, 70, 8.5] }), seats, "x"), undefined);
   assert.match(judgeIdler(stand, 0, reading({ deaths: 1, pos: [0.5, 64, 0.5] }), seats, "x")!, /where the party is \(the bell fire\)/);

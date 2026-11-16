@@ -317,7 +317,7 @@ export class PartyRun {
       if (this.stand !== undefined) {
         const idler = await this.readUntil(IDLER, inPlay);
         this.idlerReadings += 1;
-        const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, "after the path", this.crossing);
+        const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, "after the path", this.crossing, true);
         if (f !== undefined) this.fail(f);
       }
       // Settled before the final grant reading: the last beat's grant reaches a

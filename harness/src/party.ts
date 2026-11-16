@@ -310,15 +310,20 @@ export function judgeIdler(
   seats: readonly Seat[],
   at: string,
   crossing?: Crossing,
+  waitingIsStranded = false,
 ): string | undefined {
   if (!reading.online) return `${at}: the idler is not on the server`;
+  // A death puts the body in the observation state for a declared respawn
+  // wait: a state the table names, judged once it is back in play. One still
+  // out after the path is stranded (`waitingIsStranded`).
+  const died = (reading.deaths ?? 0) > baselineDeaths;
+  if (!inPlay(reading) && died && reading.observing && !waitingIsStranded) return undefined;
   if (!inPlay(reading)) {
     return (
       `${at}: the idler is stranded out of play — game mode ${reading.mode ?? "unread"}` +
       `${reading.observing ? ", still under the observation tag" : ""}`
     );
   }
-  const died = (reading.deaths ?? 0) > baselineDeaths;
   if (died) {
     const place = owedPlace(seats, reading.cp, crossing);
     if (place === undefined) return undefined;
