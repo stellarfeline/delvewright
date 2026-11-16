@@ -16,8 +16,16 @@
                 "kind": "anchor-relative"
               },
               "kind": "box",
-              "max": [0, 1, 1],
-              "min": [0, 1, 1]
+              "max": [
+                0,
+                1,
+                1
+              ],
+              "min": [
+                0,
+                1,
+                1
+              ]
             },
             "verb": "select"
           },
