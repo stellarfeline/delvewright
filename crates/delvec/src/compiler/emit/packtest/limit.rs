@@ -79,7 +79,9 @@ fn first_flag(effs: &[QuestEffect]) -> Option<String> {
 /// The lines that open `o` to its pending state from a clean slate, and the
 /// lines that put the slate back.
 ///
-/// Every score the objective's guard reads is written here: its quest, its
+/// Every score the objective's guard reads is written here: its quest (and
+/// every other quest shut, so no other quest's driver can enter a mode that
+/// holds the clock while it runs), its
 /// `after` ancestors, its settlement scores, and its whole [`Gate`] — flags
 /// and numeric terms alike, through [`packtest_gate_drive`], the one authority
 /// that opens a gate in a template — so no kind's template reads a term a
@@ -145,6 +147,20 @@ pub(super) fn open_and_close(
         ));
     }
     open.push(format!("scoreboard players set {p} {qa} 1"));
+    // Every other quest closed while the clock runs, so no driver of another
+    // quest can write a term the settlement reads: a body left on the server
+    // that completes a kept quest's objective enters the mode that holds this
+    // clock, and the expiry then never settles (`DW0807`). A template that
+    // wants a sibling quest in progress (the mode clock's kept quests) opens
+    // it after these lines.
+    for other in &c.quests.content.quests {
+        if other.id != q.id {
+            open.push(format!(
+                "scoreboard players set {p} {} 0",
+                quest_active_score(other.id.as_str())
+            ));
+        }
+    }
     // spec-0140: the map in no mode, so nothing holds the objective.
     open.extend(super::super::mode::mode_drive(c, q.id.as_str()));
     (open, close)
