@@ -198,7 +198,7 @@ inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which analyzes and builds the gallery and which the coverage gate runs" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "gallery/**", why = "the gallery campaign and its probes, whose every declared surface the coverage gate binds" },
-  { glob = "tools/**", why = "`check-gallery-coverage.py`, `gallery_units.py`, `gallery_domain.py` and `tools/lib/*` (`delvec_bin.py`)" },
+  { glob = "tools/**", why = "`check-gallery-coverage.py`, `check-party-semantics.py` and its record, `gallery_units.py`, `gallery_domain.py` and `tools/lib/*` (`delvec_bin.py`)" },
 ]
 
 [[group]]

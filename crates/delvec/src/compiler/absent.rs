@@ -117,19 +117,7 @@ pub const SERVED: &[Site] = &[
         rule: "a cutscene takes every present player into the observation state and returns \
                them; a member who left inside the bracket is repaired on their first tick back \
                (`cs_repair`), and one who was never in it has nothing to restore",
-        matches: |name, line| {
-            let c = command(line);
-            (name.starts_with("cs_") || name.starts_with("rw_"))
-                && (c.starts_with("gamemode ")
-                    || c.starts_with("tag @a")
-                    || c.starts_with("tp @a")
-                    || c.starts_with("teleport @a")
-                    || c.starts_with("spectate")
-                    || c.starts_with("effect ")
-                    || c.starts_with("scoreboard players ")
-                    || c.starts_with("ride @a")
-                    || c.starts_with("attribute "))
-        },
+        matches: |name, _| name.starts_with("cs_") || name.starts_with("rw_"),
     },
     Site {
         site: "refresh",
