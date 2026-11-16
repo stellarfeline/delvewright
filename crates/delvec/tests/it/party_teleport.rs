@@ -12,6 +12,7 @@ use crate::common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
@@ -78,6 +79,61 @@ fn quests(to: &str, ask: &str, extra: &str) -> String {
     )
 }
 
+static WORLD: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "cast-ledger",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "time": "noon",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
+    "weather": "clear",
+    "difficulty": "normal",
+    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+  }
+}"#,
+    )
+});
+
+static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
+    common::at_dsl_version(
+        r#"{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "cast-ledger",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt. The door stays shut until the toll is paid.",
+            "options": [
+              { "label": "Pay what he asks.",
+                "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": "npc/sleeper",
+        "root": "dlg/snore",
+        "nodes": [ { "id": "dlg/snore", "text": "...mm. Not my watch.", "options": [] } ]
+      }
+    ]
+  }
+}"#,
+    )
+});
+
 const AT_EXIT: &str = r#"{ "anchor": "anchor/exit" }"#;
 const NARRATE: &str = r#"{ "type": "narrate", "text": "Paid." }"#;
 const A_CUTSCENE: &str = r#"{ "type": "cutscene", "subject": "landscape", "seconds": 2,
@@ -94,6 +150,8 @@ fn fixture(who: &str, quests: &str) -> PathBuf {
         )
         .unwrap();
     }
+    std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
+    std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
     std::fs::write(dir.join("quests.json"), quests).unwrap();
     dir
 }
@@ -392,18 +450,20 @@ fn first_leg(tag: &str, mark: serde_json::Value) -> PathBuf {
     ));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::compiler_fixtures_dir().join("first-leg"), &dir);
-    // The vault binds a piece that can be arrived in (`first_leg.rs`).
+    // The vault binds a piece that can be arrived in and whose anchor names no
+    // other area holds (`anchor/exit` and `spawn` are the hall's too, and a
+    // name resolves to its first holder).
     common::patch_file(&dir.join("world.json"), |w| {
         for a in w["content"]["areas"].as_array_mut().unwrap() {
             if a["id"] == "area/vault" {
-                a["prefab"] = json!("prefab/cave-shore");
+                a["prefab"] = json!("prefab/island-galley");
             }
         }
     });
     common::patch_file(&dir.join("quests.json"), |q| {
         for x in q["content"]["quests"].as_array_mut().unwrap() {
             if x["id"] == "quest/vault" {
-                x["objectives"][0]["anchor"] = json!("anchor/exit");
+                x["objectives"][0]["anchor"] = json!("anchor/deck");
             }
             if x["id"] == "quest/hall" && !mark.is_null() {
                 x["on_objective_complete"]["obj/bell"] =
@@ -436,7 +496,7 @@ fn a_party_carry_a_step_fires_is_its_transport_and_replaces_the_crossing() {
     // With it, onto a mark in the vault: the party is already where the next
     // beat stands, so no crossing; the landing is the bell step's transport.
     let (transport, crossings, to) =
-        plan_first_leg(&first_leg("vault", json!({ "anchor": "anchor/exit" }))).unwrap();
+        plan_first_leg(&first_leg("vault", json!({ "anchor": "anchor/deck-aft" }))).unwrap();
     assert_eq!(crossings, 0, "the party carry is the move");
     let to = to.expect("one party carry");
     assert_eq!(

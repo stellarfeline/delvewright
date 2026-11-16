@@ -2045,7 +2045,15 @@ pub(super) fn build_critical_path(
                 return Err(PlanError::new(
                     DW_PARTY_CARRY_CROSSED,
                     format!(
-                        "completing objective `{prev_id}` carries the whole party to                          [{}, {}, {}] in area `{landed}` (a `teleport` with `from: \"party\"`                          in its bundle), and the next objective on the critical path, `{id}`,                          stands in area `{area}` — areas sit {sp} blocks apart across the void,                          so the compiler would also carry the party across to `{area}`'s entry                          point from the same completion, and one step cannot put the party in                          two places. Fault: a party carry and a crossing on one step. Remedy:                          put the teleport's mark in `{area}`, where the party is going, or                          remove the teleport and let the crossing carry the party",
+                        "completing objective `{prev_id}` carries the whole party to \
+                         [{}, {}, {}] in area `{landed}` (a `teleport` with `from: \"party\"` \
+                         in its bundle), and the next objective on the critical path, `{id}`, \
+                         stands in area `{area}` — areas sit {sp} blocks apart across the void, \
+                         so the compiler would also carry the party across to `{area}`'s entry \
+                         point from the same completion, and one step cannot put the party in \
+                         two places. Fault: a party carry and a crossing on one step. Remedy: \
+                         put the teleport's mark in `{area}`, where the party is going, or \
+                         remove the teleport and let the crossing carry the party",
                         cell[0],
                         cell[1],
                         cell[2],
