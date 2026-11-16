@@ -182,10 +182,13 @@ pub(super) fn emit_functions(
     // its value is painted the gold the action bar already paints it, and the
     // objective is put in the slot — once, at world init, which is the slot's
     // lifetime. Nothing per tick: the sidebar reads the objective's own scores,
-    // which `state_seed` seeds and every state verb moves. `DW0919` has already
-    // refused a second occupant, an unnamed datum and a `party` one, so this
-    // loop runs at most once and never over a `#party` holder. Empty for a
-    // campaign that declares no `display` → byte-identical.
+    // which `state_seed` seeds and every state verb moves. A `party` datum's
+    // value lives on `#party`, which the slot never draws: its one line is the
+    // visible holder `dw.party`, given the party value and the datum's name
+    // here, and moved by the datum's announcer on every change. `DW0919` has
+    // already refused a second occupant and an unnamed datum, so this loop runs
+    // at most once. Empty for a campaign that declares no `display` →
+    // byte-identical.
     for (st, display) in standing_states(plan) {
         let obj = plan::state_score(st.id.as_str());
         let name = st.name.as_deref().unwrap_or_default();
@@ -201,6 +204,14 @@ pub(super) fn emit_functions(
             "scoreboard objectives setdisplay {} {obj}",
             display.slot()
         ));
+        if let Some(copy) = party_line_copy(st) {
+            setup.push(copy);
+            setup.push(format!(
+                "scoreboard players display name {} {obj} {}",
+                plan::PARTY_LINE,
+                tr(name)
+            ));
+        }
     }
     // spec-0135 §13: each board's objective, headed by its title; shown only
     // when the story shows it. Empty without a board → byte-identical.

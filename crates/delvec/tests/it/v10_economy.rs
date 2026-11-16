@@ -515,6 +515,101 @@ fn a_displayed_datum_is_addressed_by_its_own_objective() {
     assert!(!setup.contains("dw.s_embers"), "{setup}");
 }
 
+/// A `party` purse standing on the sidebar, written by the talk.
+const PARTY_PURSE: &str = r#",
+    "state": [
+      { "id": "state/bounty", "scope": "party", "initial": 3, "name": "Bounty",
+        "display": "sidebar", "note": "the party's one purse" }
+    ]"#;
+
+const PARTY_PAY: &str = r#", { "type": "add-state", "state": "state/bounty", "amount": 2 }"#;
+
+/// **A `party` datum stands as the party's one line** (spec-0076). The sidebar
+/// never draws `#party` (the pinned client hides every `#`-prefixed holder), so
+/// the line is the visible holder `dw.party` in the datum's own objective:
+/// `setup` copies the seeded party value onto it and gives it the datum's
+/// translated name, after the slot is taken; the datum's announcer, which runs on
+/// every change of the value, copies it again before it remembers the value.
+/// Perturbed both ways: the same datum `player`-scoped, or without `display`,
+/// emits no `dw.party` anywhere.
+#[test]
+fn a_party_datum_stands_as_one_line() {
+    let src = quests_doc(PARTY_PURSE, PARTY_PAY);
+    let out = build(&parse_hw(&src));
+    let setup = fnc(&out, "setup");
+    let lines: Vec<&str> = setup.lines().collect();
+    let key = delvewright_dsl::pack_key("hello-world", "state.bounty.name");
+    let copy = "scoreboard players operation dw.party dw.s_bounty = #party dw.s_bounty";
+    let at = |want: &str| {
+        lines
+            .iter()
+            .position(|l| *l == want)
+            .unwrap_or_else(|| panic!("`{want}` in setup:\n{setup}"))
+    };
+    let seed = at("scoreboard players set #party dw.s_bounty 3");
+    let slot = at("scoreboard objectives setdisplay sidebar dw.s_bounty");
+    let c = at(copy);
+    assert!(
+        seed < c && slot < c,
+        "seeded, slotted, then copied:\n{setup}"
+    );
+    let label = lines[c + 1];
+    assert!(
+        label.starts_with("scoreboard players display name dw.party dw.s_bounty ")
+            && label.contains(&format!("\"translate\":\"{key}\""))
+            && label.contains("\"fallback\":\"Bounty\""),
+        "the line is labelled with the datum's translated name:\n{label}"
+    );
+    let show = fnc(&out, "st_show_bounty");
+    let s: Vec<&str> = show.lines().collect();
+    let ci = s
+        .iter()
+        .position(|l| *l == copy)
+        .expect("the announcer copies");
+    let remember = s
+        .iter()
+        .position(|l| l.starts_with("scoreboard players operation #party dw.sh_bounty"))
+        .expect("the announcer remembers");
+    assert!(ci < remember, "copied on the change it announces:\n{show}");
+    assert!(
+        fnc(&out, "tick").contains(
+            "execute unless score #party dw.s_bounty = #party dw.sh_bounty run function hello-world:st_show_bounty"
+        ),
+        "the announcer runs on every change"
+    );
+    let template = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/state_bounty_stands.mcfunction",
+    );
+    assert!(
+        template.contains("assert score #sd_same dw.sys matches 0"),
+        "{template}"
+    );
+
+    let mentions = |o: &BuildOutput| {
+        o.iter()
+            .filter(|(p, b)| {
+                p.ends_with(".mcfunction") && String::from_utf8_lossy(b).contains("dw.party")
+            })
+            .count()
+    };
+    assert_eq!(mentions(&out), 3, "setup, the announcer and the template");
+    let player = src.replace(r#""scope": "party""#, r#""scope": "player""#);
+    assert_ne!(player, src);
+    assert_eq!(
+        mentions(&build(&parse_hw(&player))),
+        0,
+        "a player datum draws its own holders"
+    );
+    let silent = src.replace(r#""display": "sidebar", "#, "");
+    assert_ne!(silent, src);
+    assert_eq!(
+        mentions(&build(&parse_hw(&silent))),
+        0,
+        "no `display`, no line"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC2 — a price is the shared gate, and the shop adds NO comparison of its own
 // ---------------------------------------------------------------------------
