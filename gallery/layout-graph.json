@@ -99,6 +99,11 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/fish-off-the-slip",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/row-the-basin",
         "quest": "quest/long-hall"
       },
@@ -404,6 +409,6 @@
       }
     ]
   },
-  "dsl_version": "0.79.0",
+  "dsl_version": "0.81.0",
   "stage": "layout-graph"
 }

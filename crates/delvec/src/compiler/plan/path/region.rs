@@ -852,6 +852,7 @@ pub(crate) fn activation_prop(
             anchor, dropped_by, ..
         } => {
             if dropped_by.is_some()
+                || o.collect_gathered()
                 || o.collect_holder()
                     .is_some_and(|c| point_any_in(anchors, c.as_str()).is_some())
             {

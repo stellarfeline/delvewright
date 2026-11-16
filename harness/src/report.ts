@@ -849,6 +849,8 @@ export class RunReport {
                 sound: v.sound,
                 heard: v.heard && [...v.heard],
                 bot: v.bot && [...v.bot],
+                held: v.held,
+                held_at: v.heldAt && [...v.heldAt],
                 from_spawn: v.fromSpawn,
                 ok: v.ok,
                 detail: v.detail,

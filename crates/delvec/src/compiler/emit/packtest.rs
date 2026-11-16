@@ -31,6 +31,7 @@ mod lightning;
 mod limit;
 mod r#loop;
 mod loot;
+mod mode;
 mod moves;
 mod music;
 mod npc;
@@ -184,6 +185,9 @@ pub(super) fn emit_packtest(
     // spec-0139: a race's credit in order and its refusal of a skip. Emits
     // nothing for a campaign that declares no race.
     race::emit_race_packtests(plan, out);
+    // spec-0140: what a mode holds, gives back, and that it is left. Emits
+    // nothing for a campaign that declares no mode.
+    mode::emit_mode_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final
@@ -728,6 +732,9 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
         "scoreboard players set {party} {} 1",
         quest_active_score(quest_id)
     )];
+    // spec-0140: a quest a mode holds reads the map's mode in every guard, so
+    // the template owns it too — no mode, in both directions.
+    p.extend(super::mode::mode_drive(plan.campaign, quest_id));
     p.extend(super::quorum::after_drive(plan.campaign, o));
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
     // spec-0139 §4: an objective that declares a course reads its race's

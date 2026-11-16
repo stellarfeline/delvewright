@@ -859,6 +859,10 @@ pub(super) fn emit_quest_effect(
         Verb::StartRace { .. } | Verb::EndRace { .. } => {
             emit_race_verb(plan, eff, body);
         }
+        // spec-0140: the mode verbs.
+        Verb::EnterMode { .. } | Verb::LeaveMode { .. } => {
+            emit_mode_verb(plan, eff, body);
+        }
         // --- DSL v0.4 effects ---
         Verb::Narrate(n) => {
             emit_narrate(&n.text, n.style, n.sound.as_deref(), who, body);

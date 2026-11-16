@@ -949,14 +949,18 @@ enum RideOn<'a> {
 /// presses, are a block used at the block reach; an `interact`'s hitbox and
 /// a `talk-to`'s NPC are a body clicked at the entity reach. Every other act
 /// is done on foot: a fight takes the body where the fight goes, a drop is
-/// picked up off the floor, a frame or a stand is taken from the stance its
+/// picked up off the floor, a gathered item (DSL v0.81) is got standing at
+/// its anchor, a frame or a stand is taken from the stance its
 /// own pass proved (`DW1037`), and a `reach-anchor` is entered, not reached
 /// for.
 fn seat_target(world: &World, step: &Step) -> Option<(BodyBox, f64)> {
     use crate::compiler::crosshair::{BLOCK_INTERACTION_REACH, INTERACTION_REACH};
     match step {
         Step::Collect {
-            pos, dropped: None, ..
+            pos,
+            dropped: None,
+            gathered: false,
+            ..
         } if !world.holder_stances.contains_key(pos) => {
             Some((BodyBox::block(*pos), BLOCK_INTERACTION_REACH))
         }

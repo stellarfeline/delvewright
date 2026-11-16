@@ -165,7 +165,13 @@ pub fn acts_of_from(
                 target: pos,
                 body: match o {
                     Objective::Interact { .. } => false,
-                    Objective::Collect { dropped_by, .. } => dropped_by.is_some(),
+                    // A drop is picked up off the floor and a gathered item
+                    // is got where the party stands: a place stood in.
+                    Objective::Collect {
+                        dropped_by,
+                        gathered,
+                        ..
+                    } => dropped_by.is_some() || *gathered,
                     _ => true,
                 },
             })

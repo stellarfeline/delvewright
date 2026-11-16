@@ -221,6 +221,7 @@ fn an_act_from_the_seat_and_a_ride_on_from_aboard_are_carries() {
             count: 1,
             pos: [5, 67, 2],
             dropped: None,
+            gathered: false,
         },
         ride(
             [4, 66, 2],
@@ -292,6 +293,7 @@ fn every_lapse_after_an_act_from_the_seat_is_a_carry_at_the_seat() {
             count: 1,
             pos: [5, 67, 2],
             dropped: None,
+            gathered: false,
         },
         lapse("obj/one"),
         lapse("obj/two"),

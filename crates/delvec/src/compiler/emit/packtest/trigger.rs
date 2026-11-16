@@ -482,6 +482,8 @@ fn objective_drive(plan: &Plan, oid: &str, complete: Option<bool>) -> Vec<String
         quest_active_score(q.id.as_str()),
         if complete.is_some() { 1 } else { 0 }
     )];
+    // spec-0140: the map in no mode, so nothing holds the objective.
+    v.extend(super::super::mode::mode_drive(plan.campaign, q.id.as_str()));
     v.extend(super::super::quorum::after_drive(plan.campaign, o));
     v.push(format!(
         "scoreboard players set {party} {} {}",

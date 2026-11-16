@@ -1448,6 +1448,22 @@ pub fn check_highlights(c: &Campaign) -> (Vec<Diagnostic>, HighlightBinding) {
                         ),
                     ));
                 }
+                Objective::Collect { gathered: true, .. } => {
+                    b.refused += 1;
+                    let id = o.id().as_str();
+                    d.push(Diagnostic::error(
+                        DW_HIGHLIGHT_INERT,
+                        "quests",
+                        format!("/content/quests/{qi}/objectives/{oi}/highlight"),
+                        format!(
+                            "`collect` objective `{id}` declares `highlight` and its item is \
+                             `gathered`: the world supplies it and the engine places nothing, \
+                             so no block or body stands for the glow to light. Remove \
+                             `highlight`, or give the glow a thing to light (an `interact` on \
+                             the place where the item is got can carry it)."
+                        ),
+                    ));
+                }
                 Objective::TalkTo { .. } | Objective::Kill { .. } => b.on_body += 1,
                 _ => b.on_block += 1,
             }

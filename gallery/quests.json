@@ -772,6 +772,14 @@
         ]
       }
     ],
+    "modes": [
+      {
+        "id": "mode/the-long-hall",
+        "keeps": [
+          "quest/long-hall"
+        ]
+      }
+    ],
     "on_death": [
       {
         "stake": "stake/tokens",
@@ -2832,6 +2840,10 @@
                 "verb": "arrives"
               },
               "type": "set-checkpoint"
+            },
+            {
+              "mode": "mode/the-long-hall",
+              "type": "leave-mode"
             }
           ],
           "obj/board-the-ferry": [
@@ -4388,6 +4400,24 @@
             "after": [
               "obj/ride-clover"
             ],
+            "anchor": "anchor/long-hall-slip",
+            "count": 2,
+            "gathered": true,
+            "happening": {
+              "subject": "anchor/long-hall-slip",
+              "text": "the party casts a line off the slip and lands two salmon",
+              "verb": "gains"
+            },
+            "hint": "Salmon run in the basin; cast a line from the slip where the boat is moored.",
+            "id": "obj/fish-off-the-slip",
+            "item": "minecraft:salmon",
+            "title": "Land two salmon off the slip",
+            "type": "collect"
+          },
+          {
+            "after": [
+              "obj/fish-off-the-slip"
+            ],
             "anchor": "anchor/long-hall-far-bank",
             "answers": {
               "done": "The lever is thrown; water mutters somewhere under the flags.",
@@ -4521,6 +4551,10 @@
             {
               "race": "race/the-march",
               "type": "end-race"
+            },
+            {
+              "mode": "mode/the-long-hall",
+              "type": "enter-mode"
             }
           ],
           "obj/ask-the-groom": [
@@ -6597,6 +6631,6 @@
       }
     ]
   },
-  "dsl_version": "0.79.0",
+  "dsl_version": "0.81.0",
   "stage": "quests"
 }

@@ -80,6 +80,7 @@
 //! - [`loss`]: a task the story loses — where a `fail-objective` stands so the story worlds date it, an elective act that fails a task as a world of its own, and `DW1112` where no world can.
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
+//! - [`mode`]: a mode over the path — a step that performs an objective the mode then on holds (`DW1124`), and the mode binding (spec-0140).
 //! - [`music`]: what every biome a camera can stand in plays, what each cutscene hears and what each `stop-sound` cuts — the music ledger and `DW1032`.
 //! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
@@ -208,6 +209,7 @@ pub mod loot;
 pub mod loss;
 pub mod mark;
 pub mod massing;
+pub mod mode;
 pub mod music;
 pub mod muster;
 pub mod nav;

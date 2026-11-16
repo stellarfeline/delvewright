@@ -208,6 +208,8 @@ pub(super) fn emit_functions(
     // spec-0139: each race's scores, at rest. Empty without a race →
     // byte-identical.
     setup.extend(race_setup(plan));
+    // spec-0140: the map's mode. Empty without a mode → byte-identical.
+    setup.extend(mode_setup(plan));
     // spec-0032: a named datum's shadow score — the value it was last announced at.
     // Party-scoped ones are seeded here beside the datum itself, so a world that
     // has just loaded announces nothing.
@@ -1379,6 +1381,7 @@ pub(super) fn emit_functions(
     fns.extend(emit_vehicle_functions(plan));
     fns.extend(board_fns(plan));
     fns.extend(race_fns(plan));
+    fns.extend(mode_fns(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

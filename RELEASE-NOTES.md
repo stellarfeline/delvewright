@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.79.0
+## delvewright-dsl 0.81.0
 
 ### Highlights
 
@@ -36,6 +36,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - Every objective kind takes `record`, what the task was, and the `record-outcome` verb — in any effect bundle and on a dialogue option — writes a way the task went; the journal keeps a finished task with every line its play wrote.
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
+- A `collect` takes `gathered`: the party gets the item by an act the game already has — a fish off a line, a creature in a bucket — and the engine places nothing.
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
 - An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
 - `vehicles[]` on stage 5: `{id, entity, at, facing?, bounds, name?, equipment?, attributes?}`, the kind (boat, minecart, mount), seats and steering item read from the pinned game; the `seat-vehicle` and `despawn-vehicle` verbs.
@@ -46,6 +47,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
 - A `particle` and a `play-sound` can happen at staged bodies: `at: {"bodies": [...], "up"?}` and `at: {"at": "bodies", "bodies": [...]}`.
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
+- `modes[]` on stage 5: `{id, keeps}` — a state of the map in which every quest but the ones it keeps is held: not told, not completable, its clocks standing still; the `enter-mode` and `leave-mode` verbs; a mode leaves by itself when none of its kept quests is in progress.
 - `races[]` on stage 5: `{id, checkpoints, laps?, racers?, board?, grace_ticks?, missed, passed?}` — a course of checkpoints every racer, a player or a listed actor, is credited in order; the `start-race` and `end-race` verbs; every objective kind takes `course`, and `move-actor` takes `along`.
 
 ### Changed
