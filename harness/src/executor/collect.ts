@@ -99,14 +99,21 @@ export const methods = {
   async collect(this: MineflayerExecutor, step: CollectStep): Promise<void> {
     const bot = this.requireBot();
     const seated = this.aboard;
-    if (seated !== undefined && (step.holder !== undefined || step.droppedBy !== undefined)) {
+    if (
+      seated !== undefined &&
+      (step.holder !== undefined || step.droppedBy !== undefined || step.gathered === true)
+    ) {
       throw new Error(
         `collect ${step.item}: the bot sits in ${seated.vehicle}, and a take off a holder ` +
-          "or the floor is done on foot (spec-0135 §5)",
+          "or the floor, or an item the world supplies, is done on foot (spec-0135 §5)",
       );
     }
     if (step.holder !== undefined) {
       await this.takeFromHolder(step, step.holder);
+      return;
+    }
+    if (step.gathered === true) {
+      await this.gather(step);
       return;
     }
     if (step.droppedBy !== undefined) {
@@ -178,6 +185,29 @@ export const methods = {
     }
     // Holding the items is not the objective; the inventory_changed advancement
     // completing it is. Wait for that objective's own marker.
+    await this.requireObjective(step.objective, `collect ${step.item}`);
+  },
+
+  /**
+   * A **gathered** collect (DSL v0.81): the world supplies the item — a fish
+   * off a line, a creature in a bucket — and the engine places nothing. The
+   * bot walks to where the act is done
+   * and is handed the item by command there, as a census puts its bodies in:
+   * the vanilla act is the playtest's, and what the build proves is that
+   * possession completes the objective. The proof is the objective's marker.
+   */
+  async gather(this: MineflayerExecutor, step: CollectStep): Promise<void> {
+    await this.walkTo(step.pos, 2, `the place ${step.item} is got`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
+    await this.atStance();
+    const command = `/give @s ${step.item} ${step.count}`;
+    process.stderr.write(`[collect] ${step.item}: gathered — handed over by \`${command}\`\n`);
+    const refused = await this.refusalOf(command);
+    if (refused !== undefined) {
+      throw new Error(`collect ${step.item}: handing the gathered item over was refused — ${refused}`);
+    }
     await this.requireObjective(step.objective, `collect ${step.item}`);
   },
 

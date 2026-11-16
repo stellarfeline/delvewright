@@ -20,6 +20,7 @@ mod dw0856_prefab_exists;
 mod dw1077_trigger_agrees;
 mod dw1081_entrance;
 mod gate_consumers;
+mod gathered_collect;
 mod give_item_enchantments;
 mod grade;
 mod holder_slots;

@@ -107,6 +107,10 @@ pub enum Step {
         /// walks the fight's ground and waits for the pickup instead of opening
         /// a block that is not there.
         dropped: Option<String>,
+        /// The world supplies the item (DSL v0.81): there is nothing at
+        /// `pos` to open, and the harness hands the party the item by command
+        /// there, standing in for the vanilla act a player performs.
+        gathered: bool,
     },
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
@@ -351,6 +355,12 @@ impl Step {
                     INTERACTION_REACH
                 },
             ),
+            Step::Collect {
+                pos,
+                dropped: None,
+                gathered: true,
+                ..
+            } => within(*pos, INTERACTION_REACH),
             Step::Collect {
                 pos, dropped: None, ..
             } => within(*pos, BLOCK_INTERACTION_REACH),
@@ -646,9 +656,15 @@ fn choices_before(
 ///   would refuse the key, and one that ignored it would stage a story body
 ///   away and decide the outcome the path is proving.
 ///
+/// * `15` — a `collect` step carries `gathered: true` when the world supplies
+///   its item (DSL v0.81): nothing stands at `pos` to open, and the harness
+///   hands the party the item by command there. A format change for `4`'s
+///   reason: a format-14 bot would refuse the key, and one that ignored it
+///   would open a chest that is not there.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 14;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 15;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1670,6 +1686,7 @@ pub(super) fn build_critical_path(
                     anchor,
                     holder: container,
                     dropped_by,
+                    gathered,
                     ..
                 } => {
                     // The step position is the CONTAINER the bot opens: the
@@ -1706,6 +1723,7 @@ pub(super) fn build_critical_path(
                         count: *count as i32,
                         pos,
                         dropped: dropped_by.as_ref().map(|w| w.as_str().to_string()),
+                        gathered: *gathered,
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

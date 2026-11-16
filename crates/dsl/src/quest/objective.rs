@@ -351,7 +351,9 @@ pub enum Objective {
     /// any of the twelve kinds (spec-0105), an item frame or an armour stand
     /// (spec-0111) — at [`Objective::Collect::holder`], optionally carrying an
     /// [`Objective::Collect::item_name`] and padded to read full with
-    /// [`Objective::Collect::fill_count`].
+    /// [`Objective::Collect::fill_count`] — or off a wave's body
+    /// ([`Objective::Collect::dropped_by`]), or by an act of the world the
+    /// engine places nothing for ([`Objective::Collect::gathered`]).
     Collect {
         /// Objective id.
         id: ObjectiveId,
@@ -448,6 +450,21 @@ pub enum Objective {
         /// still declare `drops[]`; those drops just cannot gate a quest.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dropped_by: Option<WaveId>,
+        /// **The world supplies the item** (DSL v0.81): the party gets it by
+        /// an act vanilla already provides — a fish on a line, a creature
+        /// scooped into a bucket, a crop harvested, a trade — and the engine
+        /// places nothing: no chest at `anchor`, no holder fill, no drop.
+        /// The objective is judged by the possession advancement every
+        /// `collect` carries (`inventory_changed` with `count`), so the item
+        /// completes it however it arrived. `anchor` stays the place the act
+        /// is done: the compass and the critical path point there, and the
+        /// harness hands the party the item by command at it.
+        ///
+        /// Exclusive with every field that places the item: `holder`,
+        /// `dropped_by`, `item_name` and `fill_count` are `DW1121`; a `slot`
+        /// is `DW1035`; a `highlight` lights nothing (`DW1016`).
+        #[serde(default, skip_serializing_if = "is_false")]
+        gathered: bool,
         /// Display name for the collected item (DSL v0.8), emitted as the vanilla `custom_name` item component.
         ///
         /// A quest item is a *named thing* in the story ("Cheese", "Tide
@@ -1216,6 +1233,12 @@ impl Objective {
             Objective::Collect { dropped_by, .. } => dropped_by.as_ref(),
             _ => None,
         }
+    }
+
+    /// Whether this is a `collect` whose item the world supplies (DSL v0.81):
+    /// the engine places nothing for it. `false` on every other objective.
+    pub fn collect_gathered(&self) -> bool {
+        matches!(self, Objective::Collect { gathered: true, .. })
     }
 
     /// The padding-stack count of a `collect` (DSL v0.8); `0` for every other
