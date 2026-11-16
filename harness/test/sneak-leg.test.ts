@@ -10,9 +10,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { configureLeg, hopMovements, type LegMovements } from "../src/movement.ts";
+import { configureLeg, type LegMovements } from "../src/movement.ts";
 import { type GoalSpec, walkGoals } from "../src/waypoints.ts";
-import { cellKey, fmtPos, simBot, simWalk, type Cells, type SimBot } from "./sim-bot.ts";
+import { cellKey, fmtPos, simBot, simJump, simWalk, type Cells, type SimBot } from "./sim-bot.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const { Movements } = requireCjs("mineflayer-pathfinder") as {
@@ -30,13 +30,14 @@ function lane(step: boolean): Cells {
 
 /**
  * Walk one leg the way `walkLeg` drives it — `configureLeg`, then for each hop
- * `hopMovements`, `setMovements`, the crouch yielded for a stand-up, and a goal —
- * counting the ticks the body is not crouched outside a stand-up.
+ * `setMovements`, the crouch yielded for a stand-up, and a goal, or for a
+ * proven jump's hop the executor's own drive (`driveJump`) — counting the ticks
+ * the body is not crouched outside a stand-up.
  */
-function walkSneakLeg(
+async function walkSneakLeg(
   bot: SimBot,
   hops: ReadonlyArray<readonly [number, number, number] | GoalSpec>,
-): { upright: number; ticks: number; reached: boolean; at: readonly number[] } {
+): Promise<{ upright: number; ticks: number; reached: boolean; at: readonly number[] }> {
   const movements = new Movements(bot);
   let yielded = false;
   let restore = (): void => {};
@@ -53,16 +54,22 @@ function walkSneakLeg(
   try {
     for (const h of hops) {
       const hop: GoalSpec = Array.isArray(h) ? { x: h[0], y: h[1], z: h[2], range: 0 } : (h as GoalSpec);
-      hopMovements(movements, true, hop);
       bot.run(() => bot.pathfinder.setMovements(movements));
       yielded = hop.standsUp === true;
       bot.on("physicsTick", count);
-      const r = simWalk(bot, [hop.x, hop.y, hop.z], 0, 900);
+      let ok: boolean;
+      if (hop.jump !== undefined) {
+        const r = await simJump(bot, hop.jump, (up) => {
+          yielded = up;
+        });
+        ok = r.landed;
+      } else {
+        ok = simWalk(bot, [hop.x, hop.y, hop.z], 0, 900).reached;
+      }
       bot.off("physicsTick", count);
-      hopMovements(movements, true, {});
       yielded = false;
-      reached &&= r.reached;
-      if (!r.reached) break;
+      reached &&= ok;
+      if (!ok) break;
     }
   } finally {
     restore();
@@ -71,9 +78,9 @@ function walkSneakLeg(
   return { upright, ticks, reached, at: [p.x, p.y, p.z] };
 }
 
-test("a sneak leg is crouched on every tick of every hop", () => {
+test("a sneak leg is crouched on every tick of every hop", async () => {
   const bot = simBot(lane(false), [1.5, 64, 2.5]);
-  const r = walkSneakLeg(bot, [
+  const r = await walkSneakLeg(bot, [
     [9, 64, 2],
     [18, 64, 2],
   ]);
@@ -82,18 +89,18 @@ test("a sneak leg is crouched on every tick of every hop", () => {
   assert.equal(r.upright, 0, `upright on ${r.upright} of ${r.ticks} ticks`);
 });
 
-test("the leg's end releases the crouch and stops holding it", () => {
+test("the leg's end releases the crouch and stops holding it", async () => {
   const bot = simBot(lane(false), [1.5, 64, 2.5]);
-  walkSneakLeg(bot, [[6, 64, 2]]);
+  await walkSneakLeg(bot, [[6, 64, 2]]);
   assert.equal(bot.controlState["sneak"], false, "the crouch outlived its leg");
   bot.tick();
   assert.equal(bot.controlState["sneak"], false, "the hold still runs after its leg ended");
 });
 
-test("a crouched body stops at a step down; the leg stands for that hop and arrives", () => {
+test("a crouched body stops at a step down; the leg stands for that hop and arrives", async () => {
   // Vanilla's edge back-off, reproduced by the client physics: a crouched body
   // will not walk off a one-block step. Held crouched through it, the hop stalls.
-  const held = walkSneakLeg(simBot(lane(true), [1.5, 64, 2.5]), [[18, 63, 2]]);
+  const held = await walkSneakLeg(simBot(lane(true), [1.5, 64, 2.5]), [[18, 63, 2]]);
   assert.equal(held.reached, false, `a crouched body stepped down to ${fmtPos(held.at)}`);
   // The compiler's `stand_ups` names the hop down; the leg stands for it, and
   // only for it.
@@ -113,7 +120,7 @@ test("a crouched body stops at a step down; the leg stands for that hop and arri
     goals.map((g) => g.standsUp === true),
     [false, false, true, false],
   );
-  const ruled = walkSneakLeg(
+  const ruled = await walkSneakLeg(
     simBot(lane(true), [1.5, 64, 2.5]),
     goals.map((g) => ({ ...g, range: 0 })),
   );
@@ -131,7 +138,7 @@ function gapLane(): Cells {
   return cells;
 }
 
-test("a sneak leg makes its proven sprint jump standing, at a sprint, and lands", () => {
+test("a sneak leg makes its proven sprint jump standing, at a sprint, and lands", async () => {
   // The gallery's broken plank on a walk declared stealth: a three-wide gap,
   // declared `sprint`, the compiler's `stand_ups` naming the jump.
   const jump = { from: [9, 64, 2] as const, to: [13, 64, 2] as const, sprint: true, runUp: 1 };
@@ -147,16 +154,18 @@ test("a sneak leg makes its proven sprint jump standing, at a sprint, and lands"
     [jump],
     [{ from: jump.from, to: jump.to, why: "jump" }],
   );
-  const r = walkSneakLeg(
-    simBot(gapLane(), [1.5, 64, 2.5]),
+  const bot = simBot(gapLane(), [1.5, 64, 2.5]);
+  let sprinted = 0;
+  const sprint = (): void => {
+    if (bot.controlState["sprint"]) sprinted += 1;
+  };
+  bot.on("physicsTick", sprint);
+  const r = await walkSneakLeg(
+    bot,
     goals.map((g) => ({ ...g, range: 0 })),
   );
+  bot.off("physicsTick", sprint);
   assert.ok(r.reached, `stopped at ${fmtPos(r.at)}`);
   assert.equal(r.upright, 0, `upright on ${r.upright} of ${r.ticks} crouched ticks`);
-  const flags = goals.map((g) => hopMovements({ allowParkour: false, allowSprinting: false }, true, g));
-  assert.deepEqual(
-    flags.map((f) => f.sprint),
-    [false, false, true, false],
-    "a sneak leg sprints for its sprint jump's hop and no other",
-  );
+  assert.ok(sprinted > 0, "the sprint jump was not sprinted");
 });

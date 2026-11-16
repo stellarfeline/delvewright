@@ -22,10 +22,10 @@ export interface ControlBot {
  * and `allow1by1towers` are always locked off (adventure mode: never break or
  * pillar); `canOpenDoors` is turned ON (opening a door/fence-gate is a use
  * interaction vanilla permits in adventure mode — see {@link configureLeg});
- * `allowSprinting` is turned off for a sneak leg, except on the hop of a proven
- * sprint jump the leg makes standing ({@link hopMovements}); `allowParkour` is
- * turned off for every leg, and on only for the hop of a jump the compiler
- * proved (spec-0113 §6, {@link parkourFor}).
+ * `allowSprinting` is turned off for a sneak leg; `allowParkour` is turned off
+ * for every leg and every hop — a jump the compiler proved is driven by the
+ * executor as the compiler flew it (spec-0113 §6, `executor/jump.ts`), never
+ * by the pathfinder.
  */
 export interface LegMovements {
   canDig: boolean;
@@ -238,8 +238,8 @@ export function configureLeg(
   movements.allow1by1towers = false;
   movements.canOpenDoors = true; // open doors/fence-gates (adventure-legal use, not a mutation)
   // The library leaps gaps on its own (`allowParkour` defaults on). The bot
-  // walks what the compiler proved, so a leap is taken only on the hop of a
-  // declared jump the compiler proved makeable (spec-0113 §6).
+  // walks what the compiler proved: a leap is a proven jump's hop, which the
+  // executor drives itself (spec-0113 §6), so the library never leaps.
   movements.allowParkour = false;
   // spec-0134 §10: the route proof crosses water only on a leg it exported a
   // `water` stretch for; every other leg keeps out of it, as the proof did.
@@ -258,47 +258,6 @@ export function configureLeg(
     bot.removeListener("physicsTick", hold);
     bot.setControlState("sneak", false);
   };
-}
-
-/**
- * Set the pathfinder's parkour move for one hop: on when the hop is a jump the
- * compiler proved (spec-0113 §6), off otherwise. Returns what it set, so the
- * caller can state it per hop.
- */
-export function parkourFor(movements: Pick<LegMovements, "allowParkour">, jump: boolean): boolean {
-  movements.allowParkour = jump;
-  return jump;
-}
-
-/** What {@link hopMovements} reads of one hop (a `GoalSpec`). */
-export interface HopKind {
-  /** The proven jump the hop is, when it is one; its `sprint` is the world's declaration. */
-  readonly jump?: { readonly sprint: boolean };
-  /** Set when the hop is one of a sneak leg's `stand_ups`. */
-  readonly standsUp?: true;
-}
-
-/**
- * Set the pathfinder's moves for one hop of a leg walked `sneak` or not, and
- * return them: the parkour move ({@link parkourFor}) and the sprint.
- *
- * A plain leg sprints wherever the pathfinder chooses. A sneak leg does not —
- * except on the hop of a proven jump declared `sprint` that the leg makes
- * standing (its `stand_ups`): mineflayer-pathfinder 2.4.5's parkour move lands
- * at most two cells forward with sprinting off (`getMoveParkourForward`,
- * `maxD`), so a sprint jump on a sneak leg is no neighbour of its take-off
- * cell and the hop answers `No path to the goal!`. Called with an empty hop,
- * it restores the leg's own moves.
- */
-export function hopMovements(
-  movements: Pick<LegMovements, "allowParkour" | "allowSprinting">,
-  sneak: boolean,
-  hop: HopKind,
-): { parkour: boolean; sprint: boolean } {
-  const parkour = parkourFor(movements, hop.jump !== undefined);
-  const sprint = !sneak || (hop.standsUp === true && hop.jump?.sprint === true);
-  movements.allowSprinting = sprint;
-  return { parkour, sprint };
 }
 
 /**

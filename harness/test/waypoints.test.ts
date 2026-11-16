@@ -17,7 +17,7 @@ import {
   WAYPOINT_RANGE,
   type Waypoints,
   nearestIndex,
-  parkourGap,
+  jumpAxis,
 } from "../src/waypoints.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 import { distSqToRoute } from "../src/route.ts";
@@ -655,9 +655,8 @@ test("a sensor beside the middle of a straight two-waypoint leg is in earshot of
   assert.equal(distSqToRoute([40, 64, 0], [[0, 64, 0], [30, 64, 0]]), 100);
 });
 
-// spec-0113 §6: a leg's `jumps` parse, their ends are consecutive waypoints, and
-// a jump the pathfinder's parkour move cannot express is refused by name.
-test("a leg's jumps parse, and one outside the parkour move's table is a named gap", () => {
+// spec-0113 §6: a leg's `jumps` parse, and their ends are consecutive waypoints.
+test("a leg's jumps parse, their ends consecutive waypoints, each along its axis", () => {
   const leg = {
     from: [0, 64, 0],
     to: [9, 64, 0],
@@ -672,7 +671,6 @@ test("a leg's jumps parse, and one outside the parkour move's table is a named g
   const w = parseWaypoints({ version: "0.4.0", campaign_id: "c", legs: [leg] });
   assert.equal(w.legs[0]!.jumps.length, 1);
   assert.equal(w.legs[0]!.jumps[0]!.runUp, 3);
-  assert.equal(parkourGap(w.legs[0]!.jumps[0]!), undefined, "three forward, flat: the move's own");
   // Not consecutive waypoints: refused at parse.
   assert.throws(
     () =>
@@ -683,16 +681,10 @@ test("a leg's jumps parse, and one outside the parkour move's table is a named g
       }),
     WaypointsParseError,
   );
-  const gap = (to: [number, number, number], sprint = true): string | undefined =>
-    parkourGap({ from: [0, 64, 0], to, sprint, runUp: 6 });
-  assert.match(gap([5, 64, 0]) ?? "", /beyond the parkour move's 4/, "five forward");
-  assert.match(gap([4, 65, 0]) ?? "", /rises one at four/, "up one at four");
-  assert.match(gap([3, 62, 0]) ?? "", /drops 2/, "down two");
-  assert.match(gap([3, 64, 3]) ?? "", /not along one axis/, "diagonal");
-  assert.match(gap([3, 64, 0], false) ?? "", /beyond the parkour move's 2/, "a walking jump of three");
-  assert.equal(gap([4, 64, 0]), undefined);
-  assert.equal(gap([3, 65, 0]), undefined);
-  assert.equal(gap([4, 63, 0]), undefined);
+  // The compiler's `jump_axis`: the larger offset takes it.
+  assert.deepEqual(jumpAxis(w.legs[0]!.jumps[0]!), [1, 0]);
+  assert.deepEqual(jumpAxis({ from: [0, 64, 0], to: [-1, 63, -3] }), [0, -1]);
+  assert.deepEqual(jumpAxis({ from: [0, 64, 0], to: [2, 64, 2] }), [1, 0]);
 });
 
 // spec-0123 §3.1: a leg's doors a hand opens parse, each a waypoint of the leg;
