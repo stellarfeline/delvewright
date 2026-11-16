@@ -16,7 +16,7 @@ const BODY_FEET: [number, number, number] = [15.5, 67, 9.5];
 const BOT_FEET: [number, number, number] = [22.5, 67, 8.38];
 const HOME_YAW = -180;
 
-type Vec3 = [number, number, number];
+type Vec3 = readonly [number, number, number];
 
 const WATCHER: Watcher = {
   id: "npc/curator",
