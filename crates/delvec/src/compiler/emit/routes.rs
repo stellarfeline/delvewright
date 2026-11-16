@@ -1241,6 +1241,7 @@ pub(super) fn prove_world(
                     // stand. The binding is printed before the verdict.
                     let (despawns, verdict) = crate::compiler::waypoints::check_despawns(
                         plan,
+                        &plan.critical_path,
                         &plan.path_firing,
                         &routes,
                     );
@@ -1646,7 +1647,7 @@ fn prove_branch_world(
     crate::compiler::nav::verify_exported_routes(world, &routes).map_err(label)?;
     crate::compiler::notes::mark("branch world: routes planned and verified");
     if !routes.is_empty() {
-        crate::compiler::waypoints::check_despawns(plan, &cp.firing, &routes)
+        crate::compiler::waypoints::check_despawns(plan, &cp.steps, &cp.firing, &routes)
             .1
             .map_err(label)?;
     }

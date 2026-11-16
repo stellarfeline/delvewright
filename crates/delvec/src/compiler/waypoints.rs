@@ -95,6 +95,7 @@ pub(crate) fn free_bodies(
 /// [`free_bodies`] dates it.
 pub(crate) fn check_despawns(
     plan: &Plan,
+    steps: &[crate::compiler::plan::Step],
     firing: &crate::compiler::plan::PathFiring,
     routes: &[LegRoute],
 ) -> (
@@ -102,7 +103,7 @@ pub(crate) fn check_despawns(
     Result<(), crate::compiler::failure::Failure>,
 ) {
     let sprung = sprung_steps(plan, routes);
-    crate::compiler::plan::check_despawns_follow_arrivals(plan.campaign, firing, &|t| {
+    crate::compiler::plan::check_despawns_follow_arrivals(plan.campaign, steps, firing, &|t| {
         sprung.get(t).copied()
     })
 }

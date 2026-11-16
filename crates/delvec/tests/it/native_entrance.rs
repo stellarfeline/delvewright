@@ -580,9 +580,9 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
     // An undated unleash — a trap-free trigger the path never performs. It may
     // fire at any step (spec-0132 §5.3), after the dated despawn at
     // `obj/door` too, so that despawn does not end it: only the step whose
-    // completion fires the despawn is walked beside nobody.
+    // completion fires the despawn is walked beside nobody. The beat's own
+    // unleash at `obj/talk` stays, so the despawn follows an arrival (DW1140).
     let mut c = base();
-    beat(&mut c, "obj/talk").retain(|e| e.actor_ref().is_none_or(|a| a.as_str() != SLEEPER));
     let hum = c
         .quests
         .content
@@ -643,6 +643,40 @@ fn an_outrun_body_loose_on_no_step_is_refused_at_build() {
     let err = try_build(&c).err().expect("refused");
     assert!(err.starts_with("DW1082:"), "{err}");
     assert!(err.contains(SLEEPER), "{err}");
+}
+
+/// `DW1140`: the sleeper unleashed at `obj/key`'s completion and despawned at
+/// `obj/shrine`'s is a despawn after its arrival; despawned at `obj/slay`'s,
+/// two steps before anything places it, the despawn removes nothing on the
+/// path and is refused, naming the actor, the line and the steps.
+#[test]
+fn a_despawn_the_path_fires_before_its_actor_can_stand_is_dw1140() {
+    let shaped = |despawn_at: &str| {
+        let mut c = base();
+        for o in ["obj/talk", "obj/door"] {
+            beat(&mut c, o).retain(|e| e.actor_ref().is_none_or(|a| a.as_str() != SLEEPER));
+        }
+        beat(&mut c, "obj/key").push(effect(json!({
+            "type": "unleash-actor",
+            "actor": SLEEPER,
+            "happening": { "verb": "arrives", "text": "the sleeper digs out of the floor" }
+        })));
+        beat(&mut c, despawn_at).push(effect(json!({
+            "type": "despawn-actor",
+            "actor": SLEEPER,
+            "style": "vanish",
+            "happening": { "verb": "departs", "text": "the sleeper sinks away" }
+        })));
+        c
+    };
+    let after = shaped("obj/shrine");
+    try_build(&after).unwrap_or_else(|e| panic!("a despawn after the arrival builds: {e}"));
+    let before = shaped("obj/slay");
+    let err = try_build(&before).err().expect("refused");
+    assert!(err.contains("DW1140"), "{err}");
+    for needle in [SLEEPER, "(`obj/slay`) of the path", "(`obj/key`), after the despawn"] {
+        assert!(err.contains(needle), "{needle}: {err}");
+    }
 }
 
 // ---------------------------------------------------------------------------

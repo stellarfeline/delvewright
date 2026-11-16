@@ -882,6 +882,7 @@ impl DespawnBinding {
 /// to remove arrives after it and stays.
 pub(crate) fn check_despawns_follow_arrivals(
     c: &Campaign,
+    steps: &[Step],
     firing: &PathFiring,
     sprung: &dyn Fn(&str) -> Option<usize>,
 ) -> (DespawnBinding, Result<(), Failure>) {
@@ -956,25 +957,31 @@ pub(crate) fn check_despawns_follow_arrivals(
         if verdict.is_err() {
             continue;
         }
+        let at = |i: usize| match steps.get(i).and_then(Step::objective) {
+            Some(o) => format!("step {i} (`{o}`)"),
+            None => format!("step {i}"),
+        };
         let first = list
             .iter()
             .map(|a| if a.exact { a.from - 1 } else { a.from })
             .min();
         let when = match first {
             Some(s) => format!(
-                "the first line that places it can fire at step {s}, after the despawn"
+                "the first line that places it can fire at {}, after the despawn",
+                at(s)
             ),
             None => "no line on this path places it at all".to_string(),
         };
         verdict = Err(Failure::new(
             DW_DESPAWN_BEFORE_ARRIVAL,
             format!(
-                "`despawn-actor` of `{actor}` at `{pointer}` fires at step {d} of the path, and \
+                "`despawn-actor` of `{actor}` at `{pointer}` fires at {} of the path, and \
                  the actor cannot be standing then: {when} (a `spawn-actor` or `unleash-actor` \
                  of it, an `ambush` that names it included). On this play order the despawn \
                  removes nothing and its beat never happens, and a body that arrives later \
                  stays. Move the despawn to a beat after the actor's arrival, or bring the \
-                 actor in before it"
+                 actor in before it",
+                at(d)
             ),
         ));
     }
