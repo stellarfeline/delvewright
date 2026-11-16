@@ -4985,6 +4985,39 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
   );
 });
 
+// --- a gathered collect: the world supplies the item (DSL v0.80) ---------------
+
+/** A fake server on which the item arrives only by `/give`, completing the objective. */
+class GatherFakeBot extends InteractFakeBot {
+  override chat(message: string): void {
+    super.chat(message);
+    if (message === "/give @s minecraft:cod 5") {
+      this.emit("messagestr", "Gave 5 [Raw Cod] to delve-bot");
+      this.emit("messagestr", "[dw:complete hello-world obj/fish]");
+    }
+  }
+}
+
+const GATHER_STEP: CollectStep = {
+  action: "collect",
+  objective: "obj/fish",
+  item: "minecraft:cod",
+  count: 5,
+  gathered: true,
+  pos: [0, 64, 0],
+  sneak: false,
+} as unknown as CollectStep;
+
+test("a gathered collect walks to its place and is handed the item by command, opening nothing", async () => {
+  const bot = new GatherFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  await within("executor.collect(GATHER_STEP)", executor.collect(GATHER_STEP));
+  const acts = bot.calls.filter((c) => !c.startsWith("chat(/tellraw"));
+  assert.deepEqual(acts, ["goto", "chat(/give @s minecraft:cod 5)"]);
+});
+
 // --- trigger steps: the bot does to the target what a player does ---------------
 
 import type { LoopStep, TriggerStep } from "../src/critical-path.ts";

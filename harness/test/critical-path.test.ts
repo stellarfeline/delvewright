@@ -1336,6 +1336,25 @@ test("a stand with no click height, an unknown kind or an unknown key is refused
   }
 });
 
+// --- format 15: a collect whose item the world supplies (DSL v0.80) ---
+
+test("a gathered collect carries `gathered`; any value but true is refused", () => {
+  const raw = withCollect(undefined);
+  (raw["steps"] as Record<string, unknown>[])[2]!["gathered"] = true;
+  const step = parseCriticalPath(raw).steps[2];
+  if (step?.action !== "collect") throw new Error("not a collect");
+  assert.equal(step.gathered, true);
+  const plain = parseCriticalPath(withCollect(undefined)).steps[2];
+  if (plain?.action !== "collect") throw new Error("not a collect");
+  assert.equal(plain.gathered, undefined);
+  const bad = withCollect(undefined);
+  (bad["steps"] as Record<string, unknown>[])[2]!["gathered"] = false;
+  assert.throws(
+    () => parseCriticalPath(bad),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/2/gathered",
+  );
+});
+
 // --- spec-0108 §6.5: an act no step kind drives, performed by mock ----------------
 
 const candle = {

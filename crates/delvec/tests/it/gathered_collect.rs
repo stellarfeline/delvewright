@@ -33,9 +33,9 @@ fn fixture(tag: &str, middle: Vec<Value>) -> PathBuf {
             .unwrap();
         let exit = objs.pop().unwrap();
         assert_eq!(exit["id"], "obj/exit");
-        let before = middle
-            .last()
-            .map_or("obj/talk".to_string(), |o| o["id"].as_str().unwrap().to_string());
+        let before = middle.last().map_or("obj/talk".to_string(), |o| {
+            o["id"].as_str().unwrap().to_string()
+        });
         objs.extend(middle);
         objs.push(json!({
             "type": "interact", "id": "obj/feed", "anchor": "anchor/exit",
@@ -169,7 +169,10 @@ fn a_gathered_collect_supplies_the_presented_cod_and_places_nothing() {
         .unwrap()
         .clone();
     assert_eq!(crit["trigger"], "minecraft:inventory_changed", "{crit}");
-    assert_eq!(crit["conditions"]["items"][0]["items"], "minecraft:cod", "{crit}");
+    assert_eq!(
+        crit["conditions"]["items"][0]["items"], "minecraft:cod",
+        "{crit}"
+    );
     assert_eq!(crit["conditions"]["items"][0]["count"]["min"], 5, "{crit}");
 
     // The bot is told the world supplies it.
