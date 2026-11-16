@@ -5004,7 +5004,7 @@ const GATHER_STEP: CollectStep = {
   item: "minecraft:cod",
   count: 5,
   gathered: true,
-  pos: [0, 64, 0],
+  pos: [10, 64, 0],
   sneak: false,
 } as unknown as CollectStep;
 
