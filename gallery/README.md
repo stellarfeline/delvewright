@@ -715,8 +715,8 @@ box, are still two bodies and still refused (`DW0878`).
 
 **Touched, the hearth calls the party home.** `trigger/warm-at-the-hearth`
 also carries a `teleport` whose subject is the party (`"from": "party"`):
-every member, wherever they stand, is put on the hearth floor two cells east of
-the fire (`anchor/hearth` + `[2, 0, 0]`: the fire's own cell hurts, and a mark
+every member, wherever they stand, is put on the hearth floor one cell east of
+the fire (`anchor/hearth` + `[1, 0, 0]`: the fire's own cell hurts, and a mark
 there is `DW1141`), each on a cell of their own — the mark's, then its nearest neighbours a body walks to — so
 the build fixes four seats there (`validation/teleport-gate.json`,
 `party_seats`; a mark with fewer is `DW1141`). The generated
