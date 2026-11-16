@@ -80,7 +80,7 @@ test("a reading round-trips through the server's rendering, an offline member in
     "[dw:party 7 party_idle|[0.5d, 64.0d, 0.5d]|2|3|3|0|1]",
     "[dw:party-obs 7 party_idle]",
     "[dw:party 7 party_late||||3||1]",
-    "[dw:party 7 party_away|[1.0d, 64.0d, 2.0d]|3|1|3|1|1]",
+    "[dw:party 7 party_away|[1.0d,64.0d,2.0d]|3|1|3|1|1]",
     "[dw:party 6 party_away|[9.0d, 64.0d, 9.0d]|2|3|3|0|1]",
   ];
   const r = parseReadings(7, lines, MEMBERS);

@@ -153,7 +153,9 @@ export function readingCommands(serial: number, names: readonly string[]): strin
 
 const READING_RE = /^\[dw:party (\d+) ([A-Za-z0-9_]+)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\]$/;
 const OBS_RE = /^\[dw:party-obs (\d+) ([A-Za-z0-9_]+)\]$/;
-const POS_RE = /^\[(-?[\d.E-]+)d, (-?[\d.E-]+)d, (-?[\d.E-]+)d\]$/;
+// The pinned server prints a list's SNBT without a space after the comma
+// (`[15.5d,67.0d,2.5d]`); either spelling is read.
+const POS_RE = /^\[(-?[\d.E-]+)d,\s*(-?[\d.E-]+)d,\s*(-?[\d.E-]+)d\]$/;
 
 function int(text: string): number | undefined {
   return /^-?\d+$/.test(text) ? Number(text) : undefined;

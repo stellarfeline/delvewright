@@ -95,6 +95,7 @@ export class PartyRun {
   private awayLeftAt: Vec3Tuple | undefined;
   private lateJoined = false;
   private awayCameBack = false;
+  private rawLogged = false;
 
   constructor(options: PartyRunOptions) {
     this.o = options;
@@ -168,7 +169,15 @@ export class PartyRun {
     const serial = this.serial;
     const reply = await this.o.ask(readingCommands(serial, MEMBERS));
     if (!reply.answered) throw new Error(`party reading ${serial} was never answered`);
-    return parseReadings(serial, reply.lines, MEMBERS);
+    const readings = parseReadings(serial, reply.lines, MEMBERS);
+    // A member with a connection the server states no body for is the reading
+    // failing, not the member being away: its raw lines are logged once.
+    const unread = MEMBERS.filter((n) => this.member(n).bot !== undefined && !readings.get(n)!.online);
+    if (unread.length > 0 && !this.rawLogged) {
+      this.rawLogged = true;
+      this.o.log(`[party] reading ${serial} states no body for ${unread.join(", ")}: ${JSON.stringify(reply.lines)}`);
+    }
+    return readings;
   }
 
   /** Read until `done` holds of `name`'s reading, or the poll runs out; the last reading. */
@@ -197,7 +206,9 @@ export class PartyRun {
   async boundary(index: number): Promise<void> {
     const at = `after step ${index}`;
     const idler = await this.readUntil(IDLER, inPlay);
-    if (this.stand === undefined) {
+    if (this.stand === undefined && !inPlay(idler)) {
+      this.fail(`${at}: the idler could not be read in play (game mode ${idler.mode ?? "unread"}, ${idler.online ? "a body" : "no body"})`);
+    } else if (this.stand === undefined) {
       // The idler's place is where it stands once every member has taken the
       // class at the entry: taking one is a move the table names.
       this.stand = idler.pos;
