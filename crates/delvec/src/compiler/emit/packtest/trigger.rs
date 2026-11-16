@@ -705,3 +705,132 @@ pub(super) fn emit_answer_heard_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
     }
 }
+
+/// **One click box, two clicks** — one PackTest per click box two presses
+/// share ([`crate::compiler::pressable::shared_boxes`]): a left-click and a
+/// right-click of one block, each boxed in every state, ride one
+/// `minecraft:interaction`.
+///
+/// The template rebuilds the box from the press that summons it, then asserts
+/// it is ONE entity wearing every rider's tag — without that, the rest would
+/// pass vacuously on two boxes. Then, for each click a rider answers, it
+/// writes the record vanilla writes for that click (`attack` for a
+/// left-click, `interaction` for a right-click) on the one box, runs every
+/// polled rider's own poll clause and then every clear — the clauses `tick`
+/// carries, never the whole `tick` — and asserts every polled rider of that
+/// click fired and every polled rider of the other click did not. A rider dispatched
+/// by its advancement (a `presser`) is reached by the criterion keyed on its
+/// tag, which the count proves the one box wears; its own dispatch is driven
+/// by its `env_trigger_` template.
+///
+/// Emits nothing for a campaign with no shared box.
+pub(super) fn emit_shared_box_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use crate::compiler::pressable::{Owner, box_tags, shared_boxes};
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let triggers = &plan.campaign.quests.content.triggers;
+    for group in shared_boxes(plan) {
+        let holder = group[0];
+        let [x, y, z] = holder.cell;
+        let key = format!("{x}_{y}_{z}").replace('-', "m");
+        let tags = box_tags(plan, holder);
+        // The riders the template drives: every authored trigger on the box,
+        // with whether the tick polls it.
+        let riders: Vec<(&delvewright_dsl::EnvTrigger, bool)> = group
+            .iter()
+            .filter_map(|p| match &p.owner {
+                Owner::Trigger { id } => triggers.iter().find(|t| t.id.as_str() == id),
+                _ => None,
+            })
+            .map(|t| {
+                (
+                    t,
+                    !t.addresses_presser() && !trigger_is_block_bound(plan, t),
+                )
+            })
+            .collect();
+        let mut b = packtest_header(&format!(
+            "{title}: one click box at {:?} carries {} press(es), and each click reaches its own",
+            holder.cell,
+            group.len()
+        ));
+        b.push(format!("function {ns}:setup"));
+        // Own init (batch contract): exactly the one box this template counts.
+        for t in &tags {
+            b.push(format!("kill @e[type=minecraft:interaction,tag={t}]"));
+        }
+        if let Some(s) = super::super::press::box_summon(plan, holder) {
+            b.push(s);
+        }
+        let all = tags
+            .iter()
+            .map(|t| format!("tag={t}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        b.push(format!(
+            "execute store result score #sbx_{key} dw.sys if entity @e[type=minecraft:interaction,{all}]"
+        ));
+        b.push(format!("assert score #sbx_{key} dw.sys matches 1"));
+        for t in &tags {
+            b.push(format!(
+                "execute store result score #sbx_{key} dw.sys if entity @e[type=minecraft:interaction,tag={t}]"
+            ));
+            b.push(format!("assert score #sbx_{key} dw.sys matches 1"));
+        }
+        let the_box = format!("@e[type=minecraft:interaction,tag={},limit=1]", holder.tag);
+        // One pass per click the box answers: the record that click writes,
+        // every polled rider of it fires, and no polled rider of the other
+        // click does — a left-click on the box never reaches a `use`, nor a
+        // right-click a `strike`.
+        for rec in ["attack", "interaction"] {
+            if !riders.iter().any(|(t, _)| trigger_record(t) == rec) {
+                continue;
+            }
+            for (r, _) in &riders {
+                b.push(format!(
+                    "scoreboard players set #trig_{} dw.sys 0",
+                    plan::safe_local(r.id.as_str())
+                ));
+            }
+            for (r, polled) in &riders {
+                if *polled && trigger_record(r) == rec {
+                    b.extend(packtest_gate_drive(plan, r.gate(), true));
+                }
+            }
+            b.push(format!(
+                "data modify entity {the_box} {rec} set value {{player:[I;0,0,0,1],timestamp:1L}}"
+            ));
+            let mut clears: Vec<String> = Vec::new();
+            for (r, polled) in &riders {
+                if !polled {
+                    continue;
+                }
+                let (poll, clear) = click_trigger_poll(plan, r);
+                b.push(poll);
+                if !clears.contains(&clear) {
+                    clears.push(clear);
+                }
+            }
+            b.extend(clears);
+            // A record no polled rider reads is cleared here, so the next
+            // pass starts from a box that holds no click.
+            b.push(format!(
+                "execute as {the_box} run data remove entity @s {rec}"
+            ));
+            for (r, polled) in &riders {
+                if !polled {
+                    continue;
+                }
+                let want = usize::from(trigger_record(r) == rec);
+                b.push(format!(
+                    "assert score #trig_{} dw.sys matches {want}",
+                    plan::safe_local(r.id.as_str())
+                ));
+            }
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/shared_box_{key}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}

@@ -695,6 +695,22 @@ and writes `validation/body-answers.json`, one row per body; the generated
 `v119_answer_box_hall_sentry` PackTest stands the box with the puppet and
 watches it go before the twin stands.
 
+## The hearth stone, struck and touched
+
+One block answers a left-click and a right-click, each with its own beat.
+The smooth stone slab at `anchor/hearth-stone` carries `trigger/strike-the-hearth`
+(a `strike`, answered to the striker) and `trigger/warm-at-the-hearth` (a
+`use`, narrated to the party), both naming the same `prop`. A slab is a block
+the game reports no press of, so each press's click box stands in every state,
+and the build summons ONE `minecraft:interaction` over it wearing both
+triggers' tags: the left-click lands in its `attack` record and the right-click
+in its `interaction` record, so neither press takes the other's. The press
+proof says how many boxes are shared and by how many presses
+(`validation/press-proof.json`, `shared_boxes`), and the generated
+`shared_box_<cell>` PackTest writes each record on the one box and reads which
+press fired. Two presses of one button on one box, or a bell under a strike's
+box, are still two bodies and still refused (`DW0878`).
+
 ## The heartbeat, and the drip
 
 Three sounds beat over places (spec-0102). Under the hearth, one cell below

@@ -6291,6 +6291,24 @@
           "on": "body-enters",
           "state": "state/aboard-the-gull"
         }
+      },
+      {
+        "at": "anchor/hearth-stone",
+        "effects": [
+          {
+            "style": "chat",
+            "text": "The hearth stone is warm under the hand: struck, it speaks; touched, it only glows.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/warm-at-the-hearth",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:smooth_stone_slab[type=bottom]"
+        }
       }
     ],
     "vehicles": [

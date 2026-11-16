@@ -292,7 +292,11 @@ pub(super) fn press_setup(plan: &Plan) -> Vec<String> {
         out.extend(p.setblocks());
     }
     for p in plan.presses() {
-        if matches!(p.owner, Owner::GateAnswer { .. }) {
+        // A shared box is summoned once, by the first press that rides it,
+        // wearing every rider's tag (`pressable::box_tags`).
+        if matches!(p.owner, Owner::GateAnswer { .. })
+            || crate::compiler::pressable::box_summoned_by_another(plan, p)
+        {
             continue;
         }
         if p.boxed_in(p.initial())
