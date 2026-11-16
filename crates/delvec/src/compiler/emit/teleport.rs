@@ -271,6 +271,7 @@ pub(super) fn party_teleport_objectives(plan: &Plan, crossings: &[Crossing]) -> 
     }
     if !crossings.is_empty() {
         out.push(format!("scoreboard objectives add {XC} dummy"));
+        out.push(format!("scoreboard objectives add {XD} deathCount"));
     }
     out
 }
@@ -301,6 +302,10 @@ impl Crossing {
 /// Each member's count of the crossings they were carried across; on
 /// [`plan::PARTY`], the party's.
 pub(super) const XC: &str = "dw.xc";
+/// Each member's deaths since they were last put where the party is
+/// (`deathCount`): a member who dies past a crossing respawns behind it, so a
+/// death makes them owed.
+pub(super) const XD: &str = "dw.xd";
 /// The `dw.sys` holder naming the party's last crossing ([`Crossing::id`]).
 const XTO: &str = "#xto";
 /// The `dw.sys` holder keeping the checkpoint armed when the party last
@@ -357,8 +362,9 @@ pub(super) fn crossing_call(plan: &Plan, crossings: &[Crossing], pos: [i32; 3]) 
 /// every member present, writing the party's count onto each member carried.
 ///
 /// A member who was not carried — away, on their death screen, waiting out a
-/// respawn, or still choosing a class — is behind the party's count, and the
-/// tick's owed line ([`crossing_tick`]) runs [`CROSS_OWED_FN`] as them once
+/// respawn, or still choosing a class — is behind the party's count, and one
+/// who died since they were carried respawns behind the crossing ([`XD`]); the
+/// tick's owed line ([`crossing_tick`]) runs [`CROSS_OWED_FN`] as either once
 /// they are a member present again: they are put where the party respawns
 /// when a checkpoint was armed since the crossing (`cp_seat_<i>`), else on
 /// the last crossing's entry point. The void between areas has no walk back,
@@ -386,10 +392,13 @@ pub(super) fn crossing_fns(plan: &Plan, crossings: &[Crossing]) -> Vec<(String, 
             plan,
             x.to,
             &name,
-            &[format!(
-                "scoreboard players operation @a[scores={{{TPP_SEAT}=1..}}] {XC} = {} {XC}",
-                plan::PARTY
-            )],
+            &[
+                format!(
+                    "scoreboard players operation @a[scores={{{TPP_SEAT}=1..}}] {XC} = {} {XC}",
+                    plan::PARTY
+                ),
+                format!("scoreboard players set @a[scores={{{TPP_SEAT}=1..}}] {XD} 0"),
+            ],
         ));
         out.push((name, lines(&body)));
     }
@@ -421,22 +430,36 @@ pub(super) fn crossing_fns(plan: &Plan, crossings: &[Crossing]) -> Vec<(String, 
         "scoreboard players operation @s {XC} = {} {XC}",
         plan::PARTY
     ));
+    owed.push(format!("scoreboard players set @s {XD} 0"));
     out.push((CROSS_OWED_FN.to_string(), lines(&owed)));
     out
 }
 
-/// The tick's owed line: a member present, not watching a cutscene, whose
-/// count is behind the party's crossings runs [`CROSS_OWED_FN`]. Empty for a
-/// campaign that never crosses.
+/// The tick's owed lines: once the party has crossed, a member present, not
+/// watching a cutscene, whose count is behind the party's crossings, or who
+/// has died since they were last put where the party is, runs
+/// [`CROSS_OWED_FN`]. Empty for a campaign that never crosses.
 pub(super) fn crossing_tick(plan: &Plan, crossings: &[Crossing]) -> Vec<String> {
     if crossings.is_empty() {
         return Vec::new();
     }
-    vec![format!(
-        "{} if entity @s[tag=!{CUTSCENE_TAG}] if score {p} {XC} matches 1.. unless score @s {XC} \
-         = {p} {XC} run function {}:{CROSS_OWED_FN}",
+    let who = format!(
+        "{} if entity @s[tag=!{CUTSCENE_TAG}] if score {p} {XC} matches 1..",
         as_members_present(plan),
-        plan.namespace,
         p = plan::PARTY,
-    )]
+    );
+    let ns = &plan.namespace;
+    // The entry is created first: a comparison against an entry that does not
+    // exist is false whatever it asks (`DW0495`).
+    vec![
+        format!(
+            "scoreboard players add {} {XC} 0",
+            super::grant::owed_players(plan)
+        ),
+        format!(
+            "{who} unless score @s {XC} = {p} {XC} run function {ns}:{CROSS_OWED_FN}",
+            p = plan::PARTY
+        ),
+        format!("{who} if score @s {XD} matches 1.. run function {ns}:{CROSS_OWED_FN}"),
+    ]
 }

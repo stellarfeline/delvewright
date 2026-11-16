@@ -140,11 +140,11 @@ fn a_crossing_carries_every_member_not_the_one_who_acted() {
     assert!(wrote < lines.len() - 1);
     // Declared in setup.
     let setup = func(&out, NS, "setup");
-    for obj in ["dw.tpp", "dw.xc"] {
+    for obj in ["dw.tpp dummy", "dw.xc dummy", "dw.xd deathCount"] {
         assert!(
             setup
                 .lines()
-                .any(|l| l == format!("scoreboard objectives add {obj} dummy")),
+                .any(|l| l == format!("scoreboard objectives add {obj}")),
             "setup declares {obj}"
         );
     }
@@ -163,6 +163,15 @@ fn a_member_who_was_away_is_carried_once_back() {
             .any(|l| l.starts_with("execute as @a") && l.ends_with(&owed)),
         "the tick carries a member behind the party's crossings:\n{tick}"
     );
+    let died = format!(
+        "if entity @s[tag=!dw_cutscene] if score #party dw.xc matches 1.. if score @s dw.xd matches \
+         1.. run function {NS}:cross_owed"
+    );
+    assert!(
+        tick.lines()
+            .any(|l| l.starts_with("execute as @a") && l.ends_with(&died)),
+        "a member who died since they were carried is owed too:\n{tick}"
+    );
     let owed_fn = func(&out, NS, "cross_owed");
     let [x, y, z] = KEEP_ENTRY;
     assert!(
@@ -171,9 +180,11 @@ fn a_member_who_was_away_is_carried_once_back() {
         ))),
         "a late member lands on the last crossing's entry point:\n{owed_fn}"
     );
-    assert_eq!(
-        owed_fn.lines().last().unwrap(),
-        "scoreboard players operation @s dw.xc = #party dw.xc"
+    assert!(
+        owed_fn.ends_with(
+            "scoreboard players operation @s dw.xc = #party dw.xc\nscoreboard players set @s dw.xd 0\n"
+        ),
+        "{owed_fn}"
     );
 }
 

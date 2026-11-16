@@ -10,13 +10,16 @@ import {
   IDLER,
   MEMBERS,
   judgeArrival,
+  judgeCarried,
   judgeIdler,
   judgeOwed,
   judgeTellings,
   parseReadings,
   partyFromEnv,
   readingCommands,
+  owedPlace,
   scheduleParty,
+  type Crossing,
   type MemberReading,
 } from "../src/party.ts";
 
@@ -42,6 +45,8 @@ function reading(over: Partial<MemberReading>): MemberReading {
     partyGranted: 2,
     deaths: 0,
     cp: 0,
+    crossed: undefined,
+    partyCrossed: undefined,
     ...over,
   };
 }
@@ -77,11 +82,11 @@ test("a reading round-trips through the server's rendering, an offline member in
   assert.ok(cmds[0]!.includes('"entity":"@a[name=party_idle,limit=1]"'));
   assert.ok(cmds[1]!.includes("tag=dw_cutscene"));
   const lines = [
-    "[dw:party 7 party_idle|[0.5d, 64.0d, 0.5d]|2|3|3|0|1]",
+    "[dw:party 7 party_idle|[0.5d, 64.0d, 0.5d]|2|3|3|0|1|2|2]",
     "[dw:party-obs 7 party_idle]",
-    "[dw:party 7 party_late||||3||1]",
-    "[dw:party 7 party_away|[1.0d,64.0d,2.0d]|3|1|3|1|1]",
-    "[dw:party 6 party_away|[9.0d, 64.0d, 9.0d]|2|3|3|0|1]",
+    "[dw:party 7 party_late||||3||1||2]",
+    "[dw:party 7 party_away|[1.0d,64.0d,2.0d]|3|1|3|1|1|1|2]",
+    "[dw:party 6 party_away|[9.0d, 64.0d, 9.0d]|2|3|3|0|1||]",
   ];
   const r = parseReadings(7, lines, MEMBERS);
   assert.deepEqual(r.get("party_idle"), {
@@ -94,10 +99,14 @@ test("a reading round-trips through the server's rendering, an offline member in
     partyGranted: 3,
     deaths: 0,
     cp: 1,
+    crossed: 2,
+    partyCrossed: 2,
   });
   const late = r.get("party_late")!;
   assert.equal(late.online, false);
   assert.equal(late.granted, undefined);
+  assert.equal(late.crossed, undefined);
+  assert.equal(late.partyCrossed, 2);
   assert.equal(r.get("party_away")!.pos![0], 1, "the stale serial's line is not this reading");
   assert.throws(() => parseReadings(8, lines, MEMBERS), /stated nothing for party_idle/);
 });
@@ -114,7 +123,7 @@ test("the idler holds where it stood, and is red when moved, stranded or seated 
   assert.match(judgeIdler(stand, 0, reading({ online: false, pos: undefined }), seats, "x")!, /not on the server/);
   // A death puts it on the seat in force, which is where the table says it stands.
   assert.equal(judgeIdler(stand, 0, reading({ deaths: 1, pos: [40.5, 70, 8.5] }), seats, "x"), undefined);
-  assert.match(judgeIdler(stand, 0, reading({ deaths: 1, pos: [0.5, 64, 0.5] }), seats, "x")!, /seat in force/);
+  assert.match(judgeIdler(stand, 0, reading({ deaths: 1, pos: [0.5, 64, 0.5] }), seats, "x")!, /where the party is \(the bell fire\)/);
 });
 
 test("a member's grants are level with the party's, and a build with none is unbound", () => {
@@ -158,4 +167,41 @@ test("a member present is told every beat the walker is told, and never one it w
   // A beat at the moment of a join is neither owed nor a replay.
   const edge = judgeTellings([{ token: "obj/d", at: 30_500 }], [], away);
   assert.deepEqual([edge.owed, edge.edge, edge.missing.length], [0, 1, 0]);
+});
+
+test("a crossing carries the idler onto a seat by its landing, and a member owed it is put where the party is", () => {
+  const crossing: Crossing = { after: 6, landing: [300, 65, 4], cp: 0 };
+  // Carried: on a seat within the ring, level with the party's count.
+  assert.equal(
+    judgeCarried(reading({ pos: [301.5, 65, 5.5], crossed: 1, partyCrossed: 1 }), crossing, "idler"),
+    undefined,
+  );
+  // Left behind in the old area: red.
+  assert.match(
+    judgeCarried(reading({ pos: [0.5, 64, 0.5], crossed: undefined, partyCrossed: 1 }), crossing, "idler")!,
+    /was not carried by the crossing after step 6/,
+  );
+  // By the landing but not counted: red.
+  assert.match(
+    judgeCarried(reading({ pos: [300.5, 65, 4.5], crossed: 0, partyCrossed: 1 }), crossing, "idler")!,
+    /holds 0 crossing/,
+  );
+  // Owed, with the checkpoint kept at the crossing still in force: the landing.
+  assert.deepEqual(owedPlace(seats, 0, crossing)!.point, [300.5, 65, 4.5]);
+  // A checkpoint armed since: its seat.
+  assert.deepEqual(owedPlace(seats, 0, { ...crossing, cp: undefined })!.point, [40.5, 70, 8.5]);
+  // No checkpoint ever, before or since: the landing.
+  assert.deepEqual(owedPlace(seats, undefined, { ...crossing, cp: undefined })!.point, [300.5, 65, 4.5]);
+  // No crossing: the seat in force, as before.
+  assert.deepEqual(owedPlace(seats, 0, undefined)!.point, [40.5, 70, 8.5]);
+  // The idler dead past a crossing respawns where the party is.
+  const stand: [number, number, number] = [301.5, 65, 5.5];
+  assert.equal(judgeIdler(stand, 0, reading({ deaths: 1, pos: [300.5, 65, 4.5] }), seats, "x", crossing), undefined);
+  assert.match(
+    judgeIdler(stand, 0, reading({ deaths: 1, pos: [40.5, 70, 8.5] }), seats, "x", crossing)!,
+    /where the party is \(the crossing's landing after step 6\)/,
+  );
+  // A late member after a crossing arrives on its landing.
+  assert.equal(judgeArrival(reading({ pos: [300.5, 65, 4.5] }), seats, crossing).ok, true);
+  assert.equal(judgeArrival(reading({ pos: [40.5, 70, 8.5] }), seats, crossing).ok, false);
 });

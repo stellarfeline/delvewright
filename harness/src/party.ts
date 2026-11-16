@@ -8,8 +8,12 @@
 //
 // * **Who is moved.** A member is where their own body is. The idler, at every
 //   step boundary, stands where it stood — back in adventure, out of every
-//   cutscene's observation state — unless it died, when it stands on the seat
-//   in force. The member who left comes back where it left.
+//   cutscene's observation state — unless it died, when it stands where the
+//   party is. The member who left comes back where it left. A crossing into
+//   another area carries the party: the idler is carried onto a seat around
+//   the step's landing, and a member who was away, died or joined late after
+//   it is put where the party is — on the checkpoint armed since the crossing,
+//   else on the crossing's landing ({@link owedPlace}).
 // * **Who is given.** A stack for the party is a grant: every member's issue
 //   count (`dw.gr`) reaches the party's (`#all`), the late joiner and the one
 //   who was away included.
@@ -115,6 +119,10 @@ export interface MemberReading {
   readonly deaths: number | undefined;
   /** The active checkpoint (`#cp dw.sys`); absent before any. */
   readonly cp: number | undefined;
+  /** This member's crossing count (`dw.xc`); absent in a build that never crosses. */
+  readonly crossed: number | undefined;
+  /** The party's (`#party dw.xc`); absent before the first crossing. */
+  readonly partyCrossed: number | undefined;
 }
 
 const OBSERVING_TAG = "dw_cutscene";
@@ -140,6 +148,10 @@ export function readingCommands(serial: number, names: readonly string[]): strin
         score(name, "dw.deaths"),
         sep,
         score("#cp", "dw.sys"),
+        sep,
+        score(name, "dw.xc"),
+        sep,
+        score("#party", "dw.xc"),
         { text: "]" },
       ])}`,
     );
@@ -151,7 +163,8 @@ export function readingCommands(serial: number, names: readonly string[]): strin
   return out;
 }
 
-const READING_RE = /^\[dw:party (\d+) ([A-Za-z0-9_]+)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\]$/;
+const READING_RE =
+  /^\[dw:party (\d+) ([A-Za-z0-9_]+)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\]$/;
 const OBS_RE = /^\[dw:party-obs (\d+) ([A-Za-z0-9_]+)\]$/;
 // The pinned server prints a list's SNBT without a space after the comma
 // (`[15.5d,67.0d,2.5d]`); either spelling is read.
@@ -195,6 +208,8 @@ export function parseReadings(
       partyGranted: int(m[6]!),
       deaths: int(m[7]!),
       cp: int(m[8]!),
+      crossed: int(m[9]!),
+      partyCrossed: int(m[10]!),
     });
   }
   return out;
@@ -224,6 +239,63 @@ export function seatInForce(seats: readonly Seat[], cp: number | undefined): Sea
   return seats.find((s) => s.cp === key);
 }
 
+/**
+ * **A crossing the party made**: the step boundary it was read at (the
+ * party's `dw.xc` rose), the step's landing, and the checkpoint in force then.
+ */
+export interface Crossing {
+  readonly after: number;
+  readonly landing: Vec3Tuple;
+  readonly cp: number | undefined;
+}
+
+/** How far a party carry's seats stand from its mark: three cells on each axis. */
+export const SEAT_RING = 3;
+
+/** The farthest a carried body may stand from the landing's centre and be on one of its seats. */
+export const CARRIED_TOLERANCE = Math.sqrt(3) * SEAT_RING + STAND_TOLERANCE;
+
+/** A landing's standing point: the cell's centre. */
+export function landingPoint(landing: Vec3Tuple): Vec3Tuple {
+  return [landing[0] + 0.5, landing[1], landing[2] + 0.5];
+}
+
+/**
+ * **Where a member owed by the party is put**, with `cp` in force: on the
+ * last crossing's landing unless a checkpoint was armed since it, when on that
+ * checkpoint's seat; with no crossing, the seat in force. The compiler's
+ * `cross_owed` rule, read off the same two facts it reads (`#cp` against the
+ * checkpoint kept at the crossing). `undefined` when the build names no seat.
+ */
+export function owedPlace(
+  seats: readonly Seat[],
+  cp: number | undefined,
+  crossing: Crossing | undefined,
+): { point: Vec3Tuple; label: string } | undefined {
+  const armed = (c: number | undefined) => (c === undefined || c < 0 ? -1 : c);
+  if (crossing !== undefined && armed(cp) === armed(crossing.cp)) {
+    return { point: landingPoint(crossing.landing), label: `the crossing's landing after step ${crossing.after}` };
+  }
+  const seat = seatInForce(seats, cp);
+  return seat === undefined ? undefined : { point: seatPoint(seat), label: seat.label };
+}
+
+/** A carried member against a crossing's landing: on one of its seats, and level with the party's count. */
+export function judgeCarried(reading: MemberReading, crossing: Crossing, who: string): string | undefined {
+  if (!reading.pos) return `${who} has no body to read after the crossing`;
+  const d = distance(reading.pos, landingPoint(crossing.landing));
+  if (d > CARRIED_TOLERANCE) {
+    return (
+      `${who} was not carried by the crossing after step ${crossing.after}: it stands at ${fmt(reading.pos)}, ` +
+      `${d.toFixed(2)} from the landing ${fmt(crossing.landing)}`
+    );
+  }
+  if (reading.crossed !== reading.partyCrossed) {
+    return `${who} stands by the landing but holds ${reading.crossed ?? "no"} crossing(s) of the party's ${reading.partyCrossed ?? "none"}`;
+  }
+  return undefined;
+}
+
 const fmt = (p: Vec3Tuple | undefined) => (p ? p.map((v) => v.toFixed(2)).join(" ") : "nowhere");
 
 /**
@@ -237,6 +309,7 @@ export function judgeIdler(
   reading: MemberReading,
   seats: readonly Seat[],
   at: string,
+  crossing?: Crossing,
 ): string | undefined {
   if (!reading.online) return `${at}: the idler is not on the server`;
   if (!inPlay(reading)) {
@@ -247,12 +320,12 @@ export function judgeIdler(
   }
   const died = (reading.deaths ?? 0) > baselineDeaths;
   if (died) {
-    const seat = seatInForce(seats, reading.cp);
-    if (seat === undefined) return undefined;
-    const d = distance(reading.pos!, seatPoint(seat));
+    const place = owedPlace(seats, reading.cp, crossing);
+    if (place === undefined) return undefined;
+    const d = distance(reading.pos!, place.point);
     return d <= STAND_TOLERANCE
       ? undefined
-      : `${at}: the idler died and stands at ${fmt(reading.pos)}, ${d.toFixed(2)} from the seat in force (${seat.label})`;
+      : `${at}: the idler died and stands at ${fmt(reading.pos)}, ${d.toFixed(2)} from where the party is (${place.label})`;
   }
   const d = distance(reading.pos!, stand);
   return d <= STAND_TOLERANCE
@@ -282,13 +355,14 @@ export function judgeOwed(reading: MemberReading, who: string): OwedVerdict {
   };
 }
 
-/** A late member's arrival after its class: on the seat in force. */
+/** A late member's arrival after its class: where the party is ({@link owedPlace}). */
 export function judgeArrival(
   reading: MemberReading,
   seats: readonly Seat[],
+  crossing?: Crossing,
 ): { bound: boolean; ok: boolean; detail: string } {
-  const seat = seatInForce(seats, reading.cp);
-  if (seat === undefined) {
+  const place = owedPlace(seats, reading.cp, crossing);
+  if (place === undefined) {
     return {
       bound: false,
       ok: true,
@@ -296,12 +370,12 @@ export function judgeArrival(
     };
   }
   if (!reading.pos) return { bound: true, ok: false, detail: "the late member has no body to read" };
-  const d = distance(reading.pos, seatPoint(seat));
+  const d = distance(reading.pos, place.point);
   return {
     bound: true,
     ok: d <= STAND_TOLERANCE,
     detail:
-      `the late member arrived at ${fmt(reading.pos)}, ${d.toFixed(2)} from ${seat.label} ` +
+      `the late member arrived at ${fmt(reading.pos)}, ${d.toFixed(2)} from ${place.label} ` +
       `(checkpoint ${reading.cp ?? -1} in force)`,
   };
 }

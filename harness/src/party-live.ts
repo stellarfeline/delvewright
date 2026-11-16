@@ -19,13 +19,17 @@ import {
   IDLER,
   LATE,
   MEMBERS,
+  distance,
   inPlay,
   judgeArrival,
+  judgeCarried,
   judgeIdler,
   judgeOwed,
   judgeTellings,
   parseReadings,
   readingCommands,
+  owedPlace,
+  type Crossing,
   type Heard,
   type MemberReading,
   type OwedVerdict,
@@ -56,6 +60,8 @@ export interface PartyRunOptions {
   readonly campaignId: string;
   readonly schedule: PartySchedule;
   readonly seats: readonly Seat[];
+  /** Each critical-path step's landing (`transport`), by step index: where a crossing that step makes carries the party. */
+  readonly transports: readonly (Vec3Tuple | undefined)[];
   /** The walking bot's bracketed command channel (it is opped; the members are not). */
   readonly ask: (commands: readonly string[]) => Promise<BracketedReply>;
   /** The walking bot, whose hearing every member's is judged against. */
@@ -93,6 +99,12 @@ export class PartyRun {
   private standDeaths = 0;
   private idlerReadings = 0;
   private awayLeftAt: Vec3Tuple | undefined;
+  /** The party's crossing count when the away member left. */
+  private awayLeftCrossed = 0;
+  /** The party's crossing count last read, and the last crossing it made. */
+  private partyCrossed = 0;
+  private crossing: Crossing | undefined;
+  private crossingsRead = 0;
   private lateJoined = false;
   private awayCameBack = false;
   private rawLogged = false;
@@ -214,9 +226,26 @@ export class PartyRun {
       this.stand = idler.pos;
       this.standDeaths = idler.deaths ?? 0;
       this.o.log(`[party] ${IDLER} stands at ${idler.pos?.map((v) => v.toFixed(2)).join(" ") ?? "nowhere"}`);
+    } else if ((idler.partyCrossed ?? 0) > this.partyCrossed) {
+      // The party crossed on this step: the idler is carried with it, onto a
+      // seat around the step's landing, and stands there from now on.
+      this.partyCrossed = idler.partyCrossed ?? 0;
+      const landing = this.o.transports[index];
+      if (landing === undefined) {
+        this.fail(`${at}: the party crossed and the step names no landing`);
+      } else {
+        this.crossing = { after: index, landing, cp: idler.cp };
+        this.crossingsRead += 1;
+        this.idlerReadings += 1;
+        const f = judgeCarried(idler, this.crossing, `${at}: the idler`);
+        if (f !== undefined) this.fail(f);
+        else this.o.log(`[party] ok ${IDLER} carried by the crossing after step ${index}`);
+      }
+      this.stand = idler.pos;
+      this.standDeaths = idler.deaths ?? 0;
     } else {
       this.idlerReadings += 1;
-      const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, at);
+      const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, at, this.crossing);
       if (f !== undefined) {
         this.failures.push(f);
         this.o.log(`[party] FAIL ${f}`);
@@ -224,7 +253,9 @@ export class PartyRun {
     }
     const s = this.o.schedule;
     if (index === s.dropAfter) {
-      this.awayLeftAt = (await this.read()).get(AWAY)?.pos;
+      const leaving = (await this.read()).get(AWAY);
+      this.awayLeftAt = leaving?.pos;
+      this.awayLeftCrossed = leaving?.partyCrossed ?? 0;
       await this.leave(AWAY);
     }
     if (index === s.rejoinAfter) {
@@ -232,12 +263,22 @@ export class PartyRun {
       this.awayCameBack = true;
       const back = await this.readUntil(AWAY, (r) => inPlay(r) && r.granted === r.partyGranted);
       this.judgeOwed(back, `${AWAY} back ${at}`);
-      if (this.awayLeftAt && back.pos) {
-        const d = Math.hypot(
-          back.pos[0] - this.awayLeftAt[0],
-          back.pos[1] - this.awayLeftAt[1],
-          back.pos[2] - this.awayLeftAt[2],
-        );
+      if ((back.partyCrossed ?? 0) > this.awayLeftCrossed) {
+        // The party crossed while it was away: it is owed the crossing, and
+        // is put where the party is.
+        const place = owedPlace(this.o.seats, back.cp, this.crossing);
+        if (place === undefined) {
+          this.fail(`${AWAY} came back after a crossing and the build names no place for it`);
+        } else if (!back.pos || distance(back.pos, place.point) > 1.5) {
+          this.fail(
+            `${AWAY} came back after the party crossed and stands ${back.pos ? distance(back.pos, place.point).toFixed(2) : "nowhere"} ` +
+              `from where the party is (${place.label}) — a member who was away is owed the crossing`,
+          );
+        } else {
+          this.o.log(`[party] ok ${AWAY} came back after a crossing onto ${place.label}`);
+        }
+      } else if (this.awayLeftAt && back.pos) {
+        const d = distance(back.pos, this.awayLeftAt);
         if (d > 1.5) {
           this.fail(`${AWAY} came back ${d.toFixed(2)} blocks from where it left — a returning member is moved`);
         }
@@ -248,7 +289,7 @@ export class PartyRun {
       await this.join(LATE);
       this.lateJoined = true;
       const late = await this.readUntil(LATE, (r) => inPlay(r) && r.granted === r.partyGranted);
-      this.arrival = judgeArrival(late, this.o.seats);
+      this.arrival = judgeArrival(late, this.o.seats, this.crossing);
       this.o.log(`[party] ${this.arrival.ok ? "ok" : "FAIL"} ${this.arrival.detail}`);
       if (!this.arrival.ok) this.failures.push(this.arrival.detail);
       this.judgeOwed(late, `${LATE} on joining ${at}`);
@@ -276,7 +317,7 @@ export class PartyRun {
       if (this.stand !== undefined) {
         const idler = await this.readUntil(IDLER, inPlay);
         this.idlerReadings += 1;
-        const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, "after the path");
+        const f = judgeIdler(this.stand, this.standDeaths, idler, this.o.seats, "after the path", this.crossing);
         if (f !== undefined) this.fail(f);
       }
       // Settled before the final grant reading: the last beat's grant reaches a
@@ -310,6 +351,7 @@ export class PartyRun {
     const line =
       `party binding (spec-0141): ${MEMBERS.length} member(s) beside the walker; ` +
       `${this.idlerReadings} idler reading(s) over ${s.boundaries} boundary(ies); ` +
+      `${this.crossingsRead} crossing(s) the idler was carried by; ` +
       `late arrival ${this.arrival === undefined ? "never read" : this.arrival.bound ? "judged" : "unbound"}; ` +
       `${boundOwed} of ${this.owed.length} grant reading(s) bound; ` +
       `${told} telling(s) owed to members, ${this.walkerHeard.length} heard by the walker; ` +
