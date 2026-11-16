@@ -38,23 +38,23 @@ Judged at `delvec validate`, at the clue's own pointer (`…/clues/<i>`): a `hin
 
 ## 4. A main-line step's clue is presented before it — `DW0863` **[authored]**
 
-**The main line is derived.** It is the stage-4 spine, `QuestPlanContent::spine` — the finale and every quest its `depends_on` chain demands, the one authority on which quests a body cannot reach the finale without (spec-0051). An objective is on the main line when its quest is in the spine. A trigger is on the main line of a walk when the objective the path performs it in front of is. Nothing about the main line is written on the step.
+**The main line is derived.** It is the stage-4 spine, `QuestPlanContent::spine` — the finale and every quest its `depends_on` chain demands, the one authority on which quests a body cannot reach the finale without (spec-0051). An objective is on the main line when its quest is in the spine. A trigger is on the main line of a walk when the objective it belongs to — the one it `serves`, else the one whose flag the walked path performs it to pay, else the next objective on that path — is. Where a path happens to put a press says nothing about the story's order, so a trigger is judged as a step of that objective. Nothing about the main line is written on the step.
 
-**An optional step is owed nothing.** A step in a quest outside the spine, or a trigger no walked path performs in front of a spine objective, is a side puzzle: not knowing how to solve it, and going to look for the clue, is play. Its clues are counted on the binding line and judged nowhere.
+**An optional step is owed nothing.** A step in a quest outside the spine, or a trigger that belongs to no spine objective on any walked path, is a side puzzle: not knowing how to solve it, and going to look for the clue, is play. Its clues are counted on the binding line and judged nowhere.
 
 **The walks** are `compiler::acts`'s: the exported critical path and every realised branch's own path. A main-line step is judged on every walk that performs it.
 
 **Before is every play order, never one walk's.** An objective `X` is *forced before* a step when no run reaches the step without `X` done:
 
-1. `X` is a strict ancestor of the step (`Plan::strict_ancestor_steps`, and a branch's own from `Plan::branch_gate_model`): in the transitive `after` of the step's objective, or an objective of a quest its quest transitively `depends_on`; for a trigger, a strict ancestor of the objective it is performed in front of.
-2. `X` is the one objective whose completion alone sets a flag that the step, or anything already forced before it, requires — every `set-flag` of that flag hangs in `X`'s `on_objective_complete` bundle and nowhere else (no other objective, no quest completion, no trigger, no dialogue option, no optional root). Taken to a fixed point.
+1. `X` is a strict ancestor of the step (`Plan::strict_ancestor_steps`, and a branch's own from `Plan::branch_gate_model`): in the transitive `after` of the step's objective, or an objective of a quest its quest transitively `depends_on`; for a trigger, a strict ancestor of the objective it belongs to.
+2. `X` is the one objective whose completion alone sets a flag that the step, the objective a trigger belongs to, or anything already forced before it, requires — every `set-flag` of that flag hangs in `X`'s `on_objective_complete` bundle and nowhere else (no other objective, no quest completion, no trigger, no dialogue option, no optional root). Taken to a fixed point.
 
 So a chest that must be opened for the story to go on is forced before what it gates, whether it gates by `after` or by a flag; a chest the lineariser merely happened to put earlier is not.
 
 **Presented:**
 
 - a `record` clue, when its objective is forced before the step;
-- a `hint` clue, when its objective is the step itself, or is forced before the step, or is a main-line objective on the walk that the replay holds started (`RegionEvents::armed`) at or before the step;
+- a `hint` clue, when its objective is the step itself, or the one a trigger `serves` (the press is open only while that objective is pending), or is forced before the step, or is a main-line objective on the walk that the replay holds started (`RegionEvents::armed`) at or before the step;
 - a `sight` clue, when its anchor's cell is in sight — `framing::in_sight`, one of nine lines clear, within 64 blocks — from the standing eye of a cell the main line stands on before the step: the walk's entry cell, the place of each step forced before this one, the step's own place, and the cells of the walked route into each of those (`World::find_route` between the cells the walk names, snapped to footing), each in the world the walk holds when it arrives there (`nav::worlds_at`).
 
 A clue that is not presented is refused with `DW0863`, naming the walk, the step, the clue and its pointer, and why: its objective is not on the main line (a clue an optional detour shows does not count for a main-line step); or it comes earlier on this walk and nothing forces that order; or it comes later; or its page has not opened; or its cell is in sight from none of the counted cells, with the nearest reason. Each names its repair.
@@ -77,21 +77,21 @@ The gallery binds `clues` on a trigger and on each of the five objective kinds, 
 
 - A clue held by text the journal does not keep: a `narrate` line, a sign, a written book, a dialogue line. The journal's pages are the texts a player can read again; a creator who wants a talk's line to count writes it as the `talk-to`'s `record`.
 - A clue seen on a body (an NPC's skin, a mob's gear): `sight` names an anchor's cell.
-- A clue for a step no walked path performs in front of a main-line objective, whatever its quest: it is optional by this rule.
+- A clue for a trigger that belongs to no main-line objective on any walked path, whatever is written near it: it is optional by this rule.
 - Guidance to an act. Nothing replaces the withdrawn rule.
 
 ## Acceptance criteria
 
 1. **The surface.** `delvec schema --stage quests` exports `clues` on all five objective kinds and on a trigger, with the three `by` entries, at `dsl_version` 0.86.0; every document the repository holds parses.
-2. **The castle passes.** `crates/delvec/tests/it/clue_presented.rs`: four `use` triggers 77 blocks apart with a wall between each pair, performed in front of a main-line objective whose `after` names the note's `collect`, each stating the note's `record` — no refusal; the binding counts four main-line acts and four text clues presented.
+2. **The castle passes.** `crates/delvec/tests/it/clue_presented.rs`: four `use` triggers 77 blocks apart with a wall between each pair, performed to pay the flags of a main-line objective whose `after` names the note, each stating the note's `record` — no refusal; the binding counts four main-line acts and four text clues presented.
 3. **The castle reds.** The same shape with the note's `collect` in a quest outside the spine is `DW0863` on each fire, naming that the note is not on the main line; with the note on the main line and no `after` or flag forcing it, `DW0863` naming that nothing forces the order.
-4. **A side puzzle is owed nothing.** The optional-note shape with the fires performed in front of an objective of an optional quest: no refusal, and the binding counts the acts as optional.
+4. **A side puzzle is owed nothing.** The optional-note shape with the fires lit for an objective of an optional quest: no refusal, and the binding counts the acts as optional.
 5. **A flag forces.** The note's completion as the sole setter of a flag the step requires passes with no `after`; a second setter of that flag reds.
 6. **Sight.** A `sight` clue down a clear line from a forced step's place passes; behind a wall from every counted cell it is `DW0863` naming the first stopping cell; an anchor that resolves to no cell is `DW1136`.
 7. **`DW1136`.** `clue_presented.rs`: each arm of §3 is raised at the clue's pointer, and the same clue with the text written is silent.
 8. **The withdrawn rule.** An act out of sight with no hint, and a `kill` whose wave is out of reach, build with no `DW0863`.
 9. **One sight rule.** `every_consumer_of_in_sight_answers_alike` asks `clue::unseen` beside the other consumers.
-10. **The gallery and the pages.** The units of §2 are bound in the gallery primary; the three probes of §6 are refused with their codes; `docs/reference/compiler.md` and `docs/reference/delvec/compiler/promise.md` state the rule; `check-dw-codes.py`, `check-diagnostic-messages.py` and `check-gallery-coverage.py` are green.
+10. **The gallery and the pages.** The units of §2 are bound in the gallery primary; the three probes of §6 are refused with their codes; `docs/reference/compiler.md` and `docs/reference/delvec/compiler/clue.md` state the rule; `check-dw-codes.py`, `check-diagnostic-messages.py` and `check-gallery-coverage.py` are green.
 
 ## Measurements this spec states
 

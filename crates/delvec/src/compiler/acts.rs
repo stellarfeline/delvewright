@@ -101,6 +101,9 @@ pub struct ActWalk {
     /// Every objective step of the walk, placed or not, as `(step, id)` in
     /// path order.
     pub steps: Vec<(usize, String)>,
+    /// Trigger id → the objective whose flag the path performs it to pay
+    /// (`PathFiring::trigger_debts`): the step the press is for.
+    pub debts: BTreeMap<String, String>,
 }
 
 /// Every walk's acts, derived once per plan.
@@ -232,6 +235,7 @@ pub fn acts_of_from(
             .enumerate()
             .filter_map(|(i, s)| s.objective().map(|o| (i, o.to_string())))
             .collect(),
+        debts: BTreeMap::new(),
     }
 }
 
@@ -257,12 +261,20 @@ fn derive_walks(
     takes: &BTreeMap<String, crate::compiler::plan::LinkTakes>,
 ) -> ActWalks {
     let mut out = ActWalks::default();
-    out.walks.push(acts_of(
+    let debts_of = |f: &crate::compiler::plan::PathFiring| -> BTreeMap<String, String> {
+        f.trigger_debts
+            .iter()
+            .map(|(t, (o, _))| (t.clone(), o.clone()))
+            .collect()
+    };
+    let mut main = acts_of(
         plan,
         "the critical path",
         &plan.critical_path,
         &plan.critical_path_transport,
-    ));
+    );
+    main.debts = debts_of(&plan.path_firing);
+    out.walks.push(main);
     let realized = crate::compiler::branch::realize(plan.campaign);
     if !realized.is_empty() {
         let flow = crate::compiler::flow::Flow::new(plan.campaign);
@@ -283,6 +295,7 @@ fn derive_walks(
                 &cp.transport_by_step,
             );
             walk.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
+            walk.debts = debts_of(&cp.firing);
             out.walks.push(walk);
         }
     }

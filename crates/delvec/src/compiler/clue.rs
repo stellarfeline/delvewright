@@ -521,15 +521,22 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                     .next(),
             };
             let Some(step) = step else { continue };
-            // The objective a trigger is performed in front of carries it:
-            // the trigger is on the main line when that objective is.
+            // The objective a trigger belongs to carries it: the one it
+            // `serves`, else the one whose flag the path performs it to pay,
+            // else the next objective on the path. Where the path happens to
+            // put the press says nothing about the story's order.
+            let trigger = (s.what == "trigger")
+                .then(|| triggers.iter().find(|t| t.id.as_str() == s.id))
+                .flatten();
+            let serves: Option<&str> = trigger.and_then(|t| match &t.serves {
+                Some(delvewright_dsl::Serves::Objective(o)) => Some(o.as_str()),
+                _ => None,
+            });
             let carrier: Option<&str> = match s.what {
                 "objective" => Some(s.id.as_str()),
-                _ => wd
-                    .at_step
-                    .range(step..)
-                    .next()
-                    .map(|(_, id)| *id)
+                _ => serves
+                    .or_else(|| w.debts.get(s.id.as_str()).map(String::as_str))
+                    .or_else(|| wd.at_step.range(step..).next().map(|(_, id)| *id))
                     .or_else(|| wd.at_step.values().next_back().copied()),
             };
             let on_main = |oid: &str| objectives.get(oid).is_some_and(|(q, _)| spine.contains(*q));
@@ -542,22 +549,27 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                 None => (&plan.region_events, &plan.strict_ancestor_steps),
                 Some(g) => (&g.0, &g.1),
             };
-            // Everything forced before the act: its strict ancestors, and the
-            // sole setter of every flag it or they require, to a fixed point.
+            // Everything forced before the act: the strict ancestors of its
+            // objective — a trigger's is its carrier — and the sole setter of
+            // every flag it or they require, to a fixed point. Only objective
+            // steps are kept: a trigger step's place in a path is the path's.
+            let carrier_step = carrier.and_then(|x| wd.step_of.get(x)).copied();
+            // Where the story reaches the act: an objective at its own step,
+            // a trigger where its carrier stands.
+            let reach = carrier_step.unwrap_or(step);
             let mut forced: BTreeSet<&str> = BTreeSet::new();
-            let mut forced_steps: BTreeSet<usize> =
-                ancestors.get(&step).cloned().unwrap_or_default();
+            let mut forced_steps: BTreeSet<usize> = carrier_step
+                .and_then(|a| ancestors.get(&a))
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|a| wd.at_step.contains_key(a))
+                .collect();
             let mut frontier: Vec<Vec<&str>> = Vec::new();
-            if let Some(t) = triggers.iter().find(|t| t.id.as_str() == s.id)
-                && s.what == "trigger"
-            {
+            if let Some(t) = trigger {
                 frontier.push(t.requires_flags.iter().map(|f| f.as_str()).collect());
-                // A trigger takes what is forced before the objective it is
-                // performed in front of: that objective's own flags too.
-                if let Some((_, o)) = carrier.and_then(|x| objectives.get(x)) {
-                    frontier.push(o.requires_flags().iter().map(|f| f.as_str()).collect());
-                }
-            } else if let Some((_, o)) = objectives.get(s.id.as_str()) {
+            }
+            if let Some((_, o)) = carrier.and_then(|x| objectives.get(x)) {
                 frontier.push(o.requires_flags().iter().map(|f| f.as_str()).collect());
             }
             let mut pending: Vec<&str> = forced_steps
@@ -575,8 +587,8 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                     if let Some(st) = wd.step_of.get(oid) {
                         forced_steps.insert(*st);
                         for a in ancestors.get(st).into_iter().flatten() {
-                            forced_steps.insert(*a);
                             if let Some(x) = wd.at_step.get(a) {
+                                forced_steps.insert(*a);
                                 pending.push(x);
                             }
                         }
@@ -586,6 +598,7 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                 for f in flags {
                     if let Some(Some(x)) = setters.get(f)
                         && x != &s.id
+                        && Some(x.as_str()) != carrier
                         && let Some((k, _)) = objectives.get_key_value(x.as_str())
                     {
                         pending.push(k);
@@ -601,6 +614,18 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                         .take(step + 1)
                         .any(|set| set.contains(oid))
             };
+            // The act as a message places it: an objective is itself, a
+            // trigger is named with the objective it belongs to.
+            let (belongs, after_of) = match (s.what, carrier) {
+                ("trigger", Some(c)) => (
+                    format!("`{c}`, the objective `{}` belongs to", s.id),
+                    format!(
+                        "`{c}` (the objective the trigger `serves`, else the one that needs \
+                         its flag, else the next on the path)"
+                    ),
+                ),
+                _ => (format!("`{}`", s.id), format!("`{}`", s.id)),
+            };
             for (ci, clue) in s.clues.iter().enumerate() {
                 b.judged += 1;
                 let verdict: Result<String, String> = match clue {
@@ -611,20 +636,19 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                                 "`{x}` is over before `{}` in every play order",
                                 s.id
                             ))
-                        } else if wd.step_of.get(x).is_some_and(|xs| *xs < step) {
+                        } else if wd.step_of.get(x).is_some_and(|xs| *xs < reach) {
                             Err(format!(
-                                "`{x}` comes before `{}` on this walk, but nothing forces that \
-                                 order: a run may reach `{}` with `{x}` not done and its record \
-                                 unread. Make `{x}` something the story cannot go on without — \
-                                 name it in the `after` of `{}` (or of the objective it serves), \
-                                 or have its completion alone set a flag the step requires",
-                                s.id, s.id, s.id
+                                "`{x}` comes before {belongs} on this walk, but nothing forces \
+                                 that order: a run may reach `{}` with `{x}` not done and its \
+                                 record unread. Make `{x}` something the story cannot go on \
+                                 without — name it in the `after` of {after_of}, or have its \
+                                 completion alone set a flag the step requires",
+                                s.id
                             ))
                         } else if wd.step_of.contains_key(x) {
                             Err(format!(
-                                "`{x}` is performed after `{}` on this walk, so its record is \
-                                 not yet written when the party reaches the step",
-                                s.id
+                                "`{x}` is performed after {belongs} on this walk, so its record \
+                                 is not yet written when the story reaches the step"
                             ))
                         } else {
                             Err(format!(
@@ -641,6 +665,11 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                         let x = objective.as_str();
                         if x == s.id {
                             Ok("it is the step's own hint, on its open page".to_string())
+                        } else if serves == Some(x) {
+                            Ok(format!(
+                                "the press serves `{x}` and is open only while it is pending, \
+                                 with its page open"
+                            ))
                         } else if forced.contains(x) {
                             Ok(format!(
                                 "`{x}` is over before `{}` in every play order",

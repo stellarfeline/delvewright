@@ -80,7 +80,7 @@ fn with_side_quest(dir: &std::path::Path, objectives: Value) {
         q["content"]["quests"].as_array_mut().unwrap().push(json!({
             "id": "quest/side", "trigger": { "type": "campaign-start" },
             "happening": happening("the party pokes about"),
-            "objectives": objectives
+            "objectives": objectives, "on_complete": []
         }));
     });
 }
