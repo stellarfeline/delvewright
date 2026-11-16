@@ -237,8 +237,8 @@
         "id": "actor/destrier",
         "tier": "elite",
         "variant": {
-          "variant": "black",
-          "markings": "white_dots"
+          "markings": "white_dots",
+          "variant": "black"
         }
       },
       {
@@ -6346,8 +6346,8 @@
         "id": "vehicle/yard-mare",
         "name": "Bramble",
         "variant": {
-          "variant": "chestnut",
-          "markings": "white"
+          "markings": "white",
+          "variant": "chestnut"
         }
       },
       {

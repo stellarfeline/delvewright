@@ -64,8 +64,8 @@
         },
         "role": "flavor",
         "variant": {
-          "variant": "minecraft:savanna",
-          "profession": "minecraft:cartographer"
+          "profession": "minecraft:cartographer",
+          "variant": "minecraft:savanna"
         }
       },
       {
@@ -129,8 +129,8 @@
         },
         "role": "flavor",
         "variant": {
-          "variant": "minecraft:tabby",
-          "collar": "blue"
+          "collar": "blue",
+          "variant": "minecraft:tabby"
         }
       }
     ]
