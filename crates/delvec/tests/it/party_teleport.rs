@@ -486,6 +486,7 @@ fn first_leg(tag: &str, mark: serde_json::Value) -> PathBuf {
 
 /// What the path made of the first-leg fixture: the per-step transports,
 /// the crossings, and the party carry's mark.
+#[derive(Debug)]
 struct Carried {
     transport: Vec<Option<[i32; 3]>>,
     crossings: usize,
