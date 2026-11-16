@@ -893,10 +893,7 @@ fn a_use_and_a_strike_on_two_blocks_on_one_cell_are_refused() {
     let BuildFailure::Diagnostic { code, message } = err else {
         panic!("expected a coded build diagnostic, got {err:?}");
     };
-    assert!(
-        code == DW_AFFORDANCE_CONTEST || code == "DW0896",
-        "{code}: {message}"
-    );
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
 }
 
 /// **Red, kept.** Two right-clicks on one pumpkin would both hear one click:

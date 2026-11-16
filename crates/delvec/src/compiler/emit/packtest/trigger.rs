@@ -713,12 +713,12 @@ pub(super) fn emit_answer_heard_packtests(plan: &Plan, out: &mut BuildOutput) {
 ///
 /// The template rebuilds the box from the press that summons it, then asserts
 /// it is ONE entity wearing every rider's tag — without that, the rest would
-/// pass vacuously on two boxes. Then, for every rider polled on the tick (a
-/// party `use` or `strike`), it writes the record vanilla writes for that
-/// rider's click (`attack` for a left-click, `interaction` for a right-click)
-/// on the one box, runs every rider's own poll clause and then every clear —
-/// the clauses `tick` carries, never the whole `tick` — and asserts that
-/// rider fired and every rider of the other click did not. A rider dispatched
+/// pass vacuously on two boxes. Then, for each click a rider answers, it
+/// writes the record vanilla writes for that click (`attack` for a
+/// left-click, `interaction` for a right-click) on the one box, runs every
+/// polled rider's own poll clause and then every clear — the clauses `tick`
+/// carries, never the whole `tick` — and asserts every polled rider of that
+/// click fired and every polled rider of the other click did not. A rider dispatched
 /// by its advancement (a `presser`) is reached by the criterion keyed on its
 /// tag, which the count proves the one box wears; its own dispatch is driven
 /// by its `env_trigger_` template.
@@ -778,24 +778,31 @@ pub(super) fn emit_shared_box_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.push(format!("assert score #sbx_{key} dw.sys matches 1"));
         }
         let the_box = format!("@e[type=minecraft:interaction,tag={},limit=1]", holder.tag);
-        for (t, polled) in &riders {
-            if !polled {
+        // One pass per click the box answers: the record that click writes,
+        // every polled rider of it fires, and no polled rider of the other
+        // click does — a left-click on the box never reaches a `use`, nor a
+        // right-click a `strike`.
+        for rec in ["attack", "interaction"] {
+            if !riders.iter().any(|(t, _)| trigger_record(t) == rec) {
                 continue;
             }
-            let rec = trigger_record(t);
             for (r, _) in &riders {
                 b.push(format!(
                     "scoreboard players set #trig_{} dw.sys 0",
                     plan::safe_local(r.id.as_str())
                 ));
             }
-            b.extend(packtest_gate_drive(plan, t.gate(), true));
+            for (r, polled) in &riders {
+                if *polled && trigger_record(r) == rec {
+                    b.extend(packtest_gate_drive(plan, r.gate(), true));
+                }
+            }
             b.push(format!(
                 "data modify entity {the_box} {rec} set value {{player:[I;0,0,0,1],timestamp:1L}}"
             ));
             let mut clears: Vec<String> = Vec::new();
-            for (r, r_polled) in &riders {
-                if !r_polled {
+            for (r, polled) in &riders {
+                if !polled {
                     continue;
                 }
                 let (poll, clear) = click_trigger_poll(plan, r);
@@ -805,17 +812,20 @@ pub(super) fn emit_shared_box_packtests(plan: &Plan, out: &mut BuildOutput) {
                 }
             }
             b.extend(clears);
+            // A record no polled rider reads is cleared here, so the next
+            // pass starts from a box that holds no click.
             b.push(format!(
-                "assert score #trig_{} dw.sys matches 1",
-                plan::safe_local(t.id.as_str())
+                "execute as {the_box} run data remove entity @s {rec}"
             ));
-            for (r, r_polled) in &riders {
-                if *r_polled && trigger_record(r) != rec {
-                    b.push(format!(
-                        "assert score #trig_{} dw.sys matches 0",
-                        plan::safe_local(r.id.as_str())
-                    ));
+            for (r, polled) in &riders {
+                if !polled {
+                    continue;
                 }
+                let want = usize::from(trigger_record(r) == rec);
+                b.push(format!(
+                    "assert score #trig_{} dw.sys matches {want}",
+                    plan::safe_local(r.id.as_str())
+                ));
             }
         }
         out.insert(
