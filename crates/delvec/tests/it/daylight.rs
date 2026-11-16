@@ -208,6 +208,63 @@ fn the_prescription_names_a_head_piece_only_for_a_body_that_shows_one() {
     );
 }
 
+/// **A mount burns by its own species** (spec-0135 §13). The rider is helmeted,
+/// so the rider is answered; the zombie horse under it is not, and vanilla burns
+/// it to death in fourteen seconds at daytime 1000 under open sky and leaves the
+/// rider on foot (`validation/festival-probe.mjs` T17). The mount is judged with
+/// the rider's cells, beats and reach, and the prescription is read from the
+/// mount's body: it draws no head slot, so no head piece is offered.
+#[test]
+fn a_helmeted_rider_on_a_burning_mount_is_dw0496() {
+    let tmp = TempCampaign::new("mounted");
+    campaign_with(tmp.path(), true, |_, quests| {
+        set_mobs(
+            quests,
+            serde_json::json!([{
+                "entity": "minecraft:zombie",
+                "count": 2,
+                "equipment": { "head": "minecraft:iron_helmet", "main_hand": "minecraft:iron_spear" },
+                "mount": { "entity": "minecraft:zombie_horse" }
+            }]),
+        );
+    });
+    let err = build(tmp.path()).expect_err("the zombie horse under the helmeted rider burns");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    let message = message_of(&err);
+    assert!(
+        message.contains("summons its `minecraft:zombie` stack on `minecraft:zombie_horse`"),
+        "names the mount and the rider it carries: {message}"
+    );
+    assert!(
+        message.contains("choose a `mount.entity` outside `#minecraft:burn_in_daylight`"),
+        "prescribes a mount that does not burn: {message}"
+    );
+    assert!(
+        !message.contains("Give this mount `mount.equipment.head`")
+            && !message.contains("Give this stack `equipment.head`"),
+        "offers no head piece to a body that shows none: {message}"
+    );
+}
+
+/// The prescribed mount: a skeleton horse is outside the tag, and the helmeted
+/// rider on it fights in daylight.
+#[test]
+fn a_mount_outside_the_tag_clears_dw0496() {
+    let tmp = TempCampaign::new("mounted-skeleton");
+    campaign_with(tmp.path(), true, |_, quests| {
+        set_mobs(
+            quests,
+            serde_json::json!([{
+                "entity": "minecraft:zombie",
+                "count": 2,
+                "equipment": { "head": "minecraft:iron_helmet" },
+                "mount": { "entity": "minecraft:skeleton_horse" }
+            }]),
+        );
+    });
+    build(tmp.path()).expect("a skeleton horse does not burn");
+}
+
 // --- green: the two sanctioned remedies -------------------------------------
 
 /// The owner-sanctioned fix, and the one `hollow-vigil` shipped: a helmet.
