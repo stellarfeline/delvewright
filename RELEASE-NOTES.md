@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.81.0
+## delvewright-dsl 0.86.0
 
 ### Highlights
 
