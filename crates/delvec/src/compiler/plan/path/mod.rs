@@ -2064,7 +2064,9 @@ pub(super) fn build_critical_path(
             transport.insert(prev_id.to_string(), *pos);
             transport_by_step[prev_idx] = Some(*pos);
         }
-        let here = party_at[*idx].as_ref().map_or(area.as_str(), |(a, _)| a.as_str());
+        let here = party_at[*idx]
+            .as_ref()
+            .map_or(area.as_str(), |(a, _)| a.as_str());
         from = Some((here, Some((id.as_str(), *idx))));
     }
     // Every other party carry a step performs: its landing is the step's

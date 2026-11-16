@@ -172,13 +172,12 @@ fn try_build(dir: &Path, c: &Campaign) -> Result<BuildOutput, (String, String)> 
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
     );
-    assert!(diags.is_empty(), "the fixture must validate clean: {diags:#?}");
-    let plan = Plan::build(c, &prefabs).map_err(|e| {
-        (
-            e.failure.code.id().to_string(),
-            e.failure.message.clone(),
-        )
-    })?;
+    assert!(
+        diags.is_empty(),
+        "the fixture must validate clean: {diags:#?}"
+    );
+    let plan = Plan::build(c, &prefabs)
+        .map_err(|e| (e.failure.code.id().to_string(), e.failure.message.clone()))?;
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
@@ -209,11 +208,8 @@ fn build(who: &str, quests: &str) -> BuildOutput {
 }
 
 fn text(out: &BuildOutput, path: &str) -> String {
-    String::from_utf8_lossy(
-        out.get(path)
-            .unwrap_or_else(|| panic!("{path} is emitted")),
-    )
-    .into_owned()
+    String::from_utf8_lossy(out.get(path).unwrap_or_else(|| panic!("{path} is emitted")))
+        .into_owned()
 }
 
 /// The one party teleport's generated function: `(name, body)`.
@@ -240,11 +236,7 @@ fn seats(body: &str) -> Vec<[f64; 3]> {
     body.lines()
         .filter(|l| l.starts_with("tp @a[tag=!dw_cutscene,scores={dw.tpp="))
         .map(|l| {
-            let v: Vec<f64> = l
-                .rsplit(' ')
-                .take(3)
-                .map(|t| t.parse().unwrap())
-                .collect();
+            let v: Vec<f64> = l.rsplit(' ').take(3).map(|t| t.parse().unwrap()).collect();
             [v[2], v[1], v[0]]
         })
         .collect()
@@ -292,8 +284,13 @@ fn every_member_is_numbered_and_put_on_a_seat_of_their_own() {
         Some("scoreboard players reset @a dw.tpp"),
         "{body}"
     );
-    assert!(text(&out, &format!("datapack/data/{NS}/function/setup.mcfunction"))
-        .contains("scoreboard objectives add dw.tpp dummy"));
+    assert!(
+        text(
+            &out,
+            &format!("datapack/data/{NS}/function/setup.mcfunction")
+        )
+        .contains("scoreboard objectives add dw.tpp dummy")
+    );
     // The press calls it.
     let all: String = out
         .iter()
@@ -321,14 +318,20 @@ fn the_packtest_carries_two_members_far_apart_onto_two_seats_alone() {
         &format!("packtest-datapack/data/{NS}/test/party_{name}.mcfunction"),
     );
     assert!(
-        t.lines().nth(1).unwrap().starts_with(&format!("# @environment {NS}:solo/party_{name}")),
+        t.lines()
+            .nth(1)
+            .unwrap()
+            .starts_with(&format!("# @environment {NS}:solo/party_{name}")),
         "the move takes every player on the server, so the template runs alone:\n{t}"
     );
     assert!(out.contains_key(&format!(
         "packtest-datapack/data/{NS}/test_environment/solo/party_{name}.json"
     )));
     assert!(t.contains("dummy dwptp0p1 spawn"), "{t}");
-    assert!(t.contains("assert score #ptp_0_near dw.sys matches 0"), "{t}");
+    assert!(
+        t.contains("assert score #ptp_0_near dw.sys matches 0"),
+        "{t}"
+    );
     assert!(t.contains(&format!("function {NS}:{name}")), "{t}");
     // One player on each of the first two seats, read at the seats the
     // function writes.
@@ -379,7 +382,11 @@ fn a_member_watching_a_cutscene_is_seated_where_the_camera_returns_them() {
     );
     assert!(keep.contains(&format!("function {NS}:tpp_keep with storage dw:cs tpp")));
     assert_eq!(
-        text(&out, &format!("datapack/data/{NS}/function/tpp_keep.mcfunction")).trim(),
+        text(
+            &out,
+            &format!("datapack/data/{NS}/function/tpp_keep.mcfunction")
+        )
+        .trim(),
         "$data modify storage dw:cs places.p$(id).pos set from storage dw:cs tpp.pos"
     );
 }
@@ -417,7 +424,10 @@ fn a_mark_with_no_room_for_every_member_is_dw1141() {
     let dir = fixture("dw1141", &quests(into_floor, NARRATE, ""));
     let (code, message) = try_build(&dir, &campaign(&dir)).expect_err("refused");
     assert_eq!(code, "DW1141", "{message}");
-    assert!(message.contains("trigger/door-latch") || message.contains("/triggers/0"), "{message}");
+    assert!(
+        message.contains("trigger/door-latch") || message.contains("/triggers/0"),
+        "{message}"
+    );
     assert!(message.contains("anchor/exit"), "{message}");
     // The same fixture with the mark on the floor builds: one variable.
     let dir = fixture("dw1141-green", &quests(AT_EXIT, NARRATE, ""));
@@ -431,7 +441,10 @@ fn a_box_teleport_emits_no_party_machinery() {
         r#""from": { "anchor": "anchor/keeper-stand", "extent": [1, 2, 1] }"#,
     );
     let out = build("box", &q);
-    let setup = text(&out, &format!("datapack/data/{NS}/function/setup.mcfunction"));
+    let setup = text(
+        &out,
+        &format!("datapack/data/{NS}/function/setup.mcfunction"),
+    );
     assert!(!setup.contains("dw.tpp"), "{setup}");
     assert!(
         !out.keys().any(|p| p.contains("/test/party_teleport_")),
@@ -444,10 +457,7 @@ fn a_box_teleport_emits_no_party_machinery() {
 // ---------------------------------------------------------------------------
 
 fn first_leg(tag: &str, mark: serde_json::Value) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "dw-party-carry-{tag}-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("dw-party-carry-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::compiler_fixtures_dir().join("first-leg"), &dir);
     // The vault binds a piece that can be arrived in and whose anchor names no
@@ -474,7 +484,9 @@ fn first_leg(tag: &str, mark: serde_json::Value) -> PathBuf {
     dir
 }
 
-fn plan_first_leg(dir: &Path) -> Result<(Vec<Option<[i32; 3]>>, usize, Option<[i32; 3]>), (String, String)> {
+fn plan_first_leg(
+    dir: &Path,
+) -> Result<(Vec<Option<[i32; 3]>>, usize, Option<[i32; 3]>), (String, String)> {
     let loaded = load_campaign_dir(dir).unwrap();
     let c = parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("first-leg")).unwrap();

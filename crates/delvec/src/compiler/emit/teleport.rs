@@ -102,7 +102,11 @@ fn seat_term(k: usize, n: usize) -> String {
 /// cutscene is not moved under the camera: the place the cutscene puts them
 /// back on is rewritten to their seat (`<fn>_keep`), so the camera's return
 /// lands them there.
-pub(super) fn party_teleport_lines(plan: &Plan, eff: &QuestEffect, name: &str) -> Option<Vec<String>> {
+pub(super) fn party_teleport_lines(
+    plan: &Plan,
+    eff: &QuestEffect,
+    name: &str,
+) -> Option<Vec<String>> {
     eff.party_teleport()?;
     let ns = &plan.namespace;
     let to = teleport_cell(plan, eff)?;
@@ -162,7 +166,9 @@ fn party_keep_lines(plan: &Plan, eff: &QuestEffect) -> Option<Vec<String>> {
     out.push(format!(
         "execute store result storage dw:cs tpp.id int 1 run scoreboard players get @s {CS_ID}"
     ));
-    out.push(format!("function {ns}:{TPP_KEEP_FN} with storage dw:cs tpp"));
+    out.push(format!(
+        "function {ns}:{TPP_KEEP_FN} with storage dw:cs tpp"
+    ));
     Some(out)
 }
 
@@ -214,8 +220,10 @@ pub(super) fn party_teleport_helper_fns(plan: &Plan) -> Vec<(String, String)> {
     if !out.is_empty() {
         out.push((
             TPP_KEEP_FN.to_string(),
-            lines(&["$data modify storage dw:cs places.p$(id).pos set from storage dw:cs tpp.pos"
-                .to_string()]),
+            lines(&[
+                "$data modify storage dw:cs places.p$(id).pos set from storage dw:cs tpp.pos"
+                    .to_string(),
+            ]),
         ));
     }
     out

@@ -715,13 +715,15 @@ box, are still two bodies and still refused (`DW0878`).
 
 **Touched, the hearth calls the party home.** `trigger/warm-at-the-hearth`
 also carries a `teleport` whose subject is the party (`"from": "party"`):
-every member, wherever they stand, is put on `anchor/hearth`, each on a cell
-of their own — the mark's, then its nearest neighbours a body walks to — so
+every member, wherever they stand, is put on the hearth floor two cells east of
+the fire (`anchor/hearth` + `[2, 0, 0]`: the fire's own cell hurts, and a mark
+there is `DW1141`), each on a cell of their own — the mark's, then its nearest neighbours a body walks to — so
 the build fixes four seats there (`validation/teleport-gate.json`,
 `party_seats`; a mark with fewer is `DW1141`). The generated
 `party_teleport_<key>` PackTest stands two members 48 blocks either side of
 the hearth and finds one on each of the first two seats after the press. No
-path performs the touch, so no leg leans on it.
+path performs the touch, so no leg leans on it. The probe `a-party-called-into-the-fire`
+aims the call at the fire's own cell and is refused (`DW1141`).
 
 ## The heartbeat, and the drip
 

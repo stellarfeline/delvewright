@@ -1578,7 +1578,10 @@ mod teleport_subject_tests {
     #[test]
     fn the_party_keyword_is_a_party_teleport() {
         let e = parse(r#""party""#).unwrap();
-        assert_eq!(e.party_teleport().map(|m| m.anchor.as_str()), Some("anchor/exit"));
+        assert_eq!(
+            e.party_teleport().map(|m| m.anchor.as_str()),
+            Some("anchor/exit")
+        );
         assert!(e.teleport().is_none());
         assert!(e.teleport_to().is_some());
         // It names one anchor: the mark's.

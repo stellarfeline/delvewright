@@ -855,13 +855,12 @@ fn emit_all(
         message: f.message,
     })?;
     // A party carry's seats, one per member, over the same world (`DW1141`).
-    let party_seats =
-        crate::compiler::nav::fix_party_seats(plan, &world).map_err(|f| {
-            BuildFailure::Diagnostic {
-                code: f.code,
-                message: f.message,
-            }
-        })?;
+    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world).map_err(|f| {
+        BuildFailure::Diagnostic {
+            code: f.code,
+            message: f.message,
+        }
+    })?;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //

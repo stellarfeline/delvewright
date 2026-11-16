@@ -6303,7 +6303,12 @@
           {
             "from": "party",
             "to": {
-              "anchor": "anchor/hearth"
+              "anchor": "anchor/hearth",
+              "offset": [
+                2,
+                0,
+                0
+              ]
             },
             "type": "teleport"
           }
@@ -6706,6 +6711,6 @@
       }
     ]
   },
-  "dsl_version": "0.86.0",
+  "dsl_version": "0.88.0",
   "stage": "quests"
 }

@@ -1,0 +1,12 @@
+{
+  "code": "DW1141",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/triggers/24/effects/1/to/offset"
+    }
+  ],
+  "units": [],
+  "why": "The hearth stone's call to the party aimed at `anchor/hearth` itself, the cell the lit campfire stands on, instead of the floor two cells east of it. A party teleport puts its first member on the mark's own cell, and a campfire's cell hurts a body that stands in it, so there is no seat for every member: the build refuses it, naming the mark and its cell, and asks for open floor with room for four players side by side. It declares no unit: the party subject is a surface the primary binds."
+}
