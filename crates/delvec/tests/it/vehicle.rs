@@ -662,10 +662,11 @@ fn each_kind_is_seated_in_its_medium() {
         );
     }
     // A boat is summoned afloat in its water cell, where the pinned server's
-    // save holds it at rest (the record §5: 0.52326431274413 over the cell's
-    // floor), and its re-seat measures the mark from there: the body the
-    // summon places is the body the save holds (`DW1040`). Summoned on the
-    // water's top face, it settled a block lower than the ledger wrote it.
+    // save holds it at rest (the record §5: a fixed depth under the cell's
+    // water level, the floor plus a source's height summed in `float`), and
+    // its re-seat measures the mark from there: the body the summon places is
+    // the body the save holds (`DW1040`). Summoned on the water's top face, it
+    // settled a block lower than the ledger wrote it.
     let gull = function(&out, "vehicle_seat_gull");
     let summon = gull
         .lines()
@@ -676,8 +677,10 @@ fn each_kind_is_seated_in_its_medium() {
         .nth(3)
         .and_then(|t| t.parse().ok())
         .expect(summon);
+    #[allow(clippy::cast_possible_truncation)]
+    let floor = y.floor() as i32;
     assert!(
-        (y - y.floor() - 0.523_264_312_744_13).abs() < 1e-9,
+        (y - delvec::compiler::nav::vehicle::boat_rest_y(floor)).abs() < 1e-9,
         "the boat is summoned at y {y}, not afloat in its water cell: {summon}"
     );
     let reseat = function(&out, "vehicle_reseat_gull");

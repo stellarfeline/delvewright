@@ -2,7 +2,7 @@
 //! boarding one does.
 
 use super::*;
-use crate::compiler::nav::vehicle::{BOAT_AFLOAT, VehiclePlan};
+use crate::compiler::nav::vehicle::{VehiclePlan, boat_rest_y};
 use delvewright_dsl::{EquipSlot, VehicleKind};
 
 /// Ticks between two re-seat checks: a replace-mode `schedule`, so a vehicle
@@ -20,11 +20,11 @@ const AT_MARK: &str = "1.5";
 pub(super) const BOARD: &str = "vehicle_board";
 
 /// Where a vehicle's body is summoned: the mark's cell centre, a boat afloat
-/// in its water cell where the server keeps it ([`BOAT_AFLOAT`]).
+/// in its water cell where the server keeps it ([`boat_rest_y`]).
 fn summon_point(v: &VehiclePlan) -> [f64; 3] {
     let p = crate::compiler::nav::cell_center(v.seat);
     if v.kind == VehicleKind::Boat {
-        [p[0], f64::from(v.seat[1]) + BOAT_AFLOAT, p[2]]
+        [p[0], boat_rest_y(v.seat[1]), p[2]]
     } else {
         p
     }
