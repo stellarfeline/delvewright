@@ -839,9 +839,13 @@ delvewright_dsl::dw_code! {
 /// arrival that is not exact (it comes during a walk, from `from` on) by the
 /// walk of step `d`.
 pub(crate) fn arrived_by(arrivals: &[Arrival], d: usize) -> bool {
-    arrivals
-        .iter()
-        .any(|a| if a.exact { a.from <= d + 1 } else { a.from <= d })
+    arrivals.iter().any(|a| {
+        if a.exact {
+            a.from <= d + 1
+        } else {
+            a.from <= d
+        }
+    })
 }
 
 /// What [`check_despawns_follow_arrivals`] judged on one path.

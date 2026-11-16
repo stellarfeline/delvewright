@@ -674,7 +674,11 @@ fn a_despawn_the_path_fires_before_its_actor_can_stand_is_dw1140() {
     let before = shaped("obj/slay");
     let err = try_build(&before).err().expect("refused");
     assert!(err.contains("DW1140"), "{err}");
-    for needle in [SLEEPER, "(`obj/slay`) of the path", "(`obj/key`), after the despawn"] {
+    for needle in [
+        SLEEPER,
+        "(`obj/slay`) of the path",
+        "(`obj/key`), after the despawn",
+    ] {
         assert!(err.contains(needle), "{needle}: {err}");
     }
 }
