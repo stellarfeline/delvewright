@@ -7,6 +7,7 @@
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
 //! (`tests/it/module_list.rs`) is what keeps it whole.
 //!
+//! - [`absent`]: the party is every member, present or not — the census of lasting writes onto the present and of picks of one player (`DW1126`/`DW1127`).
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
@@ -136,6 +137,7 @@
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
 
+pub mod absent;
 pub mod acts;
 pub mod affordance;
 pub mod analyze;

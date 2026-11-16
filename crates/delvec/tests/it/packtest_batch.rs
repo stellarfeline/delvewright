@@ -265,6 +265,11 @@ fn is_runtime_holder(h: &str) -> bool {
         // the census answers above, and it surfaced the same way: with one
         // watcher per suite it was unshared by accident, and a talkable NPC
         // watching by default made two.
+        // The active-checkpoint marker. `setup` and every `set-checkpoint` own
+        // it; `party_class_arrives` and the checkpoint templates arm one
+        // checkpoint, drive, and write the marker back to `setup`'s −1 inside
+        // one atomic function.
+        || h == "#cp"
         || h == "#cs_live"
         // A cutscene's own re-entry latch. `cs_<bare>` sets it and `cs_end_<bare>`
         // clears it; a template that drives the real bracket (`cutscene_music_<n>`,
