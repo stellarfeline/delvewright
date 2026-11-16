@@ -600,6 +600,26 @@ not third-party reconstructions.
   `JAVA_HOME=<a JDK 21> python3 tools/maintenance/extract-entity-steering.py`
   (`--check` to compare without writing).
 
+- **`entity-variants-1.21.11.json`** (in `crates/dsl/data/`) — the **variant
+  properties** each entity type carries, the values each takes and the NBT a
+  `/summon` writes it under: 23 of the 157 types, 31 properties, 23 value
+  domains. Read out of the pinned server jar (`versions.toml` `[minecraft]`
+  `server_jar_sha256`
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`) with the
+  official server mappings: the 25 `<entity>/<property>` data components (the
+  types reading each one through `applyImplicitComponent` cross-checked against
+  the types of the class that saves it) and three saved appearance fields
+  (horse markings, villager profession, panda gene); each NBT key a string
+  constant of its class's `addAdditionalSaveData`; values from the jar's
+  registry data files, the built-in villager registries and each enum's id by
+  reflection. Measured on the pinned server by
+  `tools/maintenance/probe-entity-variants.py` (331 reads, 0 disagreeing). It
+  lives in the DSL crate because a body's variant is validated where the
+  document is (`DW1131`, `DW1132`) and written by one rule the emitters share.
+  **Reproduce it**: `JAVA_HOME=<a JDK 21> python3
+  tools/maintenance/extract-entity-variants.py` (`--check` to compare without
+  writing).
+
 - **`timeline-day-1.21.11.json`** and **`timeline-moon-1.21.11.json`** (in
   `crates/dsl/data/`) — **not** from the misode summary: read straight out of the
   pinned server jar, `versions.toml` `[minecraft]` `server_jar_sha256`
