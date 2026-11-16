@@ -704,7 +704,7 @@ fn two_losses_on_one_night_are_a_world() {
     let flow = delvec::compiler::flow::Flow::new(&c);
     let both = branch::realize(&c)
         .into_iter()
-        .find(|r| r.branch.id == "branch/hold+branch/bell-lost+branch/lamp-lost")
+        .find(|r| r.branch.id == "branch/bell-lost+branch/hold+branch/lamp-lost")
         .unwrap();
     let w = &flow.story().worlds[both.world.unwrap()];
     assert_eq!(w.origin.token(), "branch", "{w:?}");
@@ -732,8 +732,8 @@ fn two_losses_each_forbidding_the_other_still_refuse() {
     assert_eq!(
         refused,
         vec![
-            "branch/bolt+branch/bell-lost+branch/lamp-lost".to_string(),
-            "branch/hold+branch/bell-lost+branch/lamp-lost".to_string(),
+            "branch/bell-lost+branch/bolt+branch/lamp-lost".to_string(),
+            "branch/bell-lost+branch/hold+branch/lamp-lost".to_string(),
         ]
     );
     let d = find(branch::check_branches(&c), "DW0482");
