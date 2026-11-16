@@ -257,7 +257,7 @@ impl BranchSearch {
             .max()
             .unwrap_or(0);
         format!(
-            "branch search binding: {n} declared branch(es) no first world realized, each searched \
+            "branch search binding: {n} declared branch(es) no chosen world realized, each searched \
              over every participation of the elective acts its flags turn on (at most {widest} \
              act(s), so at most {cost} participation(s) per selection) on the all and the none \
              world; {runs} participation(s) run; {found} realized, {left} realized by none \
@@ -266,6 +266,18 @@ impl BranchSearch {
             left = n - found,
         )
     }
+}
+
+/// One dialogue selection's runs and chosen worlds, held until the branch
+/// search has run over every selection.
+struct Pending {
+    sel: usize,
+    local: Vec<(BTreeSet<String>, WorldOrigin, StoryRun)>,
+    chosen: BTreeSet<usize>,
+    i_all: usize,
+    i_none: usize,
+    expiry_runs: Vec<usize>,
+    scene_targets: Vec<Target>,
 }
 
 /// One target of one scene under one selection (§4.2).
@@ -1657,8 +1669,6 @@ impl<'a> Flow<'a> {
                 (t.into_keys().collect(), lean)
             })
             .collect();
-        let mut branch_found: Vec<bool> = vec![false; branches.len()];
-        let mut branch_search = BranchSearch::default();
         // Every journal line, with the acts its way turns on (spec-0137 §8).
         let records = crate::compiler::recording::Records::plain(self.c);
         let lines: Vec<Vec<String>> = records
@@ -1671,6 +1681,7 @@ impl<'a> Flow<'a> {
         let mut runs: Vec<StoryRun> = Vec::new();
         let mut targets: Vec<Target> = Vec::new();
         let mut at_bound = 0usize;
+        let mut pending: Vec<Pending> = Vec::new();
         for sel in 0..self.worlds.len() {
             // Candidate participations: subsets of the relevant electives, by
             // size then act id, bounded.
@@ -1862,54 +1873,6 @@ impl<'a> Flow<'a> {
                     chosen.insert(ri);
                 }
             }
-            // Per declared branch no world kept so far realizes, in this
-            // selection or an earlier one: every participation of the acts
-            // its flags turn on, the rest as the all world and then as the
-            // none world leave them, by how far each departs from the acts'
-            // lean, until one realizes it. A branch no participation
-            // realizes is unreachable, and `DW0482` says so with what was run.
-            for (bi, b) in branches.iter().enumerate() {
-                let realizes = |ri: usize, local: &[(BTreeSet<String>, WorldOrigin, StoryRun)]| {
-                    let run = &local[ri].2;
-                    run.incoherent.is_none()
-                        && b.set.iter().all(|f| run.flags.contains(f))
-                        && !b.unset.iter().any(|f| run.flags.contains(f))
-                };
-                if branch_found[bi] || chosen.iter().any(|&ri| realizes(ri, &local)) {
-                    branch_found[bi] = true;
-                    continue;
-                }
-                let (ids, lean) = &turning[bi];
-                let rec = branch_search
-                    .branches
-                    .entry(b.id.clone())
-                    .or_insert_with(|| SearchedBranch {
-                        acts: ids.clone(),
-                        ..SearchedBranch::default()
-                    });
-                rec.selections += 1;
-                let none = BTreeSet::new();
-                for base in [&all, &none] {
-                    let rest: Vec<&String> = base.iter().filter(|a| !ids.contains(a)).collect();
-                    let hit = first_subset(ids.len(), &mut |flips: &[usize]| {
-                        let mut p: BTreeSet<String> = rest.iter().map(|a| (*a).clone()).collect();
-                        for (i, a) in ids.iter().enumerate() {
-                            if lean[i] != flips.contains(&i) {
-                                p.insert(a.clone());
-                            }
-                        }
-                        let ri = run_of(p, WorldOrigin::Branch, &mut local);
-                        rec.runs += 1;
-                        realizes(ri, &local).then_some(ri)
-                    });
-                    if let Some(ri) = hit {
-                        chosen.insert(ri);
-                        rec.found = true;
-                        branch_found[bi] = true;
-                        break;
-                    }
-                }
-            }
             // Per journal line no world yet shows: the first coherent run of
             // this selection, over the subsets of the acts its way turns on by
             // size then act id, that fires it and settles its objective — a
@@ -1950,6 +1913,95 @@ impl<'a> Flow<'a> {
                     }
                 }
             }
+            pending.push(Pending {
+                sel,
+                local,
+                chosen,
+                i_all,
+                i_none,
+                expiry_runs,
+                scene_targets,
+            });
+        }
+        // The branch search (spec-0025), once every selection's worlds are
+        // chosen: per declared branch no chosen world of any selection
+        // realizes, every participation of the acts its flags turn on, the
+        // rest as the all world and then as the none world leave them, by how
+        // far each departs from the acts' lean, selection by selection, until
+        // one realizes it. A branch no participation realizes is unreachable,
+        // and `DW0482` says so with what was run.
+        let realizes = |b: &crate::compiler::branch::EnumeratedBranch, run: &StoryRun| {
+            run.incoherent.is_none()
+                && b.set.iter().all(|f| run.flags.contains(f))
+                && !b.unset.iter().any(|f| run.flags.contains(f))
+        };
+        let mut branch_search = BranchSearch::default();
+        for (bi, b) in branches.iter().enumerate() {
+            if pending
+                .iter()
+                .any(|pd| pd.chosen.iter().any(|&ri| realizes(b, &pd.local[ri].2)))
+            {
+                continue;
+            }
+            let (ids, lean) = &turning[bi];
+            let rec = branch_search
+                .branches
+                .entry(b.id.clone())
+                .or_insert_with(|| SearchedBranch {
+                    acts: ids.clone(),
+                    ..SearchedBranch::default()
+                });
+            let none = BTreeSet::new();
+            'selections: for pd in pending.iter_mut() {
+                if pd.chosen.iter().any(|&ri| realizes(b, &pd.local[ri].2)) {
+                    rec.found = true;
+                    break;
+                }
+                rec.selections += 1;
+                for base in [&all, &none] {
+                    let rest: Vec<&String> = base.iter().filter(|a| !ids.contains(a)).collect();
+                    let sel = pd.sel;
+                    let local = &mut pd.local;
+                    let hit = first_subset(ids.len(), &mut |flips: &[usize]| {
+                        let mut p: BTreeSet<String> = rest.iter().map(|a| (*a).clone()).collect();
+                        for (i, a) in ids.iter().enumerate() {
+                            if lean[i] != flips.contains(&i) {
+                                p.insert(a.clone());
+                            }
+                        }
+                        rec.runs += 1;
+                        let ri = match local.iter().position(|(q, _, _)| *q == p) {
+                            Some(i) => i,
+                            None => {
+                                let run = self.run_story(&StoryWorld {
+                                    selection: sel,
+                                    performs: p.clone(),
+                                    origin: WorldOrigin::Branch,
+                                });
+                                local.push((p, WorldOrigin::Branch, run));
+                                local.len() - 1
+                            }
+                        };
+                        realizes(b, &local[ri].2).then_some(ri)
+                    });
+                    if let Some(ri) = hit {
+                        pd.chosen.insert(ri);
+                        rec.found = true;
+                        break 'selections;
+                    }
+                }
+            }
+        }
+        for Pending {
+            sel,
+            local,
+            chosen,
+            i_all,
+            i_none,
+            expiry_runs,
+            scene_targets,
+        } in pending
+        {
             // This selection's worlds in canonical order: all, none, then the
             // witnesses by participation size and act id.
             let mut order: Vec<usize> = vec![i_all];

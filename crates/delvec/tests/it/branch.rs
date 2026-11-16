@@ -714,7 +714,7 @@ fn two_losses_on_one_night_are_a_world() {
     let (_, bind) = branch::check_branches_bound(&c);
     let line = bind.search.line();
     assert!(
-        line.contains("2 declared branch(es) no first world realized"),
+        line.contains("2 declared branch(es) no chosen world realized"),
         "{line}"
     );
     assert!(line.contains("2 realized, 0 realized by none"), "{line}");
