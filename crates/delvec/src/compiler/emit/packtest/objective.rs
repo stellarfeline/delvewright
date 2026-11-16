@@ -1097,6 +1097,7 @@ pub(super) fn emit_verb_packtests(
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
         b.push(pin);
+        b.extend(clear_from_others("dw_t_cpre", &[o]));
         let party = plan::PARTY;
         b.push(format!(
             "scoreboard players set {party} {} 0",
@@ -1160,6 +1161,7 @@ pub(super) fn emit_verb_packtests(
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
+        b.extend(clear_from_others("dw_t_cadp", &[o]));
         b.push(format!(
             "scoreboard players set {party} {} 0",
             obj_score(id.as_str())
@@ -1233,6 +1235,7 @@ pub(super) fn emit_verb_packtests(
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
+        b.extend(clear_from_others("dw_t_cown", &[a, b_o]));
         for id in [ia, ib] {
             b.push(format!(
                 "scoreboard players set {party} {} 0",
@@ -1251,6 +1254,23 @@ pub(super) fn emit_verb_packtests(
         b.push(format!("assert score {party} {} matches 0", obj_score(ib)));
         write("collect_own_stack", b);
     }
+}
+
+/// **No other player holds what this template's collect counts** (`pin_dummy`
+/// rule 4): `clear @a[tag=!<tag>] <predicate>` for each collect, the template's
+/// own dummy excepted. The collect's per-tick held check runs `as @a`, so a
+/// stack any other player on the server carries completes the objective in this
+/// template's `tick`, and a sibling's dummy can outlive its test: in the
+/// gallery's suite `collect_preheld`'s dummy, given four marked emeralds, logs
+/// no departure, and `collect_container`, run after it in its own environment,
+/// read its collect complete on the tick that asserts the unmarked stack
+/// completes nothing.
+fn clear_from_others(tag: &str, collects: &[&Objective]) -> Vec<String> {
+    collects
+        .iter()
+        .filter_map(|o| collect_predicate(o))
+        .map(|item| format!("clear @a[tag=!{tag}] {item}"))
+        .collect()
 }
 
 /// The collect's stack with its item and name but not its holder's mark —

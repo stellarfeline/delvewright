@@ -391,6 +391,44 @@ fn a_holders_collect_is_completed_only_by_the_stack_it_placed() {
     );
 }
 
+/// The held check runs `as @a`, so a stack another player on the server carries
+/// — a sibling template's dummy that outlived its test — completes the collect
+/// in this template's `tick`. Every template that ticks a collect clears what
+/// the collect counts off every player but its own dummy before its first tick.
+#[test]
+fn a_ticked_collect_template_clears_the_counted_stack_off_every_other_player() {
+    let out = try_build(ADOPTED, Some(BARREL_EDITS.as_str())).expect("builds");
+    let mut bound = 0;
+    for (name, tag) in [
+        ("collect_container", "dw_t_cadp"),
+        ("collect_preheld", "dw_t_cpre"),
+    ] {
+        let path = format!("packtest-datapack/data/hello-world/test/{name}.mcfunction");
+        if !out.contains_key(&path) {
+            continue;
+        }
+        bound += 1;
+        let pt = text(&out, &path);
+        let lines: Vec<&str> = pt.lines().collect();
+        let clear = format!(
+            "clear @a[tag=!{tag}] minecraft:bread[custom_data~{{dw_collect:\"obj/cheese\"}}]"
+        );
+        let cleared = lines
+            .iter()
+            .position(|l| *l == clear)
+            .unwrap_or_else(|| panic!("`{name}` must clear `{clear}`:\n{pt}"));
+        let first_tick = lines
+            .iter()
+            .position(|l| l.ends_with(":tick"))
+            .unwrap_or_else(|| panic!("`{name}` ticks:\n{pt}"));
+        assert!(
+            cleared < first_tick,
+            "`{name}` clears before it ticks:\n{pt}"
+        );
+    }
+    assert_eq!(bound, 2, "both tick-driven collect templates are emitted");
+}
+
 /// A collect that adopts no holder is adjudicated on the item id alone, so
 /// any other stack of that item completes it.
 #[test]
