@@ -1964,8 +1964,8 @@ pub(super) fn build_critical_path(
         .map(|s| {
             crate::compiler::hold::completion_bundles(campaign, s)
                 .into_iter()
-                .filter_map(|b| crate::compiler::link::party_landing(anchors, b))
-                .last()
+                .rev()
+                .find_map(|b| crate::compiler::link::party_landing(anchors, b))
         })
         .collect();
     // Where the party stands as it sets off for the next objective: the area,
