@@ -492,6 +492,25 @@ impl<'a> Flow<'a> {
             .map_or(&[], |(_, e)| e)
     }
 
+    /// What ambient act `id`'s own gate reads that a step can shut — its
+    /// `forbids` flags — and the data its gate compares, with the flag the act
+    /// itself sets (a disarm), if it sets one.
+    pub fn act_gate_reads(&self, id: &str) -> (Vec<String>, Vec<String>, Option<String>) {
+        self.acts()
+            .bundles
+            .get(id)
+            .map_or_else(Default::default, |b| {
+                (
+                    b.forbids.clone(),
+                    b.state
+                        .iter()
+                        .map(|t| t.state.as_str().to_string())
+                        .collect(),
+                    b.sets_flag.clone(),
+                )
+            })
+    }
+
     /// **Whether a story world performs entry deed `act` at `st`** (spec-0108
     /// §4.1): its own gate holds there, or a debt of the path performs it
     /// (`owed`), which the debt walk proved performable there — the story

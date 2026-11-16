@@ -1628,31 +1628,37 @@ fn search_orders(
                 .unwrap_or_default()
         })
         .collect();
-    let fronted: Vec<bool> = steps
-        .iter()
-        .map(|s| {
-            pt.story
-                .as_ref()
-                .is_some_and(|ctx| ctx.fronts(&s.objective))
-        })
-        .collect();
     let beats: Vec<Vec<(HappeningVerb, String)>> = steps
         .iter()
         .zip(&due)
         .map(|(s, d)| possible_beats(c, s, d))
         .collect();
+    // A subject a clash can involve: some step can leave it in a carried
+    // state, and acting lines about it stand at two steps or more — a subject
+    // only one step acts on has no later line to clash with in any order but
+    // the ones that step's own lines already fix.
+    let mut acted_at: BTreeMap<&str, usize> = BTreeMap::new();
+    for b in &beats {
+        let at: BTreeSet<&str> = b
+            .iter()
+            .filter(|(v, _)| acts(*v))
+            .map(|(_, s)| s.as_str())
+            .collect();
+        for s in at {
+            *acted_at.entry(s).or_default() += 1;
+        }
+    }
     let carried: BTreeSet<String> = beats
         .iter()
         .flatten()
-        .filter(|(v, _)| carries(*v))
+        .filter(|(v, s)| carries(*v) && acted_at.get(s.as_str()).is_some_and(|n| *n > 1))
         .map(|(_, s)| s.clone())
         .collect();
-    let quiet: Vec<bool> = quiet_steps(c, flow, &steps, &beats, &carried)
-        .into_iter()
-        .zip(&fronted)
-        .map(|(q, f)| q && !*f)
-        .collect();
-    let read = data_gates_read(c);
+    let quiet = quiet_steps(c, flow, &steps, &beats, &carried, pt.story.as_deref());
+    let mut read = data_gates_read(c);
+    for (_, a) in pt.story.iter().flat_map(|ctx| &ctx.deeds) {
+        read.extend(flow.act_gate_reads(a).1);
+    }
     let mut search = OrderSearch {
         steps: &steps,
         quiet: &quiet,
@@ -1950,16 +1956,16 @@ fn data_gates_read(c: &Campaign) -> BTreeSet<String> {
 /// without losing an order. A step is quiet when all of these hold:
 ///
 /// - it fires the same effects whenever it is taken: no effect in its
-///   objective's bundle or its quest's `on_complete` carries a flag or numeric
-///   gate;
+///   objective's bundle, its quest's `on_complete` or the bundle of an entry
+///   deed due in front of it carries a flag or numeric gate, and none fails an
+///   objective (a failed objective's step is legal anywhere);
 /// - it changes no gate another step reads: it sets no flag (by its option,
-///   its bundle, its quest's `on_complete`) that any `forbids_flags` anywhere or
-///   any effect's `requires_flags` reads, directly or through an ambient
-///   producer, and writes no datum any effect gate compares;
+///   its bundle, its quest's `on_complete`, a choice or deed due in front of
+///   it) that any `forbids_flags` anywhere, any effect's `requires_flags` or
+///   the `forbids` of a deed of its world reads, directly or through an
+///   ambient producer, and writes no datum any effect gate or deed gate
+///   compares;
 /// - it does not end the delve;
-/// - no entry deed or choice of its story world is due in front of it (the
-///   caller's half: a deed fires where the step is taken, so taking it first
-///   moves the deed);
 /// - none of its possible lines acts on a subject some step of the path can
 ///   leave in a carried state (`carried`).
 fn quiet_steps(
@@ -1968,9 +1974,18 @@ fn quiet_steps(
     steps: &[PathStep],
     beats: &[Vec<(HappeningVerb, String)>],
     carried: &BTreeSet<String>,
+    story: Option<&crate::compiler::flow::StoryCtx>,
 ) -> Vec<bool> {
     // Flags whose value some gate reads in a way that is not "more is more".
     let mut gates: BTreeSet<String> = BTreeSet::new();
+    let mut read = data_gates_read(c);
+    // A deed's own gate: a flag it forbids shuts the step it is due in front
+    // of, and a datum it compares can open or shut it.
+    for (_, a) in story.iter().flat_map(|ctx| &ctx.deeds) {
+        let (forbids, data, _) = flow.act_gate_reads(a);
+        gates.extend(forbids);
+        read.extend(data);
+    }
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             gates.extend(o.forbids_flags().iter().map(|f| f.as_str().to_string()));
@@ -2001,7 +2016,6 @@ fn quiet_steps(
             break;
         }
     }
-    let read = data_gates_read(c);
     steps
         .iter()
         .zip(beats)
@@ -2026,12 +2040,28 @@ fn quiet_steps(
                     }
                 }
             }
+            // The choices and deeds due in front of the step travel with it.
+            let due: Vec<&str> = story
+                .map(|ctx| ctx.deeds_before(&step.objective).collect())
+                .unwrap_or_default();
+            for ch in story
+                .into_iter()
+                .flat_map(|ctx| ctx.choices_before(&step.objective))
+            {
+                sets.extend(ch.sets.iter().cloned());
+            }
+            for a in &due {
+                sets.extend(flow.act_gate_reads(a).2);
+            }
             let mut steady = true;
             let mut bundle = |e: &QuestEffect| {
                 if !e.requires_flags().is_empty()
                     || !e.forbids_flags().is_empty()
                     || !e.requires_state().is_empty()
-                    || matches!(e.verb, Verb::CampaignComplete { .. })
+                    || matches!(
+                        e.verb,
+                        Verb::CampaignComplete { .. } | Verb::FailObjective { .. }
+                    )
                     || e.writes_state()
                         .is_some_and(|(id, _)| read.contains(id.as_str()))
                 {
@@ -2048,6 +2078,9 @@ fn quiet_steps(
                 each_effect(effs, &mut bundle);
             }
             each_effect(&q.on_complete, &mut bundle);
+            for a in &due {
+                each_effect(flow.act_effects(a), &mut bundle);
+            }
             steady
                 && !sets.iter().any(|f| gates.contains(f))
                 && !beats.iter().any(|(v, s)| acts(*v) && carried.contains(s))

@@ -331,7 +331,7 @@ impl StoryCtx {
     }
 
     /// The dialogue choices due in front of `step`, as [`Self::deeds_before`].
-    fn choices_before<'s>(&'s self, step: &str) -> impl Iterator<Item = &'s PathChoice> + 's {
+    pub fn choices_before<'s>(&'s self, step: &str) -> impl Iterator<Item = &'s PathChoice> + 's {
         let at = self.slots.get(step).copied();
         self.choices
             .iter()
