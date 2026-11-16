@@ -43,7 +43,10 @@ fn note(after: Value) -> Value {
 /// The objective the fires are lit for: it requires every fire's flag, so the
 /// path performs the four triggers in front of it.
 fn grate(id: &str, after: Value, extra_flags: &[&str]) -> Value {
-    let mut flags: Vec<String> = FIRES.iter().map(|(n, _)| format!("flag/fire-{n}")).collect();
+    let mut flags: Vec<String> = FIRES
+        .iter()
+        .map(|(n, _)| format!("flag/fire-{n}"))
+        .collect();
     flags.extend(extra_flags.iter().map(|f| (*f).to_string()));
     json!({ "type": "reach-anchor", "id": id, "anchor": "anchor/exit", "radius": 2,
             "title": "Go back to the grate", "hint": "Light the fires in the note's order.",
@@ -164,7 +167,11 @@ fn record_clue() -> Value {
 fn four_fires_out_of_sight_pass_when_the_note_is_forced_first() {
     let dir = keep("castle", fires(record_clue()), |objs, _| {
         objs.push(note(json!(["obj/talk"])));
-        objs.push(grate("obj/lift-the-grate", json!(["obj/find-the-note"]), &[]));
+        objs.push(grate(
+            "obj/lift-the-grate",
+            json!(["obj/find-the-note"]),
+            &[],
+        ));
     });
     let c = load(&dir);
     let plan = Plan::build(&c, &prefabs()).expect("plan");
@@ -181,7 +188,15 @@ fn four_fires_out_of_sight_pass_when_the_note_is_forced_first() {
     let (b, r) = clue::judge(&plan, &world, &walks);
     assert!(r.is_empty(), "{r:?}");
     assert_eq!(
-        (b.stated, b.clues, b.main, b.optional, b.judged, b.text_presented, b.refused),
+        (
+            b.stated,
+            b.clues,
+            b.main,
+            b.optional,
+            b.judged,
+            b.text_presented,
+            b.refused
+        ),
         (4, 4, 4, 0, 4, 4, 0),
         "{}",
         b.line()
@@ -196,7 +211,10 @@ fn four_fires_out_of_sight_pass_when_the_note_is_forced_first() {
     let ledger = b.to_json();
     assert_eq!(ledger["examined"], 4);
     assert_eq!(ledger["rows"][0]["line"], "main");
-    assert_eq!(ledger["rows"][0]["clues"][0]["verdicts"][0]["presented"], true);
+    assert_eq!(
+        ledger["rows"][0]["clues"][0]["verdicts"][0]["presented"],
+        true
+    );
 }
 
 /// spec-0143 criterion 3, first arm: the same castle with the note in a chest
@@ -217,13 +235,18 @@ fn the_fires_red_when_the_note_is_in_an_optional_quest() {
     for f in &r {
         assert_eq!(f.code, clue::DW_CLUE_UNPRESENTED);
         assert!(
-            f.message.contains("`obj/find-the-note` is not on the main line")
+            f.message
+                .contains("`obj/find-the-note` is not on the main line")
                 && f.message.contains("optional detour"),
             "{}",
             f.message
         );
     }
-    assert!(r[0].message.contains("/content/triggers/0/clues/0"), "{}", r[0].message);
+    assert!(
+        r[0].message.contains("/content/triggers/0/clues/0"),
+        "{}",
+        r[0].message
+    );
 }
 
 /// spec-0143 criterion 3, second arm: the note on the main line, with nothing
@@ -267,7 +290,11 @@ fn a_side_puzzle_is_owed_nothing() {
         "{}",
         b.line()
     );
-    assert!(b.line().contains("4 optional act(s) owed nothing"), "{}", b.line());
+    assert!(
+        b.line().contains("4 optional act(s) owed nothing"),
+        "{}",
+        b.line()
+    );
     assert_eq!(b.to_json()["rows"][0]["line"], "optional");
 }
 
@@ -279,8 +306,13 @@ fn the_sole_setter_of_a_required_flag_is_forced_first() {
     let shape = |name: &str, second_setter: bool| {
         let dir = keep(name, fires(record_clue()), |objs, bundles| {
             objs.push(note(json!(["obj/talk"])));
-            objs.push(grate("obj/lift-the-grate", json!(["obj/talk"]), &["flag/note-read"]));
-            bundles["obj/find-the-note"] = json!([{ "type": "set-flag", "flag": "flag/note-read" }]);
+            objs.push(grate(
+                "obj/lift-the-grate",
+                json!(["obj/talk"]),
+                &["flag/note-read"],
+            ));
+            bundles["obj/find-the-note"] =
+                json!([{ "type": "set-flag", "flag": "flag/note-read" }]);
             if second_setter {
                 bundles["obj/talk"]
                     .as_array_mut()
@@ -296,10 +328,18 @@ fn the_sole_setter_of_a_required_flag_is_forced_first() {
     };
     let (b, r) = shape("flag-forces", false);
     assert!(r.is_empty(), "{r:?}");
-    assert_eq!((b.main, b.text_presented, b.refused), (4, 4, 0), "{}", b.line());
+    assert_eq!(
+        (b.main, b.text_presented, b.refused),
+        (4, 4, 0),
+        "{}",
+        b.line()
+    );
     let (b, r) = shape("flag-two-setters", true);
     assert_eq!((b.main, b.refused), (4, 4), "{}", b.line());
-    assert!(r.iter().all(|f| f.code == clue::DW_CLUE_UNPRESENTED), "{r:?}");
+    assert!(
+        r.iter().all(|f| f.code == clue::DW_CLUE_UNPRESENTED),
+        "{r:?}"
+    );
 }
 
 /// A `hint` clue: the step's own hint is on its open page; the hint of an
@@ -328,7 +368,11 @@ fn a_hint_clue_is_presented_by_the_steps_own_page_or_a_forced_one() {
     assert_eq!(b.text_presented, 1, "{}", b.line());
     let (b, r) = shape("hint-optional", "obj/find-the-note", true);
     assert_eq!(b.refused, 1, "{}", b.line());
-    assert!(r[0].message.contains("is not on the main line"), "{}", r[0].message);
+    assert!(
+        r[0].message.contains("is not on the main line"),
+        "{}",
+        r[0].message
+    );
 }
 
 /// spec-0143 criterion 6: a `sight` clue. Down a clear line from where the
@@ -347,11 +391,18 @@ fn a_sight_clue_is_presented_from_a_cell_the_main_line_stands_on() {
     let c = shape("sight", "anchor/latch");
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan");
-    let target = plan.point_any("anchor/latch").expect("the anchor has a cell");
+    let target = plan
+        .point_any("anchor/latch")
+        .expect("the anchor has a cell");
 
     let (b, r) = clue::check_presented(&plan, &walls(&[]));
     assert!(r.is_empty(), "{r:?}");
-    assert_eq!((b.main, b.sight_presented, b.refused), (1, 1, 0), "{}", b.line());
+    assert_eq!(
+        (b.main, b.sight_presented, b.refused),
+        (1, 1, 0),
+        "{}",
+        b.line()
+    );
 
     let mut shell = Vec::new();
     for dx in -1..=1 {
@@ -367,8 +418,7 @@ fn a_sight_clue_is_presented_from_a_cell_the_main_line_stands_on() {
     assert_eq!((b.sight_presented, b.refused), (0, 1), "{}", b.line());
     assert_eq!(r[0].code, clue::DW_CLUE_UNPRESENTED);
     assert!(
-        r[0].message.contains("is in sight from none of the")
-            && r[0].message.contains("stopped"),
+        r[0].message.contains("is in sight from none of the") && r[0].message.contains("stopped"),
         "{}",
         r[0].message
     );
@@ -377,8 +427,9 @@ fn a_sight_clue_is_presented_from_a_cell_the_main_line_stands_on() {
     let plan = Plan::build(&c, &prefabs).expect("plan");
     let (_, r) = clue::check_presented(&plan, &walls(&[]));
     assert!(
-        r.iter().any(|f| f.code == clue::DW_CLUE_NAMES_NOTHING
-            && f.message.contains("resolves to no cell")),
+        r.iter()
+            .any(|f| f.code == clue::DW_CLUE_NAMES_NOTHING
+                && f.message.contains("resolves to no cell")),
         "{r:?}"
     );
 }
@@ -394,7 +445,11 @@ fn a_clue_names_a_text_that_exists() {
                 n.as_object_mut().unwrap().remove(f);
             }
             objs.push(n);
-            objs.push(grate("obj/lift-the-grate", json!(["obj/find-the-note"]), &[]));
+            objs.push(grate(
+                "obj/lift-the-grate",
+                json!(["obj/find-the-note"]),
+                &[],
+            ));
         });
         clue::check(&load(&dir))
     };
@@ -403,7 +458,12 @@ fn a_clue_names_a_text_that_exists() {
 
     let (d, b) = shape("names-ok", record.clone(), None);
     assert!(d.is_empty(), "{d:?}");
-    assert_eq!((b.acts, b.stated, b.clues, b.refused), (8, 4, 4, 0), "{}", b.line());
+    assert_eq!(
+        (b.acts, b.stated, b.clues, b.refused),
+        (8, 4, 4, 0),
+        "{}",
+        b.line()
+    );
 
     let (d, b) = shape("names-no-record", record, Some("record"));
     assert_eq!((d.len(), b.refused), (4, 4));
@@ -423,7 +483,11 @@ fn a_clue_names_a_text_that_exists() {
         None,
     );
     assert_eq!(d.len(), 4);
-    assert!(d[0].message.contains("no objective `obj/nobody` exists"), "{}", d[0].message);
+    assert!(
+        d[0].message.contains("no objective `obj/nobody` exists"),
+        "{}",
+        d[0].message
+    );
 }
 
 /// spec-0143 criterion 8: the withdrawn rule. A step that states no clue is
@@ -435,7 +499,11 @@ fn a_step_that_states_no_clue_is_owed_nothing() {
         let mut n = note(json!(["obj/talk"]));
         n.as_object_mut().unwrap().remove("hint");
         objs.push(n);
-        objs.push(grate("obj/lift-the-grate", json!(["obj/find-the-note"]), &[]));
+        objs.push(grate(
+            "obj/lift-the-grate",
+            json!(["obj/find-the-note"]),
+            &[],
+        ));
     });
     let c = load(&dir);
     let plan = Plan::build(&c, &prefabs()).expect("plan");
@@ -445,7 +513,8 @@ fn a_step_that_states_no_clue_is_owed_nothing() {
     assert!(r.is_empty(), "{r:?}");
     assert_eq!((b.stated, b.judged, b.refused), (0, 0, 0), "{}", b.line());
     assert!(
-        b.line().ends_with("8 act(s) state no clue and are owed nothing"),
+        b.line()
+            .ends_with("8 act(s) state no clue and are owed nothing"),
         "{}",
         b.line()
     );

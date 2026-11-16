@@ -17,7 +17,6 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
-use delvec::compiler::promise;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, parse_campaign};
 use serde_json::{Value, json};

@@ -607,7 +607,10 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                     Clue::Record { objective } => {
                         let x = objective.as_str();
                         if forced.contains(x) {
-                            Ok(format!("`{x}` is over before `{}` in every play order", s.id))
+                            Ok(format!(
+                                "`{x}` is over before `{}` in every play order",
+                                s.id
+                            ))
                         } else if wd.step_of.get(x).is_some_and(|xs| *xs < step) {
                             Err(format!(
                                 "`{x}` comes before `{}` on this walk, but nothing forces that \
@@ -639,7 +642,10 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                         if x == s.id {
                             Ok("it is the step's own hint, on its open page".to_string())
                         } else if forced.contains(x) {
-                            Ok(format!("`{x}` is over before `{}` in every play order", s.id))
+                            Ok(format!(
+                                "`{x}` is over before `{}` in every play order",
+                                s.id
+                            ))
                         } else if on_main(x) && wd.step_of.contains_key(x) && armed_by(x) {
                             Ok(format!(
                                 "`{x}` is a main-line objective already started when the walk \
@@ -679,9 +685,7 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                             });
                             Err("its anchor resolves to no cell".to_string())
                         }
-                        Some(target) => {
-                            seen_before(world, events, wd, step, &forced_steps, target)
-                        }
+                        Some(target) => seen_before(world, events, wd, step, &forced_steps, target),
                     },
                 };
                 match &verdict {
@@ -755,7 +759,9 @@ fn seen_before(
     for (i, s) in arrivals.iter().enumerate() {
         let w: &World = worlds[at[i]].as_ref().unwrap_or(world);
         let (from, to) = wd.place[s];
-        let route = from.and_then(|f| w.route_between(f, to)).unwrap_or_default();
+        let route = from
+            .and_then(|f| w.route_between(f, to))
+            .unwrap_or_default();
         for c in route.into_iter().chain(from).chain(std::iter::once(to)) {
             vantages.push((c, w, format!("on the way to step {s}")));
         }

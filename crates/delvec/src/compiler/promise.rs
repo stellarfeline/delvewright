@@ -406,13 +406,6 @@ fn wave_place(plan: &crate::compiler::plan::Plan, wave_id: &str) -> Option<[i32;
     plan.point(area, w.anchor.as_str())
 }
 
-/// An assembly's mark cell.
-fn assembly_place(plan: &crate::compiler::plan::Plan, id: &str) -> Option<[i32; 3]> {
-    let decl = plan.campaign.quests.content.assembly_decl(id)?;
-    plan.point_any(decl.at.anchor.as_str())
-        .map(|a| decl.at.cell(a))
-}
-
 // ---------------------------------------------------------------------------
 // DW0860 — the failure clock
 // ---------------------------------------------------------------------------

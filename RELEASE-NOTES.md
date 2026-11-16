@@ -49,9 +49,11 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
 - `modes[]` on stage 5: `{id, keeps}` — a state of the map in which every quest but the ones it keeps is held: not told, not completable, its clocks standing still; the `enter-mode` and `leave-mode` verbs; a mode leaves by itself when none of its kept quests is in progress.
 - `races[]` on stage 5: `{id, checkpoints, laps?, racers?, board?, grace_ticks?, missed, passed?}` — a course of checkpoints every racer, a player or a listed actor, is credited in order; the `start-race` and `end-race` verbs; every objective kind takes `course`, and `move-actor` takes `along`.
+- Every objective kind and a trigger take `clues`: what tells the player the step's answer — a task's `record` or `hint` in the journal, or a thing in sight. On the main line a build confirms each stated clue is presented before the party reaches the step; an optional step, and a step that states no clue, is owed nothing.
 
 ### Changed
 
+- A build no longer refuses an act because it is out of sight of the last one with no hint, or a fight because its wave forms up out of sight or out of reach: whether the party can find an act is judged in play.
 - The `damage-players` verb is named `damage`.
 - `play-sound` `at: {"at": "actor"}`, which every build refused, is replaced by `at: {"at": "bodies"}`.
 - A limited task's clock settles it when it runs out whatever the task's own gate says, so a task whose gate a lost body holds shut no longer hangs.

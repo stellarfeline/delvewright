@@ -8,14 +8,12 @@
 
 use crate::common;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvec::compiler::acts::{Act, ActWalk, ActWalks, ActWhat};
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
-use delvec::compiler::nav::World;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::promise;
 use delvec::compiler::registry::PrefabRegistry;
