@@ -256,8 +256,8 @@ pub(super) fn emit_functions(
     ));
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
-    // exists, so v0.2/v0.3 setup is unchanged.
-    if has_gated_dialogue(c) {
+    // exists (a dialogue option or a shop offer), so v0.2/v0.3 setup is unchanged.
+    if has_gated_dialogue(c) || has_gated_offer(plan) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
     // spec-0020: the per-player cast-scene selector. Declared only when some
@@ -292,6 +292,9 @@ pub(super) fn emit_functions(
     if has_collect_objective(c) {
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
+    // spec-0141 §3.2: the grant counts. Empty for a campaign that hands no
+    // stack to the whole party → byte-identical.
+    setup.extend(grant_setup(plan));
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
     // `deathCount` respawn-detection scores. Emitted for EVERY campaign that
     // declares a checkpoint — the marker now also drives the respawn **re-seat**
@@ -1224,25 +1227,35 @@ pub(super) fn emit_functions(
                     ));
                 }
                 Objective::Collect { id, count, .. } => {
-                    // Complete for a player already holding the item (gap 13): a
+                    // Complete for a party already holding the item (gap 13): a
                     // `collect` normally completes via an `inventory_changed`
                     // advancement whose reward revokes-to-re-arm, and that will NOT
                     // re-fire while the item is merely held — so an item pocketed
                     // before the objective activated could leave it stuck open. This
-                    // per-tick held check closes it: store the held count, then
-                    // complete once the guards hold and the player carries >= the
-                    // required count — whether the item was taken before or after
-                    // activation. `store result … if items` captures the total
-                    // matching item count across the inventory — of the stack its
-                    // holder placed, when it adopts one (spec-0111 §4.2).
+                    // per-tick held check closes it: store each player's held
+                    // count — `store result … if items` captures the total
+                    // matching item count across the inventory, of the stack its
+                    // holder placed when it adopts one (spec-0111 §4.2) — and
+                    // complete once the guards hold and the count is met.
+                    //
+                    // **The count is the party's** (spec-0141 §3.1): progress is
+                    // a fact about the party, so three of an item gathered by
+                    // three players is three. Each player's count is summed
+                    // into `#hold dw.sys`, and the objective completes as the
+                    // first player who carries one of them — the acting player
+                    // a `carrier: one` hand-off needs. The advancement keeps
+                    // reading one inventory, and this line is what it misses.
                     let item = collect_predicate(o).expect("a collect has a predicate");
+                    let guard = pending_guard(plan, o, &qa);
+                    tick.push(format!("scoreboard players set {COLLECT_PARTY} dw.sys 0"));
                     tick.push(format!(
-                        "execute as @a{} store result score @s {COLLECT_HOLD} if items entity @s container.* {item}",
-                        pending_guard(plan, o, &qa)
+                        "execute as @a{guard} store result score @s {COLLECT_HOLD} if items entity @s container.* {item}"
                     ));
                     tick.push(format!(
-                        "execute as @a{} if score @s {COLLECT_HOLD} matches {count}.. run function {ns}:complete_{}",
-                        pending_guard(plan, o, &qa),
+                        "execute as @a{guard} run scoreboard players operation {COLLECT_PARTY} dw.sys += @s {COLLECT_HOLD}"
+                    ));
+                    tick.push(format!(
+                        "execute as @a{guard} if score @s {COLLECT_HOLD} matches 1.. if score {COLLECT_PARTY} dw.sys matches {count}.. run function {ns}:complete_{}",
                         safe_obj_fn(id.as_str())
                     ));
                 }
@@ -1324,6 +1337,9 @@ pub(super) fn emit_functions(
     // spec-0139: every racer of a running race is asked for its next
     // checkpoint. Empty for a campaign with no race → byte-identical.
     tick.extend(race_tick(plan));
+    // spec-0141 §3.2: a member behind the party's grants is handed the next
+    // one. Empty for a campaign that issues none → byte-identical.
+    tick.extend(grant_tick(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
@@ -1519,6 +1535,7 @@ pub(super) fn emit_functions(
     fns.extend(moves::hop_fns(plan));
     fns.extend(moves::cadence_fns(plan));
     fns.extend(teleport_fns(plan));
+    fns.extend(grant_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));
     // spec-0134 §1: the census tick and each `body-enters` dispatch. Empty

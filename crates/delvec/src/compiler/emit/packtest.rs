@@ -302,13 +302,18 @@ pub(super) fn emit_packtest(
     // spec-0018: one two-player test per objective that hands a `carrier: one`
     // item, asserting exactly one member holds it.
     party::emit_carrier_one_packtests(plan, out);
+    // spec-0141: the absent member — a count held between two members, a
+    // grant owed to a member who arrives late, a class taken at a checkpoint.
+    party::emit_party_collect_packtest(plan, out);
+    party::emit_party_grant_packtests(plan, out);
+    party::emit_party_class_packtest(plan, out);
 
     // Last, over every template the emitters above wrote: a template that
     // re-runs `setup` and then the load takes the settled setup.
     settle_loads(ns, out);
 }
 
-pub use party::{PartyBinding, party_binding};
+pub use party::{AbsentBinding, PartyBinding, absent_binding, party_binding};
 
 // ------------------------------------------- per-object watch claims (DW0811) --
 //

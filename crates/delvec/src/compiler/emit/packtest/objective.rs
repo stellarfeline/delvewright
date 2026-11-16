@@ -1321,7 +1321,7 @@ pub(super) fn emit_verb_packtests(
 /// no departure, and `collect_container`, run after it in its own environment,
 /// read its collect complete on the tick that asserts the unmarked stack
 /// completes nothing.
-fn clear_from_others(tag: &str, collects: &[&Objective]) -> Vec<String> {
+pub(super) fn clear_from_others(tag: &str, collects: &[&Objective]) -> Vec<String> {
     collects
         .iter()
         .filter_map(|o| collect_predicate(o))

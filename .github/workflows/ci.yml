@@ -1786,6 +1786,15 @@ jobs:
             --build-out gallery-out-en \
             --report gallery-coverage.json \
             --index gallery-coverage.md
+      # spec-0141 §2: the same units, asked a second question — what each one
+      # means for a party of one to four. Reds when the schema export gains a
+      # unit with no row in `tools/ci/party-semantics.json`, and when a row
+      # names a unit that is gone. States its denominator.
+      - name: every declared surface states what it means for a party
+        run: |
+          python3 tools/ci/check-party-semantics.py \
+            --delvec target/debug/delvec \
+            --index party-semantics.md
       # §6: the numbers are reported from day one, and no wall-clock value gates
       # — a timing red on a shared runner is an intermittent red, and the debug
       # doctrine forbids re-running those.
