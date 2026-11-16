@@ -15,8 +15,11 @@ import {
   wrapDegrees,
   yRotationRange,
   watchStops,
+  parsePlayerReply,
+  watchTargets,
   type Watcher,
 } from "../src/watch.ts";
+import type { Vec3Tuple } from "../src/critical-path.ts";
 
 function pathWith(watchers: unknown): Record<string, unknown> {
   return {
@@ -178,4 +181,48 @@ test("a watcher beside the middle of a straight two-waypoint leg is judged from 
     pathWith([row({ id: "npc/far", feet: [10.5, 64, 12.5], stands: [[10.5, 64, 12.5]], within: 7 })]),
   ).watchers as [Watcher];
   assert.deepEqual(watchStops(leg, [far]), { cells: leg, inserted: 0, reachable: [] });
+});
+
+test("a roster line names the player, its tags and its feet", () => {
+  const p = parsePlayerReply(
+    `[dw:watch-player party_idle ["dw_cutscene", "dw_class_scout"] [10.5d, 67.0d, 4.5d]]`,
+  );
+  assert.deepEqual(p, { name: "party_idle", tags: ["dw_cutscene", "dw_class_scout"], feet: [10.5, 67, 4.5] });
+  assert.deepEqual(parsePlayerReply(`[dw:watch-player delve-bot  [1.0d,2.0d,3.0d]]`), {
+    name: "delve-bot",
+    tags: [],
+    feet: [1, 2, 3],
+  });
+  assert.equal(parsePlayerReply(`[dw:watch-player delve-bot ]`), undefined);
+});
+
+test("a body faces the nearest player it can draw, and a tie admits both", () => {
+  const w: Watcher = {
+    id: "npc/curator",
+    class: "npc",
+    tag: "dw_npc_curator",
+    selector: "tag=dw_npc_curator,tag=dw_npc",
+    feet: [10.5, 67, 5.5],
+    stands: [[10.5, 67, 5.5]],
+    homeYaw: 0,
+    who: "nearest",
+    within: 8,
+  };
+  const bot = { name: "delve-bot", tags: [], feet: [13.5, 67, 11.41] as Vec3Tuple };
+  const idler = { name: "party_idle", tags: [], feet: [6.5, 67, 3.5] as Vec3Tuple };
+  const t = watchTargets(w, [10.5, 67, 5.5], [bot, idler]);
+  assert.ok(t.judged);
+  assert.deepEqual(t.targets.map((p) => p.name), ["party_idle"]);
+  // In a cutscene the idler is not drawn.
+  const c = watchTargets(w, [10.5, 67, 5.5], [bot, { ...idler, tags: ["dw_cutscene"] }]);
+  assert.ok(c.judged);
+  assert.deepEqual(c.targets.map((p) => p.name), ["delve-bot"]);
+  // A class watch draws only its class.
+  const k = watchTargets({ ...w, classTag: "dw_class_scout" }, [10.5, 67, 5.5], [bot, idler]);
+  assert.equal(k.judged, false);
+  // Two at one distance: either is the nearest.
+  const twin = { name: "party_late", tags: [], feet: [14.5, 67, 5.5] as Vec3Tuple };
+  const tie = watchTargets(w, [10.5, 67, 5.5], [{ ...idler, feet: [6.5, 67, 5.5] }, twin]);
+  assert.ok(tie.judged);
+  assert.equal(tie.targets.length, 2);
 });
