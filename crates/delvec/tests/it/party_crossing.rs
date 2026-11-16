@@ -226,6 +226,12 @@ fn the_party_crossing_packtest_drives_the_real_completion() {
         "the owed carry is driven:\n{body}"
     );
     assert!(
+        body.contains(
+            "store result score #pcx_0_late dw.sys if entity @a[name=dwpcx0p2,limit=1,distance=..0.5]"
+        ),
+        "the late member is found on the entry point by one selector:\n{body}"
+    );
+    assert!(
         body.contains("assert score #pcx_0_late dw.sys matches 1"),
         "{body}"
     );

@@ -689,7 +689,7 @@ pub(super) fn emit_party_crossing_packtests(plan: &Plan, out: &mut BuildOutput) 
         let [sx, sy, sz] = super::super::coords::ent_xyz(seats[0]);
         b.push(format!(
             "execute positioned {sx} {sy} {sz} store result score #pcx_{k}_late dw.sys if entity \
-             {late_sel}[distance=..0.5]"
+             @a[name={late},limit=1,distance=..0.5]"
         ));
         b.push(format!("assert score #pcx_{k}_late dw.sys matches 1"));
         b.push(format!("dummy {late} leave"));
