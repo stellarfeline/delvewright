@@ -574,11 +574,9 @@ export const methods = {
       if (this.dieRetry) {
         this.encounterPhases.set(enc.wave, "die-retry");
         this.stageNow = "die-retry";
-        // Until the first census of the stage refines it, everything standing at
-        // the anchor is treated as the encounter's: a protected body wrongly left
-        // standing costs the run a little health, and an unprotected one costs the
-        // measurement.
-        this.protectedWave = { wave: enc.wave, census: [{ pos: enc.pos }] };
+        // A body is of the protected wave when the server says it wears the
+        // step's tag (`stageAway`), never because of where it stands.
+        this.protectedWave = { wave: enc.wave, tag: step.tag };
         try {
           await this.dieRetryAt(step, enc);
         } catch (err) {
@@ -838,9 +836,6 @@ export const methods = {
       const sum = this.censusSummaries.get(enc.wave);
       if (sum && sum.seq > before) {
         const mobs = this.censusMobs.get(sum.seq) ?? [];
-        // Keep the protected wave's view of where its bodies stand current, so the
-        // die-retry stage's own re-seats stay protected as they move.
-        if (this.protectedWave?.wave === enc.wave) this.protectedWave.census = mobs;
         return { summary: sum, mobs };
       }
       if (Date.now() >= deadline) return undefined;

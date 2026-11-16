@@ -4,6 +4,7 @@ import type { Vec3Tuple } from "../critical-path.ts";
 import { INSTANT_HEALTH_UNIT } from "../sustain.ts";
 import { delay } from "./connection.ts";
 import { isRejection } from "../rejection.ts";
+import { CENSUS_MATCH_RADIUS, isWaveBody } from "../wave.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /**
@@ -87,24 +88,42 @@ export const methods = {
     //     33 blocks off its anchor — outside the radius the old rule guessed
     //     membership by — was staged unread, and the run-back's muster then
     //     reported the campaign had seated two of three;
-    //   * the wave the die-retry stage is proving. See `dieRetryHolds`.
+    //   * the wave the die-retry stage is proving. See `dieRetryHolds`. Whether
+    //     the body is of it is asked of the server BY UUID: does it wear the
+    //     step's tag. A census position within a few blocks of where the client
+    //     sees the body is a candidate, not a match — on the town's castle yard it
+    //     found no body of the protected wave three times in three runs, and the
+    //     body the stage was proving was removed.
     if (body?.position) {
       const here: Vec3Tuple = [body.position.x, body.position.y, body.position.z];
       this.stagingInFlight.add(id);
       try {
-        const of = await this.waveOfBody(here);
-        if (of !== undefined) {
-          const protect = this.protectedWave;
-          if (protect?.wave === of.wave) {
-            // How much of the wave stands, asked of the server now: whether this
-            // removal would be the one that clears it is the fact the hold turns on.
-            const standing = (await this.census(of))?.summary.present;
-            const hold = this.dieRetryHolds(of, standing);
-            if (hold !== undefined) {
-              process.stderr.write(`[staged] ${kind}#${id} stands with \`${of.wave}\`: ${hold}\n`);
-              return;
+        const protect = this.protectedWave;
+        const enc = protect === undefined ? undefined : this.encounterFor(protect.wave);
+        const wears = protect === undefined || enc === undefined ? false : await this.bodyWears(uuid, protect.tag);
+        if (enc !== undefined && wears !== false) {
+          // How much of the wave stands, asked of the server now: whether this
+          // removal would be the one that clears it is the fact the hold turns on.
+          const census = await this.census(enc);
+          const hold = this.dieRetryHolds(enc, census?.summary.present);
+          if (hold !== undefined) {
+            const asked = wears === true ? "" : ` (whether it wears \`${protect!.tag}\` went unread: ${wears})`;
+            process.stderr.write(`[staged] ${kind}#${id} stands with \`${enc.wave}\`${asked}: ${hold}\n`);
+            // What the position match this replaced would have said, so a run
+            // records where the census put the body against where the client did.
+            if (census !== undefined && !isWaveBody({ pos: here, census: census.mobs })) {
+              process.stderr.write(
+                `[staged] ${kind}#${id}: no census body of \`${enc.wave}\` stands within ` +
+                  `${CENSUS_MATCH_RADIUS} blocks of where the client sees it ` +
+                  `(${here.map((v) => v.toFixed(1)).join(", ")}; census seq ${census.summary.seq}: ` +
+                  `${census.mobs.map((m) => `[${m.pos.join(", ")}]`).join(" ") || "no body lines"})\n`,
+              );
             }
-          } else if (this.readingOwed(of)) {
+            return;
+          }
+        } else {
+          const of = await this.waveOfBody(here);
+          if (of !== undefined && this.readingOwed(of)) {
             process.stderr.write(
               `[staged] ${kind}#${id} is of \`${of.wave}\`, whose current seating this run has ` +
                 `not read — reading it where it stands, then removing the body\n`,
@@ -208,33 +227,56 @@ export const methods = {
 
   /**
    * **Which story-body rows match this body, and whether it is of the `kill`
-   * step under way**, asked of the server by UUID: one bracket, one
-   * conditional `tellraw` per row of the compiler's `story_bodies` and one
-   * for {@link fightTag}. A bracket that never closed, or a refusal, is read
-   * as a story body — the direction that harms nothing.
+   * step under way**, asked of the server by UUID ({@link askBody}): one row of
+   * the compiler's `story_bodies` per question, and one for {@link fightTag}. An
+   * unread answer is read as a story body — the direction that harms nothing.
    */
   async storyVerdict(this: MineflayerExecutor, uuid: string): Promise<StoryVerdict> {
     const rows = this.requireStoryBodies();
-    const bot = this.requireBot();
     if (rows.length === 0) return { of: [], ofFight: false };
-    const serial = ++this.storyAsks;
-    const mark = (what: string): string => `[dw:story ${serial} ${what}]`;
-    const ask = (select: string, what: string): string =>
-      `/execute as ${uuid} if entity @s[${select}] run tellraw ${bot.username} ` +
-      JSON.stringify({ text: mark(what) });
-    const commands = rows.map((r, i) => ask(r.select, String(i)));
-    if (this.fightTag !== undefined) commands.push(ask(`tag=${this.fightTag}`, "fight"));
+    const selects = rows.map((r) => r.select);
+    if (this.fightTag !== undefined) selects.push(`tag=${this.fightTag}`);
+    const answer = await this.askBody(uuid, selects);
+    if (typeof answer === "string") {
+      return { of: [`unread (${answer}), so treated as story`], ofFight: false };
+    }
+    const of = rows.filter((_, i) => answer[i]).map((r) => `${r.of}: ${r.reads.join(", ")}`);
+    return { of, ofFight: this.fightTag !== undefined && answer[rows.length] === true };
+  },
+
+  /**
+   * Whether the body wears `tag`, asked of the server by UUID ({@link askBody}):
+   * `true` or `false` as it answered, or why it could not be read — no UUID, an
+   * empty tag, a reply that never closed, a refusal.
+   */
+  async bodyWears(this: MineflayerExecutor, uuid: string | undefined, tag: string): Promise<boolean | string> {
+    if (!uuid) return "the client has no UUID for it";
+    if (tag === "") return "the step names no tag";
+    const answer = await this.askBody(uuid, [`tag=${tag}`]);
+    return typeof answer === "string" ? answer : answer[0] === true;
+  },
+
+  /**
+   * **Ask the server which of `selects` one body matches, by UUID**: one
+   * bracket, one conditional `tellraw` per `@s[<select>]`. Each answer is
+   * `true` exactly when its line came back. A string when nothing can be read:
+   * the reply never closed, or the server refused a question.
+   */
+  async askBody(this: MineflayerExecutor, uuid: string, selects: readonly string[]): Promise<boolean[] | string> {
+    const bot = this.requireBot();
+    const serial = ++this.bodyAsks;
+    const mark = (i: number): string => `[dw:body ${serial} ${i}]`;
+    const commands = selects.map(
+      (select, i) =>
+        `/execute as ${uuid} if entity @s[${select}] run tellraw ${bot.username} ` +
+        JSON.stringify({ text: mark(i) }),
+    );
     const reply = await this.bracketed(commands);
     const refused = reply.lines.find((l) => isRejection(l));
-    if (!reply.answered || refused !== undefined) {
-      const why = !reply.answered ? "the reply never closed" : `refused — ${refused}`;
-      return { of: [`unread (${why}), so treated as story`], ofFight: false };
-    }
+    if (!reply.answered) return "the reply never closed";
+    if (refused !== undefined) return `refused — ${refused}`;
     const said = new Set(reply.lines.map((l) => l.trim()));
-    const of = rows
-      .filter((_, i) => said.has(mark(String(i))))
-      .map((r) => `${r.of}: ${r.reads.join(", ")}`);
-    return { of, ofFight: said.has(mark("fight")) };
+    return selects.map((_, i) => said.has(mark(i)));
   },
 
   /**
