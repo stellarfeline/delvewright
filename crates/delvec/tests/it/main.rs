@@ -241,6 +241,7 @@ mod schem_roundtrip;
 mod schem_stair_shape_measured;
 mod score_seeding;
 mod scratch_paths;
+mod sculk_free_bodies;
 mod sculpt;
 mod seating_cli;
 mod server_properties;
