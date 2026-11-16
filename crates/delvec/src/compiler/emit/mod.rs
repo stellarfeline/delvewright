@@ -1648,6 +1648,22 @@ fn emit_all(
     crate::note!("{}", fresh.line());
     put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
 
+    // ---- a template owns every gate it drives through ----
+    // Read off the finished tree, after every emitter and every pass that
+    // writes into a template, so the drive it writes before is the one the
+    // shipped body holds and it reaches templates not yet written
+    // (`crate::compiler::batchstate::own_gates`); `DW0807` judges the result.
+    let own = crate::compiler::batchstate::own_gates(
+        &plan.namespace,
+        &mut out,
+        &packtest::start_ledger(plan),
+    );
+    crate::note!("{}", own.line());
+    put_json(
+        &mut out,
+        "validation/packtest-own-gates.json",
+        &own.to_json(),
+    );
     // ---- the quota the delve's own sources need ----
     // Last of the writers, over the finished tree: every tick repeats work
     // that grows with the campaign and cannot move to a later tick, so when a

@@ -245,6 +245,8 @@ struct Tree<'a> {
 /// One gated dispatch line, reduced to the two things this check needs.
 #[derive(Debug, Clone)]
 struct Gate {
+    /// The campaign function whose body holds the line.
+    holder: String,
     /// The campaign function this line runs.
     target: String,
     /// Every `#party` objective read in the line's CONDITION.
@@ -302,10 +304,45 @@ impl Tree<'_> {
                 if reads.is_empty() {
                     continue;
                 }
-                gates.push(Gate { target, reads });
+                gates.push(Gate {
+                    holder: f.clone(),
+                    target,
+                    reads,
+                });
             }
         }
         gates
+    }
+
+    /// The shortest dispatch chain from `root` to `goal`, both included.
+    fn chain(&self, root: &str, goal: &str) -> Vec<String> {
+        let mut parent: BTreeMap<String, String> = BTreeMap::new();
+        let mut queue = std::collections::VecDeque::from([root.to_string()]);
+        let mut seen: BTreeSet<String> = BTreeSet::from([root.to_string()]);
+        while let Some(f) = queue.pop_front() {
+            if f == goal {
+                let mut path = vec![f.clone()];
+                let mut cur = f;
+                while let Some(p) = parent.get(&cur) {
+                    path.push(p.clone());
+                    cur = p.clone();
+                }
+                path.reverse();
+                return path;
+            }
+            let Some(body) = self.campaign.get(&f) else {
+                continue;
+            };
+            for line in body.lines() {
+                if let Some(t) = dispatch_target(self.ns, line)
+                    && seen.insert(t.clone())
+                {
+                    parent.insert(t.clone(), f.clone());
+                    queue.push_back(t);
+                }
+            }
+        }
+        vec![root.to_string(), goal.to_string()]
     }
 
     /// A template body with its own hoisted helper functions inlined in place.
@@ -393,67 +430,76 @@ fn asserted_scores(after: &[String], flat: &[String]) -> BTreeSet<(String, Strin
     asserted
 }
 
-/// Judge a whole emitted tree. `ns` is the campaign namespace.
-pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStateBinding, Failure> {
-    let collect = |prefix: &str| -> BTreeMap<String, String> {
-        out.iter()
-            .filter_map(|(p, b)| {
-                let name = p.strip_prefix(prefix)?.strip_suffix(".mcfunction")?;
-                Some((name.to_string(), std::str::from_utf8(b).ok()?.to_string()))
+/// The analysis of one finished tree, resolved once and asked per template.
+struct Analysis<'a> {
+    tree: Tree<'a>,
+    /// What each campaign function records, transitively.
+    deep: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Every `#party`-gated dispatch below each campaign function.
+    gates_below: BTreeMap<String, Vec<Gate>>,
+}
+
+/// What [`Analysis::judge`] found in one template.
+enum Verdict {
+    /// The template drives nothing it asserts on.
+    NotDriving,
+    /// It drives, but no gate stands on the path to what it asserts.
+    Ungated,
+    /// It drives through gates: the flattened line the drive is at, the
+    /// `#party` objectives those gates read that the template does not write
+    /// before it, and per such objective the drive root and the gate.
+    Judged {
+        drive_at: usize,
+        missing: Vec<String>,
+        witness: BTreeMap<String, (String, Gate)>,
+    },
+}
+
+impl<'a> Analysis<'a> {
+    fn new(ns: &'a str, out: &BTreeMap<String, Vec<u8>>) -> Option<Self> {
+        let collect = |prefix: &str| -> BTreeMap<String, String> {
+            out.iter()
+                .filter_map(|(p, b)| {
+                    let name = p.strip_prefix(prefix)?.strip_suffix(".mcfunction")?;
+                    Some((name.to_string(), std::str::from_utf8(b).ok()?.to_string()))
+                })
+                .collect()
+        };
+        let tree = Tree {
+            ns,
+            campaign: collect(&format!("datapack/data/{ns}/function/")),
+            helper: collect(&format!("packtest-datapack/data/{ns}/function/")),
+        };
+        if tree.campaign.is_empty() {
+            // No campaign functions: nothing dispatches, so nothing can be gated.
+            return None;
+        }
+        let deep = tree
+            .campaign
+            .keys()
+            .map(|f| (f.clone(), tree.deep_writes(f)))
+            .collect();
+        let gates_below = tree
+            .campaign
+            .keys()
+            .map(|f| {
+                (
+                    f.clone(),
+                    tree.gates_in(&tree.reachable(std::slice::from_ref(f))),
+                )
             })
-            .collect()
-    };
-    let tree = Tree {
-        ns,
-        campaign: collect(&format!("datapack/data/{ns}/function/")),
-        helper: collect(&format!("packtest-datapack/data/{ns}/function/")),
-    };
-    if tree.campaign.is_empty() {
-        // No campaign functions: nothing dispatches, so nothing can be gated.
-        return Ok(BatchStateBinding {
-            templates: 0,
-            driving: 0,
-            judged: 0,
-        });
+            .collect();
+        Some(Self {
+            tree,
+            deep,
+            gates_below,
+        })
     }
 
-    // What each campaign function records, transitively, read off the shipped
-    // tree. Computed once for the whole tree rather than per template.
-    let deep: BTreeMap<String, BTreeSet<(String, String)>> = tree
-        .campaign
-        .keys()
-        .map(|f| (f.clone(), tree.deep_writes(f)))
-        .collect();
-    // Every `#party`-gated dispatch below each campaign function, likewise.
-    let gates_below: BTreeMap<String, Vec<Gate>> = tree
-        .campaign
-        .keys()
-        .map(|f| {
-            (
-                f.clone(),
-                tree.gates_in(&tree.reachable(std::slice::from_ref(f))),
-            )
-        })
-        .collect();
-
-    let prefix = format!("packtest-datapack/data/{ns}/test/");
-    let mut binding = BatchStateBinding {
-        templates: 0,
-        driving: 0,
-        judged: 0,
-    };
-    let mut offenders: Vec<String> = Vec::new();
-
-    for (path, bytes) in out {
-        if !path.starts_with(&prefix) || !path.ends_with(".mcfunction") {
-            continue;
-        }
-        let Ok(body) = std::str::from_utf8(bytes) else {
-            continue;
-        };
-        binding.templates += 1;
-        let flat = tree.flatten(body);
-
+    /// Judge one template, given its body with its helpers inlined.
+    fn judge(&self, flat: &[String]) -> Verdict {
+        let ns = self.tree.ns;
+        let (deep, gates_below) = (&self.deep, &self.gates_below);
         // The DRIVE: a line that dispatches a campaign function which,
         // transitively, writes something the template asserts LATER. Everything
         // before it is the template's own init; everything from it on is the
@@ -468,13 +514,12 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
         let drives = |i: usize| -> Option<BTreeSet<(String, String)>> {
             let t = dispatch_target(ns, &flat[i])?;
             let recorded = deep.get(&t)?;
-            let a = asserted_scores(&flat[i + 1..], &flat);
+            let a = asserted_scores(&flat[i + 1..], flat);
             (!recorded.is_disjoint(&a)).then_some(a)
         };
         if !(0..flat.len()).any(|i| drives(i).is_some()) {
-            continue;
+            return Verdict::NotDriving;
         }
-        binding.driving += 1;
         let gated = |i: usize| -> Option<(usize, BTreeSet<(String, String)>)> {
             let a = drives(i)?;
             let t = dispatch_target(ns, &flat[i])?;
@@ -485,7 +530,7 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
                 .then_some((i, a))
         };
         let Some((drive_at, asserted)) = (0..flat.len()).find_map(gated) else {
-            continue;
+            return Verdict::Ungated;
         };
 
         // Owned: every `#party` objective the template writes before it drives.
@@ -499,11 +544,12 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
             })
             .collect();
 
-        binding.judged += 1;
-
         // Required: the gate of every `#party`-gated dispatch on the path from
-        // the drive to the outcome, whose target records something asserted.
+        // the drive to the outcome, whose target records something asserted;
+        // per term, the first gate that reads it and the root it was reached
+        // from.
         let mut required: BTreeSet<String> = BTreeSet::new();
+        let mut witness: BTreeMap<String, (String, Gate)> = BTreeMap::new();
         for root in flat[drive_at..]
             .iter()
             .filter_map(|l| dispatch_target(ns, l))
@@ -516,12 +562,203 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
                     .get(&g.target)
                     .is_some_and(|w| !w.is_disjoint(&asserted))
                 {
+                    for r in &g.reads {
+                        witness
+                            .entry(r.clone())
+                            .or_insert_with(|| (root.clone(), g.clone()));
+                    }
                     required.extend(g.reads.iter().cloned());
                 }
             }
         }
-
         let missing: Vec<String> = required.difference(&owned).cloned().collect();
+        witness.retain(|k, _| missing.contains(k));
+        Verdict::Judged {
+            drive_at,
+            missing,
+            witness,
+        }
+    }
+}
+
+/// What [`own_gates`] did to the tree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnBinding {
+    /// Generated PackTest templates examined.
+    pub templates: usize,
+    /// Templates that drive an outcome through a `#party` gate.
+    pub judged: usize,
+    /// `(template, objectives written)` per template the pass gave a term,
+    /// in template order.
+    pub owned: Vec<(String, Vec<String>)>,
+    /// `(template, objective)` per term with no value at the campaign's
+    /// start: left unwritten, for [`check_tree`] to refuse.
+    pub unvalued: Vec<(String, String)>,
+}
+
+impl OwnBinding {
+    /// The record written to `validation/packtest-own-gates.json`.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "templates": self.templates,
+            "judged": self.judged,
+            "owned_count": self.owned.len(),
+            "terms_written": self.owned.iter().map(|(_, t)| t.len()).sum::<usize>(),
+            "owned": self.owned.iter().map(|(t, o)| serde_json::json!({"template": t, "writes": o})).collect::<Vec<_>>(),
+            "unvalued": self.unvalued.iter().map(|(t, o)| serde_json::json!({"template": t, "objective": o})).collect::<Vec<_>>(),
+        })
+    }
+
+    /// The build line.
+    pub fn line(&self) -> String {
+        format!(
+            "packtest gate ownership: {} of {} template(s) drive an outcome through a `{PARTY}` gate; {} of them read {} gate term(s) they did not write, now written at the campaign's start value before the drive; {} term(s) have no start value",
+            self.judged,
+            self.templates,
+            self.owned.len(),
+            self.owned.iter().map(|(_, t)| t.len()).sum::<usize>(),
+            self.unvalued.len()
+        )
+    }
+}
+
+/// **Every gate a template drives through is the template's own**: each
+/// `#party` term a gate on the path from a template's drive to the outcome it
+/// asserts reads, and the template does not write before the drive, is
+/// written at its value at the campaign's start (`start`: objective → value)
+/// before the first template line that reads one of those terms or carries
+/// the drive.
+///
+/// A template writes the terms of the gate it means to open; every other term
+/// a gate on its way reads — a mode, another quest, the gate of a trigger an
+/// effect fires, the guard of a fight an effect fails — is the fresh delve's,
+/// as a player who never touched that part of the map holds it. The rule is
+/// applied to the finished tree, after every emitter, by the same reading
+/// [`check_tree`] judges with, so it reaches templates not yet written; a term
+/// with no start value is left for [`check_tree`] to refuse.
+pub fn own_gates(
+    ns: &str,
+    out: &mut BTreeMap<String, Vec<u8>>,
+    start: &BTreeMap<String, i32>,
+) -> OwnBinding {
+    let mut binding = OwnBinding::default();
+    let Some(analysis) = Analysis::new(ns, out) else {
+        return binding;
+    };
+    let prefix = format!("packtest-datapack/data/{ns}/test/");
+    let mut edits: Vec<(String, String)> = Vec::new();
+    for (path, bytes) in out.iter() {
+        if !path.starts_with(&prefix) || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let Ok(body) = std::str::from_utf8(bytes) else {
+            continue;
+        };
+        binding.templates += 1;
+        let flat = analysis.tree.flatten(body);
+        let Verdict::Judged {
+            drive_at, missing, ..
+        } = analysis.judge(&flat)
+        else {
+            continue;
+        };
+        binding.judged += 1;
+        let name = path[prefix.len()..]
+            .trim_end_matches(".mcfunction")
+            .to_string();
+        let mut writes = Vec::new();
+        let mut terms = Vec::new();
+        for m in &missing {
+            match start.get(m) {
+                Some(v) => {
+                    writes.push(format!("scoreboard players set {PARTY} {m} {v}"));
+                    terms.push(m.clone());
+                }
+                None => binding.unvalued.push((name.clone(), m.clone())),
+            }
+        }
+        if writes.is_empty() {
+            continue;
+        }
+        // The first body line whose expansion reads one of the terms, or
+        // holds the drive: a probe the template asks before it drives reads
+        // the term at its start value too, never at a sibling's.
+        let wanted: BTreeSet<(String, String)> = terms
+            .iter()
+            .map(|t| (PARTY.to_string(), t.clone()))
+            .collect();
+        let lines: Vec<&str> = body.lines().collect();
+        let (mut so_far, mut inlined) = (Vec::new(), BTreeSet::new());
+        let mut at = lines.len();
+        for (k, l) in lines.iter().enumerate() {
+            let from = so_far.len();
+            // An empty line is a line of the flattened body too, and
+            // `lines()` of it yields none.
+            if l.is_empty() {
+                so_far.push(String::new());
+            } else {
+                analysis.tree.flatten_into(l, &mut so_far, &mut inlined);
+            }
+            let reads = so_far[from..]
+                .iter()
+                .any(|f| !score_pairs(f).is_disjoint(&wanted));
+            if reads || so_far.len() > drive_at {
+                at = k;
+                break;
+            }
+        }
+        let mut text: Vec<String> = lines[..at].iter().map(|l| l.to_string()).collect();
+        text.extend(writes);
+        text.extend(lines[at..].iter().map(|l| l.to_string()));
+        let mut joined = text.join("\n");
+        if body.ends_with('\n') {
+            joined.push('\n');
+        }
+        edits.push((path.clone(), joined));
+        binding.owned.push((name, terms));
+    }
+    for (p, t) in edits {
+        out.insert(p, t.into_bytes());
+    }
+    binding
+}
+
+/// Judge a whole emitted tree. `ns` is the campaign namespace.
+pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStateBinding, Failure> {
+    let mut binding = BatchStateBinding {
+        templates: 0,
+        driving: 0,
+        judged: 0,
+    };
+    let Some(analysis) = Analysis::new(ns, out) else {
+        return Ok(binding);
+    };
+    let prefix = format!("packtest-datapack/data/{ns}/test/");
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (path, bytes) in out {
+        if !path.starts_with(&prefix) || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let Ok(body) = std::str::from_utf8(bytes) else {
+            continue;
+        };
+        binding.templates += 1;
+        let flat = analysis.tree.flatten(body);
+        let (missing, witness) = match analysis.judge(&flat) {
+            Verdict::NotDriving => continue,
+            Verdict::Ungated => {
+                binding.driving += 1;
+                continue;
+            }
+            Verdict::Judged {
+                missing, witness, ..
+            } => {
+                binding.driving += 1;
+                binding.judged += 1;
+                (missing, witness)
+            }
+        };
         if missing.is_empty() {
             continue;
         }
@@ -534,6 +771,24 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+        // Where each unowned term is read: the gate, and the dispatch chain
+        // from the template's drive down to the function that holds it.
+        for m in &missing {
+            let Some((root, g)) = witness.get(m) else {
+                continue;
+            };
+            offenders.push(format!(
+                "    `{PARTY} {m}` gates `{}`, reached by {}",
+                g.target,
+                analysis
+                    .tree
+                    .chain(root, &g.holder)
+                    .iter()
+                    .map(|f| format!("`{f}`"))
+                    .collect::<Vec<_>>()
+                    .join(" -> ")
+            ));
+        }
     }
 
     if offenders.is_empty() {
@@ -548,18 +803,15 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
              order PackTest RANDOMISES, and `{PARTY}` is batch-global progression state \
              (spec-0018). A term a template only READS is whatever the sibling that ran last left \
              there. A template in that position does not fail; it becomes a coin toss that lands \
-             green most of the time, which is the shape that gets re-run instead of read.\n\nFix \
-             it in the emitter that writes the template, and there are two authorities depending \
-             on what the template drives. A template that opens ONE gate drives it through \
-             `packtest_gate_drive`, which takes a `Gate` and therefore covers all three axes at \
-             once — `requires_flags`, `forbids_flags` and `requires_state`. The \
-             campaign-playthrough template drives the whole campaign, so it opens with \
-             `campaign_progression_baseline` — the entire party ledger set to the campaign's start \
-             state, every term of which its own drive writes again inside the same atomic \
-             mcfunction. Do NOT hand-roll the terms beside the template: three sites did exactly \
-             that and each dropped a different axis, which is how this arrived. And never silence \
-             this by relaxing the assertion or retrying the test: an intermittent is a finding, \
-             and re-running discards it",
+             green most of the time, which is the shape that gets re-run instead of read.\n\n\
+             `own_gates` writes every such term at its value at the campaign's start before the \
+             drive, after every emitter, so a term named here is one the campaign's start ledger \
+             (`fresh_ledger`) holds no value for, or a tree that did not pass through \
+             `own_gates`. Give the term its start value in `fresh_ledger`, the one authority on \
+             the party ledger at the campaign's start. A template that opens ONE gate still \
+             drives it through `packtest_gate_drive`. Never silence this by relaxing the \
+             assertion or retrying the test: an intermittent is a finding, and re-running \
+             discards it",
             offenders.join("\n")
         ),
     })
@@ -620,7 +872,136 @@ mod tests {
         // The prescription must name the one authority, and must forbid the two
         // repairs that look right and are not.
         assert!(e.message.contains("packtest_gate_drive"), "{}", e.message);
-        assert!(e.message.contains("Do NOT hand-roll"), "{}", e.message);
+        assert!(e.message.contains("fresh_ledger"), "{}", e.message);
+        // The refusal names where the term is read: the gate and the chain
+        // from the drive to the function holding it.
+        assert!(
+            e.message
+                .contains("`#party dw.f_hall_sealed` gates `trig_skip`, reached by `tick`"),
+            "{}",
+            e.message
+        );
+    }
+
+    /// The pass writes the unowned gate term at its start value before the
+    /// drive, and the judge then passes the very tree it refused.
+    #[test]
+    fn own_gates_writes_the_unowned_term_before_the_drive() {
+        let mut t = gallery_like(false);
+        assert!(check_tree("g", &t).is_err());
+        let start = BTreeMap::from([("dw.f_hall_sealed".to_string(), 0)]);
+        let b = own_gates("g", &mut t, &start);
+        assert_eq!((b.templates, b.judged), (1, 1));
+        assert_eq!(
+            b.owned,
+            vec![(
+                "v04_strike_npc".to_string(),
+                vec!["dw.f_hall_sealed".to_string()]
+            )]
+        );
+        let body =
+            String::from_utf8(t["packtest-datapack/data/g/test/v04_strike_npc.mcfunction"].clone())
+                .unwrap();
+        let lines: Vec<&str> = body.lines().collect();
+        let w = lines
+            .iter()
+            .position(|l| *l == "scoreboard players set #party dw.f_hall_sealed 0")
+            .unwrap();
+        let d = lines.iter().position(|l| *l == "function g:tick").unwrap();
+        assert_eq!(w + 1, d, "{body}");
+        let after = check_tree("g", &t).expect("the owned tree passes");
+        assert_eq!(after.judged, 1);
+        // Idempotent: a second pass finds nothing to write.
+        let again = own_gates("g", &mut t, &start);
+        assert!(again.owned.is_empty());
+    }
+
+    /// A term the start ledger holds no value for is left unwritten, recorded,
+    /// and still refused.
+    #[test]
+    fn own_gates_leaves_an_unvalued_term_to_dw0807() {
+        let mut t = gallery_like(false);
+        let b = own_gates("g", &mut t, &BTreeMap::new());
+        assert!(b.owned.is_empty());
+        assert_eq!(
+            b.unvalued,
+            vec![("v04_strike_npc".to_string(), "dw.f_hall_sealed".to_string())]
+        );
+        assert_eq!(check_tree("g", &t).unwrap_err().code, "DW0807");
+    }
+
+    /// A blank line before the drive is a line of the body: the term lands
+    /// immediately before the drive, not after it (a blank line once shifted
+    /// the write past the drive, and the judge refused the tree the pass had
+    /// written).
+    #[test]
+    fn own_gates_counts_a_blank_line_before_the_drive() {
+        let mut t = gallery_like(false);
+        t.insert(
+            "packtest-datapack/data/g/test/v04_strike_npc.mcfunction".to_string(),
+            b"#> t\n# @dummy\n\nscoreboard players set #trig_skip dw.sys 0\nfunction g:tick\nassert score #trig_skip dw.sys matches 1\n"
+                .to_vec(),
+        );
+        let start = BTreeMap::from([("dw.f_hall_sealed".to_string(), 0)]);
+        own_gates("g", &mut t, &start);
+        let body =
+            String::from_utf8(t["packtest-datapack/data/g/test/v04_strike_npc.mcfunction"].clone())
+                .unwrap();
+        assert_eq!(
+            body,
+            "#> t\n# @dummy\n\nscoreboard players set #trig_skip dw.sys 0\nscoreboard players set #party dw.f_hall_sealed 0\nfunction g:tick\nassert score #trig_skip dw.sys matches 1\n"
+        );
+        check_tree("g", &t).expect("the owned tree passes");
+    }
+
+    /// A probe the template asks before its drive that reads the term gets
+    /// the start value too: the term lands before the probe.
+    #[test]
+    fn own_gates_writes_before_a_probe_that_reads_the_term() {
+        let mut t = gallery_like(false);
+        t.insert(
+            "packtest-datapack/data/g/test/v04_strike_npc.mcfunction".to_string(),
+            b"#> t\n# @dummy\nexecute unless score #party dw.f_hall_sealed matches 1 run scoreboard players set #p dw.sys 1\nfunction g:tick\nassert score #trig_skip dw.sys matches 1\n"
+                .to_vec(),
+        );
+        let start = BTreeMap::from([("dw.f_hall_sealed".to_string(), 0)]);
+        own_gates("g", &mut t, &start);
+        let body =
+            String::from_utf8(t["packtest-datapack/data/g/test/v04_strike_npc.mcfunction"].clone())
+                .unwrap();
+        assert!(
+            body.starts_with(
+                "#> t\n# @dummy\nscoreboard players set #party dw.f_hall_sealed 0\nexecute unless"
+            ),
+            "{body}"
+        );
+        check_tree("g", &t).expect("the owned tree passes");
+    }
+
+    /// A drive inside a hoisted helper: the term is written before the body
+    /// line that calls the helper.
+    #[test]
+    fn own_gates_writes_before_a_hoisted_drive() {
+        let mut t = gallery_like(false);
+        t.insert(
+            "packtest-datapack/data/g/function/pt_drive.mcfunction".to_string(),
+            b"scoreboard players set #trig_skip dw.sys 0\nfunction g:tick\n".to_vec(),
+        );
+        t.insert(
+            "packtest-datapack/data/g/test/v04_strike_npc.mcfunction".to_string(),
+            b"#> t\n# @dummy\nfunction g:pt_drive\nassert score #trig_skip dw.sys matches 1\n"
+                .to_vec(),
+        );
+        let start = BTreeMap::from([("dw.f_hall_sealed".to_string(), 0)]);
+        own_gates("g", &mut t, &start);
+        let body =
+            String::from_utf8(t["packtest-datapack/data/g/test/v04_strike_npc.mcfunction"].clone())
+                .unwrap();
+        assert_eq!(
+            body,
+            "#> t\n# @dummy\nscoreboard players set #party dw.f_hall_sealed 0\nfunction g:pt_drive\nassert score #trig_skip dw.sys matches 1\n"
+        );
+        check_tree("g", &t).expect("the owned tree passes");
     }
 
     #[test]
@@ -768,12 +1149,8 @@ mod tests {
         assert_eq!(e.code, "DW0807");
         assert!(e.message.contains("campaign.mcfunction"), "{}", e.message);
         assert!(e.message.contains("dw.q_only"), "{}", e.message);
-        // The prescription for THIS shape is the whole-ledger baseline, named.
-        assert!(
-            e.message.contains("campaign_progression_baseline"),
-            "{}",
-            e.message
-        );
+        // The prescription names the one authority on the start ledger.
+        assert!(e.message.contains("fresh_ledger"), "{}", e.message);
     }
 
     /// The same tree with the baseline in place. The template's drive lives in

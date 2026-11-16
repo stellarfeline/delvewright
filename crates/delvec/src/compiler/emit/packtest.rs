@@ -55,6 +55,23 @@ mod watching;
 mod wave;
 mod world;
 
+/// The party ledger at the campaign's start, objective → value: the lines of
+/// [`quest::fresh_ledger`], the one authority on it, read back (a later line
+/// for one objective wins, as it does on the server).
+pub(super) fn start_ledger(plan: &Plan) -> BTreeMap<String, i32> {
+    let mut start = BTreeMap::new();
+    for line in quest::fresh_ledger(plan) {
+        let t: Vec<&str> = line.split_whitespace().collect();
+        if let ["scoreboard", "players", "set", h, obj, v] = t.as_slice()
+            && *h == plan::PARTY
+            && let Ok(v) = v.parse::<i32>()
+        {
+            start.insert((*obj).to_string(), v);
+        }
+    }
+    start
+}
+
 /// What the build's proofs established that the suite stands its templates on:
 /// each locked strike's plan (spec-0094) and each watcher's drawable cell
 /// (spec-0101). They travel from the proof to the template, never re-derived.

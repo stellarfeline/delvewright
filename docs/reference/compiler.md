@@ -2409,7 +2409,26 @@ CI-enforced over every fixture family by `tests/it/packtest_batch.rs`):
   `pt_camp_run_<i>`) are inlined before judging, because a baseline does not stop
   belonging to the template when the emitter moves it. All of it is decided at
   build time over the shipped bytes, not by a convention a future template can be
-  written without.
+  written without. **The terms a template does not open are written for it**
+  (`batchstate::own_gates`): after every emitter and after every pass that
+  writes into a template (`compiler::solo`, `compiler::handback`,
+  `compiler::owncells`, `compiler::freshbody`), each gate term a template reads and does not write before its drive — the
+  map's mode, another quest's scores, the gate of a trigger an effect fires,
+  the guard of a fight an effect fails — is written at its value at the
+  campaign's start (`packtest::start_ledger`, read back from `fresh_ledger`)
+  before the first body line that reads one of those terms or carries the
+  drive (the call of a hoisted helper that holds either counts as that line),
+  so a probe the template asks before it drives reads the start value too. A template still opens its own gate itself;
+  the pass gives every other term the fresh delve's value, by the same reading
+  `DW0807` judges with, so it reaches templates not yet written. The build
+  prints `packtest gate ownership: J of T template(s) drive an outcome through
+  a #party gate; N of them read K gate term(s) they did not write, now written
+  at the campaign's start value before the drive; U term(s) have no start
+  value` and writes `validation/packtest-own-gates.json` (`templates`,
+  `judged`, `owned_count`, `terms_written`, per template the terms written,
+  and `unvalued`). A term with no start value is left unwritten and `DW0807`
+  refuses it; each refused term names the gate that reads it and the shortest
+  dispatch chain from the drive to the function holding that gate.
 - **Own server, for a template that takes every body (`compiler::solo`).** A
   campaign function that teleports, re-modes or makes spectate a party-wide `@a`
   — a cutscene's start (`gamemode spectator @a`) and its return (`tp @a <mark>`)
