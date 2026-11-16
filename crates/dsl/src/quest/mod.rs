@@ -168,6 +168,11 @@ pub struct QuestsContent {
     /// campaign that declares none, so such a campaign stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub races: Vec<crate::Race>,
+    /// Modes (spec-0140): a state of the map in which every quest but the
+    /// ones the mode keeps is held. Empty/absent for every campaign that
+    /// declares none, so such a campaign stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modes: Vec<crate::Mode>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The

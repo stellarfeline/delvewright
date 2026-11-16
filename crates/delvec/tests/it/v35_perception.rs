@@ -574,6 +574,15 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"start-race","race":"race/dash"}),
         ),
         ("end-race", json!({"type":"end-race","race":"race/dash"})),
+        // spec-0140: the map's mode is the party's.
+        (
+            "enter-mode",
+            json!({"type":"enter-mode","mode":"mode/aside"}),
+        ),
+        (
+            "leave-mode",
+            json!({"type":"leave-mode","mode":"mode/aside"}),
+        ),
         // spec-0135 §13: the sidebar is the world's; a place is a body's.
         (
             "show-board",

@@ -1,0 +1,15 @@
+{
+  "code": "DW1124",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/modes/0/keeps",
+      "value": [
+        "quest/the-reliquary"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the mode the porch enters keeps the reliquary instead of the long hall. The reliquary is in progress when the party arrives on the porch, so the mode is on, and the next step of the path — the hall's end — belongs to a quest it holds: not told, not completable. Refused at the plan, naming the objective, its step, the mode and the step it is entered at. It declares no unit."
+}

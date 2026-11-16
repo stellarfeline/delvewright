@@ -15,6 +15,7 @@ pub(crate) use mock::path_mocks;
 pub use pursuers::Pursuer;
 pub(crate) use pursuers::{
     check_courses_started, check_outrun_loose, check_ridden_vehicles_stand, pursuers_by_step,
+    walk_modes,
 };
 pub use region::*;
 pub(crate) use triggers::*;
