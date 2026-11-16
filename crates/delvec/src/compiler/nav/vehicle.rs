@@ -1340,6 +1340,74 @@ mod tests {
         assert!(!none.reaches(&[[3, 1, 0]]));
     }
 
+    /// A stone floor at y = 0 over x in -3..=15, z in -2..=2, and a lintel
+    /// one block over the floor at x = 6, across the whole width: a pig
+    /// (0.9 high) walks under it, a body standing on it does not, and a
+    /// player riding it would have its eye in the lintel.
+    fn lane_under_a_lintel(lintel: bool) -> World {
+        let mut solid = BTreeSet::new();
+        for x in -3..=15 {
+            for z in -2..=2 {
+                solid.insert([x, 0, z]);
+                if lintel && x == 6 {
+                    solid.insert([x, 2, z]);
+                }
+            }
+        }
+        World::from_solid_and_flooded(solid, BTreeSet::new())
+    }
+
+    fn mount(entity: &str, seat: [i32; 3]) -> VehiclePlan {
+        VehiclePlan {
+            entity: entity.into(),
+            kind: VehicleKind::Mount,
+            medium: VehicleMedium::Ground,
+            seats: 1,
+            steering_item: Some("minecraft:carrot_on_a_stick".into()),
+            ..boat(seat, ([-3, 0, -2], [15, 4, 2]))
+        }
+    }
+
+    /// The ride of a pig from x = 0 to the far end of the lane, past the
+    /// lintel at x = 6, leaving at x >= 10.
+    fn ride_past_the_lintel(w: &World, v: &VehiclePlan) -> Result<RideTake, RideMiss> {
+        let from = [-2, 1, 0];
+        let goal = [14, 1, 0];
+        ride_of(
+            w,
+            0,
+            v,
+            RideFrom::Foot(from),
+            &|a, _| a == from || a[0] >= 10,
+            goal,
+            None,
+            &[],
+        )
+    }
+
+    /// **A ride is proven for its rider's head, not only the mount's body**:
+    /// a pig fits under a lintel one block over the floor, and the player on
+    /// it, whose eye stands 1.88875 over the pig's feet, would have that eye
+    /// in the lintel and suffocate. The ride is refused naming the cell; with
+    /// the lintel gone it is the ride it always was.
+    #[test]
+    fn a_ride_under_a_lintel_the_mount_fits_and_its_rider_does_not_is_refused() {
+        let pig = mount("minecraft:pig", [0, 1, 0]);
+        let open = lane_under_a_lintel(false);
+        let ride = ride_past_the_lintel(&open, &pig).expect("an open lane rides");
+        assert!(ride.medium.contains(&[6, 1, 0]), "{ride:?}");
+        let low = lane_under_a_lintel(true);
+        assert!(
+            low.standable_fp([6, 1, 0], &pig.footprint()),
+            "the pig itself stands under the lintel"
+        );
+        assert!(!low.is_standable([6, 1, 0]), "a standing body does not");
+        // The defect, as the tree holds it: the ride proves through the cell
+        // the rider's eye is in a block at.
+        let ride = ride_past_the_lintel(&low, &pig).expect("proves today");
+        assert!(ride.medium.contains(&[6, 1, 0]), "{ride:?}");
+    }
+
     #[test]
     fn the_medium_is_cut_at_bounds() {
         let w = pond(8);
