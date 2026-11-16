@@ -3124,16 +3124,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   is `DW1141`). Before the members are carried it counts the crossing on
   `#party dw.xc`, names it on `#xto dw.sys` (`Crossing::id`, 1-based in area
   order) and, in a campaign with a checkpoint, keeps the checkpoint armed then on
-  `#xcp dw.sys` (`-1`: none); each member carried takes the party's `dw.xc`.
+  `#xcp dw.sys` (`-1`: none); each member carried takes the party's `dw.xc`
+  and has `dw.xd` (a `deathCount`) zeroed.
   **A member who was not carried is owed the crossing**: one away, on a death
   screen, waiting out a respawn or still choosing a class is behind the party's
-  count, and the tick runs `cross_owed` as each member present (the carry's own
-  predicate), not watching a cutscene, whose `dw.xc` is not `#party`'s once the
-  party has crossed: it puts them on the active checkpoint's seat (`cp_seat_<i>`)
-  when a checkpoint was armed since the crossing, else on the last crossing's
-  entry point, and writes the party's count on them. The void has no walk back,
-  so a member left in the old area could never follow (`absent::SERVED` site
-  `crossing`). `dw.xc` is declared in `setup` for a campaign that crosses.
+  count, and one who died since they were last put where the party is respawns
+  behind it. Once the party has crossed, the tick seeds every member's `dw.xc`
+  (`DW0495`) and runs `cross_owed` as each member present (the carry's own
+  predicate), not watching a cutscene, whose `dw.xc` is not `#party`'s or whose
+  `dw.xd` is 1 or more: it puts them on the active checkpoint's seat
+  (`cp_seat_<i>`) when a checkpoint was armed since the crossing, else on the
+  last crossing's entry point, writes the party's count on them and zeroes
+  `dw.xd`. The void has no walk back, so a member left in the old area could
+  never follow (`absent::SERVED` site `crossing`). `dw.xc` and `dw.xd` are
+  declared in `setup` for a campaign that crosses.
   **PackTest** `party_cross_<area>`, one per area the exported path crosses into,
   run alone: two members 48 blocks either side of the entry point, nobody within
   8 of it, the pinned dummy completes the first objective that crosses there

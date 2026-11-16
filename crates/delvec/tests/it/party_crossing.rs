@@ -176,7 +176,7 @@ fn a_member_who_was_away_is_carried_once_back() {
     let [x, y, z] = KEEP_ENTRY;
     assert!(
         owed_fn.lines().any(|l| l.ends_with(&format!(
-            "if score #xto dw.sys matches 1 run tp @s {x}.5 {y} {z}.5"
+            "if score #xto dw.sys matches 1 run tp @s {x}.5 {y}.0 {z}.5"
         ))),
         "a late member lands on the last crossing's entry point:\n{owed_fn}"
     );

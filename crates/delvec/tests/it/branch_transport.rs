@@ -167,7 +167,7 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
     let body = complete_fn(&out, "obj/bolt");
     let expected = format!(
         "execute if score {p} {flee} matches 1 unless score {p} {wait} matches 1 run function \
-         hello-world:cross_area_landing",
+         hello-world:cross_landing",
         p = plan::PARTY,
         flee = plan::flag_score("flag/flee"),
         wait = plan::flag_score("flag/wait"),
