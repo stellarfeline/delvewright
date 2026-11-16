@@ -649,9 +649,10 @@ fn an_unaffordable_purchase_is_refused_and_says_so() {
 /// two halves a display gate has to keep apart.
 fn shop_with_a_gated_offer() -> String {
     let gated = PURSE_AND_STAKE.replace(
-        r#"        ] }
+        r#"            ] }
+        ] }
     ]"#,
-        r#"        ] },
+        r#"            ] },
           { "label": "Light the brazier",
             "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],
             "effects": [ { "type": "narrate", "text": "The brazier takes." } ] }
@@ -776,9 +777,13 @@ fn too_many_gated_offers_is_dw0362() {
         })
         .collect();
     let many = PURSE_AND_STAKE.replace(
-        r#"        ] }
+        r#"            ] }
+        ] }
     ]"#,
-        &format!("        ] }},\n{}\n        ] }}\n    ]", offers.join(",\n")),
+        &format!(
+            "            ] }},\n{}\n        ] }}\n    ]",
+            offers.join(",\n")
+        ),
     );
     assert_ne!(many, PURSE_AND_STAKE);
     let c = parse_hw(&quests_doc(&many, ""));
