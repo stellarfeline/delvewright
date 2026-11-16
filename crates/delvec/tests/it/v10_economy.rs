@@ -645,6 +645,158 @@ fn an_unaffordable_purchase_is_refused_and_says_so() {
     );
 }
 
+/// A shop with one open offer and one offer gated on `state/embers ≥ 3` — the
+/// two halves a display gate has to keep apart.
+fn shop_with_a_gated_offer() -> String {
+    let gated = PURSE_AND_STAKE.replace(
+        r#"            ] }
+        ] }
+    ]"#,
+        r#"            ] },
+          { "label": "Light the brazier",
+            "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],
+            "effects": [ { "type": "narrate", "text": "The brazier takes." } ] }
+        ] }
+    ]"#,
+    );
+    assert_ne!(gated, PURSE_AND_STAKE, "the second offer was spliced in");
+    gated
+}
+
+fn dialog(out: &BuildOutput, name: &str) -> serde_json::Value {
+    serde_json::from_str(&text(
+        out,
+        &format!("datapack/data/hello-world/dialog/{name}.json"),
+    ))
+    .unwrap()
+}
+
+fn commands(d: &serde_json::Value) -> Vec<String> {
+    d["actions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|b| b["action"]["command"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// **An offer whose gate is closed is not shown.** Vanilla cannot hide a dialog
+/// button, so a shop with a gated offer is drawn the way a gated dialogue node is:
+/// one dialog per availability mask, and an opener that computes this player's
+/// mask from each gated offer's whole gate and shows the matching variant. Each
+/// button keeps its declared `/trigger` value, so the pick dispatch is unchanged.
+///
+/// Binding: one gated offer of two, so two variants — mask 0 draws one button,
+/// mask 1 draws both.
+#[test]
+fn a_closed_offer_is_not_shown() {
+    let out = build(&parse_hw(&quests_doc(&shop_with_a_gated_offer(), "")));
+
+    let m0 = commands(&dialog(&out, "shop_0__m0"));
+    assert_eq!(
+        m0,
+        vec!["/trigger dw.shop set 1".to_string()],
+        "the gate closed: only the open offer is drawn"
+    );
+    let m1 = commands(&dialog(&out, "shop_0__m1"));
+    assert_eq!(
+        m1,
+        vec![
+            "/trigger dw.shop set 1".to_string(),
+            "/trigger dw.shop set 2".to_string()
+        ],
+        "the gate open: both offers, in declaration order"
+    );
+    assert!(
+        !out.contains_key("datapack/data/hello-world/dialog/shop_0.json"),
+        "no dialog draws every offer whatever its gate"
+    );
+
+    let open = fnc(&out, "shop_open_0");
+    assert!(
+        open.contains("function hello-world:shop_show_0") && !open.contains("dialog show"),
+        "the opener shows the variant the mask chooses:\n{open}"
+    );
+    let mask = fnc(&out, "shop_mask_0");
+    assert!(
+        mask.contains("scoreboard players set @s dw.dmask 0")
+            && mask.contains(
+                "execute if score @s dw.s_embers matches 3.. run scoreboard players add @s dw.dmask 1"
+            ),
+        "bit 0 is the gated offer's whole gate, read as the opening player:\n{mask}"
+    );
+    let show = fnc(&out, "shop_show_0");
+    for m in 0..2 {
+        assert!(
+            show.contains(&format!(
+                "execute if score @s dw.dmask matches {m} run dialog show @s hello-world:shop_0__m{m}"
+            )),
+            "variant {m} is reachable from the chooser:\n{show}"
+        );
+    }
+    let setup = fnc(&out, "setup");
+    assert!(
+        setup.contains("scoreboard objectives add dw.dmask dummy"),
+        "the mask objective is declared for a shop that reads it:\n{setup}"
+    );
+}
+
+/// A shop whose every offer is closed draws a notice, not an empty button list —
+/// vanilla's 1.21.11 dialog codec rejects a `multi_action` with no actions.
+#[test]
+fn a_shop_with_every_offer_closed_is_a_notice() {
+    let all_gated = shop_with_a_gated_offer().replace(
+        r#"{ "label": "Bank an ember", "tooltip": "Costs one ember.","#,
+        r#"{ "label": "Bank an ember", "tooltip": "Costs one ember.",
+            "requires_flags": [ "flag/brazier-lit" ],"#,
+    );
+    assert_ne!(all_gated, shop_with_a_gated_offer());
+    let out = build(&parse_hw(&quests_doc(
+        &all_gated,
+        r#", { "type": "set-flag", "flag": "flag/brazier-lit" }"#,
+    )));
+    let m0 = dialog(&out, "shop_0__m0");
+    assert_eq!(m0["type"], serde_json::json!("minecraft:notice"));
+    assert!(m0.get("actions").is_none());
+    assert_eq!(commands(&dialog(&out, "shop_0__m3")).len(), 2);
+}
+
+/// A shop past the gated-button cap is `DW0362`, the one cap every precomputed
+/// dialog answers to, naming the shop.
+#[test]
+fn too_many_gated_offers_is_dw0362() {
+    let offers: Vec<String> = (0..11)
+        .map(|k| {
+            format!(
+                r#"{{ "label": "Offer {k}",
+            "requires_state": [ {{ "state": "state/embers", "op": "at-least", "value": {k} }} ],
+            "effects": [ {{ "type": "narrate", "text": "Taken." }} ] }}"#
+            )
+        })
+        .collect();
+    let many = PURSE_AND_STAKE.replace(
+        r#"            ] }
+        ] }
+    ]"#,
+        &format!(
+            "            ] }},\n{}\n        ] }}\n    ]",
+            offers.join(",\n")
+        ),
+    );
+    assert_ne!(many, PURSE_AND_STAKE);
+    let c = parse_hw(&quests_doc(&many, ""));
+    match try_build(&c) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0362", "{message}");
+            assert!(message.contains("shop/brazier"), "{message}");
+        }
+        Err(other) => panic!("expected DW0362, got {other:?}"),
+        Ok(_) => panic!("expected DW0362, but the build succeeded"),
+    }
+}
+
 /// A gated offer is inert to a **direct** `/trigger` — the bot's path, which
 /// bypasses any UI. Same discipline a dialogue option's handler already applies.
 #[test]

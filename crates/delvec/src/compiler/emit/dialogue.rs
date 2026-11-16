@@ -47,6 +47,25 @@ pub(super) fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure
             }
         }
     }
+    // A shop's gated offers are the same encoding (one dialog per mask), so the
+    // same cap answers for them.
+    for (_, sh, _) in shops(plan) {
+        let n = gated_offers(sh).len();
+        if n > MAX_GATED_DIALOGUE_OPTIONS {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_DIALOGUE_VARIANT_CAP,
+                message: format!(
+                    "shop `{}` declares {n} gated offers (`requires_flags` / `forbids_flags` / \
+                     `requires_state`); the cap is {MAX_GATED_DIALOGUE_OPTIONS}. Vanilla cannot \
+                     hide a dialog button, so the compiler precomputes every combination: this \
+                     shop would emit 2^{n} dialog variants and a dispatcher of the same size. \
+                     Split the offers across two shops, or leave some offers open and gate \
+                     their effects instead.",
+                    sh.id,
+                ),
+            });
+        }
+    }
     Ok(())
 }
 
@@ -156,27 +175,52 @@ pub(super) fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(Stri
             continue;
         }
         let node_safe = plan::safe_local(&opt.node_id);
-
-        let mut dmask = vec!["scoreboard players set @s dw.dmask 0".to_string()];
-        for (i, g) in gated.iter().enumerate() {
-            dmask.push(format!(
-                "execute{} run scoreboard players add @s dw.dmask {}",
-                option_display_conditions(plan, c, g),
-                1u32 << i
-            ));
-        }
-        out.push((format!("dmask_{}_{}", npc.safe, node_safe), lines(&dmask)));
-
-        let mut show = vec![format!("function {ns}:dmask_{}_{}", npc.safe, node_safe)];
-        for mask in 0..(1u32 << gated.len()) {
-            show.push(format!(
-                "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{}_{}__m{mask}",
-                npc.safe, node_safe
-            ));
-        }
-        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&show)));
+        let conds: Vec<String> = gated
+            .iter()
+            .map(|g| option_display_conditions(plan, c, g))
+            .collect();
+        out.extend(mask_chooser(
+            ns,
+            &format!("dmask_{}_{}", npc.safe, node_safe),
+            &format!("show_{}_{}", npc.safe, node_safe),
+            &format!("{}_{}", npc.safe, node_safe),
+            &conds,
+        ));
     }
     out
+}
+
+/// **The one availability chooser** every precomputed dialog uses — a gated
+/// dialogue node and a shop with a gated offer alike.
+///
+/// `mask_fn` computes this player's availability bitmask into `dw.dmask` (bit `i`
+/// set iff `conds[i]`, a space-prefixed `execute` condition, holds), and
+/// `show_fn` runs it and `dialog show`s `<variant_prefix>__m<mask>`. The caller
+/// emits one dialog per mask under that name.
+pub(super) fn mask_chooser(
+    ns: &str,
+    mask_fn: &str,
+    show_fn: &str,
+    variant_prefix: &str,
+    conds: &[String],
+) -> [(String, String); 2] {
+    let mut dmask = vec!["scoreboard players set @s dw.dmask 0".to_string()];
+    for (i, cond) in conds.iter().enumerate() {
+        dmask.push(format!(
+            "execute{cond} run scoreboard players add @s dw.dmask {}",
+            1u32 << i
+        ));
+    }
+    let mut show = vec![format!("function {ns}:{mask_fn}")];
+    for mask in 0..(1u32 << conds.len()) {
+        show.push(format!(
+            "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{variant_prefix}__m{mask}"
+        ));
+    }
+    [
+        (mask_fn.to_string(), lines(&dmask)),
+        (show_fn.to_string(), lines(&show)),
+    ]
 }
 
 /// Whether any dialogue option is display-gated (gates the `dw.dmask`
@@ -290,30 +334,71 @@ pub(super) fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec
     // bonfire's two options use, because `/trigger` is the only command a non-op
     // player may run. `DW0523` guarantees the action list is non-empty: vanilla's
     // 1.21.11 dialog codec rejects an empty one at pack load.
+    //
+    // An offer whose own gate is closed is not drawn: a shop with a gated offer
+    // emits one variant per availability mask (`shop_<i>__m<mask>`, bit `b` = the
+    // b-th gated offer's gate holds), chosen by `shop_show_<i>` — the encoding a
+    // gated dialogue node uses. Each button keeps its declared `/trigger` value.
     for (i, sh, _) in shops(plan) {
-        let actions: Vec<Value> = sh
+        let buttons: Vec<(bool, Value)> = sh
             .offers
             .iter()
             .enumerate()
             .map(|(j, off)| {
-                dialog_button(
-                    tr(&off.label),
-                    off.tooltip.as_deref(),
-                    &format!("/trigger dw.shop set {}", j + 1),
+                (
+                    !off.gate().is_empty(),
+                    dialog_button(
+                        tr(&off.label),
+                        off.tooltip.as_deref(),
+                        &format!("/trigger dw.shop set {}", j + 1),
+                    ),
                 )
             })
             .collect();
-        dialogs.push((
-            format!("shop_{i}"),
-            json!({
-                "type": "minecraft:multi_action",
-                "title": tr(&sh.title),
-                "columns": 1,
-                "can_close_with_escape": true,
-                "after_action": "close",
-                "actions": actions
-            }),
-        ));
+        let shop_dialog = |actions: Vec<Value>| {
+            if actions.is_empty() {
+                // Vanilla's 1.21.11 dialog codec rejects an empty action list.
+                json!({
+                    "type": "minecraft:notice",
+                    "title": tr(&sh.title),
+                    "can_close_with_escape": true
+                })
+            } else {
+                json!({
+                    "type": "minecraft:multi_action",
+                    "title": tr(&sh.title),
+                    "columns": 1,
+                    "can_close_with_escape": true,
+                    "after_action": "close",
+                    "actions": actions
+                })
+            }
+        };
+        let n_gated = buttons.iter().filter(|(g, _)| *g).count();
+        if n_gated == 0 {
+            dialogs.push((
+                format!("shop_{i}"),
+                shop_dialog(buttons.into_iter().map(|(_, b)| b).collect()),
+            ));
+            continue;
+        }
+        for mask in 0..(1u32 << n_gated) {
+            let mut bit = 0u32;
+            let visible: Vec<Value> = buttons
+                .iter()
+                .filter(|(gated, _)| {
+                    if *gated {
+                        let shown = mask & (1u32 << bit) != 0;
+                        bit += 1;
+                        shown
+                    } else {
+                        true
+                    }
+                })
+                .map(|(_, b)| b.clone())
+                .collect();
+            dialogs.push((format!("shop_{i}__m{mask}"), shop_dialog(visible)));
+        }
     }
 
     // per-npc dialogue nodes (stage 6) → one dialog each
