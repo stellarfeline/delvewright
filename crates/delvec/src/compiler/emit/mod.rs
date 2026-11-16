@@ -855,8 +855,23 @@ fn emit_all(
         code: f.code,
         message: f.message,
     })?;
-    // A party carry's seats, one per member, over the same world (`DW1141`).
-    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world).map_err(|f| {
+    // The inter-area crossings that exist only on a branch. Computed here so
+    // `DW0494` fails the build before a single function is emitted, and before
+    // the seats: every crossing is a party carry, seated as one.
+    let branch_transport = branch_transport_overlay(plan)?;
+    let crossing_marks: Vec<([i32; 3], String)> = teleport::crossings(plan, &branch_transport)
+        .into_iter()
+        .map(|x| {
+            (
+                x.to,
+                format!("the crossing into area `{}` (`{}`)", x.area, x.fn_name()),
+            )
+        })
+        .collect();
+    // A party carry's seats, one per member, over the same world (`DW1141`):
+    // every party teleport's and every crossing's.
+    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world, &crossing_marks)
+        .map_err(|f| {
         BuildFailure::Diagnostic {
             code: f.code,
             message: f.message,
@@ -1160,9 +1175,6 @@ fn emit_all(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
-    // The inter-area crossings that exist only on a branch. Computed
-    // here so `DW0494` fails the build before a single function is emitted.
-    let branch_transport = branch_transport_overlay(plan)?;
 
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
