@@ -11,6 +11,11 @@ pub(super) fn safe_obj_fn(obj_id: &str) -> String {
 /// collect completion check (gap 13).
 pub(super) const COLLECT_HOLD: &str = "dw.hold";
 
+/// The `dw.sys` holder the party's held count of a `collect`'s item is summed
+/// into (spec-0141 §3.1): every player's [`COLLECT_HOLD`], added up on the tick
+/// that judges the objective.
+pub(super) const COLLECT_PARTY: &str = "#hold";
+
 /// The fake-player sentinel on `dw.sys` that guards an objective's activation
 /// placement so it runs exactly once, world-wide (gap 13).
 pub(super) fn activation_flag(obj_id: &str) -> String {

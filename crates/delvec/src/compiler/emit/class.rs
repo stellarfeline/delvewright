@@ -352,6 +352,14 @@ pub(super) fn class_apply_fns(plan: &Plan, guide: &guidance::Guide) -> Vec<(Stri
         if let Some(pos) = campaign_spawn(plan) {
             body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
         }
+        // spec-0141 §3.3: a player who takes a class after the party has
+        // armed a checkpoint arrives where the party respawns, not at the
+        // entry point the party has left: the same seat a respawn takes
+        // (`cp_seat_<i>`), dispatched on the active checkpoint. Before the
+        // first checkpoint `#cp` holds no score and the entry point stands.
+        if plan.any_checkpoint() {
+            body.extend(cp_seat_dispatch(plan));
+        }
         // spec-0105 §4.1: the container class's arrival line, told to this
         // player by the one `narrate` emitter in the same function that warps
         // them in — so it precedes every container a body can reach, by

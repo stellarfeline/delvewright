@@ -308,3 +308,292 @@ pub fn party_binding(plan: &Plan, out: &BuildOutput) -> PartyBinding {
     }
     b
 }
+
+// ------------------------------------------------ the absent member (spec-0141) --
+
+/// The first `collect` that asks for two or more of its item, with its quest:
+/// the one a party can hold between two inventories.
+fn first_split_collect(c: &delvewright_dsl::Campaign) -> Option<(&str, &Objective)> {
+    c.quests.content.quests.iter().find_map(|q| {
+        q.objectives
+            .iter()
+            .find(|o| matches!(o, Objective::Collect { count, .. } if *count >= 2))
+            .map(|o| (q.id.as_str(), o))
+    })
+}
+
+/// Generated **party-count** PackTest (spec-0141 §3.1): a `collect` of `n`
+/// completes when two members hold `n` between them.
+///
+/// The claim a single dummy cannot make: one player's count and the party's
+/// are the same number to a party of one. The template spawns a second member,
+/// hands its own dummy `n − 1` of the stack and the other member one, opens the
+/// objective's guards and runs one real `tick`.
+///
+/// Batch model: own member (spawned and removed here), own dummy pinned, the
+/// item cleared from every other player first, and no `await`.
+pub(super) fn emit_party_collect_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let Some((qid, o)) = first_split_collect(c) else {
+        return;
+    };
+    let Objective::Collect { id, count, .. } = o else {
+        return;
+    };
+    let stack = collect_stack(o).expect("a collect has a stack");
+    let item = collect_predicate(o).expect("a collect has a predicate");
+    // The stack without its count: the two members are handed parts of it.
+    let Some((bare, _)) = stack.rsplit_once(' ') else {
+        return;
+    };
+    let (pin, sel) = pin_dummy("dw_t_pcol");
+    let other = "dwpcolp1";
+    let other_sel = format!("@a[name={other},limit=1]");
+    let party = plan::PARTY;
+    let mut b = packtest_header(&format!(
+        "{}: collect `{id}` counts the party — {} held by one member and 1 by another complete \
+         it (spec-0141)",
+        artifact_title(c),
+        count - 1
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    b.push(format!("dummy {other} spawn"));
+    b.extend(objective::clear_from_others("dw_t_pcol", &[o]));
+    b.push(format!("clear {sel} {item}"));
+    b.push(format!(
+        "scoreboard players set {party} {} 0",
+        obj_score(id.as_str())
+    ));
+    b.push(format!("give {sel} {bare} {}", count - 1));
+    b.push(format!("give {other_sel} {bare} 1"));
+    b.extend(packtest_guards(plan, qid, o, true));
+    b.push(format!("function {ns}:tick"));
+    b.push(format!(
+        "assert score {party} {} matches 1",
+        obj_score(id.as_str())
+    ));
+    b.push(format!("clear {sel} {item}"));
+    b.push(format!("clear {other_sel} {item}"));
+    b.push(format!("dummy {other} leave"));
+    out.insert(party_collect_template_path(ns), lines(&b).into_bytes());
+}
+
+fn party_collect_template_path(ns: &str) -> String {
+    format!("packtest-datapack/data/{ns}/test/party_collect.mcfunction")
+}
+
+/// Generated **owed-grant** PackTests (spec-0141 §3.2), one per grant: a
+/// member who arrives after the party was handed a stack is handed theirs.
+///
+/// The template issues the grant through its real `grant_<i>`, spawns a member
+/// who was not there, and runs the owed dispatch as that member: they hold the
+/// stack once, a second dispatch owes them nothing for it, and their count of
+/// it is the party's.
+///
+/// Batch model: own member under a name no other template uses, own scratch
+/// holders (`#pg_<i>_*`), the member's copies cleared before they leave, and
+/// no `await`.
+pub(super) fn emit_party_grant_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use super::super::grant::{
+        GRANT_OWED_FN, GRANT_PARTY, grant_fn, grant_objective, grant_owed_fn, grants,
+    };
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let all = grants(plan);
+    for (i, stack) in all.iter().enumerate() {
+        let Some((bare, n)) = stack.rsplit_once(' ') else {
+            continue;
+        };
+        // The item id alone: `clear … 0` counts every stack of it the member holds.
+        let item = bare.split('[').next().unwrap_or(bare);
+        let obj = grant_objective(i);
+        let other = format!("dwpg{i}p1");
+        let sel = format!("@a[name={other},limit=1]");
+        let mut b = packtest_header(&format!(
+            "{}: grant {i} (`{item}` × {n}) is owed to a member who arrives after it was issued \
+             (spec-0141)",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:{}", grant_fn(i)));
+        b.push(format!("dummy {other} spawn"));
+        // Own init: a name's scores outlive its body, so the arriving member's
+        // count of this grant is put one issue behind the party's.
+        b.push(format!("clear {sel} {item}"));
+        // Level with the party on every grant, then one issue of this one
+        // behind: the dispatch owes them this stack and no other.
+        for j in 0..all.len() {
+            let oj = grant_objective(j);
+            b.push(format!(
+                "scoreboard players operation {sel} {oj} = {GRANT_PARTY} {oj}"
+            ));
+        }
+        b.push(format!("scoreboard players remove {sel} {obj} 1"));
+        b.push(format!(
+            "execute as {sel} run function {ns}:{GRANT_OWED_FN}"
+        ));
+        b.push(format!(
+            "execute store result score #pg_{i}_a dw.sys run clear {sel} {item} 0"
+        ));
+        b.push(format!("assert score #pg_{i}_a dw.sys matches {n}"));
+        b.push(format!(
+            "execute store success score #pg_{i}_l dw.sys if score {sel} {obj} = {GRANT_PARTY} {obj}"
+        ));
+        b.push(format!("assert score #pg_{i}_l dw.sys matches 1"));
+        // Level with the party, the member is owed nothing more of it.
+        b.push(format!(
+            "execute as {sel} run function {ns}:{GRANT_OWED_FN}"
+        ));
+        b.push(format!(
+            "execute store result score #pg_{i}_b dw.sys run clear {sel} {item} 0"
+        ));
+        b.push(format!("assert score #pg_{i}_b dw.sys matches {n}"));
+        b.push(format!("clear {sel}"));
+        b.push(format!("dummy {other} leave"));
+        // The hand-over itself, named so the suite calls every body it emits.
+        b.push(format!("# hands over through {ns}:{}", grant_owed_fn(i)));
+        out.insert(party_grant_template_path(ns, i), lines(&b).into_bytes());
+    }
+}
+
+fn party_grant_template_path(ns: &str, i: usize) -> String {
+    format!("packtest-datapack/data/{ns}/test/party_grant_{i}.mcfunction")
+}
+
+/// The first checkpoint a class apply can be told from the entry point by:
+/// one whose seat is in another column than the campaign's spawn.
+fn first_distinct_checkpoint(plan: &Plan) -> Option<(usize, [i32; 3])> {
+    let entry = campaign_spawn(plan)?;
+    plan.checkpoints
+        .iter()
+        .map(|cp| (cp.index, plan.seat(cp)))
+        .find(|(_, seat)| seat[0] != entry[0] || seat[2] != entry[2])
+}
+
+/// Generated **late-class** PackTest (spec-0141 §3.3): a player who takes a
+/// class while a checkpoint is armed arrives on its seat, not at the entry
+/// point.
+///
+/// Batch model: the framework dummy (`@s`), the active-checkpoint marker set
+/// and put back, and every residue of the class apply cleared, as
+/// `class_apply_<c>` clears it.
+pub(super) fn emit_party_class_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let (Some(cl), Some(class)) = (plan.classes.first(), c.classes.content.classes.first()) else {
+        return;
+    };
+    let Some(entry) = campaign_spawn(plan) else {
+        return;
+    };
+    let Some((index, seat)) = first_distinct_checkpoint(plan) else {
+        return;
+    };
+    let safe = &cl.safe;
+    let mut b = packtest_header(&format!(
+        "{}: a class taken while checkpoint {index} is armed arrives on its seat (spec-0141)",
+        artifact_title(c)
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("scoreboard players reset @s dw.class".to_string());
+    b.push("scoreboard players reset @s dw.classed".to_string());
+    b.push(format!("scoreboard players set #cp dw.sys {index}"));
+    b.push(format!("tp @s {} {} {}", entry[0] + 32, entry[1], entry[2]));
+    b.push(format!(
+        "execute as @s run function {ns}:class_apply_{safe}"
+    ));
+    b.push("execute store result score #pcl_x dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #pcl_x dw.sys matches {}", seat[0]));
+    b.push("execute store result score #pcl_z dw.sys run data get entity @s Pos[2] 1".to_string());
+    b.push(format!("assert score #pcl_z dw.sys matches {}", seat[2]));
+    b.push("scoreboard players set #cp dw.sys -1".to_string());
+    b.push("clear @s".to_string());
+    b.push(format!("tag @s remove {}", class_tag(safe)));
+    b.push("scoreboard players reset @s dw.classed".to_string());
+    for (k, item) in class.kit.iter().enumerate() {
+        if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+            b.push(format!("scoreboard players reset #kit_{safe}_{k} dw.sys"));
+        }
+    }
+    out.insert(party_class_template_path(ns), lines(&b).into_bytes());
+}
+
+fn party_class_template_path(ns: &str) -> String {
+    format!("packtest-datapack/data/{ns}/test/party_class_arrives.mcfunction")
+}
+
+/// What the absent-member templates bound on one build (spec-0141 §5), counted
+/// off the emitted suite.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AbsentBinding {
+    /// `collect` objectives that ask for two or more of their item.
+    pub split_collects: usize,
+    /// Whether the suite carries `party_collect`.
+    pub split_collect_judged: bool,
+    /// Grants the campaign issues.
+    pub grants: usize,
+    /// Of those, the ones with a `party_grant_<i>` template.
+    pub grants_judged: usize,
+    /// Checkpoints whose seat is in another column than the entry point.
+    pub distinct_checkpoints: usize,
+    /// Whether the suite carries `party_class_arrives`.
+    pub class_judged: bool,
+}
+
+impl AbsentBinding {
+    /// Whether every surface the campaign declares has its template.
+    pub fn complete(&self, has_classes: bool) -> bool {
+        (self.split_collects == 0 || self.split_collect_judged)
+            && self.grants_judged == self.grants
+            && (self.distinct_checkpoints == 0 || !has_classes || self.class_judged)
+    }
+
+    /// The one line a build prints.
+    pub fn line(&self) -> String {
+        format!(
+            "absent-member binding (spec-0141): {} `collect`(s) of two or more, {} judged by the \
+             two-member `party_collect` PackTest; {} grant(s), {} judged by a late-member \
+             `party_grant` PackTest; {} checkpoint(s) off the entry column, {} judged by \
+             `party_class_arrives`",
+            self.split_collects,
+            usize::from(self.split_collect_judged),
+            self.grants,
+            self.grants_judged,
+            self.distinct_checkpoints,
+            usize::from(self.class_judged),
+        )
+    }
+}
+
+/// Count the absent-member templates off the emitted suite in `out`.
+pub fn absent_binding(plan: &Plan, out: &BuildOutput) -> AbsentBinding {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let all = super::super::grant::grants(plan);
+    let distinct = campaign_spawn(plan).map_or(0, |entry| {
+        plan.checkpoints
+            .iter()
+            .map(|cp| plan.seat(cp))
+            .filter(|s| s[0] != entry[0] || s[2] != entry[2])
+            .count()
+    });
+    AbsentBinding {
+        split_collects: c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter(|o| matches!(o, Objective::Collect { count, .. } if *count >= 2))
+            .count(),
+        split_collect_judged: out.contains_key(&party_collect_template_path(ns)),
+        grants: all.len(),
+        grants_judged: (0..all.len())
+            .filter(|i| out.contains_key(&party_grant_template_path(ns, *i)))
+            .count(),
+        distinct_checkpoints: distinct,
+        class_judged: out.contains_key(&party_class_template_path(ns)),
+    }
+}

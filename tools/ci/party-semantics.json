@@ -1,0 +1,1290 @@
+{
+  "classes": {
+    "actor": "It belongs to the one player who acted (`@s`): the presser, the buyer, the credited killer, the player who died.",
+    "declared": "The creator states which of these applies, in a field of the surface; the engine's default is the one that leaves nobody out.",
+    "each": "Every player has their own, kept on that player (a score, a tag, an inventory, a screen). One member's does not change another's.",
+    "first-come": "One physical thing in the world. Whoever takes it has it, and the party shares it by hand.",
+    "no-runtime": "The unit shapes the built world, the build's proofs or the authoring record. Nothing it compiles to addresses a player at run time, so player count cannot change it. Counted and excluded.",
+    "parameter": "A value of the surface that holds it (an operator, a slot, a colour, a shape, a mark). It has no audience of its own; it is judged with its holder.",
+    "party": "One fact for the whole party, kept on the `#party` holder, a `dw.sys` holder or in the world. It happens once whoever acted, and every member reads the same value.",
+    "present": "It reaches the players present in the world, or in a declared box, on the tick it happens: a telling, a sound, a status effect, a blow."
+  },
+  "stages": {
+    "design": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "detail-plan": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "geometry-brief": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "layout-graph": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "quest-plan": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "site-plan": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player.",
+    "world-edits": "This stage's documents are read by the compiler to build and prove the world; they emit no command that addresses a player."
+  },
+  "types": {
+    "Actor": {
+      "class": "party",
+      "evidence": "`emit::wave`, `emit::actor`, `compiler::assembly`: bodies under one tag, the live count on `dw.wave`.",
+      "semantics": "One fight in the world for the whole party; its count may scale with the players present. A kill is credited to the player vanilla credits."
+    },
+    "ActorAudience": {
+      "class": "parameter",
+      "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
+      "semantics": "Aims an effect at bodies the engine placed, not at players."
+    },
+    "ActorKey": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "ActorSubject": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "Ambush": {
+      "class": "party",
+      "evidence": "`emit::wave`, `emit::actor`, `compiler::assembly`: bodies under one tag, the live count on `dw.wave`.",
+      "semantics": "One fight in the world for the whole party; its count may scale with the players present. A kill is credited to the player vanilla credits."
+    },
+    "Answers": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Area": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "AreaLighting": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "AreaMitigation": {
+      "class": "present",
+      "evidence": "`emit::boundary`: per-second return as each player outside; the area's night vision per player in its box.",
+      "semantics": "Applies to every player standing where it reaches, checked on a recurring clock."
+    },
+    "Assembly": {
+      "class": "party",
+      "evidence": "`emit::wave`, `emit::actor`, `compiler::assembly`: bodies under one tag, the live count on `dw.wave`.",
+      "semantics": "One fight in the world for the whole party; its count may scale with the players present. A kill is credited to the player vanilla credits."
+    },
+    "AssemblyHitbox": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "AssemblyStrikes": {
+      "class": "party",
+      "evidence": "`emit::wave`, `emit::actor`, `compiler::assembly`: bodies under one tag, the live count on `dw.wave`.",
+      "semantics": "One fight in the world for the whole party; its count may scale with the players present. A kill is credited to the player vanilla credits."
+    },
+    "AssemblySubject": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "Atmosphere": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "AtmosphereTint": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "Board": {
+      "class": "party",
+      "evidence": "`emit::board`: `board_place_<b>` as each player; PackTest `board_<b>_players`.",
+      "semantics": "One sidebar for everyone. A player's row is their own name; a place is given once per body, in the order the acts happen."
+    },
+    "BodiesAudience": {
+      "class": "parameter",
+      "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
+      "semantics": "Aims an effect at bodies the engine placed, not at players."
+    },
+    "BodyAnswers": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "BodyPose": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "BodyTraversal": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "BodyWatch": {
+      "class": "present",
+      "evidence": "`compiler::watching`: `@p[distance=..r,tag=!dw_cutscene]`; pick named `watcher's subject` in `absent::PICKS`.",
+      "semantics": "A watching body turns to the nearest player in play within reach, optionally of one class. With several players each body looks at whoever is closest to it."
+    },
+    "Boundary": {
+      "class": "present",
+      "evidence": "`emit::boundary`: per-second return as each player outside; the area's night vision per player in its box.",
+      "semantics": "Applies to every player standing where it reaches, checked on a recurring clock."
+    },
+    "CameraShot": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Carrier": {
+      "class": "declared",
+      "evidence": "`emit::grant` (`grant_<i>`, owed line); `give @s` for `one`; PackTests `party_grant_<i>`, `party_carrier_<obj>`.",
+      "semantics": "`all` (default): every member is given the stack, a member who was away included. `one`: one copy, to the acting player, shared by hand."
+    },
+    "CastAbsence": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "CastBarks": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "CastDialogueKeyword": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "CastPlacement": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "CelestialTime": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "CensusOf": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Checkpoint": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Class": {
+      "class": "each",
+      "evidence": "`emit::class::class_apply_fns` (`dw.class`, `dw.classed` per player; `cp_seat_dispatch`); PackTests `class_apply_<c>`, `class_trigger_once`, `party_class_arrives`.",
+      "semantics": "Each player chooses a class and is handed its kit on their own. The class screen opens per player; the campaign's opening quests start for the party at the first choice. A player who chooses after a checkpoint is armed arrives on it."
+    },
+    "ClassesContent": {
+      "class": "each",
+      "evidence": "`emit::class::class_apply_fns` (`dw.class`, `dw.classed` per player; `cp_seat_dispatch`); PackTests `class_apply_<c>`, `class_trigger_once`, `party_class_arrives`.",
+      "semantics": "Each player chooses a class and is handed its kit on their own. The class screen opens per player; the campaign's opening quests start for the party at the first choice. A player who chooses after a checkpoint is armed arrives on it."
+    },
+    "Climate": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "ClockStatement": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "CollectBy": {
+      "class": "declared",
+      "evidence": "`emit::stake`: the owner's id is compared on collection.",
+      "semantics": "`owner` (default): only the player who died may take the stake back. `anyone`: any member may."
+    },
+    "CompareOp": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Containers": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "CutsceneParty": {
+      "class": "declared",
+      "evidence": "`compiler::standin`; one stand-in per player in play.",
+      "semantics": "`present` (default): each player in play is shown by a stand-in where they stood. `absent`: no stand-ins."
+    },
+    "DamageBy": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "DamageKind": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "DespawnStyle": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "DialogueContent": {
+      "class": "each",
+      "evidence": "`emit::dialogue`: `dialog show @s`, `dw.dlg_<npc>` trigger per player, `dw.dmask` per player reading `#party`; a completed objective's option is inert (`unless score #party dw.o_<obj> matches 1`).",
+      "semantics": "The screen is the clicking player's own; what it offers is read from party state. An option's effects run once per press and write party state, so two members at one NPC each see the story as it stands when they press."
+    },
+    "DialogueEffect": {
+      "class": "party",
+      "evidence": "`emit::dialogue`: every write is on `#party` or the world.",
+      "semantics": "A dialogue outcome is a party fact: the objective, flag, time, weather, checkpoint or body it changes is the party's."
+    },
+    "DialogueNode": {
+      "class": "each",
+      "evidence": "`emit::dialogue`: `dialog show @s`, `dw.dlg_<npc>` trigger per player, `dw.dmask` per player reading `#party`; a completed objective's option is inert (`unless score #party dw.o_<obj> matches 1`).",
+      "semantics": "The screen is the clicking player's own; what it offers is read from party state. An option's effects run once per press and write party state, so two members at one NPC each see the story as it stands when they press."
+    },
+    "DialogueOption": {
+      "class": "each",
+      "evidence": "`emit::dialogue`: `dialog show @s`, `dw.dlg_<npc>` trigger per player, `dw.dmask` per player reading `#party`; a completed objective's option is inert (`unless score #party dw.o_<obj> matches 1`).",
+      "semantics": "The screen is the clicking player's own; what it offers is read from party state. An option's effects run once per press and write party state, so two members at one NPC each see the story as it stands when they press."
+    },
+    "EncounterTier": {
+      "class": "no-runtime",
+      "evidence": "`compiler::combat`; the server's difficulty is one setting for every player.",
+      "semantics": "What a fight is meant to cost; read by the combat proofs."
+    },
+    "Entrance": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "EnvTrigger": {
+      "class": "party",
+      "evidence": "`emit::trigger`: `#trig_<id>` on `dw.sys`; `once` is one latch for the party.",
+      "semantics": "By default a party event: any member's act fires it once and its effects address everyone. `audience: presser` makes it the acting player's."
+    },
+    "Envelope": {
+      "class": "no-runtime",
+      "evidence": "Read by the loader; never emitted.",
+      "semantics": "The document header."
+    },
+    "EquipSlot": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Facing": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "FireworkExplosion": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "FireworkShape": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Fixture": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "Forfeit": {
+      "class": "each",
+      "evidence": "`emit::stake`: per-player slots, the owner's id on the marker.",
+      "semantics": "A death leaves the dying player's own stake; who may collect it is `collect_by`."
+    },
+    "Guard": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Guidance": {
+      "class": "each",
+      "evidence": "`emit::guidance`: `compass_give`/`journal_give` as `@s`, refreshed per player on `#epoch`.",
+      "semantics": "Each player carries their own compass and journal, aimed and written from party state."
+    },
+    "Happening": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "HappeningVerb": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "HealthBar": {
+      "class": "present",
+      "evidence": "`compiler::healthbar`: `bossbar set … players @a[tag=dw_hb_…]` in `hb_<key>`.",
+      "semantics": "Drawn for every player within `range` of a live body of the fight, refreshed every tick."
+    },
+    "Highlight": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "HorizonBase": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "HorizonSpec": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "Jump": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "KillFires": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "KitItem": {
+      "class": "each",
+      "evidence": "`emit::class::class_apply_fns` (`dw.class`, `dw.classed` per player; `cp_seat_dispatch`); PackTests `class_apply_<c>`, `class_trigger_once`, `party_class_arrives`.",
+      "semantics": "Each player chooses a class and is handed its kit on their own. The class screen opens per player; the campaign's opening quests start for the party at the first choice. A player who chooses after a checkpoint is armed arrives on it."
+    },
+    "Landscape": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "LethalVolume": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "Lethality": {
+      "class": "no-runtime",
+      "evidence": "`compiler::combat`; the server's difficulty is one setting for every player.",
+      "semantics": "What a fight is meant to cost; read by the combat proofs."
+    },
+    "LicenseEvidence": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "Limit": {
+      "class": "party",
+      "evidence": "`emit::limit`; census site `limit countdown` in `absent::SERVED`.",
+      "semantics": "One clock for the party: it starts, counts and expires once, and its expiry is told to every player present. Its countdown bar is shown to the players present when it starts (open gap: a member who joins later does not see the bar)."
+    },
+    "LimitFrom": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "LockPick": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Locomotion": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "Loop": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "Loot": {
+      "class": "first-come",
+      "evidence": "`emit::loot`: `item replace block … container.<n>` once, at load or at `fill-loot`.",
+      "semantics": "One fill of one holder in the world. Whoever opens it takes what they take; nothing is duplicated per player. A stack every member must hold is a `give-item`, not loot."
+    },
+    "LootFilled": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "LootItem": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Manual": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Mark": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "MobAttributes": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "MobEffect": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "MobEquipment": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "Mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: the mode on `#party dw.mode`, each held clock on `dw.sys`; no player selector.",
+      "semantics": "One mode for the whole party: the story puts the map in it for everyone, the quests it holds are held for every member, and their clocks stand still for all."
+    },
+    "Mount": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "NarrateStyle": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Narration": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Npc": {
+      "class": "party",
+      "evidence": "`emit::npc`: `talk_<npc>` runs as the clicking player; the body is guarded on its own tag.",
+      "semantics": "One body per character, where the story put it. Any member may talk to it; each sees their own dialogue screen."
+    },
+    "NpcDialogue": {
+      "class": "each",
+      "evidence": "`emit::dialogue`: `dialog show @s`, `dw.dlg_<npc>` trigger per player, `dw.dmask` per player reading `#party`; a completed objective's option is inert (`unless score #party dw.o_<obj> matches 1`).",
+      "semantics": "The screen is the clicking player's own; what it offers is read from party state. An option's effects run once per press and write party state, so two members at one NPC each see the story as it stands when they press."
+    },
+    "NpcKey": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "NpcSkin": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "NpcSubject": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "NpcsContent": {
+      "class": "party",
+      "evidence": "`emit::npc`: `talk_<npc>` runs as the clicking player; the body is guarded on its own tag.",
+      "semantics": "One body per character, where the story put it. Any member may talk to it; each sees their own dialogue screen."
+    },
+    "OnFull": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "OnKill": {
+      "class": "actor",
+      "evidence": "`emit::onkill`: the kill advancement's reward, `Audience::Solo`.",
+      "semantics": "Runs as the player credited with the kill; the rest of the party is not told."
+    },
+    "ParticleAtBodies": {
+      "class": "parameter",
+      "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
+      "semantics": "Aims an effect at bodies the engine placed, not at players."
+    },
+    "Persona": {
+      "class": "no-runtime",
+      "evidence": "Authoring record; never emitted.",
+      "semantics": "The character contract the dialogue is written from."
+    },
+    "Pieces": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "PlaceSubject": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "PlayerAudience": {
+      "class": "declared",
+      "evidence": "`emit::effect::effect_audience`; `DW0503` refuses `actor` where no player acted.",
+      "semantics": "`audience: party` addresses every player present; `actor` the one who acted. Absent, a root's own audience stands: a party beat tells everyone."
+    },
+    "PlayersKeyword": {
+      "class": "declared",
+      "evidence": "`emit::effect::effect_audience`; `DW0503` refuses `actor` where no player acted.",
+      "semantics": "`audience: party` addresses every player present; `actor` the one who acted. Absent, a root's own audience stands: a party beat tells everyone."
+    },
+    "Position": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "PotionContents": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "PotionEffect": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Precipitation": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "Prop": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Pulse": {
+      "class": "present",
+      "evidence": "`emit::pulse`: `execute as @a[<box>] at @s run playsound`.",
+      "semantics": "Heard by every player standing in its place on each beat."
+    },
+    "Quest": {
+      "class": "party",
+      "evidence": "`emit::quest`: `dw.qa_<q>`, `dw.q_<q>` on `#party`; `tellraw @a`; `tests/it/party.rs::no_per_player_progression_scoreboard_remains`.",
+      "semantics": "A quest is active, and done, for the whole party. Its announcement and completion are told to every player present."
+    },
+    "QuestEffect": {
+      "class": "declared",
+      "evidence": "`emit::effect::emit_quest_effect` takes the audience; `Verb::addresses_players` is exhaustive (`tests/it/v35_perception.rs::every_verb_is_classified_by_what_the_emitter_does`).",
+      "semantics": "An effect that addresses players reaches the whole party under a party root and the acting player under a solo root (`on_death`, `on_kill`, a shop offer, a presser trigger); `audience` and `in` state anything else. An effect that changes the world or party state happens once."
+    },
+    "QuestsContent": {
+      "class": "party",
+      "evidence": "`emit::quest`: `dw.qa_<q>`, `dw.q_<q>` on `#party`; `tellraw @a`; `tests/it/party.rs::no_per_player_progression_scoreboard_remains`.",
+      "semantics": "A quest is active, and done, for the whole party. Its announcement and completion are told to every player present."
+    },
+    "Quorum": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Race": {
+      "class": "each",
+      "evidence": "`emit::race`: `dw.rc.<r>`/`dw.rn.<r>` per player, `dw_rcg_<r>` per racer; PackTests `race_<r>_in_order`, `race_<r>_skip`.",
+      "semantics": "Every player present is a racer with their own count; the race ends when every racer on the course has finished, or `grace_ticks` after the first. A player who is not in the world is not waited for."
+    },
+    "RegionSubject": {
+      "class": "parameter",
+      "evidence": "Resolved to the body's tag or the place's box.",
+      "semantics": "Names a body or a place a surface acts on or a camera frames."
+    },
+    "Relationship": {
+      "class": "no-runtime",
+      "evidence": "Authoring record; never emitted.",
+      "semantics": "The character contract the dialogue is written from."
+    },
+    "Repeat": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "RespawnWait": {
+      "class": "each",
+      "evidence": "`emit::respawn`: `dw.rwait` per player; `tests/it/respawn_wait.rs`.",
+      "semantics": "A fallen player waits on their own clock, watching a living teammate; a wipe ends every wait."
+    },
+    "Role": {
+      "class": "no-runtime",
+      "evidence": "Authoring record; never emitted.",
+      "semantics": "The character contract the dialogue is written from."
+    },
+    "ScaledCount": {
+      "class": "declared",
+      "evidence": "`emit::wave::party_size` counts `@a[tag=!dw_cutscene]`; PackTest `vehicle_<id>_party` steps party sizes 1–4; `DW1115`.",
+      "semantics": "`{base, per_player}`: `base + per_player × (n − 1)` bodies for the `n` players present when the story spawns or seats them."
+    },
+    "SequenceStep": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Serves": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Shop": {
+      "class": "actor",
+      "evidence": "`emit::economy`: `shop_open_<i>` as the clicker, `dw.shop`/`dw.shop_at` per player, `Audience::Solo`.",
+      "semantics": "Each player opens the shop on their own screen and buys for themself: an offer's effects run as the buyer, and its price is read where its datum's scope says."
+    },
+    "ShopOffer": {
+      "class": "actor",
+      "evidence": "`emit::economy`: `shop_open_<i>` as the clicker, `dw.shop`/`dw.shop_at` per player, `Audience::Solo`.",
+      "semantics": "Each player opens the shop on their own screen and buys for themself: an offer's effects run as the buyer, and its price is read where its datum's scope says."
+    },
+    "Shortcut": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "ShotStyle": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Sign": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "SkinLayer": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "SkinModel": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "SlotDrop": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "SoundAt": {
+      "class": "declared",
+      "evidence": "`emit::effect::emit_play_sound`: `execute as @a at @s run playsound … @s`, or a positional `playsound … @a <x y z>`.",
+      "semantics": "Where a sound plays: `players` (default) at each listener, so every member hears it wherever they stand; `anchor` or `bodies` from a place, heard by whoever is near."
+    },
+    "SoundCategory": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Stack": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "StackFireworks": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "Stage": {
+      "class": "no-runtime",
+      "evidence": "Read by the loader; never emitted.",
+      "semantics": "The document header."
+    },
+    "Stake": {
+      "class": "each",
+      "evidence": "`emit::stake`: per-player slots, the owner's id on the marker.",
+      "semantics": "A death leaves the dying player's own stake; who may collect it is `collect_by`."
+    },
+    "StateCompare": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "StateCounts": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "StateDecl": {
+      "class": "declared",
+      "evidence": "`emit::state::state_holder`.",
+      "semantics": "A datum is the party's or each player's, by its required `scope`."
+    },
+    "StateDisplay": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "StateScope": {
+      "class": "declared",
+      "evidence": "`emit::state::state_holder`; `DW0503` refuses a `player` read where no player acted.",
+      "semantics": "`party`: one value on `#party`. `player`: each player's own. Required, so the creator always states it."
+    },
+    "StealthZone": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "StrikeAim": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "StrikeLock": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "StrikeStep": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "TakenFrom": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "TextureOverride": {
+      "class": "no-runtime",
+      "evidence": "Emitted as placement, biome and server files (`emit::world`, `emit::atmosphere`, `emit::server`); no player selector.",
+      "semantics": "Shapes the world every player stands in: one world, the same for any party."
+    },
+    "TimeKeyword": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    },
+    "TimedGate": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "TimedGateDisarm": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "Trap": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "TrapDisarm": {
+      "class": "party",
+      "evidence": "`emit::lethal`, `emit::loop`, `emit::timed_gate`, `emit::trap`, `emit::shortcut`: sentinels on `dw.sys`, flags on `#party`.",
+      "semantics": "A thing in the world: it strikes, moves or opens for whoever is there, and its disarm, unlock or latch is one for the party."
+    },
+    "TrapEffect": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "TrapReset": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "TrapTrigger": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Trigger": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "TriggerAudience": {
+      "class": "declared",
+      "evidence": "`emit::trigger`: polled without an executor, or dispatched by the pressing player's advancement; PackTest `board_<b>_players` runs two executors.",
+      "semantics": "`party` (default): the trigger fires once for the party and tells everyone. `presser`: it runs as the player who pressed or stepped, once per player per press."
+    },
+    "TriggerOn": {
+      "class": "party",
+      "evidence": "`emit::trigger`: `#trig_<id>` on `dw.sys`; `once` is one latch for the party.",
+      "semantics": "By default a party event: any member's act fires it once and its effects address everyone. `audience: presser` makes it the acting player's."
+    },
+    "Vehicle": {
+      "class": "first-come",
+      "evidence": "`emit::vehicle`: `vehicle_seat_<id>_party` measures the party; PackTest `vehicle_<id>_party`.",
+      "semantics": "A body in the world with its game's seats; `count` may give one per player. A seat is whoever boards it."
+    },
+    "VehicleLeft": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "VehicleSeated": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "Visibility": {
+      "class": "parameter",
+      "evidence": "Lowered inside its holder's emission; it selects no player on its own.",
+      "semantics": "An operator, a kind, a slot or a rule the holding surface is configured with."
+    },
+    "WatchClass": {
+      "class": "present",
+      "evidence": "`compiler::watching`: `@p[distance=..r,tag=!dw_cutscene]`; pick named `watcher's subject` in `absent::PICKS`.",
+      "semantics": "A watching body turns to the nearest player in play within reach, optionally of one class. With several players each body looks at whoever is closest to it."
+    },
+    "WatchKeyword": {
+      "class": "parameter",
+      "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
+      "semantics": "Aims an effect at bodies the engine placed, not at players."
+    },
+    "WatchNearest": {
+      "class": "present",
+      "evidence": "`compiler::watching`: `@p[distance=..r,tag=!dw_cutscene]`; pick named `watcher's subject` in `absent::PICKS`.",
+      "semantics": "A watching body turns to the nearest player in play within reach, optionally of one class. With several players each body looks at whoever is closest to it."
+    },
+    "WatchNone": {
+      "class": "present",
+      "evidence": "`compiler::watching`: `@p[distance=..r,tag=!dw_cutscene]`; pick named `watcher's subject` in `absent::PICKS`.",
+      "semantics": "A watching body turns to the nearest player in play within reach, optionally of one class. With several players each body looks at whoever is closest to it."
+    },
+    "Wave": {
+      "class": "party",
+      "evidence": "`emit::wave`, `emit::actor`, `compiler::assembly`: bodies under one tag, the live count on `dw.wave`.",
+      "semantics": "One fight in the world for the whole party; its count may scale with the players present. A kill is credited to the player vanilla credits."
+    },
+    "WaveAudience": {
+      "class": "parameter",
+      "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
+      "semantics": "Aims an effect at bodies the engine placed, not at players."
+    },
+    "WaveLane": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "WaveMob": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "WaveSummon": {
+      "class": "no-runtime",
+      "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
+      "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
+    },
+    "WorldContent": {
+      "class": "no-runtime",
+      "evidence": "`emit::world`, `emit::server`.",
+      "semantics": "World-level settings: one world for any party."
+    },
+    "WorldDifficulty": {
+      "class": "no-runtime",
+      "evidence": "`compiler::combat`; the server's difficulty is one setting for every player.",
+      "semantics": "What a fight is meant to cost; read by the combat proofs."
+    },
+    "WorldWeather": {
+      "class": "parameter",
+      "evidence": "Resolved to literal coordinates, components or ticks at build time.",
+      "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
+    }
+  },
+  "units": {
+    "Objective::collect": {
+      "class": "party",
+      "evidence": "`emit::functions`: every player's count summed into `#hold dw.sys`; PackTest `party_collect`.",
+      "semantics": "Completes when the party holds `count` of the item between all its members."
+    },
+    "Objective::interact": {
+      "class": "party",
+      "evidence": "`emit::functions`: `dw.i_<obj>` trigger per player, completion on `#party`.",
+      "semantics": "Any member's press completes it for the party; `requires_item` is the presser's own main hand."
+    },
+    "Objective::interact.prop": {
+      "class": "party",
+      "evidence": "`emit::functions`: `dw.i_<obj>` trigger per player, completion on `#party`.",
+      "semantics": "Any member's press completes it for the party; `requires_item` is the presser's own main hand."
+    },
+    "Objective::kill": {
+      "class": "party",
+      "evidence": "`emit::functions` tick drivers; `#party` latch.",
+      "semantics": "Any member's act completes it for the party: the wave's last body, a member inside the reach volume, a dialogue option."
+    },
+    "Objective::reach-anchor": {
+      "class": "party",
+      "evidence": "`emit::functions` tick drivers; `#party` latch.",
+      "semantics": "Any member's act completes it for the party: the wave's last body, a member inside the reach volume, a dialogue option."
+    },
+    "Objective::talk-to": {
+      "class": "party",
+      "evidence": "`emit::functions` tick drivers; `#party` latch.",
+      "semantics": "Any member's act completes it for the party: the wave's last body, a member inside the reach volume, a dialogue option."
+    },
+    "QuestEffect.audience": {
+      "class": "declared",
+      "evidence": "`emit::effect::effect_audience`, `effect_selector`.",
+      "semantics": "Who a player-facing effect addresses, and the box it narrows them to."
+    },
+    "QuestEffect.in": {
+      "class": "declared",
+      "evidence": "`emit::effect::effect_audience`, `effect_selector`.",
+      "semantics": "Who a player-facing effect addresses, and the box it narrows them to."
+    },
+    "QuestEffect::add-state": {
+      "class": "declared",
+      "evidence": "`emit::state`; `DW0503`.",
+      "semantics": "Writes the datum where its `scope` keeps it: once on `#party`, or on the acting player."
+    },
+    "QuestEffect::apply-edits": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::arm-strikes": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::begin-stealth": {
+      "class": "each",
+      "evidence": "`emit::stealth`: `dw.st_grace` per player, `Audience::Solo`.",
+      "semantics": "Every player is judged on their own grace clock; `on_caught` runs as the player who was caught."
+    },
+    "QuestEffect::bonfire": {
+      "class": "party",
+      "evidence": "`emit::checkpoint`: `#cp dw.sys`, `cp_seat_<i>` on every respawn; census site `checkpoint`; PackTest `party_class_arrives`.",
+      "semantics": "The party's respawn point: any member's act arms it for all. A rest restores the player who rested; a member who was away respawns, and takes a class, at the checkpoint the party armed."
+    },
+    "QuestEffect::bonfire.prop": {
+      "class": "party",
+      "evidence": "`emit::checkpoint`: `#cp dw.sys`, `cp_seat_<i>` on every respawn; census site `checkpoint`; PackTest `party_class_arrives`.",
+      "semantics": "The party's respawn point: any member's act arms it for all. A rest restores the player who rested; a member who was away respawns, and takes a class, at the checkpoint the party armed."
+    },
+    "QuestEffect::campaign-complete": {
+      "class": "party",
+      "evidence": "`scoreboard players set #party …`; `campaign_complete` tells `@a`.",
+      "semantics": "A party fact, written once."
+    },
+    "QuestEffect::clear-effect": {
+      "class": "present",
+      "evidence": "`effect give`, `damage` to `@a[tag=!dw_cutscene]` or `@s`; census sites `status effect`, `hazard`.",
+      "semantics": "Reaches the bodies of the players the effect addresses who are present, for its duration."
+    },
+    "QuestEffect::clear-region": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::clear-state": {
+      "class": "declared",
+      "evidence": "`emit::state`; `DW0503`.",
+      "semantics": "Writes the datum where its `scope` keeps it: once on `#party`, or on the acting player."
+    },
+    "QuestEffect::close-gate": {
+      "class": "party",
+      "evidence": "Emitted bare: `fill … <block>`.",
+      "semantics": "Changes the world or party state once, whoever acted. A member on the far side of the gate when it closes stays there (open gap: the engine does not gather the party)."
+    },
+    "QuestEffect::collapse": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::cutscene": {
+      "class": "present",
+      "evidence": "`emit::cutscene`: `cs_save` per player, `cs_repair`; census site `cutscene bracket`.",
+      "semantics": "Every player present watches from their own saved place and is put back on it; a member who leaves inside it is repaired on return, and one who joins while it plays is not taken into it."
+    },
+    "QuestEffect::damage": {
+      "class": "present",
+      "evidence": "`effect give`, `damage` to `@a[tag=!dw_cutscene]` or `@s`; census sites `status effect`, `hazard`.",
+      "semantics": "Reaches the bodies of the players the effect addresses who are present, for its duration."
+    },
+    "QuestEffect::despawn-actor": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::despawn-assembly": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::despawn-npc": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::despawn-vehicle": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::despawn-wave": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::drop-stake": {
+      "class": "actor",
+      "evidence": "`emit::stake`: runs as `@s`.",
+      "semantics": "Leaves the acting player's stake."
+    },
+    "QuestEffect::end-race": {
+      "class": "party",
+      "evidence": "`emit::race`: `#ron_<r> dw.sys`.",
+      "semantics": "Starts or ends the race for every racer."
+    },
+    "QuestEffect::enter-mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: `scoreboard players set #party dw.mode …`.",
+      "semantics": "Puts the party in, or takes it out of, a mode: a party fact, written once."
+    },
+    "QuestEffect::face": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::fail-objective": {
+      "class": "party",
+      "evidence": "`scoreboard players set #party …`; `campaign_complete` tells `@a`.",
+      "semantics": "A party fact, written once."
+    },
+    "QuestEffect::fill-loot": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::fill-region": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::firework": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::give-effect": {
+      "class": "present",
+      "evidence": "`effect give`, `damage` to `@a[tag=!dw_cutscene]` or `@s`; census sites `status effect`, `hazard`.",
+      "semantics": "Reaches the bodies of the players the effect addresses who are present, for its duration."
+    },
+    "QuestEffect::give-item": {
+      "class": "declared",
+      "evidence": "`emit::grant`; PackTests `party_grant_<i>`, `party_carrier_<obj>`.",
+      "semantics": "`carrier: all` (default): every member holds the stack, a member who was away included. `carrier: one`: the acting player alone."
+    },
+    "QuestEffect::hide-board": {
+      "class": "party",
+      "evidence": "`scoreboard objectives setdisplay sidebar`.",
+      "semantics": "One sidebar, shown to or taken from everyone."
+    },
+    "QuestEffect::hold": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::hop": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::leave-mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: `scoreboard players set #party dw.mode …`.",
+      "semantics": "Puts the party in, or takes it out of, a mode: a party fact, written once."
+    },
+    "QuestEffect::lightning": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::move-actor": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::move-npc": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::narrate": {
+      "class": "present",
+      "evidence": "`tellraw`/`title`/`playsound` to `@a` or `@s`; a sound for listeners plays at each listener.",
+      "semantics": "Told to the players the effect addresses who are present; a beat is not replayed to a member who was away."
+    },
+    "QuestEffect::open-gate": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::open-way": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::particle": {
+      "class": "present",
+      "evidence": "`tellraw`/`title`/`playsound` to `@a` or `@s`; a sound for listeners plays at each listener.",
+      "semantics": "Told to the players the effect addresses who are present; a beat is not replayed to a member who was away."
+    },
+    "QuestEffect::place-on-board": {
+      "class": "declared",
+      "evidence": "`emit::board`; `DW0427` where no player is named.",
+      "semantics": "Places each body the effect addresses: with a player audience, the acting player, or every player in turn."
+    },
+    "QuestEffect::play-clip": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::play-sound": {
+      "class": "present",
+      "evidence": "`tellraw`/`title`/`playsound` to `@a` or `@s`; a sound for listeners plays at each listener.",
+      "semantics": "Told to the players the effect addresses who are present; a beat is not replayed to a member who was away."
+    },
+    "QuestEffect::pose": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::record-outcome": {
+      "class": "party",
+      "evidence": "`scoreboard players set #party …`; `campaign_complete` tells `@a`.",
+      "semantics": "A party fact, written once."
+    },
+    "QuestEffect::resize": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::seat-vehicle": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::sequence": {
+      "class": "party",
+      "evidence": "`emit::sequence`: `Audience::Scheduled`; `DW0357` refuses a `carrier: one` inside it.",
+      "semantics": "One timeline for the party; each step's effects take the audience of the root that started it, with no acting player."
+    },
+    "QuestEffect::set-atmosphere": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::set-block": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::set-checkpoint": {
+      "class": "party",
+      "evidence": "`emit::checkpoint`: `#cp dw.sys`, `cp_seat_<i>` on every respawn; census site `checkpoint`; PackTest `party_class_arrives`.",
+      "semantics": "The party's respawn point: any member's act arms it for all. A rest restores the player who rested; a member who was away respawns, and takes a class, at the checkpoint the party armed."
+    },
+    "QuestEffect::set-flag": {
+      "class": "party",
+      "evidence": "`scoreboard players set #party …`; `campaign_complete` tells `@a`.",
+      "semantics": "A party fact, written once."
+    },
+    "QuestEffect::set-state": {
+      "class": "declared",
+      "evidence": "`emit::state`; `DW0503`.",
+      "semantics": "Writes the datum where its `scope` keeps it: once on `#party`, or on the acting player."
+    },
+    "QuestEffect::set-time": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::set-weather": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "QuestEffect::show-board": {
+      "class": "party",
+      "evidence": "`scoreboard objectives setdisplay sidebar`.",
+      "semantics": "One sidebar, shown to or taken from everyone."
+    },
+    "QuestEffect::spawn-actor": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::spawn-assembly": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::spawn-npc": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::spawn-wave": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::start-race": {
+      "class": "party",
+      "evidence": "`emit::race`: `#ron_<r> dw.sys`.",
+      "semantics": "Starts or ends the race for every racer."
+    },
+    "QuestEffect::stop-sound": {
+      "class": "present",
+      "evidence": "`tellraw`/`title`/`playsound` to `@a` or `@s`; a sound for listeners plays at each listener.",
+      "semantics": "Told to the players the effect addresses who are present; a beat is not replayed to a member who was away."
+    },
+    "QuestEffect::teleport": {
+      "class": "present",
+      "evidence": "`emit::teleport`: `tp @e[<box>,tag=!dw_fixture]`; one PackTest per teleport.",
+      "semantics": "Moves every body inside the declared volume, players and entities alike; a player outside it stays where they are."
+    },
+    "QuestEffect::turn": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::unleash-actor": {
+      "class": "party",
+      "evidence": "Guarded on the body's own tag; no player selector.",
+      "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::volley": {
+      "class": "party",
+      "evidence": "Emitted bare (no player selector): `fill`, `setblock`, `summon`, `time`, `weather`.",
+      "semantics": "Changes the world or party state once, whoever acted."
+    },
+    "TriggerOn::approach": {
+      "class": "party",
+      "evidence": "`emit::trigger`: `if entity @a[distance=..r,tag=!dw_cutscene]`; `DW0427` refuses `presser`.",
+      "semantics": "Fires when any member in play comes within range; it names no acting player."
+    },
+    "WorldContent.boundary": {
+      "class": "present",
+      "evidence": "`emit::boundary`.",
+      "semantics": "See `Boundary`."
+    },
+    "WorldContent.min_players": {
+      "class": "declared",
+      "evidence": "`emit::functions`: `#lobby dw.sys`; `DW0356`, `DW0358`; `tests/it/party.rs::min_players_gates_the_lobby`.",
+      "semantics": "The party size the delve requires before it starts (1–4): the class screen opens only once that many are present."
+    },
+    "WorldContent.outro": {
+      "class": "present",
+      "evidence": "`campaign_complete`: `advancement grant @a`, `title @a`.",
+      "semantics": "Shown to every player present when the campaign completes."
+    },
+    "WorldContent.respawn_wait": {
+      "class": "each",
+      "evidence": "`emit::respawn`.",
+      "semantics": "See `RespawnWait`."
+    },
+    "WorldContent.title": {
+      "class": "present",
+      "evidence": "`campaign_complete`: `advancement grant @a`, `title @a`.",
+      "semantics": "Shown to every player present when the campaign completes."
+    }
+  }
+}
