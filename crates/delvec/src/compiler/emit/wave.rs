@@ -852,7 +852,7 @@ pub(super) fn seated_most(wave: &str) -> String {
 /// The `dw.sys` holder a scaling wave's spawn writes the party size to
 /// (spec-0134 §4), one per wave: a re-seat seats the wave the party met, at
 /// the size it was first seated for, whatever wave was seated since.
-pub(super) fn party_size(wave: &str) -> String {
+pub(crate) fn party_size(wave: &str) -> String {
     format!("#pn_{}", plan::safe_local(wave))
 }
 

@@ -135,8 +135,11 @@ pub struct MusterType {
 pub struct MusterProfile {
     /// Index into [`Muster::types`].
     pub type_index: usize,
-    /// How many bodies of this profile the wave seats.
+    /// How many bodies of this profile the wave seats for one player.
     pub count: u32,
+    /// How many more it seats for each further player present at the spawn
+    /// (spec-0134 §4); 0 for a constant count.
+    pub per_player: u32,
     /// The mask a body of this stack must carry: every one of its own identity
     /// facts set, and no other.
     pub mask: i64,
@@ -170,8 +173,11 @@ pub struct Muster {
     pub types: Vec<MusterType>,
     /// Declared stacks, in declaration order.
     pub profiles: Vec<MusterProfile>,
-    /// How many bodies the wave seats in total.
+    /// How many bodies the wave seats in total for one player.
     pub bodies: u32,
+    /// The `dw.sys` holder a scaling wave's spawn writes the party size it
+    /// seated for to (`emit::party_size`), or `None` for a wave of constants.
+    pub party_size: Option<String>,
 }
 
 impl Muster {
@@ -318,10 +324,20 @@ pub fn muster(
         profiles.push(MusterProfile {
             type_index: ti,
             count: mob.count.base(),
+            per_player: mob.count.per_player(),
             mask,
             // Language-neutral, like every other field here: the stack index is
             // what a reader resolves against the campaign document.
-            label: format!("{} × {} (stack {stack})", mob.count.base(), mob.entity),
+            label: if mob.count.scales() {
+                format!(
+                    "{} (+{} per further player) × {} (stack {stack})",
+                    mob.count.base(),
+                    mob.count.per_player(),
+                    mob.entity
+                )
+            } else {
+                format!("{} × {} (stack {stack})", mob.count.base(), mob.entity)
+            },
             max_health: attrs.and_then(|a| a.max_health),
             attack_damage: attrs.and_then(|a| a.attack_damage),
             movement_speed: attrs.and_then(|a| a.movement_speed),
@@ -336,6 +352,11 @@ pub fn muster(
         types,
         profiles,
         bodies: wave.mobs.iter().map(|m| m.count.base()).sum(),
+        party_size: wave
+            .mobs
+            .iter()
+            .any(|m| m.count.scales())
+            .then(|| crate::compiler::emit::party_size(wave.id.as_str())),
     }
 }
 
@@ -600,6 +621,7 @@ pub fn to_json(ns: &str, m: &Muster) -> Value {
         "scale": MUSTER_SCALE,
         "unread": MUSTER_UNREAD,
         "bodies": m.bodies,
+        "party_size": m.party_size,
         "checked": m.checked(),
         "types": m
             .types
@@ -618,6 +640,7 @@ pub fn to_json(ns: &str, m: &Muster) -> Value {
             .map(|p| json!({
                 "type": p.type_index,
                 "count": p.count,
+                "per_player": p.per_player,
                 "mask": p.mask,
                 "label": p.label,
                 "max_health": p.max_health,

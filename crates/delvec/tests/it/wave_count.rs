@@ -156,6 +156,39 @@ fn a_constant_count_is_byte_identical() {
     assert_eq!(spawn(&plain), spawn(&zero));
 }
 
+/// The muster the harness reads states what a party meets: each stack's
+/// `per_player` beside its `count` (the base), and the holder the spawn wrote
+/// the party size to — so a reading of the wave is judged at `base +
+/// per_player × (n − 1)` for the `n` the seating measured, and at `base` for
+/// one player. A wave of constants states `per_player: 0` and no holder.
+#[test]
+fn the_muster_states_the_count_for_the_party_its_seating_measured() {
+    let muster = |out: &BuildOutput| -> serde_json::Value {
+        let plan: serde_json::Value =
+            serde_json::from_slice(&out["validation/combat-plan.json"]).unwrap();
+        plan["encounters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["wave"] == "wave/guards")
+            .unwrap_or_else(|| panic!("an encounter of the wave: {plan}"))["muster"]
+            .clone()
+    };
+    let scaled = muster(&build_with(|c| {
+        c.quests.content.waves[0].mobs[0].count = two_plus_one()
+    }));
+    assert_eq!(scaled["party_size"], "#pn_guards", "{scaled}");
+    assert_eq!(scaled["profiles"][0]["count"], 2, "{scaled}");
+    assert_eq!(scaled["profiles"][0]["per_player"], 1, "{scaled}");
+    assert_eq!(
+        scaled["profiles"][0]["label"],
+        "2 (+1 per further player) × minecraft:zombie (stack 0)"
+    );
+    let plain = muster(&build_with(|_| {}));
+    assert!(plain["party_size"].is_null(), "{plain}");
+    assert_eq!(plain["profiles"][0]["per_player"], 0, "{plain}");
+}
+
 /// `DW0983` judges a name at the stack's maximum: `count: 1` named is a
 /// person; `{base: 1, per_player: 1}` named is a crowd at two players.
 #[test]

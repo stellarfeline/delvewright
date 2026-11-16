@@ -35,6 +35,10 @@ export const methods = {
     // different fact from a body the server never seated, and only the census
     // (`#wcred_<wave>`, zeroed by `spawn_<wave>`) can tell them apart.
     const credited = (await this.census(enc))?.summary.credited;
+    // A wave that scales with the party (spec-0134 §4) was seated for the
+    // players its spawn counted, into the plan's holder: read it beside the
+    // probe, so the bodies are judged at the size they were seated for.
+    const partySize = enc.muster.partySize === undefined ? undefined : await this.readPartySize(enc.muster.partySize);
     const deadline = Date.now() + CENSUS_TIMEOUT_MS;
     for (;;) {
       const sum = this.musterSummaries.get(enc.wave);
@@ -44,6 +48,7 @@ export const methods = {
           sum,
           this.musterBodies.get(sum.seq) ?? [],
           credited,
+          { size: partySize, cap: this.partyCap },
         );
         this.musters.set(enc.wave, verdict);
         // A reading of nothing at a step's open is provisional: an approach
@@ -89,6 +94,22 @@ export const methods = {
       ],
     });
     process.stderr.write(`[muster] ${enc.wave}: the probe did not answer\n`);
+  },
+
+  /**
+   * The value of a `dw.sys` holder a scaling wave's spawn wrote the party size
+   * to, or `undefined` when the server did not state one.
+   */
+  async readPartySize(this: MineflayerExecutor, holder: string): Promise<number | undefined> {
+    const marker = `[dw:muster-party ${holder} `;
+    const reply = await this.bracketed([
+      `/tellraw @s ${JSON.stringify([{ text: marker }, { score: { name: holder, objective: "dw.sys" } }, { text: "]" }])}`,
+    ]);
+    if (!reply.answered) return undefined;
+    const line = reply.lines.find((l) => l.includes(marker));
+    if (!line) return undefined;
+    const m = /^(-?\d+)\]/.exec(line.slice(line.indexOf(marker) + marker.length));
+    return m ? Number(m[1]) : undefined;
   },
 
   /**

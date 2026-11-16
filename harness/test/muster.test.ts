@@ -268,3 +268,60 @@ test("a short read the party did not cause is said to be unaccountable, not a sh
     /the census did not answer beside the muster/,
   );
 });
+
+// --- a wave for the party (spec-0134 §4) -------------------------------------
+
+/** The gallery's muster: two zombies, one more per further player, and a vindicator. */
+const PARTY_WAVE: MusterPlan = {
+  probe: "gallery:wave_muster_muster",
+  strike: "gallery:wave_strike_muster",
+  chip: "gallery:wave_chip_muster",
+  scale: 1000,
+  unread: -1,
+  bodies: 3,
+  partySize: "#pn_muster",
+  checked: 2,
+  types: [
+    { entity: "minecraft:zombie", facts: [], droppedFacts: [], readsAttackDamage: false, readsFollowRange: false },
+    { entity: "minecraft:vindicator", facts: [], droppedFacts: [], readsAttackDamage: false, readsFollowRange: false },
+  ],
+  profiles: [
+    { typeIndex: 0, count: 2, perPlayer: 1, mask: 0, label: "2 (+1 per further player) × minecraft:zombie (stack 0)", armorAtLeast: 0, armorToughnessAtLeast: 0 },
+    { typeIndex: 1, count: 1, perPlayer: 0, mask: 0, label: "1 × minecraft:vindicator (stack 1)", armorAtLeast: 0, armorToughnessAtLeast: 0 },
+  ],
+};
+
+function partyBodies(zombies: number): MusterBody[] {
+  const b = (typeIndex: number): MusterBody =>
+    guardBody({ campaignId: "gallery", wave: "wave/muster", typeIndex, mask: 0 });
+  return [...Array.from({ length: zombies }, () => b(0)), b(1)];
+}
+
+function partySummary(read: number): MusterSummary {
+  return summary({ campaignId: "gallery", wave: "wave/muster", counted: read, tagged: read });
+}
+
+test("a wave that scales is judged at the party size its seating was measured at", () => {
+  // Three players at the spawn: 2 + 1 × 2 zombies and the vindicator.
+  const v = verifyMuster(PARTY_WAVE, partySummary(5), partyBodies(4), undefined, { size: 3, cap: 4 });
+  assert.deepEqual(v.failures, []);
+  assert.equal(v.declared, 5);
+  assert.equal(v.matched, 5);
+  // One player meets the base, as a solo run reads it.
+  const solo = verifyMuster(PARTY_WAVE, partySummary(3), partyBodies(2), undefined, { size: 1, cap: 1 });
+  assert.deepEqual(solo.failures, []);
+  assert.equal(solo.declared, 3);
+});
+
+test("a wave that scales still reds on a wrong count, an unread size, or a size the run never made", () => {
+  // The run that motivated this: five read where three players meet five — but
+  // seated as for four, the count is wrong.
+  const over = verifyMuster(PARTY_WAVE, partySummary(5), partyBodies(4), undefined, { size: 4, cap: 4 });
+  assert.ok(over.failures.some((f) => /declares 6 body\/bodies for the 4 player\(s\)/.test(f)), over.failures.join(" | "));
+  const short = verifyMuster(PARTY_WAVE, partySummary(4), partyBodies(3), undefined, { size: 3, cap: 4 });
+  assert.ok(short.failures.some((f) => /declares 5 body\/bodies/.test(f)), short.failures.join(" | "));
+  const unread = verifyMuster(PARTY_WAVE, partySummary(5), partyBodies(4), undefined, { size: undefined, cap: 4 });
+  assert.ok(unread.failures.some((f) => /was not read/.test(f)), unread.failures.join(" | "));
+  const beyond = verifyMuster(PARTY_WAVE, partySummary(5), partyBodies(4), undefined, { size: 3, cap: 1 });
+  assert.ok(beyond.failures.some((f) => /this run puts 1 to 1 in the world/.test(f)), beyond.failures.join(" | "));
+});

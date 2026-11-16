@@ -139,6 +139,22 @@ interface Slot {
 }
 
 /**
+ * The party size a scaling wave's seating was measured at, as the muster reads
+ * it beside its probe. `size` is the holder's value, or `undefined` when the
+ * server did not state it; `cap` is how many players the run itself puts in the
+ * world (1 alone, the walker and its members in a party run).
+ */
+export interface SeatedParty {
+  readonly size: number | undefined;
+  readonly cap: number;
+}
+
+/** Bodies of `profile` a seating for `n` players meets (spec-0134 §4). */
+export function stackCount(profile: MusterProfile, n: number): number {
+  return profile.count + (profile.perPlayer ?? 0) * (n - 1);
+}
+
+/**
  * Compare what the server seated against what the campaign declared.
  *
  * Matching is by MULTISET, never by position: a live body carries no memory of
@@ -162,13 +178,36 @@ export function verifyMuster(
   summary: MusterSummary,
   bodies: readonly MusterBody[],
   credited?: number,
+  party: SeatedParty = { size: 1, cap: 1 },
 ): MusterVerdict {
   const findings: string[] = [];
+  // A wave that scales with the party (spec-0134 §4) seats `base + per_player ×
+  // (n − 1)` per stack for the `n` players its spawn counted, which the spawn
+  // wrote to the plan's holder. The count is judged at that `n`, and `n` itself
+  // is judged: at least one, and no more players than the run put in the world.
+  let n = 1;
+  if (plan.partySize !== undefined) {
+    if (party.size === undefined) {
+      findings.push(
+        `${plan.probe}: the party size this seating was measured at (\`${plan.partySize}\`) was ` +
+          `not read, so how many bodies a party meets cannot be judged — judged as one player's`,
+      );
+    } else if (!Number.isInteger(party.size) || party.size < 1 || party.size > party.cap) {
+      findings.push(
+        `${plan.probe}: the seating states it was measured for ${party.size} player(s) ` +
+          `(\`${plan.partySize}\`), and this run puts 1 to ${party.cap} in the world — ` +
+          `judged as one player's`,
+      );
+    } else {
+      n = party.size;
+    }
+  }
+  const declared = plan.profiles.reduce((t, p) => t + stackCount(p, n), 0);
   const slots: Slot[] = [];
   for (const profile of plan.profiles) {
     const type = plan.types[profile.typeIndex];
     if (!type) continue;
-    for (let i = 0; i < profile.count; i += 1) slots.push({ profile, type, taken: false });
+    for (let i = 0; i < stackCount(profile, n); i += 1) slots.push({ profile, type, taken: false });
   }
 
   // Nothing standing is one fact, not N missing stacks, and it is a red: a
@@ -181,12 +220,12 @@ export function verifyMuster(
       wave: summary.wave,
       checked: plan.checked,
       read: 0,
-      declared: plan.bodies,
+      declared,
       matched: 0,
       failures: [
         `nothing of this wave was standing when the muster ran, so none of its ` +
           `${plan.checked} declared fact(s) could be checked against a body ` +
-          `(${plan.bodies} declared: ${plan.profiles.map((p) => p.label).join("; ")}) — ` +
+          `(${declared} declared: ${plan.profiles.map((p) => p.label).join("; ")}) — ` +
           `a zero binding is not a pass`,
       ],
       findings: [],
@@ -207,7 +246,7 @@ export function verifyMuster(
     );
   }
   if (bodies.length !== slots.length) {
-    findings.push(seatingFinding(plan, slots.length, bodies.length, credited));
+    findings.push(seatingFinding(plan, slots.length, bodies.length, credited, plan.partySize === undefined ? undefined : n));
   }
 
   let matched = 0;
@@ -249,7 +288,7 @@ export function verifyMuster(
     wave: summary.wave,
     checked: plan.checked,
     read: bodies.length,
-    declared: plan.bodies,
+    declared,
     matched,
     failures: findings,
     findings: [],
@@ -266,9 +305,11 @@ function seatingFinding(
   declared: number,
   read: number,
   credited: number | undefined,
+  players?: number,
 ): string {
   const head =
     `wave seating: the campaign declares ${declared} body/bodies ` +
+    (players === undefined ? "" : `for the ${players} player(s) its seating was measured at `) +
     `(${plan.profiles.map((p) => p.label).join("; ")}) and the muster read ${read}`;
   if (read > declared) return `${head} — more than the wave declares`;
   const short = declared - read;
