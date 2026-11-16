@@ -1462,7 +1462,9 @@ mod tests {
             0,
             v,
             RideFrom::Foot(from),
-            &|a, _| a == from || a[0] >= 10,
+            // Boarded from the start; the goal walked to only from past the
+            // lintel.
+            &|a, b| (a == from && b != goal) || (b == goal && a[0] >= 10),
             goal,
             None,
             &[],
