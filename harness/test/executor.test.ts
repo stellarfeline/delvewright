@@ -2232,6 +2232,22 @@ class CombatFakeBot extends InteractFakeBot {
   hitAtDeath = false;
   /** Wall-clock ms between a scripted death and its respawn (and re-seat). */
   respawnDelayMs = 10;
+  /** The wave's bodies outlive the bot's death: a wave that does not re-seat
+   * is still standing where it was when the bot respawns. Off by default, which
+   * keeps the older fixtures' empty world after a respawn. */
+  keepWaveOnRespawn = false;
+  /** Blocks the census puts every body east of where the client sees it — a
+   * position match the harness's `waveOfBody` then misses. */
+  censusDrift = 0;
+  /** The `kill` objective the server completes on the tick a staged blow leaves
+   * nothing of the wave standing: its marker is broadcast then, ahead of every
+   * later answer on the chat stream. */
+  completeOnClear: string | undefined;
+  /** On the first census after this many scripted deaths, the first standing
+   * body of the wave lands a hit the server names — a body that comes to the bot
+   * while the re-engage probe is settling. Fires once. */
+  hitOnProbeAfterDeath: number | undefined;
+  private deaths = 0;
   /**
    * The encounter's completion acts on its anchor: when a staged blow leaves
    * nothing of the wave standing, the objective is complete and its completion
@@ -2489,7 +2505,7 @@ class CombatFakeBot extends InteractFakeBot {
           this.emit(
             "messagestr",
             `[dw:censusmob the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
-              `${Math.round(p.x * 100)} ${Math.round(p.y * 100)} ${Math.round(p.z * 100)} ` +
+              `${Math.round((p.x + this.censusDrift) * 100)} ${Math.round(p.y * 100)} ${Math.round(p.z * 100)} ` +
               `${h} ${FULL_HEALTH * 100}]`,
           );
         }
@@ -2500,6 +2516,11 @@ class CombatFakeBot extends InteractFakeBot {
           `[dw:census the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
             `${mobs.length} ${branded} ${damaged} ${this.credited}]`,
         );
+        if (this.hitOnProbeAfterDeath !== undefined && this.deaths >= this.hitOnProbeAfterDeath) {
+          this.hitOnProbeAfterDeath = undefined;
+          const [body] = mobs;
+          if (body) setTimeout(() => this.emit("entityHurt", this.entity, body), 0);
+        }
         return;
       }
       return;
@@ -2525,6 +2546,9 @@ class CombatFakeBot extends InteractFakeBot {
         this.emit("entityGone", ent);
         if (ent.waveTagged) this.credited += 1;
         if (ent.waveTagged && this.waveMobs().length === 0) this.volleyLive = true;
+        if (ent.waveTagged && this.waveMobs().length === 0 && this.completeOnClear) {
+          this.emit("messagestr", `[dw:complete the-drowned-bell ${this.completeOnClear}]`);
+        }
       }
       return;
     }
@@ -2543,6 +2567,7 @@ class CombatFakeBot extends InteractFakeBot {
     }
     setTimeout(() => {
       this.died = true;
+      this.deaths += 1;
       this.emit("messagestr", "delve-bot was slain by Vindicator");
       this.emit("death");
       if (this.hitAtDeath) {
@@ -2553,7 +2578,7 @@ class CombatFakeBot extends InteractFakeBot {
       // can poll the death latch and arm a wait, which is the race the spawn
       // counter exists for.
       setTimeout(() => {
-        this.entities = {};
+        if (!this.keepWaveOnRespawn) this.entities = {};
         // `gamerule keep_inventory true` is what a delve seals; a server without
         // it hands the player back an empty bag.
         if (this.loseKitOnDeath) this.carried = [];
@@ -3095,6 +3120,63 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   assert.equal(findings.length, 2, "every stranded trial is a red finding");
   assert.match(findings[0]!, /STRANDED/);
   assert.match(findings[0]!, /obj\/hold-the-gate/);
+});
+
+/**
+ * The town's castle yard, death 2, in the logged order: a wave that does not
+ * re-seat stands across the death with one body left; the bot walks back and the
+ * re-engage probe starts settling; that body comes to the bot and lands a hit the
+ * server names; the hold misses it (the census places it where the client does
+ * not), so the harness stages it away; the server completes the `kill` objective
+ * on that tick; and the probe's last census reads the wave empty.
+ */
+function castleYardBot(completes: boolean): CombatFakeBot {
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  bot.reSeat = undefined; // `respawns_on_rest: false`
+  bot.keepWaveOnRespawn = true; // its bodies persist across both lives
+  bot.censusDrift = 10; // beyond CENSUS_MATCH_RADIUS: the position match misses
+  bot.hitOnProbeAfterDeath = 2;
+  if (completes) bot.completeOnClear = ENCOUNTER.objective;
+  return bot;
+}
+
+test("a stranded verdict reads the objective the server settled after the harness's own removal", async () => {
+  const bot = castleYardBot(true);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), true);
+
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2);
+  assert.equal(trials[0]!.outcome, "re-engaged", "death 1 found the body standing");
+  assert.equal(bot.stagedBlows.length, 1, "the harness removed the last body inside the probe");
+  const t = trials[1]!;
+  assert.equal(t.reengage!.present, 0, "the probe's last census read the wave empty");
+  assert.equal(t.objectiveComplete, true, "the objective is read after that census");
+  assert.equal(t.outcome, "cleared-before-retry");
+  assert.deepEqual(dieRetryFindings(trials), [], "a completed objective is not a soft lock");
+});
+
+test("the same order with an objective the server never completes is still stranded", async () => {
+  // The perturbation: everything as above, except no completion marker ever
+  // comes. Nothing is left to fight and the objective is incomplete on the
+  // server, so the trial reds.
+  const bot = castleYardBot(false);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), true);
+
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.equal(bot.stagedBlows.length, 1);
+  assert.equal(trials[1]!.outcome, "stranded");
+  const findings = dieRetryFindings(trials);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]!, /death 2 \(mid-fight\)[\s\S]*STRANDED/);
 });
 
 // --- re-seat fidelity + the wandered-mob false negative ----------
