@@ -2133,8 +2133,8 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0362`: a dialogue node declares more conditionally-visible options than the
-    /// variant-dialog encoding can carry. Validation-tier content-shape limit.
+    /// `DW0362`: a dialogue node declares more conditionally-visible options, or a
+    /// shop more gated offers, than the variant-dialog encoding can carry. Validation-tier content-shape limit.
     pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::new("DW0362", ExitTier::Build);
 }
 

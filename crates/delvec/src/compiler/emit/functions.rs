@@ -245,8 +245,8 @@ pub(super) fn emit_functions(
     ));
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
-    // exists, so v0.2/v0.3 setup is unchanged.
-    if has_gated_dialogue(c) {
+    // exists (a dialogue option or a shop offer), so v0.2/v0.3 setup is unchanged.
+    if has_gated_dialogue(c) || has_gated_offer(plan) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
     // spec-0020: the per-player cast-scene selector. Declared only when some
