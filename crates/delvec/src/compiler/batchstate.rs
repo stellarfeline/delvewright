@@ -245,6 +245,8 @@ struct Tree<'a> {
 /// One gated dispatch line, reduced to the two things this check needs.
 #[derive(Debug, Clone)]
 struct Gate {
+    /// The campaign function whose body holds the line.
+    holder: String,
     /// The campaign function this line runs.
     target: String,
     /// Every `#party` objective read in the line's CONDITION.
@@ -302,10 +304,45 @@ impl Tree<'_> {
                 if reads.is_empty() {
                     continue;
                 }
-                gates.push(Gate { target, reads });
+                gates.push(Gate {
+                    holder: f.clone(),
+                    target,
+                    reads,
+                });
             }
         }
         gates
+    }
+
+    /// The shortest dispatch chain from `root` to `goal`, both included.
+    fn chain(&self, root: &str, goal: &str) -> Vec<String> {
+        let mut parent: BTreeMap<String, String> = BTreeMap::new();
+        let mut queue = std::collections::VecDeque::from([root.to_string()]);
+        let mut seen: BTreeSet<String> = BTreeSet::from([root.to_string()]);
+        while let Some(f) = queue.pop_front() {
+            if f == goal {
+                let mut path = vec![f.clone()];
+                let mut cur = f;
+                while let Some(p) = parent.get(&cur) {
+                    path.push(p.clone());
+                    cur = p.clone();
+                }
+                path.reverse();
+                return path;
+            }
+            let Some(body) = self.campaign.get(&f) else {
+                continue;
+            };
+            for line in body.lines() {
+                if let Some(t) = dispatch_target(self.ns, line)
+                    && seen.insert(t.clone())
+                {
+                    parent.insert(t.clone(), f.clone());
+                    queue.push_back(t);
+                }
+            }
+        }
+        vec![root.to_string(), goal.to_string()]
     }
 
     /// A template body with its own hoisted helper functions inlined in place.
@@ -504,6 +541,9 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
         // Required: the gate of every `#party`-gated dispatch on the path from
         // the drive to the outcome, whose target records something asserted.
         let mut required: BTreeSet<String> = BTreeSet::new();
+        // Per required term, the first gate that reads it: the drive root it
+        // was reached from, and the gate.
+        let mut witness: BTreeMap<String, (String, Gate)> = BTreeMap::new();
         for root in flat[drive_at..]
             .iter()
             .filter_map(|l| dispatch_target(ns, l))
@@ -516,6 +556,11 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
                     .get(&g.target)
                     .is_some_and(|w| !w.is_disjoint(&asserted))
                 {
+                    for r in &g.reads {
+                        witness
+                            .entry(r.clone())
+                            .or_insert_with(|| (root.clone(), g.clone()));
+                    }
                     required.extend(g.reads.iter().cloned());
                 }
             }
@@ -534,6 +579,22 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<BatchStat
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+        // Where each unowned term is read: the gate, and the dispatch chain
+        // from the template's drive down to the function that holds it.
+        for m in &missing {
+            let Some((root, g)) = witness.get(m) else {
+                continue;
+            };
+            offenders.push(format!(
+                "    `{PARTY} {m}` gates `{}`, reached by {}",
+                g.target,
+                tree.chain(root, &g.holder)
+                    .iter()
+                    .map(|f| format!("`{f}`"))
+                    .collect::<Vec<_>>()
+                    .join(" -> ")
+            ));
+        }
     }
 
     if offenders.is_empty() {
