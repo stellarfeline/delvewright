@@ -41,8 +41,10 @@
 //       where the server holds it.
 //   T17 a mounted spear zombie as a build summons a wave's mounted stack: a
 //       zombie horse carrying a helmeted iron-spear zombie, in a walled pen open
-//       to the sky and in the same pen roofed, at daytime 1000. Is the mount
-//       still alive and still under its rider, read every 2 s for 60 s.
+//       to the sky, in the same pen roofed, and under the sky in iron horse
+//       armour; beside them a phantom held still, bare and helmeted; at daytime
+//       1000. Is each body alive, on fire, still under its rider, and is the
+//       armour piece worn down, read every 2 s for 60 s.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1242,50 +1244,86 @@ async function t16(bot) {
 // ---- T17: a mount under the sun ---------------------------------------------------
 // The summon a build emits for a wave stack declared with a mount
 // (`emit::mount::ride_on`): the mount, with the rider in `Passengers`, both
-// persistent; the rider helmeted (so the rider's own burn is answered), the
-// mount bare (a zombie horse's body draws no head slot, `DW0898`).
+// persistent; the rider helmeted (so the rider's own burn is answered). The
+// mount bare under the sky and under a roof, and — the slot the pinned jar's
+// `Mob.burnUndead` reads for a zombie horse being `sunProtectionSlot()`,
+// `BODY` — the mount in iron horse armour (`mount.equipment.body`) under the
+// same sky. Beside them, the head slot's one doubted member: a phantom, held
+// still (`NoAI:1b`, so it cannot leave the pen), bare and helmeted.
+const T17_RIDER =
+  'Passengers:[{id:"minecraft:zombie",Tags:["dw_t17_RIDER"],PersistenceRequired:1b,' +
+  'equipment:{mainhand:{id:"minecraft:iron_spear",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:0.0f}}]'
+const T17_PENS = [
+  { name: 'sky', x: H.x + 20, roof: false, kind: 'horse', body: null },
+  { name: 'roof', x: H.x - 20, roof: true, kind: 'horse', body: null },
+  { name: 'armoured', x: H.x + 40, roof: false, kind: 'horse', body: 'minecraft:iron_horse_armor' },
+  { name: 'phantom', x: H.x - 40, roof: false, kind: 'phantom' },
+]
+
+function t17Summon(p, dz, z) {
+  const at = `${p.x + 0.5} ${FLOOR_Y + 1} ${z + dz + 0.5}`
+  if (p.kind === 'phantom') {
+    // dz < 0: bare; dz > 0: helmeted.
+    const head = dz > 0 ? ',equipment:{head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{head:0.0f}' : ''
+    return `summon minecraft:phantom ${at} {Tags:["dw_t17_${p.name}_m","dw_t17_${p.name}_${dz > 0 ? 'helmeted' : 'bare'}"],PersistenceRequired:1b,NoAI:1b${head}}`
+  }
+  const body = p.body ? `,equipment:{body:{id:"${p.body}",count:1}},drop_chances:{body:0.0f}` : ''
+  return (
+    `summon minecraft:zombie_horse ${at} {Tags:["dw_mount","dw_t17_${p.name}_m"],PersistenceRequired:1b${body},` +
+    T17_RIDER.replace('dw_t17_RIDER', `dw_t17_${p.name}_r`) +
+    '}'
+  )
+}
+
 async function t17(bot) {
   await home(bot)
   await clearBodies()
   await rcon.run(`gamemode creative ${BOT}`)
   await rcon.run('time set 1000')
-  const pens = [
-    { name: 'sky', x: H.x + 20, roof: false },
-    { name: 'roof', x: H.x - 20, roof: true },
-  ]
-  for (const p of pens) {
-    const z = H.z
+  const z = H.z
+  for (const p of T17_PENS) {
     // A 9 x 9 floor walled four high, open above; the roofed pen is capped over the walls.
     await rcon.run(`fill ${p.x - 5} ${FLOOR_Y + 1} ${z - 5} ${p.x + 5} ${FLOOR_Y + 4} ${z + 5} minecraft:stone`)
     await rcon.run(`fill ${p.x - 4} ${FLOOR_Y + 1} ${z - 4} ${p.x + 4} ${FLOOR_Y + 4} ${z + 4} minecraft:air`)
     if (p.roof) await rcon.run(`fill ${p.x - 5} ${FLOOR_Y + 5} ${z - 5} ${p.x + 5} ${FLOOR_Y + 5} ${z + 5} minecraft:stone`)
     for (const dz of [-1, 1]) {
-      await rcon.run(
-        `summon minecraft:zombie_horse ${p.x + 0.5} ${FLOOR_Y + 1} ${z + dz + 0.5} {Tags:["dw_mount","dw_t17_${p.name}_m"],PersistenceRequired:1b,` +
-          `Passengers:[{id:"minecraft:zombie",Tags:["dw_t17_${p.name}_r"],PersistenceRequired:1b,` +
-          `equipment:{mainhand:{id:"minecraft:iron_spear",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:0.0f}}]}`,
-      )
+      const cmd = t17Summon(p, dz, z)
+      row(`summon[${p.name}]=${cmd}`)
+      await rcon.run(cmd)
     }
   }
-  begin('T17-mount-in-the-sun', 'two zombie horses each carrying a helmeted iron-spear zombie in a walled pen open to the sky, two more in the same pen roofed; daytime 1000, clear; mounts alive, riders aboard, mount health and fire, every 2 s for 60 s')
+  begin('T17-mount-in-the-sun', 'zombie horses each carrying a helmeted iron-spear zombie: two in a walled pen open to the sky, two in the same pen roofed, two in iron horse armour under the sky; two phantoms (NoAI) under the sky, one bare and one helmeted; daytime 1000, clear; bodies alive, riders aboard, health, fire and the armour piece every 2 s for 60 s')
   row(`daytime=${await rcon.probe('time query daytime')}`)
   for (let s = 0; s <= 60; s += 2) {
     const fields = [`t=${s}s`]
-    for (const p of pens) {
+    for (const p of T17_PENS) {
+      if (p.kind === 'phantom') {
+        for (const v of ['bare', 'helmeted']) {
+          const sel = `@e[tag=dw_t17_${p.name}_${v},limit=1]`
+          const n = await countOf(`@e[tag=dw_t17_${p.name}_${v}]`)
+          const hp = parseNum(await entityGet(sel, 'Health'))
+          const fire = parseNum(await entityGet(sel, 'Fire'))
+          const head = n > 0 ? valueOf(await rcon.probe(`data get entity ${sel} equipment.head`)) : '-'
+          fields.push(`phantom-${v}: alive=${n} health=${f1(hp)} fire=${fire ?? '-'} head=${head || '-'}`)
+        }
+        continue
+      }
       const mounts = await countOf(`@e[tag=dw_t17_${p.name}_m]`)
       const riders = await countOf(`@e[tag=dw_t17_${p.name}_r]`)
       await rcon.probe(`scoreboard players set #aboard ${OBJ} 0`)
       await rcon.probe(`execute as @e[tag=dw_t17_${p.name}_r] on vehicle if entity @s[tag=dw_mount] run scoreboard players add #aboard ${OBJ} 1`)
       const aboard = await score('#aboard')
-      const hp = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_m,limit=1]`, 'Health'))
-      const fire = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_m,limit=1]`, 'Fire'))
+      const sel = `@e[tag=dw_t17_${p.name}_m,limit=1]`
+      const hp = parseNum(await entityGet(sel, 'Health'))
+      const fire = parseNum(await entityGet(sel, 'Fire'))
       const riderHp = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_r,limit=1]`, 'Health'))
-      fields.push(`${p.name}: mounts=${mounts} riders=${riders} aboard=${aboard} mountHealth=${f1(hp)} mountFire=${fire ?? '-'} riderHealth=${f1(riderHp)}`)
+      const armour = p.body && mounts > 0 ? valueOf(await rcon.probe(`data get entity ${sel} equipment.body`)) : '-'
+      fields.push(`${p.name}: mounts=${mounts} riders=${riders} aboard=${aboard} mountHealth=${f1(hp)} mountFire=${fire ?? '-'} riderHealth=${f1(riderHp)} body=${armour || '-'}`)
     }
     row(...fields)
     if (s < 60) await sleep(2000)
   }
-  for (const p of pens) {
+  for (const p of T17_PENS) {
     await rcon.probe(`kill @e[tag=dw_t17_${p.name}_r]`)
     await rcon.probe(`kill @e[tag=dw_t17_${p.name}_m]`)
     await rcon.probe(`fill ${p.x - 5} ${FLOOR_Y + 1} ${H.z - 5} ${p.x + 5} ${FLOOR_Y + 5} ${H.z + 5} minecraft:air`)
