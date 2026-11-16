@@ -12,10 +12,10 @@ mod triggers;
 pub(in crate::compiler::plan) use ancestors::*;
 pub use mock::mock_function;
 pub(crate) use mock::path_mocks;
-pub use pursuers::{FreeBodyKey, Pursuer};
+pub use pursuers::{DW_DESPAWN_BEFORE_ARRIVAL, DespawnBinding, FreeBodyKey, Pursuer};
 pub(crate) use pursuers::{
-    check_courses_started, check_outrun_loose, check_ridden_vehicles_stand, free_bodies_by_step,
-    pursuers_by_step, walk_modes,
+    check_courses_started, check_despawns_follow_arrivals, check_outrun_loose,
+    check_ridden_vehicles_stand, free_bodies_by_step, pursuers_by_step, walk_modes,
 };
 pub use region::*;
 pub(crate) use triggers::*;
@@ -1955,6 +1955,19 @@ pub(super) fn build_critical_path(
     // Per-step transport marker, aligned with `steps`. Filled from `transport` via
     // each objective's recorded step index (gap 8).
     let mut transport_by_step: Vec<Option<[i32; 3]>> = vec![None; steps.len()];
+    // A **party carry** a step's completion fires with no `when` on the way
+    // (DSL v0.88, `link::party_landing`): every member is put on its mark, so
+    // the party goes on from there, in the mark's area. Its seat is the step's
+    // transport, and the area the next leg starts in is the mark's.
+    let party_at: Vec<Option<(String, [i32; 3])>> = steps
+        .iter()
+        .map(|s| {
+            crate::compiler::hold::completion_bundles(campaign, s)
+                .into_iter()
+                .rev()
+                .find_map(|b| crate::compiler::link::party_landing(anchors, b))
+        })
+        .collect();
     // Where the party stands as it sets off for the next objective: the area,
     // and the objective whose completion can carry it out of there — `None` at
     // the campaign spawn, which is the whole of `DW0873`. `None` overall when
@@ -2028,10 +2041,42 @@ pub(super) fn build_critical_path(
                     ),
                 ));
             };
+            if let Some((landed, cell)) = &party_at[prev_idx] {
+                return Err(PlanError::new(
+                    DW_PARTY_CARRY_CROSSED,
+                    format!(
+                        "completing objective `{prev_id}` carries the whole party to \
+                         [{}, {}, {}] in area `{landed}` (a `teleport` with `from: \"party\"` \
+                         in its bundle), and the next objective on the critical path, `{id}`, \
+                         stands in area `{area}` — areas sit {sp} blocks apart across the void, \
+                         so the compiler would also carry the party across to `{area}`'s entry \
+                         point from the same completion, and one step cannot put the party in \
+                         two places. Fault: a party carry and a crossing on one step. Remedy: \
+                         put the teleport's mark in `{area}`, where the party is going, or \
+                         remove the teleport and let the crossing carry the party",
+                        cell[0],
+                        cell[1],
+                        cell[2],
+                        sp = AREA_SPACING,
+                    ),
+                ));
+            }
             transport.insert(prev_id.to_string(), *pos);
             transport_by_step[prev_idx] = Some(*pos);
         }
-        from = Some((area.as_str(), Some((id.as_str(), *idx))));
+        let here = party_at[*idx]
+            .as_ref()
+            .map_or(area.as_str(), |(a, _)| a.as_str());
+        from = Some((here, Some((id.as_str(), *idx))));
+    }
+    // Every other party carry a step performs: its landing is the step's
+    // transport. A step a crossing already carries was refused above.
+    for (k, landing) in party_at.iter().enumerate() {
+        if let Some((_, cell)) = landing
+            && transport_by_step[k].is_none()
+        {
+            transport_by_step[k] = Some(*cell);
+        }
     }
 
     // DSL v0.4 per-step harness hint `sneak` (a stealth objective). The

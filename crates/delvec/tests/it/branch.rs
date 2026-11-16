@@ -610,6 +610,151 @@ fn a_branch_one_elective_takes_and_another_leaves_has_a_witness() {
     assert!(about.is_empty(), "{about:#?}");
 }
 
+/// Two independent failure forks on the Keeper's door (the town's goats and
+/// raid): a bell and a lamp the party is asked to mind, each lost by an
+/// elective act that fails its task, each act reachable only once a rope
+/// (an elective the forks do not turn on) is climbed. With `exclusive`, the
+/// lamp can be lost only once the bell is minded, so a night that loses both
+/// cannot be played.
+fn two_failure_forks(exclusive: bool) -> Campaign {
+    campaign_with(|plan, quests, _| {
+        let decide = quest(quests, "quest/decide");
+        for (thing, anchor) in [("bell", "anchor/door"), ("lamp", "anchor/exit")] {
+            decide["objectives"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": format!("obj/{thing}"), "type": "reach-anchor", "anchor": anchor, "radius": 2,
+                    "happening": { "text": format!("The party minds the {thing}."), "verb": "learns" }
+                }));
+            decide["on_objective_complete"][format!("obj/{thing}")] =
+                serde_json::json!([{ "type": "set-flag", "flag": format!("flag/{thing}-kept") }]);
+        }
+        let lost = |thing: &str, other: &str| {
+            let mut t = serde_json::json!({
+                "id": format!("trigger/{thing}-lost"), "at": "anchor/door", "on": { "on": "use" },
+                "requires_flags": ["flag/rope"],
+                "effects": [
+                    { "type": "set-flag", "flag": format!("flag/{thing}-lost") },
+                    { "type": "fail-objective", "objective": format!("obj/{thing}") }
+                ]
+            });
+            if exclusive && thing == "lamp" {
+                t["requires_flags"] =
+                    serde_json::json!(["flag/rope", format!("flag/{other}-kept")]);
+            }
+            t
+        };
+        quests["content"]["triggers"] = serde_json::json!([
+            { "id": "trigger/rope", "at": "anchor/exit", "on": { "on": "use" },
+              "effects": [{ "type": "set-flag", "flag": "flag/rope" }] },
+            lost("bell", "lamp"),
+            lost("lamp", "bell")
+        ]);
+        for thing in ["bell", "lamp"] {
+            plan["content"]["branch_points"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": format!("branch-point/{thing}"), "opens_at": "quest/decide",
+                    "forks_on": [format!("flag/{thing}-kept"), format!("flag/{thing}-lost")],
+                    "branches": [
+                        { "id": format!("branch/{thing}-kept"), "flags": [format!("flag/{thing}-kept")], "leads_to": "quest/decide" },
+                        { "id": format!("branch/{thing}-lost"), "flags": [format!("flag/{thing}-lost")], "leads_to": "quest/decide" }
+                    ]
+                }));
+        }
+    })
+}
+
+/// The branches of [`two_failure_forks`] a story world realizes, and those
+/// `DW0482` refuses as unreachable.
+fn realized_and_refused(c: &Campaign) -> (Vec<String>, Vec<String>) {
+    let realized = branch::realize(c)
+        .into_iter()
+        .filter(|r| r.world.is_some())
+        .map(|r| r.branch.id)
+        .collect();
+    let refused = branch::check_branches(c)
+        .into_iter()
+        .filter(|d| d.code == "DW0482" && d.message.contains("NOT REACHABLE"))
+        .map(|d| d.message.split('`').nth(1).unwrap().to_string())
+        .collect();
+    (realized, refused)
+}
+
+/// A night that loses both the bell and the lamp is a play: the rope climbed,
+/// then both losses. No story world composed two losses, so the four
+/// combinations reached every branch but the two (one per gate branch) that
+/// lose both, and `DW0482` refused them; the branch search runs every
+/// participation of the acts their flags turn on, and finds the world.
+#[test]
+fn two_losses_on_one_night_are_a_world() {
+    let c = two_failure_forks(false);
+    let (realized, refused) = realized_and_refused(&c);
+    assert_eq!(
+        realized.len(),
+        8,
+        "every declared combination is realized: {realized:#?}"
+    );
+    assert!(refused.is_empty(), "{refused:#?}");
+    let d = branch::check_branches(&c);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0482" || x.code == "DW0484"),
+        "{d:#?}"
+    );
+    let flow = delvec::compiler::flow::Flow::new(&c);
+    let both = branch::realize(&c)
+        .into_iter()
+        .find(|r| r.branch.id == "branch/bell-lost+branch/hold+branch/lamp-lost")
+        .unwrap();
+    let w = &flow.story().worlds[both.world.unwrap()];
+    assert_eq!(w.origin.token(), "branch", "{w:?}");
+    for act in ["trigger/rope", "trigger/bell-lost", "trigger/lamp-lost"] {
+        assert!(w.performs.contains(act), "{act} in {w:?}");
+    }
+    let (_, bind) = branch::check_branches_bound(&c);
+    let line = bind.search.line();
+    assert!(
+        line.contains("2 declared branch(es) no chosen world realized"),
+        "{line}"
+    );
+    assert!(line.contains("2 realized, 0 realized by none"), "{line}");
+}
+
+/// The same forks with the lamp lost only once the bell is minded: a night
+/// that loses both cannot be played, so those two branches still refuse,
+/// each naming what the search ran, and every other branch is realized.
+#[test]
+fn two_losses_each_forbidding_the_other_still_refuse() {
+    let c = two_failure_forks(true);
+    let (realized, mut refused) = realized_and_refused(&c);
+    refused.sort();
+    assert_eq!(realized.len(), 6, "{realized:#?}");
+    assert_eq!(
+        refused,
+        vec![
+            "branch/bell-lost+branch/bolt+branch/lamp-lost".to_string(),
+            "branch/bell-lost+branch/hold+branch/lamp-lost".to_string(),
+        ]
+    );
+    let d = find(branch::check_branches(&c), "DW0482");
+    assert!(
+        d.message.contains("the branch search ran")
+            && d.message.contains("trigger/bell-lost, trigger/lamp-lost"),
+        "{}",
+        d.message
+    );
+    let (_, bind) = branch::check_branches_bound(&c);
+    assert!(
+        bind.search
+            .line()
+            .contains("0 realized, 2 realized by none"),
+        "{}",
+        bind.search.line()
+    );
+}
+
 // --- DW0485: hard event contradictions -------------------------------------
 
 /// `dies` then acts, on one branch, with both chronicle lines shown.

@@ -29,6 +29,12 @@
 //! holds the moment each final scene begins to fire decides which target it
 //! realizes. A datum is computed by the replay, never by an abstract sum, so a
 //! `set-state` among the writers is judged as the datapack runs it.
+//!
+//! Then, per declared branch no world kept so far realizes, the **branch
+//! search** runs every participation of the elective acts its flags turn on
+//! ([`Flow::acts_turning`]) over the all and the none world, unbounded, its
+//! cost recorded in [`BranchSearch`]: each expiry and failure witness carries
+//! one, and a branch is often several at once.
 
 use super::*;
 
@@ -109,6 +115,9 @@ pub enum WorldOrigin {
     /// (`fail-objective`) — enumerated for every such act, whether or not an
     /// ending reads it.
     Failure,
+    /// The first participation the branch search found that realizes a
+    /// declared branch no other world realizes (spec-0025).
+    Branch,
 }
 
 impl WorldOrigin {
@@ -121,6 +130,7 @@ impl WorldOrigin {
             WorldOrigin::Expiry => "expiry",
             WorldOrigin::Quorum => "quorum",
             WorldOrigin::Failure => "failure",
+            WorldOrigin::Branch => "branch",
         }
     }
 }
@@ -201,6 +211,75 @@ struct Owing {
     paid: BTreeSet<String>,
 }
 
+/// Which way one elective act leans on a set of flags ([`Flow::acts_turning`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Lean {
+    /// The flags performing it sets.
+    writes: BTreeSet<String>,
+    /// The flags performing it keeps from being set.
+    prevents: BTreeSet<String>,
+}
+
+/// What the branch search did (spec-0025): per declared branch the worlds
+/// kept so far did not realize, the participations it ran. Every count is
+/// computed from the campaign; nothing caps the search.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BranchSearch {
+    /// Per branch the search ran for, by id: the acts its flags turn on, the
+    /// participations it ran (each a story run, the cached ones included),
+    /// and whether one realized it.
+    pub branches: BTreeMap<String, SearchedBranch>,
+}
+
+/// One branch the search ran for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchedBranch {
+    /// The elective acts its pinned flags turn on, by id.
+    pub acts: Vec<String>,
+    /// The dialogue selections searched.
+    pub selections: usize,
+    /// The participations run.
+    pub runs: usize,
+    /// Whether a run realized the branch.
+    pub found: bool,
+}
+
+impl BranchSearch {
+    /// The binding line, printed on every run, zeroes included.
+    pub fn line(&self) -> String {
+        let n = self.branches.len();
+        let found = self.branches.values().filter(|b| b.found).count();
+        let runs: usize = self.branches.values().map(|b| b.runs).sum();
+        let widest = self
+            .branches
+            .values()
+            .map(|b| b.acts.len())
+            .max()
+            .unwrap_or(0);
+        format!(
+            "branch search binding: {n} declared branch(es) no chosen world realized, each searched \
+             over every participation of the elective acts its flags turn on (at most {widest} \
+             act(s), so at most {cost} participation(s) per selection) on the all and the none \
+             world; {runs} participation(s) run; {found} realized, {left} realized by none \
+             (DW0482)",
+            cost = 2usize.saturating_mul(1usize.checked_shl(widest as u32).unwrap_or(usize::MAX)),
+            left = n - found,
+        )
+    }
+}
+
+/// One dialogue selection's runs and chosen worlds, held until the branch
+/// search has run over every selection.
+struct Pending {
+    sel: usize,
+    local: Vec<(BTreeSet<String>, WorldOrigin, StoryRun)>,
+    chosen: BTreeSet<usize>,
+    i_all: usize,
+    i_none: usize,
+    expiry_runs: Vec<usize>,
+    scene_targets: Vec<Target>,
+}
+
 /// One target of one scene under one selection (§4.2).
 #[derive(Clone, Debug)]
 pub struct Target {
@@ -240,6 +319,8 @@ pub struct StoryModel {
     /// The elective acts that write some final scene's input, by id — the acts
     /// whose participation an ending's reading turns on.
     pub relevant: Vec<String>,
+    /// What the branch search ran.
+    pub branch_search: BranchSearch,
 }
 
 impl StoryModel {
@@ -1081,33 +1162,65 @@ impl<'a> Flow<'a> {
         }
     }
 
-    /// The elective acts a declared fork turns on (spec-0025): an ambient act
-    /// or an optional quest that sets one of a branch point's `forks_on` flags,
-    /// and the expiry of a limited objective whose completion or expiry sets
-    /// one — the participations a branch is taken or left by.
+    /// The elective acts a declared fork turns on (spec-0025): the acts
+    /// [`Self::acts_turning`] names for every point's `forks_on` flag.
     fn branch_acts(&self) -> BTreeSet<String> {
-        let forks: BTreeSet<&str> = self
+        let forks: BTreeSet<String> = self
             .c
             .quest_plan
             .content
             .branch_points
             .iter()
-            .flat_map(|bp| bp.forks_on.iter().map(|f| f.as_str()))
+            .flat_map(|bp| bp.forks_on.iter().map(|f| f.as_str().to_string()))
             .collect();
-        if forks.is_empty() {
-            return BTreeSet::new();
-        }
+        self.acts_turning(&forks).into_keys().collect()
+    }
+
+    /// **The elective acts that turn `flags` on or off**, each with which way
+    /// it leans: an ambient act or an optional quest that sets one (`writes`),
+    /// the expiry of a limited objective whose expiry sets one (`writes`) or
+    /// whose completion sets one (`prevents`), and an act that fails an
+    /// objective whose completion sets one (`prevents`). These are the
+    /// participations a branch is taken or left by.
+    fn acts_turning(&self, flags: &BTreeSet<String>) -> BTreeMap<String, Lean> {
+        use delvewright_dsl::producers::{ProducerSite, expiry_act};
         let acts = self.acts();
-        let mut out = BTreeSet::new();
+        let mut out: BTreeMap<String, Lean> = BTreeMap::new();
+        let mut put = |act: String, flag: &str, writes: bool| {
+            if acts.elective_ids.contains(&act) {
+                let l = out.entry(act).or_default();
+                if writes {
+                    l.writes.insert(flag.to_string());
+                } else {
+                    l.prevents.insert(flag.to_string());
+                }
+            }
+        };
         for p in delvewright_dsl::producers::flag_producers(self.c) {
-            if !forks.contains(p.flag) {
+            if !flags.contains(p.flag) {
                 continue;
             }
-            out.extend(
-                producer_acts(&p)
-                    .into_iter()
-                    .filter(|a| acts.elective_ids.contains(a)),
-            );
+            match p.site {
+                ProducerSite::ObjectiveComplete { quest, objective } => {
+                    put(quest.to_string(), p.flag, true);
+                    put(expiry_act(objective), p.flag, false);
+                    for (act, failed) in &acts.fails {
+                        if failed.contains(objective) {
+                            put(act.clone(), p.flag, false);
+                        }
+                    }
+                }
+                ProducerSite::ObjectiveExpire { quest, objective } => {
+                    put(quest.to_string(), p.flag, true);
+                    put(expiry_act(objective), p.flag, true);
+                }
+                ProducerSite::QuestComplete { quest } => put(quest.to_string(), p.flag, true),
+                ProducerSite::Ambient { .. } => {
+                    if let Some(a) = &p.act {
+                        put(a.clone(), p.flag, true);
+                    }
+                }
+            }
         }
         out
     }
@@ -1534,6 +1647,28 @@ impl<'a> Flow<'a> {
             .into_iter()
             .collect();
         let branches = crate::compiler::branch::enumerate(self.c);
+        // Per declared branch, the acts its pinned flags turn on and the way
+        // each leans toward its assignment: performed when it sets a flag the
+        // branch pins set or keeps one it pins unset from being set, and not
+        // when it leans the other way. The search below starts there.
+        let turning: Vec<(Vec<String>, Vec<bool>)> = branches
+            .iter()
+            .map(|b| {
+                let flags: BTreeSet<String> = b.set.union(&b.unset).cloned().collect();
+                let t = self.acts_turning(&flags);
+                let lean = t
+                    .values()
+                    .map(|l| {
+                        let agree = l.writes.intersection(&b.set).count()
+                            + l.prevents.intersection(&b.unset).count();
+                        let disagree = l.writes.intersection(&b.unset).count()
+                            + l.prevents.intersection(&b.set).count();
+                        agree > disagree
+                    })
+                    .collect();
+                (t.into_keys().collect(), lean)
+            })
+            .collect();
         // Every journal line, with the acts its way turns on (spec-0137 §8).
         let records = crate::compiler::recording::Records::plain(self.c);
         let lines: Vec<Vec<String>> = records
@@ -1546,6 +1681,7 @@ impl<'a> Flow<'a> {
         let mut runs: Vec<StoryRun> = Vec::new();
         let mut targets: Vec<Target> = Vec::new();
         let mut at_bound = 0usize;
+        let mut pending: Vec<Pending> = Vec::new();
         for sel in 0..self.worlds.len() {
             // Candidate participations: subsets of the relevant electives, by
             // size then act id, bounded.
@@ -1777,6 +1913,95 @@ impl<'a> Flow<'a> {
                     }
                 }
             }
+            pending.push(Pending {
+                sel,
+                local,
+                chosen,
+                i_all,
+                i_none,
+                expiry_runs,
+                scene_targets,
+            });
+        }
+        // The branch search (spec-0025), once every selection's worlds are
+        // chosen: per declared branch no chosen world of any selection
+        // realizes, every participation of the acts its flags turn on, the
+        // rest as the all world and then as the none world leave them, by how
+        // far each departs from the acts' lean, selection by selection, until
+        // one realizes it. A branch no participation realizes is unreachable,
+        // and `DW0482` says so with what was run.
+        let realizes = |b: &crate::compiler::branch::EnumeratedBranch, run: &StoryRun| {
+            run.incoherent.is_none()
+                && b.set.iter().all(|f| run.flags.contains(f))
+                && !b.unset.iter().any(|f| run.flags.contains(f))
+        };
+        let mut branch_search = BranchSearch::default();
+        for (bi, b) in branches.iter().enumerate() {
+            if pending
+                .iter()
+                .any(|pd| pd.chosen.iter().any(|&ri| realizes(b, &pd.local[ri].2)))
+            {
+                continue;
+            }
+            let (ids, lean) = &turning[bi];
+            let rec = branch_search
+                .branches
+                .entry(b.id.clone())
+                .or_insert_with(|| SearchedBranch {
+                    acts: ids.clone(),
+                    ..SearchedBranch::default()
+                });
+            let none = BTreeSet::new();
+            'selections: for pd in pending.iter_mut() {
+                if pd.chosen.iter().any(|&ri| realizes(b, &pd.local[ri].2)) {
+                    rec.found = true;
+                    break;
+                }
+                rec.selections += 1;
+                for base in [&all, &none] {
+                    let rest: Vec<&String> = base.iter().filter(|a| !ids.contains(a)).collect();
+                    let sel = pd.sel;
+                    let local = &mut pd.local;
+                    let hit = first_subset(ids.len(), &mut |flips: &[usize]| {
+                        let mut p: BTreeSet<String> = rest.iter().map(|a| (*a).clone()).collect();
+                        for (i, a) in ids.iter().enumerate() {
+                            if lean[i] != flips.contains(&i) {
+                                p.insert(a.clone());
+                            }
+                        }
+                        rec.runs += 1;
+                        let ri = match local.iter().position(|(q, _, _)| *q == p) {
+                            Some(i) => i,
+                            None => {
+                                let run = self.run_story(&StoryWorld {
+                                    selection: sel,
+                                    performs: p.clone(),
+                                    origin: WorldOrigin::Branch,
+                                });
+                                local.push((p, WorldOrigin::Branch, run));
+                                local.len() - 1
+                            }
+                        };
+                        realizes(b, &local[ri].2).then_some(ri)
+                    });
+                    if let Some(ri) = hit {
+                        pd.chosen.insert(ri);
+                        rec.found = true;
+                        break 'selections;
+                    }
+                }
+            }
+        }
+        for Pending {
+            sel,
+            local,
+            chosen,
+            i_all,
+            i_none,
+            expiry_runs,
+            scene_targets,
+        } in pending
+        {
             // This selection's worlds in canonical order: all, none, then the
             // witnesses by participation size and act id.
             let mut order: Vec<usize> = vec![i_all];
@@ -1836,6 +2061,7 @@ impl<'a> Flow<'a> {
             at_bound,
             undatable: acts.story_undatable.clone(),
             relevant,
+            branch_search,
         }
     }
 
@@ -2126,6 +2352,32 @@ fn chain<'e>(
         }
     }
     false
+}
+
+/// The first answer `f` gives over every subset of `0..n`, by size and then in
+/// lexicographic order — every one of the `2^n` subsets when none answers.
+fn first_subset<T>(n: usize, f: &mut dyn FnMut(&[usize]) -> Option<T>) -> Option<T> {
+    fn go<T>(
+        start: usize,
+        n: usize,
+        size: usize,
+        cur: &mut Vec<usize>,
+        f: &mut dyn FnMut(&[usize]) -> Option<T>,
+    ) -> Option<T> {
+        if cur.len() == size {
+            return f(cur);
+        }
+        for i in start..n {
+            cur.push(i);
+            let hit = go(i + 1, n, size, cur, f);
+            cur.pop();
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        None
+    }
+    (0..=n).find_map(|size| go(0, n, size, &mut Vec::new(), f))
 }
 
 fn combinations(n: usize, size: usize) -> Vec<Vec<usize>> {

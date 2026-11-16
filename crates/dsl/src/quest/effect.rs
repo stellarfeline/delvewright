@@ -1155,14 +1155,16 @@ impl QuestEffect {
             // decides WHAT moves and the destination decides WHERE — so a typo in
             // either is a dangling reference (`DW0142`), never a silently
             // zero-cell volume or a dropped command.
-            Verb::Teleport { from, to, .. } => vec![
-                ("from/anchor".to_string(), &from.anchor, None),
-                (
+            Verb::Teleport { from, to, .. } => from
+                .volume()
+                .map(|z| ("from/anchor".to_string(), &z.anchor, None))
+                .into_iter()
+                .chain([(
                     "to/anchor".to_string(),
                     &to.anchor,
                     Some(StationKind::Point),
-                ),
-            ],
+                )])
+                .collect(),
             Verb::BeginStealth { zones, .. } => zones
                 .iter()
                 .enumerate()
@@ -1532,11 +1534,29 @@ impl QuestEffect {
         }
     }
 
-    /// `(from, to)` if this is a `teleport` (DSL v0.10): the source volume and
-    /// the destination mark.
+    /// `(from, to)` if this is a `teleport` of a box (DSL v0.10): the source
+    /// volume and the destination mark. `None` for a party teleport
+    /// ([`Self::party_teleport`]).
     pub fn teleport(&self) -> Option<(&StealthZone, &Mark)> {
         match &self.verb {
-            Verb::Teleport { from, to, .. } => Some((from, to)),
+            Verb::Teleport { from, to, .. } => Some((from.volume()?, to)),
+            _ => None,
+        }
+    }
+
+    /// The destination mark if this is a `teleport` whose subject is the party
+    /// (`from: "party"`, DSL v0.88).
+    pub fn party_teleport(&self) -> Option<&Mark> {
+        match &self.verb {
+            Verb::Teleport { from, to } if from.is_party() => Some(to),
+            _ => None,
+        }
+    }
+
+    /// The destination mark of any `teleport`, of a box or of the party.
+    pub fn teleport_to(&self) -> Option<&Mark> {
+        match &self.verb {
+            Verb::Teleport { to, .. } => Some(to),
             _ => None,
         }
     }
@@ -1544,3 +1564,39 @@ impl QuestEffect {
 
 #[cfg(test)]
 mod happening_subject_tests;
+
+#[cfg(test)]
+mod teleport_subject_tests {
+    use super::*;
+
+    fn parse(from: &str) -> Result<QuestEffect, serde_json::Error> {
+        serde_json::from_str(&format!(
+            r#"{{ "type": "teleport", "from": {from}, "to": {{ "anchor": "anchor/exit" }} }}"#
+        ))
+    }
+
+    #[test]
+    fn the_party_keyword_is_a_party_teleport() {
+        let e = parse(r#""party""#).unwrap();
+        assert_eq!(
+            e.party_teleport().map(|m| m.anchor.as_str()),
+            Some("anchor/exit")
+        );
+        assert!(e.teleport().is_none());
+        assert!(e.teleport_to().is_some());
+        // It names one anchor: the mark's.
+        let refs: Vec<String> = e.anchor_refs().into_iter().map(|(p, _, _)| p).collect();
+        assert_eq!(refs, vec!["to/anchor".to_string()]);
+        // Round-trips as written.
+        assert_eq!(serde_json::to_value(&e).unwrap()["from"], "party");
+    }
+
+    #[test]
+    fn a_box_is_a_box_teleport_and_anything_else_is_refused() {
+        let e = parse(r#"{ "anchor": "anchor/stand", "extent": [1, 1, 1] }"#).unwrap();
+        assert!(e.party_teleport().is_none());
+        assert_eq!(e.teleport().map(|(z, _)| z.extent), Some([1, 1, 1]));
+        assert!(parse(r#""everyone""#).is_err());
+        assert!(parse(r#"{ "anchor": "anchor/stand" }"#).is_err());
+    }
+}

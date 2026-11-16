@@ -334,6 +334,8 @@ pub(super) fn emit_packtest(
     party::emit_party_collect_packtest(plan, out);
     party::emit_party_grant_packtests(plan, out);
     party::emit_party_class_packtest(plan, out);
+    // DSL v0.88: a teleport of the party carries two members far apart.
+    party::emit_party_teleport_packtests(plan, out);
 
     // Last, over every template the emitters above wrote: a template that
     // re-runs `setup` and then the load takes the settled setup.

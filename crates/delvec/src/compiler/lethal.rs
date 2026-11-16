@@ -517,6 +517,9 @@ pub fn put_at_roots(
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(plan.gathers.iter().map(|g| g.to));
+    // A party carry puts every member on a seat a body on its mark walks to
+    // (`nav::party`), so its mark roots every seat.
+    out.extend(plan.party_carries.iter().map(|c| c.to));
     // spec-0086 §5.3: a loop puts a body down on every cell of its landing
     // slab, and the party stands at each exercise step's landing.
     out.extend(loop_landing_cells(plan));
@@ -546,6 +549,14 @@ pub fn stands_at_roots(
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(loop_exercise_landings(plan));
+    // A party carry a step of the path performs: the party stands on its mark.
+    out.extend(
+        plan.critical_path_transport
+            .iter()
+            .flatten()
+            .filter(|c| plan.party_carries.iter().any(|p| p.to == **c))
+            .copied(),
+    );
     out
 }
 

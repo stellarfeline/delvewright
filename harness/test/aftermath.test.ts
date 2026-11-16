@@ -162,6 +162,25 @@ test("the carry is judged by the selector's rule: a hitbox meeting the box was i
   assert.equal(rim[0]!.status, "not_observable", rim[0]!.detail);
 });
 
+test("a teleport of the party carries the bot from wherever it stood", () => {
+  const party = {
+    path: "/content/quests/1/on_complete/3",
+    verb: "teleport",
+    observable: { kind: "position", to: [5, 67, 9] },
+  };
+  const path = parseCriticalPath(pathWith([party]));
+  const done = path.steps[1]!;
+  if (done.action !== "assert-complete") throw new Error("not the terminal step");
+  assert.deepEqual(done.aftermath?.[0]?.observable, { kind: "position", to: [5, 67, 9] });
+  const carried = observeAftermath(done.aftermath as AftermathEntry[], keptWorld({ stoodAt: [0, 67, 0] }));
+  assert.equal(carried[0]!.status, "observed", carried[0]!.detail);
+  const left = observeAftermath(
+    done.aftermath as AftermathEntry[],
+    keptWorld({ stoodAt: [0, 67, 0], position: [0.5, 67, 0.5] }),
+  );
+  assert.equal(left[0]!.status, "failed", left[0]!.detail);
+});
+
 test("weather, health and effects are read off the bot's own state", () => {
   const rows: AftermathEntry[] = [
     { path: "/a", verb: "set-weather", observable: { kind: "weather", weather: "rain" } },

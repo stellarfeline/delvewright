@@ -504,6 +504,11 @@
       "evidence": "`emit::effect::body_selector`: the bodies' own tag.",
       "semantics": "Aims an effect at bodies the engine placed, not at players."
     },
+    "PartyWord": {
+      "class": "parameter",
+      "evidence": "Lowered inside `teleport`'s emission; it selects no player on its own.",
+      "semantics": "The keyword that makes the party a `teleport`'s subject; judged with the teleport."
+    },
     "Persona": {
       "class": "no-runtime",
       "evidence": "Authoring record; never emitted.",
@@ -1237,9 +1242,9 @@
       "semantics": "Told to the players the effect addresses who are present; a beat is not replayed to a member who was away."
     },
     "QuestEffect::teleport": {
-      "class": "present",
-      "evidence": "`emit::teleport`: `tp @e[<box>,tag=!dw_fixture]`; one PackTest per teleport.",
-      "semantics": "Moves every body inside the declared volume, players and entities alike; a player outside it stays where they are."
+      "class": "declared",
+      "evidence": "`emit::teleport`: a box is `tp @e[<box>,tag=!dw_fixture]`, one PackTest per teleport; the party numbers every member (`dw.tpp`) and puts member `k` on seat `k` (`tp @a[tag=!dw_cutscene,scores={dw.tpp=k}]`), a viewer's kept place rewritten, one solo two-member PackTest per party teleport.",
+      "semantics": "`from` states who moves. A box moves every body inside it, players and entities alike; a player outside it stays. The party moves every member present, wherever they stand, each onto a seat of their own; a member on a death screen, waiting out a respawn or still choosing a class is seated by the respawn or the class, and a member away on the tick it fires is not owed the move."
     },
     "QuestEffect::turn": {
       "class": "party",

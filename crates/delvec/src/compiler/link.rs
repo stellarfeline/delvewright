@@ -175,6 +175,78 @@ impl GatherPlan {
     }
 }
 
+/// A **party carry**: a `teleport` whose subject is the party (`from:
+/// "party"`, DSL v0.88). Every member present moves, wherever they stand, so it
+/// is neither a link nor a gather: it leaves nobody behind, and the path takes
+/// it where a step it performs fires it
+/// ([`party_landing`]).
+#[derive(Clone, Debug)]
+pub struct PartyCarryPlan {
+    /// The JSON pointer of the `teleport` effect.
+    pub path: String,
+    /// The root it fires from, in words.
+    pub root: String,
+    /// The `to` mark's anchor name.
+    pub to_anchor: String,
+    /// The area the `to` anchor resolves in.
+    pub to_area: String,
+    /// The mark's cell: the first member's seat.
+    pub to: [i32; 3],
+}
+
+/// **Every party carry**, in [`for_each_effect_root`] order (ADR-0006). One
+/// whose `to` does not resolve is left out: `DW0360` owns that failure.
+pub fn collect_party(campaign: &Campaign, anchors: &AnchorTable) -> Vec<PartyCarryPlan> {
+    let mut out = Vec::new();
+    for_each_effect_root(campaign, &mut |site, list| {
+        for line in timelines(list, &site.path) {
+            for t in &line.timed {
+                let Some(to) = t.eff.party_teleport() else {
+                    continue;
+                };
+                let Some((area, r)) = resolve(anchors, to.anchor.as_str()) else {
+                    continue;
+                };
+                out.push(PartyCarryPlan {
+                    path: t.path.clone(),
+                    root: root_words(&site.root),
+                    to_anchor: to.anchor.as_str().to_string(),
+                    to_area: area.to_string(),
+                    to: to.cell(point_of(r)),
+                });
+            }
+        }
+    });
+    out
+}
+
+/// **Where a bundle's own timeline leaves the party**: the area and cell of
+/// the last party carry it fires (by tick, then in order) with no `when` on
+/// the way down to it — the carry a step that fires the bundle certainly
+/// performs. A party carry behind a `when` is not taken: the path cannot say
+/// it fires. Nested bundles that fire at another moment (`on_rest`,
+/// `on_respawn`, `on_arrive`, …) are not this timeline.
+pub fn party_landing(anchors: &AnchorTable, list: &[QuestEffect]) -> Option<(String, [i32; 3])> {
+    let lines = timelines(list, "");
+    let own = lines.first()?;
+    let mut best: Option<(u32, String, [i32; 3])> = None;
+    for t in &own.timed {
+        let Some(to) = t.eff.party_teleport() else {
+            continue;
+        };
+        if !t.guards.is_empty() {
+            continue;
+        }
+        let Some((area, r)) = resolve(anchors, to.anchor.as_str()) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(tick, _, _)| t.tick >= *tick) {
+            best = Some((t.tick, area.to_string(), to.cell(point_of(r))));
+        }
+    }
+    best.map(|(_, a, c)| (a, c))
+}
+
 fn compare(v: i64, op: CompareOp, k: i64) -> bool {
     match op {
         CompareOp::Equals => v == k,
@@ -645,7 +717,7 @@ pub fn check_teleport_under_cutscene(campaign: &Campaign) -> Vec<Diagnostic> {
                 continue;
             }
             for t in &line.timed {
-                if t.eff.teleport().is_none() {
+                if t.eff.teleport_to().is_none() {
                     continue;
                 }
                 let Some((scene, end)) = scenes.iter().find(|(s, end)| {

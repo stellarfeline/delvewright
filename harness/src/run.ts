@@ -31,7 +31,7 @@ import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
 import { completionDue, runSequence, StepExecutionError } from "./sequencer.ts";
-import { partyFromEnv, scheduleParty } from "./party.ts";
+import { MEMBERS, partyFromEnv, scheduleParty } from "./party.ts";
 import { PartyRun, type PartyResult } from "./party-live.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
@@ -551,6 +551,7 @@ async function main(): Promise<number> {
               log: (line) => process.stderr.write(`${line}\n`),
             });
             await party.start();
+            executor.partyCap = 1 + MEMBERS.length;
             const run = party;
             executor.boundaryHook = (index) => run.boundary(index);
           }

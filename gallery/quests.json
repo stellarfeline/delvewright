@@ -2852,6 +2852,15 @@
               },
               "seconds": 10,
               "type": "give-effect"
+            },
+            {
+              "actor": "actor/rafter-spider",
+              "happening": {
+                "subject": "actor/rafter-spider",
+                "text": "The spider lets itself down from the rafters while the muster forms up.",
+                "verb": "arrives"
+              },
+              "type": "spawn-actor"
             }
           ],
           "obj/back-in-the-hall": [
@@ -6299,6 +6308,18 @@
             "style": "chat",
             "text": "The hearth stone is warm under the hand: struck, it speaks; touched, it only glows.",
             "type": "narrate"
+          },
+          {
+            "from": "party",
+            "to": {
+              "anchor": "anchor/hearth",
+              "offset": [
+                1,
+                0,
+                0
+              ]
+            },
+            "type": "teleport"
           }
         ],
         "id": "trigger/warm-at-the-hearth",
@@ -6699,6 +6720,6 @@
       }
     ]
   },
-  "dsl_version": "0.86.0",
+  "dsl_version": "0.88.0",
   "stage": "quests"
 }
