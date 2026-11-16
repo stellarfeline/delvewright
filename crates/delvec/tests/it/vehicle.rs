@@ -2231,6 +2231,12 @@ fn course_bay(race: String) -> Bay {
 
 fn course_build(tag: &str, bay: Bay, talk: &str) -> Result<BuildOutput, (String, String)> {
     let (dir, lib) = write(tag, bay, pig(), talk);
+    // A refusal the plan itself makes (`DW1119`) is read off the plan.
+    let c = campaign(&dir);
+    let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+    if let Err(e) = Plan::build(&c, &prefabs) {
+        return Err((e.failure.code.to_string(), e.failure.message));
+    }
     match try_build(&dir, &lib) {
         Ok(out) => Ok(out),
         Err(BuildFailure::Diagnostic { code, message }) => Err((code.to_string(), message)),
@@ -2289,20 +2295,30 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     );
 
     let body = function(&out, "race_pig_race_body");
+    let line = |starts: &str| {
+        body.lines()
+            .find(|l| l.starts_with(starts))
+            .unwrap_or_else(|| panic!("no line `{starts}…` in the body: {body}"))
+    };
+    let credit = line("execute if score @s dw.rn.pig_race matches 0 if entity @s[x=9,dx=0,");
     assert!(
-        body.contains(
-            "execute if score @s dw.rn.pig_race matches 0 if entity \
-             @s[x=9,dx=0,y=3,dy=2,z=7,dz=0] run return run function hello-world:race_pig_race_pass"
-        ),
-        "{body}"
+        credit.ends_with(",z=7,dz=0] run return run function hello-world:race_pig_race_pass"),
+        "{credit}"
+    );
+    let second = line("execute if score @s dw.rn.pig_race matches 1 if entity @s[x=14,dx=0,");
+    assert!(second.ends_with("race_pig_race_pass"), "{second}");
+    let missed = line(
+        "execute if score @s dw.rn.pig_race matches ..0 if entity \
+         @s[type=minecraft:player,x=14,dx=0,",
     );
     assert!(
-        body.contains(
-            "execute if score @s dw.rn.pig_race matches ..0 if entity \
-             @s[type=minecraft:player,x=14,dx=0,y=3,dy=2,z=7,dz=0] run return run title @s \
-             actionbar "
-        ),
-        "a player in the second checkpoint with the first unpassed reads `missed`: {body}"
+        missed.contains(",z=7,dz=0] run return run title @s actionbar "),
+        "a player in the second checkpoint with the first unpassed reads `missed`: {missed}"
+    );
+    assert_eq!(
+        body.lines().filter(|l| l.contains("actionbar")).count(),
+        1,
+        "the first checkpoint is never further on than a racer's next: {body}"
     );
     assert!(function(&out, "race_pig_race_pass").contains(
         "execute if score @s dw.rc.pig_race matches 2.. run return run function \
@@ -2311,7 +2327,7 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     let finish = function(&out, "race_pig_race_finish");
     assert!(
         finish.contains(
-            "execute unless entity @a[scores={dw.rc.pig_race=..1}] run function \
+            "execute unless entity @a[tag=dw_rcg_pig_race] run function \
              hello-world:race_pig_race_end"
         ),
         "{finish}"
@@ -2334,7 +2350,7 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
         .filter(|l| l.contains("#rfin_pig_race dw.sys matches 1"))
         .collect();
     assert!(
-        !guarded.is_empty() && guarded.iter().all(|l| l.contains("complete_obj_exit")),
+        !guarded.is_empty() && guarded.iter().all(|l| l.contains("complete_o_exit")),
         "the exit's completion waits on the race, and nothing else does: {guarded:#?}"
     );
 }
@@ -2363,9 +2379,9 @@ fn a_finish_places_its_racer_and_starts_the_grace() {
          hello-world:board_row_race_racer",
         "execute unless score #r1st_pig_race dw.sys matches 1 run schedule function \
          hello-world:race_pig_race_end 600t replace",
-        "execute unless entity @a[scores={dw.rc.pig_race=..3}] unless entity \
-         @e[tag=dw_actor_racer,type=!minecraft:interaction,scores={dw.rc.pig_race=..3}] run \
-         function hello-world:race_pig_race_end",
+        "execute unless entity @a[tag=dw_rcg_pig_race] unless entity \
+         @e[tag=dw_actor_racer,type=!minecraft:interaction,tag=dw_rcg_pig_race] run function \
+         hello-world:race_pig_race_end",
     ] {
         assert!(
             finish.contains(line),
@@ -2481,19 +2497,37 @@ fn a_walk_along_a_race_passes_every_checkpoint() {
         let out = course_build(tag, course_bay(more()), &walk(along))
             .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
         out.iter()
-            .filter(|(k, _)| k.contains("/function/") && k.contains("moveactor"))
+            .filter(|(k, _)| k.contains("/function/ma_"))
             .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let along = routed("walk-along", r#", "along": "race/pig-race""#);
+    // The waypoints the driver teleports the body through, as `(x, z)`.
+    let waypoints = |driver: &str| -> Vec<(f64, f64)> {
+        driver
+            .lines()
+            .filter_map(|l| {
+                let t: Vec<&str> = l.split_whitespace().collect();
+                let at = t.iter().position(|w| *w == "tp")?;
+                Some((t.get(at + 2)?.parse().ok()?, t.get(at + 4)?.parse().ok()?))
+            })
+            .collect()
+    };
+    // In the column of cells `[x, 7]`: the checkpoint's one-column box.
+    let within = |w: &[(f64, f64)], x: f64| {
+        w.iter()
+            .position(|(wx, wz)| (x..x + 1.0).contains(wx) && (7.0..8.0).contains(wz))
+    };
+    let along = waypoints(&routed("walk-along", r#", "along": "race/pig-race""#));
+    let (a, b) = (within(&along, 9.0), within(&along, 14.0));
     assert!(
-        along.contains(" 9.5 4 7.5") && along.contains(" 14.5 4 7.5"),
-        "the walk stands on each checkpoint's cell: {along}"
+        a.is_some() && b.is_some() && a < b,
+        "the walk passes through the bridge checkpoint's column and then the east one's: \
+         {along:?}"
     );
-    let straight = routed("walk-straight", "");
+    let straight = waypoints(&routed("walk-straight", ""));
     assert!(
-        !straight.contains(" 14.5 4 7.5"),
-        "a walk that follows no course goes one block east and no further: {straight}"
+        !straight.is_empty() && straight.iter().all(|(x, _)| *x < 6.0),
+        "a walk that follows no course goes one block east and no further: {straight:?}"
     );
 }

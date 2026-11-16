@@ -68,6 +68,10 @@ pub(super) fn emit_race_packtests(plan: &Plan, out: &mut BuildOutput) {
                     super::super::board_objective(b.as_str())
                 ));
             }
+            t.push(format!(
+                "tag {sel} remove {}",
+                super::super::race_on_course(id)
+            ));
             t.push(format!("tp {sel} ~ ~ ~"));
             t.push(format!("tag {sel} remove {tag}"));
             t

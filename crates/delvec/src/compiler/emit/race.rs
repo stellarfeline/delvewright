@@ -12,8 +12,9 @@
 //!
 //! A racer credited the last checkpoint of the last lap has finished: it
 //! takes the next place on the race's board by the board's own placing
-//! function. The race is over (`race_<race>_end`) when no racer in the world
-//! is short of the finish, when its `grace_ticks` have passed since its
+//! function. A racer the body function has asked and that has not finished
+//! carries the tag `dw_rcg_<race>`. The race is over (`race_<race>_end`) when
+//! no racer in the world carries it, when its `grace_ticks` have passed since its
 //! first finisher (a `schedule` the first finish makes and a start clears),
 //! or when an `end-race` says so; being over latches `#rfin_<race>`, the
 //! term an objective that declares the race its `course` waits on.
@@ -45,6 +46,12 @@ pub(crate) fn race_over(id: &str) -> String {
 /// The `dw.sys` holder that is 1 once a racer of race `id` has finished.
 pub(crate) fn race_first(id: &str) -> String {
     format!("#r1st_{}", plan::safe_local(id))
+}
+
+/// The tag a racer of race `id` carries while it is on the course: put on
+/// by the body function, taken off by its finish and by a start.
+pub(crate) fn race_on_course(id: &str) -> String {
+    format!("dw_rcg_{}", plan::safe_local(id))
 }
 
 /// The function that starts race `id`.
@@ -145,17 +152,25 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
         let total = r.total();
         let (on, over, first) = (race_running(id), race_over(id), race_first(id));
         let end = format!("{ns}:{}", race_end_fn(id));
-        out.push((
-            race_start_fn(id),
-            lines(&[
-                format!("schedule clear {end}"),
-                format!("scoreboard players reset * {p}"),
-                format!("scoreboard players reset * {nx}"),
-                format!("scoreboard players set {first} dw.sys 0"),
-                format!("scoreboard players set {over} dw.sys 0"),
-                format!("scoreboard players set {on} dw.sys 1"),
-            ]),
-        ));
+        let racing = race_on_course(id);
+        let mut start = vec![
+            format!("schedule clear {end}"),
+            format!("scoreboard players reset * {p}"),
+            format!("scoreboard players reset * {nx}"),
+            format!("tag @a remove {racing}"),
+        ];
+        for a in &r.racers {
+            start.push(format!(
+                "tag @e[{}] remove {racing}",
+                racer_terms(a.as_str())
+            ));
+        }
+        start.extend([
+            format!("scoreboard players set {first} dw.sys 0"),
+            format!("scoreboard players set {over} dw.sys 0"),
+            format!("scoreboard players set {on} dw.sys 1"),
+        ]);
+        out.push((race_start_fn(id), lines(&start)));
         out.push((
             race_end_fn(id),
             lines(&[
@@ -168,10 +183,13 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
         // The body: seed a racer the start found absent, leave a finisher
         // alone, credit the next checkpoint, else tell a player what it
         // missed.
+        // `add … 0` creates an entry the start reset and keeps one that
+        // stands: a comparison against no entry is never true.
         let mut body = vec![
-            format!("execute unless score @s {p} matches 0.. run scoreboard players set @s {nx} 0"),
-            format!("execute unless score @s {p} matches 0.. run scoreboard players set @s {p} 0"),
+            format!("scoreboard players add @s {p} 0"),
+            format!("scoreboard players add @s {nx} 0"),
             format!("execute if score @s {p} matches {total}.. run return 0"),
+            format!("tag @s add {racing}"),
         ];
         for (j, (lo, hi)) in boxes.iter().enumerate() {
             body.push(format!(
@@ -212,7 +230,7 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
         out.push((race_pass_fn(id), lines(&pass)));
-        let mut finish: Vec<String> = Vec::new();
+        let mut finish: Vec<String> = vec![format!("tag @s remove {racing}")];
         if let Some(b) = &r.board {
             finish.push(format!(
                 "execute if entity @s[type=minecraft:player] run function {ns}:{}",
@@ -235,11 +253,10 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
         finish.push(format!("scoreboard players set {first} dw.sys 1"));
-        let short = format!("scores={{{p}=..{}}}", total.saturating_sub(1));
-        let mut all = format!("execute unless entity @a[{short}]");
+        let mut all = format!("execute unless entity @a[tag={racing}]");
         for a in &r.racers {
             all.push_str(&format!(
-                " unless entity @e[{},{short}]",
+                " unless entity @e[{},tag={racing}]",
                 racer_terms(a.as_str())
             ));
         }
