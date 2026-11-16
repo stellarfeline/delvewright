@@ -2206,6 +2206,84 @@ jobs:
           name: gallery-bot-run
           path: validation/run-out/dw-ci-gallery-bot/
 
+  # spec-0141 §6: the gallery's critical path walked by a party. Its own job,
+  # beside the solo walk rather than after it, so neither waits on the other:
+  # three more members join beside the walker — one idles at the entry, one
+  # joins late, one leaves mid-path and returns — and the run's `party` stage
+  # judges where each stands, what each was handed and what each was told,
+  # read on the server (`harness/src/party.ts`). The solo job proves dying;
+  # this one proves the walk with others on the server, so die-retry and the
+  # death loop are skipped here and the report says so.
+  gallery-party-bot:
+    name: gallery party bot (late, idle and returning members)
+    needs: [changes, delvec-binary, gallery-baseline]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-bot == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # The same standing acceptance as the gallery bot's: whoever runs this
+      # workflow accepts the Minecraft EULA (https://aka.ms/MinecraftEULA).
+      EULA: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: gallery-bot }
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      - name: generate the gallery's pieces and skins
+        run: |
+          python3 tools/ci/gallery-prefabs.py \
+            --delvec target/debug/delvec --out gallery-prefabs
+      - uses: actions/download-artifact@v4
+        with:
+          name: gallery-baseline
+          path: .gallery-baseline/report
+      - name: build the primary point the baseline measured
+        run: |
+          python3 tools/ci/gallery-build.py --point primary \
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --manifests .gallery-baseline/report/manifests.json
+      - name: the party walks the gallery
+        env:
+          DELVEWRIGHT_PARTY: "1"
+          DELVEWRIGHT_DIE_RETRY: "0"
+          DELVEWRIGHT_DEATH_LOOP: "0"
+        run: |
+          set -o pipefail
+          bash validation/bot-run.sh --project dw-ci-gallery-party \
+            --output ./delve-output-gallery-primary \
+            --run-out ./run-out/dw-ci-gallery-party 2>&1 | tee gallery-party.log
+      # The party stage ran, passed, and bound: the idler read at boundaries,
+      # the late member's arrival judged on a seat, a grant reading bound and
+      # tellings owed. Each count is the run's own, never written here.
+      - name: the party stage bound on the gallery
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          r = json.load(open("validation/run-out/dw-ci-gallery-party/run-report.json"))
+          stage = next((s for s in r["stages"] if s["stage"] == "party"), None)
+          p = r.get("party")
+          print(f"party stage: {json.dumps(stage)}")
+          print(f"party record: {json.dumps(p and p['line'])}")
+          if stage is None or not stage["ran"] or not stage["passed"]:
+              sys.exit("the party stage did not run green")
+          if p is None or p["idler_readings"] < 1:
+              sys.exit("the idler was read at no boundary")
+          if not (p["arrival"] or {}).get("bound"):
+              sys.exit("the late member's arrival was not judged on a seat")
+          if not any(o["bound"] for o in p["owed"]):
+              sys.exit("no grant reading bound: the gallery hands the party a stack")
+          if sum(t["owed"] for t in p["tellings"].values()) < 1:
+              sys.exit("no member was owed a telling")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-party-bot-run
+          path: validation/run-out/dw-ci-gallery-party/
+
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.
