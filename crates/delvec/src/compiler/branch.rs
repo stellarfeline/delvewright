@@ -728,10 +728,16 @@ pub fn check_branches_within(
     check_happenings(c, &mut d);
     let flow = Flow::new(c);
     check_undeclared_forks(c, &flow, &mut d);
+    bind.search = flow.story().branch_search.clone();
     for b in enumerate(c) {
         let r = realize_one(c, &flow, b);
         check_leakage(c, &flow, &r, &mut d);
-        check_terminality(c, &r, &mut d);
+        check_terminality(
+            c,
+            &r,
+            flow.story().branch_search.branches.get(&r.branch.id),
+            &mut d,
+        );
         check_cast_continuity(c, &flow, &r, &mut d);
         check_contradictions(&r, &mut d);
         if r.world.is_some() {
@@ -751,8 +757,9 @@ pub fn check_branches_within(
 }
 
 /// What `DW0485` examined across every realized branch — the binding count,
-/// stated whether or not anything was found.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// stated whether or not anything was found — and what the branch search ran
+/// for the branches no first world realized (`DW0482`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ContradictionBinding {
     /// Realized branches whose exported order was read.
     pub branches: usize,
@@ -770,6 +777,8 @@ pub struct ContradictionBinding {
     pub unproven: usize,
     /// The bound, in distinct play states per branch.
     pub bound: usize,
+    /// What the branch search ran ([`crate::compiler::flow::BranchSearch`]).
+    pub search: crate::compiler::flow::BranchSearch,
 }
 
 impl ContradictionBinding {
@@ -1101,7 +1110,12 @@ fn flag_producers(c: &Campaign, flags: &BTreeSet<String>) -> Vec<String> {
 }
 
 /// `DW0482` — every branch reaches an ending, and the one it declares.
-fn check_terminality(c: &Campaign, r: &RealizedBranch, d: &mut Vec<Diagnostic>) {
+fn check_terminality(
+    c: &Campaign,
+    r: &RealizedBranch,
+    searched: Option<&crate::compiler::flow::SearchedBranch>,
+    d: &mut Vec<Diagnostic>,
+) {
     let Some(bp) = point_of(c, &r.branch) else {
         return;
     };
@@ -1112,13 +1126,29 @@ fn check_terminality(c: &Campaign, r: &RealizedBranch, d: &mut Vec<Diagnostic>) 
             "/content/branch_points".to_string(),
             format!(
                 "branch `{}` is NOT REACHABLE, so it reaches no ending: no playthrough of this \
-                 campaign sets {} while leaving {} unset. A declared branch nobody can take is a \
+                 campaign sets {} while leaving {} unset{}. A declared branch nobody can take is a \
                  branch nothing proves. Branch assignment: {}. Prescription: give the fork a \
                  dialogue option (or a beat) that really sets this branch's flags, or drop the \
                  branch from `{}`",
                 r.branch.id,
                 join(&r.branch.set),
                 join(&r.branch.unset),
+                match searched {
+                    Some(s) => format!(
+                        " — the branch search ran {} participation(s) over {} dialogue \
+                         selection(s): every subset of the {} elective act(s) its flags turn on \
+                         ({}), on the all and the none world",
+                        s.runs,
+                        s.selections,
+                        s.acts.len(),
+                        if s.acts.is_empty() {
+                            "none".to_string()
+                        } else {
+                            s.acts.join(", ")
+                        },
+                    ),
+                    None => String::new(),
+                },
                 assignment(&r.branch),
                 bp,
             ),
