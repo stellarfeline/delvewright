@@ -894,6 +894,10 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         "vehicle" if n == 3 && last == "name" => Name,
         // spec-0135 §13: a board's heading over the sidebar.
         "board" if n == 3 && last == "title" => Title,
+        // spec-0139: a race's two action-bar lines — a checkpoint that did not
+        // count says what is wrong and what fixes it; a credit is narration.
+        "race" if n == 3 && last == "missed" => Refusal,
+        "race" if n == 3 && last == "passed" => Narration,
         "loot" if n == 5 && last == "name" => ItemName,
         "sign" if n == 4 && matches!(segs[2], "front" | "back") => Sign,
         "lethal" if n == 3 && last == "message" => Narration,
