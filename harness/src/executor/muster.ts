@@ -96,15 +96,16 @@ export const methods = {
    * candidate wave, by its tag, matched to where the body stands.
    *
    * The body is loaded (it has just hit the bot), so its own census line exists
-   * wherever it has wandered. Candidates are the waves a reading or a die-retry
-   * stake could be riding on — the rest cannot change what happens to the body —
-   * nearest anchor first, and the first match ends the search. `undefined` when no
-   * candidate's census places a body there: an ambusher, an actor, a wave with
-   * nothing owed.
+   * wherever it has wandered. Candidates are the waves a reading could be riding
+   * on — the rest cannot change what happens to the body — nearest anchor first,
+   * and the first match ends the search. `undefined` when no candidate's census
+   * places a body there: an ambusher, an actor, a wave with nothing owed. The
+   * wave the die-retry stage protects is not a candidate: `stageAway` asks the
+   * server by UUID whether a body wears its tag (`bodyWears`).
    */
   async waveOfBody(this: MineflayerExecutor, pos: Vec3Tuple): Promise<Encounter | undefined> {
     const candidates = (this.combatPlan?.encounters ?? []).filter(
-      (enc) => this.protectedWave?.wave === enc.wave || this.readingOwed(enc),
+      (enc) => this.protectedWave?.wave !== enc.wave && this.readingOwed(enc),
     );
     const dist = (enc: Encounter): number =>
       Math.hypot(pos[0] - enc.pos[0], pos[1] - enc.pos[1], pos[2] - enc.pos[2]);

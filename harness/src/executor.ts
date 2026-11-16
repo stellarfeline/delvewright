@@ -126,6 +126,12 @@ export class MineflayerExecutor implements StepExecutor {
    */
   readonly completedObjectives = new Map<string, number>();
   /**
+   * Run at every step boundary before anything else the boundary owes (the
+   * party run, spec-0141: members join and leave, and the idler is read, at
+   * boundaries). Absent on a run walked alone.
+   */
+  boundaryHook: ((index: number) => Promise<void>) | undefined;
+  /**
    * Limited objectives whose anchored expiry marker has arrived (spec-0133), and
    * the step index executing when it did. Buffered from connect, like
    * {@link completedObjectives}.
@@ -295,8 +301,8 @@ export class MineflayerExecutor implements StepExecutor {
   readonly deadBodies = new Set<number>();
   /** Serial for {@link readServerPos}'s answer markers. */
   posReads = 0;
-  /** Serial of the story-body questions this run has asked ({@link storyVerdict}). */
-  storyAsks = 0;
+  /** Serial of the by-UUID questions this run has asked of one body ({@link askBody}). */
+  bodyAsks = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -625,7 +631,8 @@ export class MineflayerExecutor implements StepExecutor {
   protectedWave:
     | {
         readonly wave: string;
-        census: ReadonlyArray<{ readonly pos: readonly [number, number, number] }>;
+        /** The `kill` step's `tag`: what the server is asked whether a body wears. */
+        readonly tag: string;
       }
     | undefined;
   /** How far `kill()` got with each encounter — the reading key for an empty

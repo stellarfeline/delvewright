@@ -47,6 +47,8 @@ fn every_key_class_has_its_kind() {
         ("sign.exit.front.0", Sign),
         ("sign.exit.back.3", Sign),
         ("lethal.pit.message", Narration),
+        ("race.round-the-town.missed", Refusal),
+        ("race.round-the-town.passed", Narration),
         ("stake.tallow.collected", Narration),
         ("shop.counter.title", Title),
         ("shop.counter.offer.2.label", OptionLabel),
@@ -67,6 +69,7 @@ fn every_key_class_has_its_kind() {
         "fx.open.done.0.spawn",
         "nope.x.name",
         "sign.exit.side.0",
+        "race.round-the-town.lap",
         "",
     ] {
         assert_eq!(key_kind(key), None, "{key}");

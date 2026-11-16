@@ -16,7 +16,8 @@ A party of one cannot ask them, so a single bot never answers them.
 
 1. **Its row.** `tools/ci/party-semantics.json` gives every surface unit of `delvec schema --stage all` a class and, where it has a meaning of its own, who is credited, told and moved, with the evidence. `tools/ci/check-party-semantics.py` refuses a unit with no row and prints the table (`--index`). The classes are `party`, `each`, `actor`, `present`, `first-come`, `declared`, `parameter` and `no-runtime`.
 2. **Its bytes.** `compiler::absent` reads every shipped function on every build. A lasting write onto the players present outside the root `tick`, and a pick of one player, each stand at a named site or refuse the build (`DW1126`, `DW1127`; [`delvec/compiler/absent.md`](delvec/compiler/absent.md)).
-3. **Its run.** The generated PackTests that bring a second member: `party_join_<obj>`, `party_carrier_<obj>`, `party_collect`, `party_grant_<i>`, `party_class_arrives`, `board_<b>_players`, `vehicle_<id>_party`.
+3. **Its run.** The generated PackTests that bring a second member: `party_join_<obj>`, `party_carrier_<obj>`, `party_collect`, `party_grant_<i>`, `party_class_arrives`, `party_limit_bar_<obj>`, `board_<b>_players`, `vehicle_<id>_party`.
+4. **Its party run.** `DELVEWRIGHT_PARTY=1` (`harness/src/party.ts`) walks the critical path with three more members on the server — one idling at the entry, one joining late, one leaving and returning — and the `party` stage asserts, read on the server, where each stands, what each was handed and what each was told. The `gallery party bot` CI job runs it on the gallery.
 
 A row is read from the emitted commands, never from the DSL's prose: the question is what an `@a`, an `@s` and a `#party` in the function do with four players online and one of them late.
 
@@ -42,11 +43,9 @@ A row is read from the emitted commands, never from the DSL's prose: the questio
 | race | every present player races on their own count; the absent are not waited for |
 | board | one sidebar; each body is placed once, in the order it acts |
 | loot | one fill in the world: first come |
-| limit | one clock for the party |
+| limit | one clock for the party; its bar is restated to every member present once a second |
 
 ## What does not hold yet
 
-- A limit's countdown bar is shown to the players present when the clock starts; a member who joins later does not see it.
 - `close-gate` does not gather the party: a member on the far side stays there until the story opens it.
 - A `carrier: one` item is out of the world while its holder is disconnected.
-- No machine run has more than one bot on a live server.

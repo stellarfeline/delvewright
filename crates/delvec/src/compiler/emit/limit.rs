@@ -307,7 +307,9 @@ pub(super) fn clocks_started_by_quest(q: &delvewright_dsl::Quest) -> Vec<&Object
 
 /// The lines that start `o`'s clock: the countdown drawn for the party, its
 /// once-a-second step scheduled, and the expiry scheduled at the declared
-/// tick — each in replace mode, so the clock cannot double up.
+/// tick — each in replace mode, so the clock cannot double up. The bar's
+/// players are set by the draw ([`show_fn`]), not here: it runs every second,
+/// so a member who joins after the start is shown the bar within one.
 pub(super) fn start_lines(ns: &str, o: &Objective) -> Vec<String> {
     let Some(l) = o.limit() else {
         return Vec::new();
@@ -323,7 +325,6 @@ pub(super) fn start_lines(ns: &str, o: &Objective) -> Vec<String> {
         format!("bossbar add {bar} \"\""),
         format!("bossbar set {bar} max {secs}"),
         format!("bossbar set {bar} color yellow"),
-        format!("bossbar set {bar} players @a"),
         format!("function {ns}:{}", show_fn(oid)),
         format!("schedule function {ns}:{} 20t replace", tick_fn(oid)),
         format!(
@@ -621,6 +622,9 @@ pub(super) fn limit_fns(
             fns.push((
                 show_fn(oid),
                 lines(&[
+                    // Restated every second (spec-0141 §6): a member who joins
+                    // the delve after the clock started is shown its bar.
+                    format!("bossbar set {bar} players @a"),
                     "scoreboard players set #c60 dw.sys 60".to_string(),
                     "scoreboard players set #c10 dw.sys 10".to_string(),
                     format!("scoreboard players operation {m} dw.sys = {secs} dw.sys"),

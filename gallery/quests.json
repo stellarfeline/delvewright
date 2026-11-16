@@ -237,8 +237,8 @@
         "id": "actor/destrier",
         "tier": "elite",
         "variant": {
-          "variant": "black",
-          "markings": "white_dots"
+          "markings": "white_dots",
+          "variant": "black"
         }
       },
       {
@@ -4439,7 +4439,7 @@
             "hint": "Salmon run in the basin; cast a line from the slip where the boat is moored.",
             "id": "obj/fish-off-the-slip",
             "item": "minecraft:salmon",
-            "title": "Land two salmon off the slip",
+            "title": "Get two salmon off the slip",
             "type": "collect"
           },
           {
@@ -6382,8 +6382,8 @@
         "id": "vehicle/yard-mare",
         "name": "Bramble",
         "variant": {
-          "variant": "chestnut",
-          "markings": "white"
+          "markings": "white",
+          "variant": "chestnut"
         }
       },
       {

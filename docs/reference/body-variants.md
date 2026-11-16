@@ -44,13 +44,11 @@ Reader: the engine work behind a body's `variant` (the DSL's one field on every 
 |------|----------|--------|-----------|
 | cat | `variant` | `cat_variant` registry (11) | `variant:"<id>"` (`VariantUtils`) |
 | cat, wolf | `collar` | the 16 dyes | `CollarColor:<dye id>b` |
-| wolf | `variant` | `wolf_variant` (9) | `variant:"<id>"` |
-| wolf | `sound_variant` | `wolf_sound_variant` (7) | `sound_variant:"<id>"` |
+| wolf | `variant`; `sound_variant` | `wolf_variant` (9); `wolf_sound_variant` (7) | `variant:"<id>"`; `sound_variant:"<id>"` |
 | pig, cow, chicken, frog | `variant` | their registries (3 each) | `variant:"<id>"` |
 | zombie_nautilus | `variant` | `temperate`, `warm` | `variant:"<id>"` |
 | painting | `variant` | `painting_variant` (51) | `variant:"<id>"` |
-| villager, zombie_villager | `variant` | `villager_type` (7) | `VillagerData:{type:"<id>"}` |
-| villager, zombie_villager | `profession` | `villager_profession` (15) | `VillagerData:{profession:"<id>"}` |
+| villager, zombie_villager | `variant`; `profession` | `villager_type` (7); `villager_profession` (15) | `VillagerData:{type:"<id>"}`; `VillagerData:{profession:"<id>"}` |
 | fox | `variant` | `red`, `snow` | `Type:"<name>"` |
 | mooshroom | `variant` | `red`, `brown` | `Type:"<name>"` |
 | salmon | `size` | `small`, `medium`, `large` | `type:"<name>"` |
