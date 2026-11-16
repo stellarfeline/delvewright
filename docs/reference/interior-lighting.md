@@ -22,12 +22,10 @@ declaration. `DW0211` is its declared-relight sibling.
 
 The reachable cells are the standing states of the reach graph from the area's anchors, and the
 survey takes them only from a whole graph (`light::surveyed_region`): a closure whose work passed
-`metrics::REACH_BUDGET_STATES` stopped partway, and a survey over it would judge the part it
-reached and report it as the area. That survey is refused, `DW1042`, as every other proof over a
-partial graph is. Measured on a site whose region reached past its walk region on the engine
-before the judged world: the survey's closure passed the ceiling (201M launch states), the
-binding read 102,734 judged cells against 107,681 over the whole graph of the same cells, and the
-build said nothing.
+its ceiling (`nav::Ceiling`, the world's own size: its rest cells times one node's launches)
+stopped partway, and a survey over it would judge the part it reached and report it as the area.
+That survey is refused, `DW1042`, as every other proof over a partial graph is: a partial survey
+of a site reads fewer judged cells than the whole graph of the same cells holds, and says nothing.
 
 The model is `crates/delvec/src/compiler/light.rs` — the **one** authority for emission, opacity and the
 flood. `crates/delvec/src/admit`'s prefab probe and spec-0010's assembled gate both read it rather than

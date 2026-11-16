@@ -647,6 +647,7 @@ fn validate_loaded_with(
             {
                 let (bd, bbind) = delvec::compiler::branch::check_branches_bound(&campaign);
                 examined.push(bbind.line());
+                examined.push(bbind.search.line());
                 diags.extend(bd);
             }
             // spec-0108: an ending reads the run. What each ending's final scene
