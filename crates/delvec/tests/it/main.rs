@@ -111,6 +111,7 @@ mod gate_separates;
 mod gate_timeline;
 mod gate_world_load_seal;
 mod gated_connection;
+mod gathered_collect;
 mod grade;
 mod grammar_arguments;
 mod grammar_audit_cli;

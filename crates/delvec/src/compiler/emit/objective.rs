@@ -150,6 +150,11 @@ fn activation_lines(
             if dropped_by.is_some() {
                 return cmds;
             }
+            // v0.80: a gathered item comes from an act of the world (a line,
+            // a bucket); the engine places nothing for it.
+            if o.collect_gathered() {
+                return cmds;
+            }
             // spec-0111 §3.4: an adopted holder ENTITY — a frame or a stand
             // the piece carries — is filled by `item replace entity` in its
             // first slot, a frame unfrozen to give it up; the engine summoned

@@ -292,6 +292,7 @@ pub(crate) fn collect_slot_checks(c: &Campaign, items: &dyn ItemRegistry, d: &mu
                 slot: Some(slot),
                 holder,
                 dropped_by,
+                gathered,
                 ..
             } = o
             else {
@@ -302,6 +303,8 @@ pub(crate) fn collect_slot_checks(c: &Campaign, items: &dyn ItemRegistry, d: &mu
             if holder.is_none() {
                 let source = if dropped_by.is_some() {
                     "its item drops from a wave (`dropped_by`), so it lands on the ground"
+                } else if *gathered {
+                    "the world supplies its item (`gathered`), so the engine places it nowhere"
                 } else {
                     "it conjures the compiler's own chest at `anchor`, whose one slot the \
                      compiler fills"
@@ -408,6 +411,77 @@ pub(crate) fn container_declaration_checks(c: &Campaign, d: &mut Vec<Diagnostic>
             });
         }
     });
+}
+
+crate::dw_code! {
+    /// (DSL v0.80) A `collect` whose item the world supplies (`gathered`)
+    /// also declares a field that places the item — a `holder` fill, a
+    /// wave's `dropped_by`, an `item_name` stamped on a stack, `fill_count`
+    /// padding: the engine places nothing for a gathered item, so the field
+    /// would bind to nothing. Validation tier (exit 1).
+    pub const DW_GATHERED_PLACED: DwCode = DwCode::new("DW1121", ExitTier::Build);
+}
+
+/// `DW1121` over every `collect` declaring `gathered` (DSL v0.80): no field
+/// that places the item stands beside it. A `slot` is `DW1035`'s
+/// ([`collect_slot_checks`]).
+pub(crate) fn collect_gathered_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let crate::Objective::Collect {
+                id,
+                item,
+                holder,
+                dropped_by,
+                item_name,
+                fill_count,
+                gathered: true,
+                ..
+            } = o
+            else {
+                continue;
+            };
+            let placed: [(&str, bool, &str); 4] = [
+                (
+                    "holder",
+                    holder.is_some(),
+                    "a `holder` is filled with the item at activation",
+                ),
+                (
+                    "dropped_by",
+                    dropped_by.is_some(),
+                    "`dropped_by` makes the item a wave's drop",
+                ),
+                (
+                    "item_name",
+                    item_name.is_some(),
+                    "an `item_name` is stamped on the stack the engine places",
+                ),
+                (
+                    "fill_count",
+                    *fill_count > 0,
+                    "`fill_count` pads the container the engine fills",
+                ),
+            ];
+            for (field, set, does) in placed {
+                if !set {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    DW_GATHERED_PLACED,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/{field}"),
+                    format!(
+                        "collect objective `{id}` declares `gathered` — the world supplies \
+                         `{item}` and the engine places none — and `{field}`: {does}, and \
+                         a gathered item is placed nowhere, so `{field}` would bind to \
+                         nothing. Delete `{field}` to keep the item the world's, or delete \
+                         `gathered` to have the engine place it."
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 /// Exclusive ownership of an adopted container (DSL v0.8, `DW0435`).

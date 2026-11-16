@@ -118,9 +118,13 @@ import type { GateTerm } from "./death-loop.ts";
  *   bot without it would have to guess which bodies are story, and that guess
  *   is the compiler's knowledge written where it cannot be right.
  *
+ * * `15` — a `collect` step may carry `gathered: true`: the world supplies the
+ *   item, nothing stands at `pos` to open, and the bot is handed the item by
+ *   command there. A format-14 bot would refuse the key.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 14;
+export const CRITICAL_PATH_FORMAT_VERSION = 15;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -439,6 +443,12 @@ export interface CollectStep extends PresentationMarkers, Pursued {
    * a block that is not there.
    */
   readonly droppedBy?: string;
+  /**
+   * The world supplies the item (DSL v0.80): a fish off a line, a creature in
+   * a bucket. Nothing stands at `pos` to open; the bot stands there and is
+   * handed the item by command, in place of the vanilla act a player performs.
+   */
+  readonly gathered?: boolean;
   /** The holder entity the item is taken from (spec-0111, format 5). */
   readonly holder?: CollectHolder;
   /** Cross-area teleport destination on completion, if any (gap 8). */
@@ -1466,6 +1476,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "count",
           "pos",
           "dropped_by",
+          "gathered",
           "holder",
           "transport",
           "sneak",
@@ -1479,6 +1490,10 @@ function parseStepBody(value: unknown, pointer: string): Step {
       if (droppedBy !== undefined && typeof droppedBy !== "string") {
         fail(`${pointer}/dropped_by`, `must be a string, got ${describe(droppedBy)}`);
       }
+      const gathered = obj["gathered"];
+      if (gathered !== undefined && gathered !== true) {
+        fail(`${pointer}/gathered`, `must be true when present, got ${describe(gathered)}`);
+      }
       const holder = obj["holder"] === undefined ? undefined : parseHolder(obj["holder"], `${pointer}/holder`);
       return {
         action: "collect",
@@ -1487,6 +1502,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
         ...(droppedBy === undefined ? {} : { droppedBy }),
+        ...(gathered === undefined ? {} : { gathered: true }),
         ...(holder === undefined ? {} : { holder }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),

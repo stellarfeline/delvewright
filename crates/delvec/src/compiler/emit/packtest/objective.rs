@@ -1254,6 +1254,62 @@ pub(super) fn emit_verb_packtests(
         b.push(format!("assert score {party} {} matches 0", obj_score(ib)));
         write("collect_own_stack", b);
     }
+
+    // v0.80: a gathered collect places nothing, and possession completes it
+    // however the item arrived. The first one, in declared order: open its
+    // gate and tick, so its activation has run, and assert no chest stands at
+    // its anchor; then the item arrives by `give` — no holder, no drop, the
+    // way a fish off a line arrives — and one tick completes the objective.
+    let first_gathered = c.quests.content.quests.iter().find_map(|q| {
+        q.objectives
+            .iter()
+            .find(|o| o.collect_gathered())
+            .map(|o| (q.id.as_str(), o))
+    });
+    if let Some((qid, o)) = first_gathered
+        && let Objective::Collect { id, anchor, .. } = o
+    {
+        let (pin, sel) = pin_dummy("dw_t_cgat");
+        let party = plan::PARTY;
+        let mut b = packtest_header(&format!(
+            "{}: gathered collect `{id}` places nothing and completes on possession",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(clear_from_others("dw_t_cgat", &[o]));
+        b.push(format!("clear {sel}"));
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_guards(plan, qid, o, true));
+        b.push(format!("function {ns}:tick"));
+        let cell = plan
+            .quest_area(qid)
+            .and_then(|a| plan.point(a, anchor.as_str()))
+            .or_else(|| plan.point_any(anchor.as_str()));
+        if let Some(p) = cell {
+            b.push(format!(
+                "assert not block {} {} {} minecraft:chest",
+                p[0], p[1], p[2]
+            ));
+        }
+        b.push(format!(
+            "assert score {party} {} matches 0",
+            obj_score(id.as_str())
+        ));
+        b.push(format!(
+            "give {sel} {}",
+            collect_stack(o).expect("a collect has a stack")
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("collect_gathered", b);
+    }
 }
 
 /// **No other player holds what this template's collect counts** (`pin_dummy`
