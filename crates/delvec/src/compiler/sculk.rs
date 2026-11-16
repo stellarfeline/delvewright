@@ -604,6 +604,14 @@ pub struct Vibration {
     pub sensor: [i32; 3],
     /// The shriekers that answer, in cell order.
     pub shriekers: Vec<[i32; 3]>,
+    /// The shriekers within the sensor's reach that are **not** predicted on
+    /// this leg, in cell order, because a free body loose while the leg is
+    /// walked can stand within the sensor's listener radius and take its click
+    /// (spec-0100 §2.4: a mob's step sets a sensor off and never reaches a
+    /// shrieker) — and those bodies, by id.
+    pub withheld: Vec<[i32; 3]>,
+    /// The free bodies that withheld [`Self::withheld`], in key order.
+    pub contested_by: Vec<String>,
 }
 
 /// The listening devices of the world as placed, for the waypoint export.
@@ -621,6 +629,102 @@ pub struct Listening {
     occluders: BTreeSet<[i32; 3]>,
     /// Cells holding a block in `#dampens_vibrations`.
     dampeners: BTreeSet<[i32; 3]>,
+    /// Per free body the campaign can loose, the sensors whose listener radius
+    /// a cell it can stand in lies within ([`Listening::with_free_bodies`]).
+    contestants: Vec<(crate::compiler::plan::FreeBodyKey, BTreeSet<[i32; 3]>)>,
+}
+
+/// Where a free body can be, for the sensors it can reach: every cell (a
+/// climber or a flier, which no ground relation bounds), or the closure of
+/// [`World::mob_moves`] from its roots.
+pub enum FreeReach {
+    /// A body the ground relation does not bound.
+    Everywhere,
+    /// The cells the mob relation puts it in.
+    Cells(BTreeSet<[i32; 3]>),
+}
+
+/// **Where each free body the campaign can loose can stand** (spec-0100 §4.6):
+/// a wave's every stack from the seats the seating pass chose (`wave_seats`),
+/// an actor's free twin from its mark; each stack and twin by its species'
+/// locomotion ([`crate::compiler::traversal::Traversal::of_entity`] — a
+/// declaration binds the nav proofs, never what vanilla lets the body do): a
+/// climber or a flier anywhere, any other body over the mob relation in the
+/// world with no exclusion and every barrier a hand opens standing open, as
+/// the catalyst proof reads it. An actor whose mark resolves to no standable
+/// cell stands anywhere.
+pub fn free_body_reach(
+    plan: &Plan,
+    world: &World,
+    blocks: &BlockMap,
+    wave_seats: &BTreeMap<String, Vec<[i32; 3]>>,
+) -> Vec<(crate::compiler::plan::FreeBodyKey, FreeReach)> {
+    use crate::compiler::plan::FreeBodyKey;
+    use crate::compiler::traversal::Traversal;
+    use delvewright_dsl::Locomotion;
+    let open = world.without_exclusions();
+    let openable: BTreeSet<[i32; 3]> = blocks
+        .iter()
+        .filter(|(_, n)| delvewright_dsl::blockshape::opens_by_hand(n.as_str()))
+        .map(|(c, _)| c)
+        .collect();
+    let opened = if openable.is_empty() {
+        open
+    } else {
+        open.with_openings_open(&openable)
+    };
+    let bound = |entity: &str| {
+        !matches!(
+            Traversal::of_entity(entity).locomotion,
+            Locomotion::Climber | Locomotion::Flier
+        )
+    };
+    let mut out = Vec::new();
+    let content = &plan.campaign.quests.content;
+    for w in &content.waves {
+        let key = FreeBodyKey::Wave(w.id.as_str().to_string());
+        let cells = wave_seats.get(w.id.as_str());
+        let mut reach: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut everywhere = cells.is_none();
+        let mut seat = 0usize;
+        for mob in &w.mobs {
+            let n = mob.count.max() as usize;
+            let roots: Vec<[i32; 3]> = (0..n)
+                .filter_map(|i| cells.and_then(|c| c.get(seat + i)).copied())
+                .collect();
+            seat += n;
+            if !bound(&mob.entity) {
+                everywhere = true;
+                continue;
+            }
+            let fp = crate::compiler::nav::entity_footprint(&mob.entity);
+            reach.extend(closure(roots, |c| opened.mob_moves(c, &fp)));
+        }
+        out.push((
+            key,
+            if everywhere {
+                FreeReach::Everywhere
+            } else {
+                FreeReach::Cells(reach)
+            },
+        ));
+    }
+    for a in &content.actors {
+        let key = FreeBodyKey::Actor(a.id.as_str().to_string());
+        let root = plan
+            .point_any(a.anchor.as_str())
+            .map(|p| delvewright_dsl::offset_cell(p, a.offset))
+            .and_then(|c| opened.snap(c, crate::compiler::nav::SNAP_RADIUS));
+        let reach = match root {
+            Some(r) if bound(&a.entity) => {
+                let fp = crate::compiler::nav::entity_footprint(&a.entity);
+                FreeReach::Cells(closure([r], |c| opened.mob_moves(c, &fp)))
+            }
+            _ => FreeReach::Everywhere,
+        };
+        out.push((key, reach));
+    }
+    out
 }
 
 impl Listening {
@@ -661,6 +765,52 @@ impl Listening {
             }
         }
         l
+    }
+
+    /// This listening with, per free body the campaign can loose, the
+    /// sensors it can take a click from: those within the listener radius
+    /// (integer `distSqr ≤ 64`) of a cell it can stand in, occluders
+    /// disregarded, so a body is judged able to reach more, never less.
+    pub fn with_free_bodies(
+        mut self,
+        reach: Vec<(crate::compiler::plan::FreeBodyKey, FreeReach)>,
+    ) -> Listening {
+        let all: Vec<[i32; 3]> = self.sensors.iter().map(|(s, _)| *s).collect();
+        self.contestants = reach
+            .into_iter()
+            .map(|(key, r)| {
+                let near: BTreeSet<[i32; 3]> = match &r {
+                    FreeReach::Everywhere => all.iter().copied().collect(),
+                    FreeReach::Cells(cells) => all
+                        .iter()
+                        .copied()
+                        .filter(|s| {
+                            cells.range(
+                                [s[0] - 8, s[1] - 8, s[2] - 8]..=[s[0] + 8, s[1] + 8, s[2] + 8],
+                            )
+                            .any(|c| dist_sq(*c, *s) <= LISTENER_RADIUS_SQ)
+                        })
+                        .collect(),
+                };
+                (key, near)
+            })
+            .filter(|(_, near)| !near.is_empty())
+            .collect();
+        self
+    }
+
+    /// The free bodies, by id, that can take `sensor`'s click while a step is
+    /// walked, given which are loose then (`loose`, per body key).
+    fn contested(
+        &self,
+        sensor: [i32; 3],
+        loose: &dyn Fn(&crate::compiler::plan::FreeBodyKey) -> bool,
+    ) -> Vec<String> {
+        self.contestants
+            .iter()
+            .filter(|(k, near)| near.contains(&sensor) && loose(k))
+            .map(|(k, _)| k.id().to_string())
+            .collect()
     }
 
     /// The sensors the world holds that a leg can predict.
@@ -705,6 +855,23 @@ impl Listening {
         must_walk: &[bool],
         crouched: &[bool],
     ) -> Vec<Vibration> {
+        self.leg_vibrations_beside(cells, must_walk, crouched, &|_| false)
+    }
+
+    /// [`Self::leg_vibrations`] for a leg walked while the free bodies `loose`
+    /// answers for are loose: a shrieker is predicted for a sensor only when
+    /// no such body can stand within the sensor's listener radius — one that
+    /// can takes the click the walk is owed, and the shrieker answers only a
+    /// player's (spec-0100 §2.4). The sensor is still predicted: it clicks for
+    /// a body as for a player. Each shrieker not predicted is carried in
+    /// [`Vibration::withheld`] with the bodies that withheld it.
+    pub fn leg_vibrations_beside(
+        &self,
+        cells: &[[i32; 3]],
+        must_walk: &[bool],
+        crouched: &[bool],
+        loose: &dyn Fn(&crate::compiler::plan::FreeBodyKey) -> bool,
+    ) -> Vec<Vibration> {
         if self.sensors.is_empty() {
             return Vec::new();
         }
@@ -730,9 +897,21 @@ impl Listening {
                 .copied()
                 .filter(|k| dist_sq(*k, s) <= LISTENER_RADIUS_SQ && !self.occluded(*k, s))
                 .collect();
+            let contested_by = if shriekers.is_empty() {
+                Vec::new()
+            } else {
+                self.contested(s, loose)
+            };
+            let (shriekers, withheld) = if contested_by.is_empty() {
+                (shriekers, Vec::new())
+            } else {
+                (Vec::new(), shriekers)
+            };
             out.push(Vibration {
                 sensor: s,
                 shriekers,
+                withheld,
+                contested_by,
             });
         }
         out
@@ -1048,6 +1227,43 @@ mod tests {
         }
     }
 
+    /// A free body that can stand within a sensor's listener radius while the
+    /// leg is walked takes the shrieker's answer away from the prediction, and
+    /// leaves the sensor's: a body one cell from the sensor, loose or not, and
+    /// a body that stands only 9 away (`distSqr` 81).
+    #[test]
+    fn a_shrieker_is_not_predicted_beside_a_free_body_that_can_reach_its_sensor() {
+        use crate::compiler::plan::FreeBodyKey;
+        let blocks = map(&[
+            ([5, 0, 3], "minecraft:sculk_sensor"),
+            ([5, 0, 10], "minecraft:sculk_shrieker"),
+        ]);
+        let near = FreeBodyKey::Actor("actor/spider".into());
+        let far = FreeBodyKey::Wave("wave/far".into());
+        let l = Listening::of(&blocks, &[]).with_free_bodies(vec![
+            (near.clone(), FreeReach::Cells([[6, 1, 3]].into_iter().collect())),
+            (far.clone(), FreeReach::Cells([[5, 1, 12]].into_iter().collect())),
+        ]);
+        let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
+        let all = vec![true; route.len()];
+        let beside = |k: &FreeBodyKey| *k == near;
+        assert_eq!(
+            l.leg_vibrations_beside(&route, &all, &[], &beside),
+            vec![Vibration {
+                sensor: [5, 0, 3],
+                shriekers: Vec::new(),
+                withheld: vec![[5, 0, 10]],
+                contested_by: vec!["actor/spider".into()],
+            }]
+        );
+        // Not loose on this leg, or loose and out of reach: the shrieker stands.
+        for loose in [&(|_: &FreeBodyKey| false) as &dyn Fn(&FreeBodyKey) -> bool, &|k| *k == far] {
+            let v = l.leg_vibrations_beside(&route, &all, &[], loose);
+            assert_eq!(v[0].shriekers, vec![[5, 0, 10]]);
+            assert!(v[0].withheld.is_empty());
+        }
+    }
+
     /// The prediction: a sensor within 7 of a route cell, its shrieker within 8
     /// of it, nothing on a sneak leg, nothing through wool.
     #[test]
@@ -1067,6 +1283,8 @@ mod tests {
             vec![Vibration {
                 sensor: [5, 0, 3],
                 shriekers: vec![[5, 0, 10]],
+                withheld: Vec::new(),
+                contested_by: Vec::new(),
             }]
         );
         assert!(

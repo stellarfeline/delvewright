@@ -131,12 +131,14 @@ blocks: the build states the nearest body cell and its distance. The waypoint
 export carries the plain sensor and its shrieker on the legs that walk past them
 and the calibrated sensor on the legs up and down the stair, and the bot asserts
 each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
-No wave body stands within the sensor's reach while a leg that carries the
-shriek is walked: a mob's footstep sets the sensor off and a shrieker answers
-only a player, so a body there would take the click the party is owed. The
-walk to the Marshal is the one such leg before the muster is cleared, and the
-muster forms up only once she has the party's answer; every later leg past the
-floor comes after the muster is cleared.
+A mob's footstep sets the sensor off and a shrieker answers only a player, so
+the build predicts the shriek only on a leg no free body loose then can reach
+the sensor on. The walk to the Marshal is that leg: the muster forms up only
+once she has the party's answer, and the rafter spider's ambush is sprung only
+later, on the long gallery. The climb onto the cabin and the walk to the exit
+carry the sensor and withhold the shriek, naming the muster and the spider —
+the spider's `despawn-actor` fires at the muster's clearing, before the ambush
+that looses it, so it stays in the hall.
 A third sensor is set into the near hall's floor two cells south of the walk
 along the valves. Two legs pass within its earshot without predicting it: the
 walk from the emeralds to the first valve and the walk from the third valve to

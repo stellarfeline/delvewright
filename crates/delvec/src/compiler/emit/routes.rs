@@ -1177,7 +1177,13 @@ pub(super) fn prove_world(
                 let listening = crate::compiler::sculk::Listening::of(
                     &assembled.blocks,
                     &crate::compiler::sculk::runtime_writes(plan),
-                );
+                )
+                .with_free_bodies(crate::compiler::sculk::free_body_reach(
+                    plan,
+                    world,
+                    &assembled.blocks,
+                    &waves,
+                ));
                 // spec-0102: every pulse's derived range over the standable
                 // cells of its place, and its listening stations on these
                 // legs. The binding is printed before the verdict, a refusal
@@ -1231,10 +1237,17 @@ pub(super) fn prove_world(
                     warnings.extend(table.notice(&reads, "build"));
                 }
                 if !routes.is_empty() {
+                    let free = crate::compiler::waypoints::free_bodies(
+                        plan,
+                        &plan.critical_path,
+                        &plan.path_firing,
+                        &routes,
+                    );
                     let doc = crate::compiler::waypoints::waypoints_json(
                         plan,
                         &routes,
                         &listening,
+                        &free,
                         &plan.critical_path_sneak,
                         &proven_jumps,
                     );
@@ -1624,10 +1637,12 @@ fn prove_branch_world(
     crate::compiler::nav::verify_exported_routes(world, &routes).map_err(label)?;
     crate::compiler::notes::mark("branch world: routes planned and verified");
     let waypoints = (!routes.is_empty()).then(|| {
+        let free = crate::compiler::waypoints::free_bodies(plan, &cp.steps, &cp.firing, &routes);
         crate::compiler::waypoints::waypoints_json(
             plan,
             &routes,
             listening,
+            &free,
             &cp.sneak_by_step,
             proven_jumps,
         )

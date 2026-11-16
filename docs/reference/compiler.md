@@ -3769,10 +3769,27 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (wool, a wool carpet) in its feet cell or under it and no
   `#occludes_vibration_signals` block (wool) in the box it and the sensor span;
   a shrieker is predicted for that sensor when its cell is within `distSqr ≤ 64`
-  of the sensor's and no occluder lies in the box between. A sensor or shrieker
+  of the sensor's and no occluder lies in the box between — unless a **free
+  body** loose while the leg's step is walked can stand within the sensor's
+  listener radius (integer `distSqr ≤ 64`, occluders disregarded): a mob's step
+  takes the sensor's click and never reaches a shrieker (spec-0100 §2.4), so
+  that shrieker is withheld and the entry carries `withheld: {shriekers, by}`
+  (the shrieker cells and the bodies' ids; the sensor stays predicted). A free
+  body is a wave or an actor's free twin (`plan::free_bodies_by_step`): it
+  arrives with a `spawn-wave` / `unleash-actor` (an `ambush` desugars to one),
+  dated as a pursuer's line — after a performed step's bundle, exactly; for a
+  trigger the path does not perform, from the first leg whose route comes
+  within the `approach` trigger's range of its point widened by 2
+  (`waypoints::free_bodies`), else from the first step; a wave never leaves,
+  an actor leaves by a certainly fired `despawn-actor` after an exact arrival
+  only (`plan::path::loose_steps`). Where it can stand
+  (`sculk::free_body_reach`): a climber or flier species anywhere; any other
+  over the mob relation from its wave seats or its mark, in the world with no
+  exclusion and every hand-opened barrier open. A sensor or shrieker
   a runtime write covers is never predicted. Read off the world as placed
   (`sculk::Listening`); omitted for a leg that sets nothing off, and the build
-  prints `sculk walk:` with the devices no leg predicts.
+  prints `sculk walk:` with the devices no leg predicts and the shrieker
+  answers withheld.
   **Validation metadata, not shipped gameplay** —
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays

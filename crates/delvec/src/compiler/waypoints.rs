@@ -32,10 +32,61 @@ const PLAYER_OCCUPANCY: i32 = 2;
 /// `listening` is the world's sculk sensors and shriekers and `sneak` the
 /// path's per-step stealth hint (indexed by a leg's `to_step`): a leg that sets
 /// a sensor off carries `vibrations` (spec-0100 §4.6).
+/// How much farther than its `range` from an approach trigger's point the
+/// bot's body may stand off a proven route cell and still spring it: the body
+/// keeps within a block of the route, and the cell's centre is half a block
+/// from its corner. Authored over the harness's leg-following tolerance.
+const SPRING_MARGIN: f64 = 2.0;
+
+/// **The free bodies loose on each step of a path** ([`plan::free_bodies_by_step`]),
+/// an `approach` trigger the path does not perform dated by its routes: the
+/// first leg (by the step it walks to) with a route cell within the trigger's
+/// range of its point, widened by [`SPRING_MARGIN`]. An approach no route
+/// comes near, and every other trigger the path does not perform, may fire
+/// from the path's first step.
+pub(crate) fn free_bodies(
+    plan: &Plan,
+    steps: &[crate::compiler::plan::Step],
+    firing: &crate::compiler::plan::PathFiring,
+    routes: &[LegRoute],
+) -> Vec<(crate::compiler::plan::FreeBodyKey, Vec<bool>)> {
+    let mut sprung: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for t in plan.campaign.quests.content.all_triggers() {
+        let delvewright_dsl::TriggerOn::Approach { range } = t.on else {
+            continue;
+        };
+        let Some(p) = t.at_anchor().and_then(|a| plan.point_any(a)) else {
+            continue;
+        };
+        let reach = f64::from(range) + SPRING_MARGIN;
+        let first = routes
+            .iter()
+            .filter(|leg| {
+                leg.cells.iter().any(|c| {
+                    let d = [
+                        f64::from(c[0]) + 0.5 - f64::from(p[0]),
+                        f64::from(c[1]) - f64::from(p[1]),
+                        f64::from(c[2]) + 0.5 - f64::from(p[2]),
+                    ];
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() <= reach
+                })
+            })
+            .map(|leg| leg.to_step)
+            .min();
+        if let Some(s) = first {
+            sprung.insert(t.id.as_str().to_string(), s);
+        }
+    }
+    crate::compiler::plan::free_bodies_by_step(plan.campaign, steps, firing, &|t| {
+        sprung.get(t).copied()
+    })
+}
+
 pub fn waypoints_json(
     plan: &Plan,
     routes: &[LegRoute],
     listening: &crate::compiler::sculk::Listening,
+    free: &[(crate::compiler::plan::FreeBodyKey, Vec<bool>)],
     sneak: &[bool],
     jumps: &[crate::compiler::nav::ProvenJump],
 ) -> Value {
@@ -192,12 +243,32 @@ pub fn waypoints_json(
             } else {
                 vec![false; leg.cells.len()]
             };
-            let heard = listening.leg_vibrations(&leg.cells, &walked, &crouched);
+            // spec-0100 §2.4: a free body loose while this leg is walked that
+            // can stand within a sensor's reach takes its click, and a
+            // shrieker answers only a player's — that shrieker is withheld.
+            let loose = |k: &crate::compiler::plan::FreeBodyKey| {
+                free.iter().any(|(key, by_step)| {
+                    key == k && by_step.get(leg.to_step).copied().unwrap_or(false)
+                })
+            };
+            let heard =
+                listening.leg_vibrations_beside(&leg.cells, &walked, &crouched, &loose);
             if !heard.is_empty() {
                 leg_json["vibrations"] = json!(
                     heard
                         .iter()
-                        .map(|v| json!({"sensor": v.sensor, "shriekers": v.shriekers}))
+                        .map(|v| {
+                            let mut e = json!({"sensor": v.sensor, "shriekers": v.shriekers});
+                            // Emitted only when present, so a leg no free body
+                            // contests is byte-identical.
+                            if !v.withheld.is_empty() {
+                                e["withheld"] = json!({
+                                    "shriekers": v.withheld,
+                                    "by": v.contested_by,
+                                });
+                            }
+                            e
+                        })
                         .collect::<Vec<Value>>()
                 );
             }
@@ -235,6 +306,7 @@ pub fn waypoints_json(
 pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening) -> String {
     let mut sensors = std::collections::BTreeSet::new();
     let mut shriekers = std::collections::BTreeSet::new();
+    let mut withheld = 0usize;
     let mut legs = 0usize;
     for leg in doc["legs"].as_array().into_iter().flatten() {
         let Some(vs) = leg["vibrations"].as_array() else {
@@ -246,11 +318,16 @@ pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening
             for k in v["shriekers"].as_array().into_iter().flatten() {
                 shriekers.insert(k.to_string());
             }
+            withheld += v["withheld"]["shriekers"]
+                .as_array()
+                .map_or(0, Vec::len);
         }
     }
     format!(
         "sculk walk: {} of {} sensor(s) predicted on {legs} leg(s), {} of {} shrieker(s); {} \
-         unpredicted sensor(s), {} unpredicted shrieker(s), {} device(s) a runtime write covers",
+         unpredicted sensor(s), {} unpredicted shrieker(s), {} device(s) a runtime write covers; \
+         {withheld} shrieker answer(s) withheld on a leg a free body can take its sensor's click \
+         on",
         sensors.len(),
         listening.sensors(),
         shriekers.len(),
