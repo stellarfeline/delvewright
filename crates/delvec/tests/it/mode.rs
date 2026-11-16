@@ -397,12 +397,9 @@ fn the_packtest_owes_a_mode_its_templates() {
     );
     // No held clock, no clock template.
     let bare = build(&fixture("templates-bare", audience));
-    assert!(
-        bare.get(&format!(
-            "packtest-datapack/data/{NS}/test/mode_audience_clock.mcfunction"
-        ))
-        .is_none()
-    );
+    assert!(!bare.contains_key(&format!(
+        "packtest-datapack/data/{NS}/test/mode_audience_clock.mcfunction"
+    )));
 }
 
 #[test]

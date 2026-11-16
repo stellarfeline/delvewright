@@ -16,7 +16,7 @@ use super::*;
 /// mode is left at once.
 ///
 /// `mode_<m>_clock`, for the held limited objective of the shortest window,
-/// runs alone and on the server's own clock. It starts the objective's
+/// runs alone and on the server's own clock, from the same ledger. It starts the objective's
 /// clock, enters the mode, waits longer than the whole window and asserts
 /// the objective not expired and its seconds where they stood; it leaves
 /// the mode, waits the seconds left and asserts the objective expired.
@@ -180,6 +180,10 @@ pub(super) fn emit_mode_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("function {ns}:setup"),
         ];
         b.extend(still.iter().cloned());
+        // Every quest at the campaign's start, so no act of a body left on
+        // the server completes what the mode keeps while the clock is
+        // watched.
+        b.extend(quest::fresh_ledger(plan));
         b.extend(open.iter().cloned());
         b.extend(progress.iter().cloned());
         b.push(format!("scoreboard players set {p} {score} 0"));
