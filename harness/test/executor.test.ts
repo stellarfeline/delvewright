@@ -4989,6 +4989,17 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
 
 /** A fake server on which the item arrives only by `/give`, completing the objective. */
 class GatherFakeBot extends InteractFakeBot {
+  constructor() {
+    super();
+    // The walk arrives: the bot stands where the goal was.
+    (this.pathfinder as { goto: (goal: unknown) => Promise<void> }).goto = async (
+      goal: unknown,
+    ): Promise<void> => {
+      const g = goal as { x: number; y: number; z: number };
+      this.calls.push("goto");
+      this.entity.position = new FakeVec3(g.x + 0.5, g.y, g.z + 0.5);
+    };
+  }
   override chat(message: string): void {
     super.chat(message);
     if (message === "/give @s minecraft:cod 5") {
