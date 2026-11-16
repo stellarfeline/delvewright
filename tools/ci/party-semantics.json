@@ -439,6 +439,11 @@
       "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
       "semantics": "How a body the engine places looks, stands and moves. A body is one thing in the world, seen alike by every player."
     },
+    "Mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: the mode on `#party dw.mode`, each held clock on `dw.sys`; no player selector.",
+      "semantics": "One mode for the whole party: the story puts the map in it for everyone, the quests it holds are held for every member, and their clocks stand still for all."
+    },
     "Mount": {
       "class": "no-runtime",
       "evidence": "Written into the body's `summon` line (`emit::npc`, `emit::actor`, `emit::wave`, `compiler::assembly`).",
@@ -1026,6 +1031,11 @@
       "evidence": "`emit::race`: `#ron_<r> dw.sys`.",
       "semantics": "Starts or ends the race for every racer."
     },
+    "QuestEffect::enter-mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: `scoreboard players set #party dw.mode …`.",
+      "semantics": "Puts the party in, or takes it out of, a mode: a party fact, written once."
+    },
     "QuestEffect::face": {
       "class": "party",
       "evidence": "Guarded on the body's own tag; no player selector.",
@@ -1075,6 +1085,11 @@
       "class": "party",
       "evidence": "Guarded on the body's own tag; no player selector.",
       "semantics": "Acts on a body the engine placed: one body, once."
+    },
+    "QuestEffect::leave-mode": {
+      "class": "party",
+      "evidence": "`emit::mode`: `scoreboard players set #party dw.mode …`.",
+      "semantics": "Puts the party in, or takes it out of, a mode: a party fact, written once."
     },
     "QuestEffect::lightning": {
       "class": "party",
