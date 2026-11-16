@@ -371,6 +371,9 @@ fn the_packtest_owes_a_mode_its_templates() {
         "{holds}"
     );
     assert!(holds.contains(HELD), "{holds}");
+    // It runs alone, from the whole ledger at the campaign's start.
+    assert!(holds.contains(&format!("# @environment {NS}:solo/mode_audience_holds")));
+    assert!(holds.contains("scoreboard players set #party dw.campaign 0"));
     assert!(holds.contains(&format!("function {NS}:mode_audience_enter")));
     assert!(holds.contains(&format!("function {NS}:mode_audience_settle")));
     // The clock template runs alone, waits longer than the window with the

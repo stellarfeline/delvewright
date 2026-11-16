@@ -169,6 +169,13 @@ fn a_kept_objective_waiting_on_a_flag_only_held_quests_set_is_dw1123() {
     // A mode nothing enters holds nothing.
     let unentered = with(waits_on_the_side);
     assert!(codes_at(&unentered, "DW1123").is_empty());
+    // The held quest that sets it is complete before the kept one starts.
+    let before = with(|q| {
+        waits_on_the_side(q);
+        on_talk(q, json!([enter()]));
+        q["quests"][0]["trigger"] = json!({"type": "quest-complete", "quest": "quest/side"});
+    });
+    assert!(codes_at(&before, "DW1123").is_empty());
 }
 
 #[test]

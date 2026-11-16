@@ -2,8 +2,11 @@ use super::*;
 
 /// The mode templates (spec-0140 §7), per mode.
 ///
-/// `mode_<m>_holds` is synchronous. With the mode's kept quests in progress
-/// it opens the guard of the first objective of a quest the mode holds and of
+/// `mode_<m>_holds` is synchronous, and runs alone: it starts from the whole
+/// party ledger at the campaign's start — the entry, the settlement and the
+/// leaving reach every clock and every quest the mode touches, and a template
+/// owns every term on that way (`DW0807`) — which no sibling may find under
+/// it. With the mode's kept quests in progress it opens the guard of the first objective of a quest the mode holds and of
 /// the first objective of a quest it keeps, and reads each guard — the very
 /// one every driver of the objective runs under — before the entry, under the
 /// mode and after the leaving: the held objective completes before and after
@@ -78,12 +81,20 @@ pub(super) fn emit_mode_packtests(plan: &Plan, out: &mut BuildOutput) {
             ]
         };
 
-        let mut t = packtest_header(&format!(
-            "{title}: mode `{id}` holds every quest but the {} it keeps — not told, not \
-             completable — gives them back when it is left, and is left when what it keeps \
-             is done (spec-0140)",
-            kept.len()
-        ));
+        let holds = format!("mode_{safe}_holds");
+        let mut t = vec![
+            format!(
+                "#> {title}: mode `{id}` holds every quest but the {} it keeps — not told, \
+                 not completable — gives them back when it is left, and is left when what it \
+                 keeps is done (spec-0140)",
+                kept.len()
+            ),
+            limit::alone(ns, &holds, out),
+            "# @dummy".to_string(),
+            "# @timeout 100".to_string(),
+            String::new(),
+        ];
+        t.extend(quest::fresh_ledger(plan));
         // The kept objective's guard first: its drive may write the map's
         // mode, which the entry then sets.
         if let Some((x, o)) = kept_objective {
@@ -132,7 +143,7 @@ pub(super) fn emit_mode_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("assert score {p} {score} matches 0"));
         t.extend(give_back.iter().cloned());
         out.insert(
-            format!("packtest-datapack/data/{ns}/test/mode_{safe}_holds.mcfunction"),
+            format!("packtest-datapack/data/{ns}/test/{holds}.mcfunction"),
             lines(&t).into_bytes(),
         );
 

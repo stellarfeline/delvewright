@@ -199,6 +199,21 @@ const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 /// `pt_camp_drive` in the scheduled-ending shape, `pt_camp_run_<i>` in the
 /// branch shape. Vanilla runs a function to completion before any other
 /// function, so no sibling can observe the zeroed intermediate state.
+/// [`campaign_progression_baseline`] for a template that is not the
+/// campaign's own: the whole party ledger at the campaign's start, under the
+/// completion objective the critical path asserts on.
+pub(super) fn fresh_ledger(plan: &Plan) -> Vec<String> {
+    let comp_obj = plan
+        .critical_path
+        .iter()
+        .find_map(|s| match s {
+            Step::AssertComplete { objective, .. } => Some(objective.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "dw.campaign".to_string());
+    campaign_progression_baseline(plan.campaign, &comp_obj)
+}
+
 fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) -> Vec<String> {
     let party = plan::PARTY;
     let mut b: Vec<String> = Vec::new();

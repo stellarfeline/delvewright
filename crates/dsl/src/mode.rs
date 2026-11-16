@@ -82,7 +82,8 @@ crate::dw_code! {
 crate::dw_code! {
     /// (spec-0140 §5) **A mode that holds what it waits on**: an objective of
     /// a quest the mode keeps, open while the mode is on, requires a flag
-    /// that only bundles of quests the mode holds set. Once the mode is on
+    /// that only bundles of quests the mode holds set — none of them a
+    /// quest complete before the kept one starts. Once the mode is on
     /// nothing can set it, the kept quest never completes, and the mode is
     /// never left. Validation-tier (exit 1). Prescription: set the flag from
     /// a quest the mode keeps or from a trigger, keep the quest that sets
@@ -111,6 +112,26 @@ fn settled_before<'a>(quest: &'a crate::Quest, objective: &'a str) -> BTreeSet<&
                 stack.push(a.as_str());
             }
         }
+    }
+    seen
+}
+
+/// Every quest certainly complete before `quest` starts: the chain of
+/// `quest-complete` triggers above it. A flag one of them sets was set
+/// before any objective of `quest` opened, whatever mode came after.
+fn complete_before<'a>(c: &'a Campaign, quest: &'a str) -> BTreeSet<&'a str> {
+    let quests = &c.quests.content.quests;
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut cur = quest;
+    while let Some(crate::Trigger::QuestComplete { quest: above }) = quests
+        .iter()
+        .find(|q| q.id.as_str() == cur)
+        .map(|q| &q.trigger)
+    {
+        if !seen.insert(above.as_str()) {
+            break;
+        }
+        cur = above.as_str();
     }
     seen
 }
@@ -306,7 +327,10 @@ pub(crate) fn mode_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 let Some(setters) = by_quest.get(flag) else {
                     continue; // never set at all: `DW0172`'s finding
                 };
-                if setters.iter().any(|s| m.keeps(s)) {
+                // Set by a quest the mode keeps, or by one complete before
+                // this quest starts.
+                let before = complete_before(c, quest.id.as_str());
+                if setters.iter().any(|s| m.keeps(s) || before.contains(s)) {
                     continue;
                 }
                 let names = setters.iter().copied().collect::<Vec<_>>().join("`, `");

@@ -1,0 +1,15 @@
+{
+  "code": "DW1123",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/objectives/7/requires_flags",
+      "value": [
+        "flag/muster-cleared"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the cart's run, the last task of the quest the long hall's mode keeps, waits on the flag the far hall's muster sets. The far hall is held while the mode is on, so nothing could set the flag: the line would never be ridden, the long hall never done and the mode never left. Refused at validation, at the objective's flag. It declares no unit."
+}

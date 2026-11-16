@@ -1,0 +1,13 @@
+{
+  "code": "DW1122",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/modes/0/keeps",
+      "value": []
+    }
+  ],
+  "units": [],
+  "why": "One edit: the long hall's mode keeps no quest. A mode is on while a quest it keeps is in progress, so this one would be left the tick the porch enters it and hold nothing. Refused at validation, at the mode's `keeps`. It declares no unit."
+}
