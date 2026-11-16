@@ -235,7 +235,11 @@
         },
         "facing": "north",
         "id": "actor/destrier",
-        "tier": "elite"
+        "tier": "elite",
+        "variant": {
+          "variant": "black",
+          "markings": "white_dots"
+        }
       },
       {
         "anchor": "anchor/usher",
@@ -6376,7 +6380,11 @@
         "entity": "minecraft:horse",
         "facing": "south",
         "id": "vehicle/yard-mare",
-        "name": "Bramble"
+        "name": "Bramble",
+        "variant": {
+          "variant": "chestnut",
+          "markings": "white"
+        }
       },
       {
         "at": {
@@ -6505,6 +6513,9 @@
                 "saddle": {
                   "item": "minecraft:saddle"
                 }
+              },
+              "variant": {
+                "variant": "minecraft:warm"
               }
             }
           },
@@ -6625,7 +6636,10 @@
                 "item": "minecraft:feather"
               }
             ],
-            "entity": "minecraft:chicken"
+            "entity": "minecraft:chicken",
+            "variant": {
+              "variant": "minecraft:cold"
+            }
           }
         ],
         "respawns_on_rest": false,

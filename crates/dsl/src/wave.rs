@@ -248,6 +248,13 @@ pub struct WaveMob {
     /// Optional custom name (shown above the mob).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The body's vanilla variant (DSL v0.83, [`crate::BodyVariant`]): its
+    /// coat, colour, collar, kind or trade, by the pinned game's own property
+    /// names and values. Absent = the type's default (a summon skips the
+    /// random pick), byte-identical. A property the body does not carry is
+    /// `DW1131`; a value it does not take is `DW1132`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<crate::BodyVariant>,
     /// Optional attribute overrides (DSL v0.4), emitted as 1.21.11 attribute
     /// components. Enables e.g. a weakened live warden as a survivable stealth
     /// threat. Omitted = vanilla defaults.

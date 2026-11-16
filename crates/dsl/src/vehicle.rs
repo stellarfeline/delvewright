@@ -40,6 +40,13 @@ pub struct Vehicle {
     /// A name tag over the body (`DW0983`: a vehicle is one body).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The body's vanilla variant (DSL v0.83, [`crate::BodyVariant`]): its
+    /// coat, colour, collar, kind or trade, by the pinned game's own property
+    /// names and values. Absent = the type's default (a summon skips the
+    /// random pick), byte-identical. A property the body does not carry is
+    /// `DW1131`; a value it does not take is `DW1132`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<crate::BodyVariant>,
     /// What a mount wears, in the wave mob's shape; the saddle is the engine's
     /// unless a piece is declared there. A piece the body does not show is
     /// `DW0898`.

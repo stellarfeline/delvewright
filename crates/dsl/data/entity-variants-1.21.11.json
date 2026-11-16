@@ -1,0 +1,1068 @@
+{
+  "domains": {
+    "axolotl_variant": [
+      {
+        "id": 0,
+        "name": "lucy"
+      },
+      {
+        "id": 1,
+        "name": "wild"
+      },
+      {
+        "id": 2,
+        "name": "gold"
+      },
+      {
+        "id": 3,
+        "name": "cyan"
+      },
+      {
+        "id": 4,
+        "name": "blue"
+      }
+    ],
+    "cat_variant": [
+      {
+        "name": "minecraft:all_black"
+      },
+      {
+        "name": "minecraft:black"
+      },
+      {
+        "name": "minecraft:british_shorthair"
+      },
+      {
+        "name": "minecraft:calico"
+      },
+      {
+        "name": "minecraft:jellie"
+      },
+      {
+        "name": "minecraft:persian"
+      },
+      {
+        "name": "minecraft:ragdoll"
+      },
+      {
+        "name": "minecraft:red"
+      },
+      {
+        "name": "minecraft:siamese"
+      },
+      {
+        "name": "minecraft:tabby"
+      },
+      {
+        "name": "minecraft:white"
+      }
+    ],
+    "chicken_variant": [
+      {
+        "name": "minecraft:cold"
+      },
+      {
+        "name": "minecraft:temperate"
+      },
+      {
+        "name": "minecraft:warm"
+      }
+    ],
+    "cow_variant": [
+      {
+        "name": "minecraft:cold"
+      },
+      {
+        "name": "minecraft:temperate"
+      },
+      {
+        "name": "minecraft:warm"
+      }
+    ],
+    "dye_color": [
+      {
+        "id": 0,
+        "name": "white"
+      },
+      {
+        "id": 1,
+        "name": "orange"
+      },
+      {
+        "id": 2,
+        "name": "magenta"
+      },
+      {
+        "id": 3,
+        "name": "light_blue"
+      },
+      {
+        "id": 4,
+        "name": "yellow"
+      },
+      {
+        "id": 5,
+        "name": "lime"
+      },
+      {
+        "id": 6,
+        "name": "pink"
+      },
+      {
+        "id": 7,
+        "name": "gray"
+      },
+      {
+        "id": 8,
+        "name": "light_gray"
+      },
+      {
+        "id": 9,
+        "name": "cyan"
+      },
+      {
+        "id": 10,
+        "name": "purple"
+      },
+      {
+        "id": 11,
+        "name": "blue"
+      },
+      {
+        "id": 12,
+        "name": "brown"
+      },
+      {
+        "id": 13,
+        "name": "green"
+      },
+      {
+        "id": 14,
+        "name": "red"
+      },
+      {
+        "id": 15,
+        "name": "black"
+      }
+    ],
+    "fox_variant": [
+      {
+        "name": "red"
+      },
+      {
+        "name": "snow"
+      }
+    ],
+    "frog_variant": [
+      {
+        "name": "minecraft:cold"
+      },
+      {
+        "name": "minecraft:temperate"
+      },
+      {
+        "name": "minecraft:warm"
+      }
+    ],
+    "horse_markings": [
+      {
+        "id": 0,
+        "name": "none"
+      },
+      {
+        "id": 1,
+        "name": "white"
+      },
+      {
+        "id": 2,
+        "name": "white_field"
+      },
+      {
+        "id": 3,
+        "name": "white_dots"
+      },
+      {
+        "id": 4,
+        "name": "black_dots"
+      }
+    ],
+    "horse_variant": [
+      {
+        "id": 0,
+        "name": "white"
+      },
+      {
+        "id": 1,
+        "name": "creamy"
+      },
+      {
+        "id": 2,
+        "name": "chestnut"
+      },
+      {
+        "id": 3,
+        "name": "brown"
+      },
+      {
+        "id": 4,
+        "name": "black"
+      },
+      {
+        "id": 5,
+        "name": "gray"
+      },
+      {
+        "id": 6,
+        "name": "dark_brown"
+      }
+    ],
+    "llama_variant": [
+      {
+        "id": 0,
+        "name": "creamy"
+      },
+      {
+        "id": 1,
+        "name": "white"
+      },
+      {
+        "id": 2,
+        "name": "brown"
+      },
+      {
+        "id": 3,
+        "name": "gray"
+      }
+    ],
+    "mooshroom_variant": [
+      {
+        "name": "brown"
+      },
+      {
+        "name": "red"
+      }
+    ],
+    "painting_variant": [
+      {
+        "name": "minecraft:alban"
+      },
+      {
+        "name": "minecraft:aztec"
+      },
+      {
+        "name": "minecraft:aztec2"
+      },
+      {
+        "name": "minecraft:backyard"
+      },
+      {
+        "name": "minecraft:baroque"
+      },
+      {
+        "name": "minecraft:bomb"
+      },
+      {
+        "name": "minecraft:bouquet"
+      },
+      {
+        "name": "minecraft:burning_skull"
+      },
+      {
+        "name": "minecraft:bust"
+      },
+      {
+        "name": "minecraft:cavebird"
+      },
+      {
+        "name": "minecraft:changing"
+      },
+      {
+        "name": "minecraft:cotan"
+      },
+      {
+        "name": "minecraft:courbet"
+      },
+      {
+        "name": "minecraft:creebet"
+      },
+      {
+        "name": "minecraft:dennis"
+      },
+      {
+        "name": "minecraft:donkey_kong"
+      },
+      {
+        "name": "minecraft:earth"
+      },
+      {
+        "name": "minecraft:endboss"
+      },
+      {
+        "name": "minecraft:fern"
+      },
+      {
+        "name": "minecraft:fighters"
+      },
+      {
+        "name": "minecraft:finding"
+      },
+      {
+        "name": "minecraft:fire"
+      },
+      {
+        "name": "minecraft:graham"
+      },
+      {
+        "name": "minecraft:humble"
+      },
+      {
+        "name": "minecraft:kebab"
+      },
+      {
+        "name": "minecraft:lowmist"
+      },
+      {
+        "name": "minecraft:match"
+      },
+      {
+        "name": "minecraft:meditative"
+      },
+      {
+        "name": "minecraft:orb"
+      },
+      {
+        "name": "minecraft:owlemons"
+      },
+      {
+        "name": "minecraft:passage"
+      },
+      {
+        "name": "minecraft:pigscene"
+      },
+      {
+        "name": "minecraft:plant"
+      },
+      {
+        "name": "minecraft:pointer"
+      },
+      {
+        "name": "minecraft:pond"
+      },
+      {
+        "name": "minecraft:pool"
+      },
+      {
+        "name": "minecraft:prairie_ride"
+      },
+      {
+        "name": "minecraft:sea"
+      },
+      {
+        "name": "minecraft:skeleton"
+      },
+      {
+        "name": "minecraft:skull_and_roses"
+      },
+      {
+        "name": "minecraft:stage"
+      },
+      {
+        "name": "minecraft:sunflowers"
+      },
+      {
+        "name": "minecraft:sunset"
+      },
+      {
+        "name": "minecraft:tides"
+      },
+      {
+        "name": "minecraft:unpacked"
+      },
+      {
+        "name": "minecraft:void"
+      },
+      {
+        "name": "minecraft:wanderer"
+      },
+      {
+        "name": "minecraft:wasteland"
+      },
+      {
+        "name": "minecraft:water"
+      },
+      {
+        "name": "minecraft:wind"
+      },
+      {
+        "name": "minecraft:wither"
+      }
+    ],
+    "panda_gene": [
+      {
+        "name": "aggressive"
+      },
+      {
+        "name": "brown"
+      },
+      {
+        "name": "lazy"
+      },
+      {
+        "name": "normal"
+      },
+      {
+        "name": "playful"
+      },
+      {
+        "name": "weak"
+      },
+      {
+        "name": "worried"
+      }
+    ],
+    "parrot_variant": [
+      {
+        "id": 0,
+        "name": "red_blue"
+      },
+      {
+        "id": 1,
+        "name": "blue"
+      },
+      {
+        "id": 2,
+        "name": "green"
+      },
+      {
+        "id": 3,
+        "name": "yellow_blue"
+      },
+      {
+        "id": 4,
+        "name": "gray"
+      }
+    ],
+    "pig_variant": [
+      {
+        "name": "minecraft:cold"
+      },
+      {
+        "name": "minecraft:temperate"
+      },
+      {
+        "name": "minecraft:warm"
+      }
+    ],
+    "rabbit_variant": [
+      {
+        "id": 0,
+        "name": "brown"
+      },
+      {
+        "id": 1,
+        "name": "white"
+      },
+      {
+        "id": 2,
+        "name": "black"
+      },
+      {
+        "id": 3,
+        "name": "white_splotched"
+      },
+      {
+        "id": 4,
+        "name": "gold"
+      },
+      {
+        "id": 5,
+        "name": "salt"
+      },
+      {
+        "id": 99,
+        "name": "evil"
+      }
+    ],
+    "salmon_size": [
+      {
+        "name": "large"
+      },
+      {
+        "name": "medium"
+      },
+      {
+        "name": "small"
+      }
+    ],
+    "tropical_fish_pattern": [
+      {
+        "id": 0,
+        "name": "kob"
+      },
+      {
+        "id": 1,
+        "name": "flopper"
+      },
+      {
+        "id": 256,
+        "name": "sunstreak"
+      },
+      {
+        "id": 257,
+        "name": "stripey"
+      },
+      {
+        "id": 512,
+        "name": "snooper"
+      },
+      {
+        "id": 513,
+        "name": "glitter"
+      },
+      {
+        "id": 768,
+        "name": "dasher"
+      },
+      {
+        "id": 769,
+        "name": "blockfish"
+      },
+      {
+        "id": 1024,
+        "name": "brinely"
+      },
+      {
+        "id": 1025,
+        "name": "betty"
+      },
+      {
+        "id": 1280,
+        "name": "spotty"
+      },
+      {
+        "id": 1281,
+        "name": "clayfish"
+      }
+    ],
+    "villager_profession": [
+      {
+        "name": "minecraft:armorer"
+      },
+      {
+        "name": "minecraft:butcher"
+      },
+      {
+        "name": "minecraft:cartographer"
+      },
+      {
+        "name": "minecraft:cleric"
+      },
+      {
+        "name": "minecraft:farmer"
+      },
+      {
+        "name": "minecraft:fisherman"
+      },
+      {
+        "name": "minecraft:fletcher"
+      },
+      {
+        "name": "minecraft:leatherworker"
+      },
+      {
+        "name": "minecraft:librarian"
+      },
+      {
+        "name": "minecraft:mason"
+      },
+      {
+        "name": "minecraft:nitwit"
+      },
+      {
+        "name": "minecraft:none"
+      },
+      {
+        "name": "minecraft:shepherd"
+      },
+      {
+        "name": "minecraft:toolsmith"
+      },
+      {
+        "name": "minecraft:weaponsmith"
+      }
+    ],
+    "villager_type": [
+      {
+        "name": "minecraft:desert"
+      },
+      {
+        "name": "minecraft:jungle"
+      },
+      {
+        "name": "minecraft:plains"
+      },
+      {
+        "name": "minecraft:savanna"
+      },
+      {
+        "name": "minecraft:snow"
+      },
+      {
+        "name": "minecraft:swamp"
+      },
+      {
+        "name": "minecraft:taiga"
+      }
+    ],
+    "wolf_sound_variant": [
+      {
+        "name": "minecraft:angry"
+      },
+      {
+        "name": "minecraft:big"
+      },
+      {
+        "name": "minecraft:classic"
+      },
+      {
+        "name": "minecraft:cute"
+      },
+      {
+        "name": "minecraft:grumpy"
+      },
+      {
+        "name": "minecraft:puglin"
+      },
+      {
+        "name": "minecraft:sad"
+      }
+    ],
+    "wolf_variant": [
+      {
+        "name": "minecraft:ashen"
+      },
+      {
+        "name": "minecraft:black"
+      },
+      {
+        "name": "minecraft:chestnut"
+      },
+      {
+        "name": "minecraft:pale"
+      },
+      {
+        "name": "minecraft:rusty"
+      },
+      {
+        "name": "minecraft:snowy"
+      },
+      {
+        "name": "minecraft:spotted"
+      },
+      {
+        "name": "minecraft:striped"
+      },
+      {
+        "name": "minecraft:woods"
+      }
+    ],
+    "zombie_nautilus_variant": [
+      {
+        "name": "minecraft:temperate"
+      },
+      {
+        "name": "minecraft:warm"
+      }
+    ]
+  },
+  "entities": {
+    "minecraft:axolotl": {
+      "variant": {
+        "component": "minecraft:axolotl/variant",
+        "domain": "axolotl_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:cat": {
+      "collar": {
+        "component": "minecraft:cat/collar",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "byte",
+            "key": "CollarColor",
+            "shift": 0
+          }
+        ]
+      },
+      "variant": {
+        "component": "minecraft:cat/variant",
+        "domain": "cat_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:chicken": {
+      "variant": {
+        "component": "minecraft:chicken/variant",
+        "domain": "chicken_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:cow": {
+      "variant": {
+        "component": "minecraft:cow/variant",
+        "domain": "cow_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:fox": {
+      "variant": {
+        "component": "minecraft:fox/variant",
+        "domain": "fox_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "Type",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:frog": {
+      "variant": {
+        "component": "minecraft:frog/variant",
+        "domain": "frog_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:horse": {
+      "markings": {
+        "domain": "horse_markings",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 8
+          }
+        ]
+      },
+      "variant": {
+        "component": "minecraft:horse/variant",
+        "domain": "horse_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:llama": {
+      "variant": {
+        "component": "minecraft:llama/variant",
+        "domain": "llama_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:mooshroom": {
+      "variant": {
+        "component": "minecraft:mooshroom/variant",
+        "domain": "mooshroom_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "Type",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:painting": {
+      "variant": {
+        "component": "minecraft:painting/variant",
+        "domain": "painting_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:panda": {
+      "gene": {
+        "domain": "panda_gene",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "MainGene",
+            "shift": 0
+          },
+          {
+            "form": "string",
+            "key": "HiddenGene",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:parrot": {
+      "variant": {
+        "component": "minecraft:parrot/variant",
+        "domain": "parrot_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:pig": {
+      "variant": {
+        "component": "minecraft:pig/variant",
+        "domain": "pig_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:rabbit": {
+      "variant": {
+        "component": "minecraft:rabbit/variant",
+        "domain": "rabbit_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "RabbitType",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:salmon": {
+      "size": {
+        "component": "minecraft:salmon/size",
+        "domain": "salmon_size",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "type",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:sheep": {
+      "color": {
+        "component": "minecraft:sheep/color",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "byte",
+            "key": "Color",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:shulker": {
+      "color": {
+        "component": "minecraft:shulker/color",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "byte",
+            "key": "Color",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:trader_llama": {
+      "variant": {
+        "component": "minecraft:llama/variant",
+        "domain": "llama_variant",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:tropical_fish": {
+      "base_color": {
+        "component": "minecraft:tropical_fish/base_color",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 16
+          }
+        ]
+      },
+      "pattern": {
+        "component": "minecraft:tropical_fish/pattern",
+        "domain": "tropical_fish_pattern",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 0
+          }
+        ]
+      },
+      "pattern_color": {
+        "component": "minecraft:tropical_fish/pattern_color",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "int",
+            "key": "Variant",
+            "shift": 24
+          }
+        ]
+      }
+    },
+    "minecraft:villager": {
+      "profession": {
+        "domain": "villager_profession",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "VillagerData.profession",
+            "shift": 0
+          }
+        ]
+      },
+      "variant": {
+        "component": "minecraft:villager/variant",
+        "domain": "villager_type",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "VillagerData.type",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:wolf": {
+      "collar": {
+        "component": "minecraft:wolf/collar",
+        "domain": "dye_color",
+        "nbt": [
+          {
+            "form": "byte",
+            "key": "CollarColor",
+            "shift": 0
+          }
+        ]
+      },
+      "sound_variant": {
+        "component": "minecraft:wolf/sound_variant",
+        "domain": "wolf_sound_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "sound_variant",
+            "shift": 0
+          }
+        ]
+      },
+      "variant": {
+        "component": "minecraft:wolf/variant",
+        "domain": "wolf_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:zombie_nautilus": {
+      "variant": {
+        "component": "minecraft:zombie_nautilus/variant",
+        "domain": "zombie_nautilus_variant",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "variant",
+            "shift": 0
+          }
+        ]
+      }
+    },
+    "minecraft:zombie_villager": {
+      "profession": {
+        "domain": "villager_profession",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "VillagerData.profession",
+            "shift": 0
+          }
+        ]
+      },
+      "variant": {
+        "component": "minecraft:villager/variant",
+        "domain": "villager_type",
+        "nbt": [
+          {
+            "form": "string",
+            "key": "VillagerData.type",
+            "shift": 0
+          }
+        ]
+      }
+    }
+  }
+}

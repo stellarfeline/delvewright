@@ -1,0 +1,44 @@
+{
+  "code": "DW0311",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/long-hall",
+        "edits": [
+          {
+            "name": "region/race-pig-lintel",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/long-hall-paddock",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [0, 1, 1],
+              "min": [0, 1, 1]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/race-pig-lintel",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/race-pig-lintel",
+        "note": "A block one over the race pig's mark."
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: a stone block laid one block over the race pig's mark in the paddock. The pig, 0.9 high, still stands under it, and the player who rides it has its eye 1.88875 over the pig's feet, inside the block, where the server suffocates it. The ride round the paddock is refused at build, naming the mark and the two clear blocks over the floor a pig's rider needs. It declares no unit."
+}

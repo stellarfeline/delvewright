@@ -528,8 +528,10 @@ pub(super) fn wave_fns(
                     }
                     _ => String::new(),
                 };
+                // DSL v0.83: the body's variant, by the one emission rule.
+                let variant = delvewright_dsl::variant_nbt(&mob.entity, mob.variant.as_ref());
                 let summon = format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}{variant}}}",
                     mob.entity,
                     c[0],
                     c[1],

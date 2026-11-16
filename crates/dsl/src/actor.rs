@@ -33,6 +33,13 @@ pub struct Actor {
     /// Optional player-model skin (mannequin), as a stage-2 NPC (`DW0190`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<NpcSkin>,
+    /// The body's vanilla variant (DSL v0.83, [`crate::BodyVariant`]): its
+    /// coat, colour, collar, kind or trade, by the pinned game's own property
+    /// names and values. Absent = the type's default (a summon skips the
+    /// random pick), byte-identical. A property the body does not carry is
+    /// `DW1131`; a value it does not take is `DW1132`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<crate::BodyVariant>,
     /// The anchor the puppet is summoned on (resolved across areas, like an
     /// `open-gate` / `move-npc` destination).
     pub anchor: AnchorId,

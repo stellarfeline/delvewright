@@ -309,6 +309,7 @@ mod loot_emit_tests {
             entity: "minecraft:wither_skeleton".to_string(),
             name: None,
             skin: None,
+            variant: None,
             anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
             offset: [0, 0, 0],
             facing: None,

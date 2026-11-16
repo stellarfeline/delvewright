@@ -9,6 +9,7 @@ mod common;
 mod activity;
 mod assembly_surface;
 mod body_skin_sites;
+mod body_variant;
 mod body_watch_sites;
 mod clock_statement;
 mod compass;
