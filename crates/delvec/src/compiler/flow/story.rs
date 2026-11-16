@@ -482,6 +482,26 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// The effects ambient act `id`'s bundle declares, gated or not: what an
+    /// entry deed can put in the chronicle. Empty for an act with no bundle.
+    pub fn act_effects(&self, id: &str) -> &'a [QuestEffect] {
+        self.acts()
+            .bundles
+            .get(id)
+            .and_then(|b| b.effects.as_ref())
+            .map_or(&[], |(_, e)| e)
+    }
+
+    /// **Whether a story world performs entry deed `act` at `st`** (spec-0108
+    /// §4.1): its own gate holds there, or a debt of the path performs it
+    /// (`owed`), which the debt walk proved performable there — the story
+    /// stance credits the act's own flags from the start, which would read as
+    /// its own gate shut. The one rule the story run places a deed by and every
+    /// walk of the world ([`Walk`]) performs it by, in any order.
+    pub(super) fn deed_performable(&self, act: &str, st: &ReplayState, owed: bool) -> bool {
+        owed || self.act_enabled(act, st)
+    }
+
     /// Whether ambient act `id`'s own gate holds at `st`.
     fn act_enabled(&self, id: &str, st: &ReplayState) -> bool {
         let Some(b) = self.acts().bundles.get(id) else {
@@ -1114,10 +1134,7 @@ impl<'a> Flow<'a> {
                 st.flags.extend(c.sets.iter().cloned());
             }
             for act in pending.iter().filter(|a| at.get(*a) == Some(&i)) {
-                // A deed a debt performs was proven performable there by the
-                // debt walk; the story stance credits its own flags from the
-                // start, which would read as its own gate shut.
-                if !owed.contains(act.as_str()) && !self.act_enabled(act, &st) {
+                if !self.deed_performable(act, &st, owed.contains(act.as_str())) {
                     // An earlier deed shut its gate: it is not performed.
                     unperformed.push(act.clone());
                     continue;
@@ -1141,11 +1158,19 @@ impl<'a> Flow<'a> {
             fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
             undecided.extend(st.undecided.iter().cloned());
         }
+        let owed: BTreeSet<String> = owed.into_iter().map(str::to_string).collect();
         pt.story = Some(std::sync::Arc::new(StoryCtx {
             performs: performs.clone(),
             deeds,
             choices: debts.choices,
             triggers: debts.triggers,
+            slots: pt
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.objective.clone(), i))
+                .collect(),
+            owed,
         }));
         StoryRun {
             playthrough: pt,
@@ -2271,6 +2296,7 @@ impl<'a> Flow<'a> {
                     taken: 0,
                     performed: Some(BTreeSet::new()),
                     story: Some(ctx.clone()),
+                    deeds_done: BTreeSet::new(),
                 }
             }
         }
@@ -2288,6 +2314,7 @@ impl<'a> Flow<'a> {
                     taken: 0,
                     performed: None,
                     story: Some(ctx.clone()),
+                    deeds_done: BTreeSet::new(),
                 }
             }
         }

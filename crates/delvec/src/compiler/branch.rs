@@ -1613,15 +1613,45 @@ fn search_orders(
     };
     let pt = flow.story_playthrough(w);
     let steps = pt.steps.clone();
-    let beats: Vec<Vec<(HappeningVerb, String)>> =
-        steps.iter().map(|s| possible_beats(c, s)).collect();
+    // The entry deeds and choices due in front of each step: they travel with
+    // it in every order (`Walk::take`), so their lines are its lines.
+    let due: Vec<Vec<&[QuestEffect]>> = steps
+        .iter()
+        .map(|s| {
+            pt.story
+                .as_ref()
+                .map(|ctx| {
+                    ctx.deeds_before(&s.objective)
+                        .map(|a| flow.act_effects(a))
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    let fronted: Vec<bool> = steps
+        .iter()
+        .map(|s| {
+            pt.story
+                .as_ref()
+                .is_some_and(|ctx| ctx.fronts(&s.objective))
+        })
+        .collect();
+    let beats: Vec<Vec<(HappeningVerb, String)>> = steps
+        .iter()
+        .zip(&due)
+        .map(|(s, d)| possible_beats(c, s, d))
+        .collect();
     let carried: BTreeSet<String> = beats
         .iter()
         .flatten()
         .filter(|(v, _)| carries(*v))
         .map(|(_, s)| s.clone())
         .collect();
-    let quiet = quiet_steps(c, flow, &steps, &beats, &carried);
+    let quiet: Vec<bool> = quiet_steps(c, flow, &steps, &beats, &carried)
+        .into_iter()
+        .zip(&fronted)
+        .map(|(q, f)| q && !*f)
+        .collect();
     let read = data_gates_read(c);
     let mut search = OrderSearch {
         steps: &steps,
@@ -1927,6 +1957,9 @@ fn data_gates_read(c: &Campaign) -> BTreeSet<String> {
 ///   any effect's `requires_flags` reads, directly or through an ambient
 ///   producer, and writes no datum any effect gate compares;
 /// - it does not end the delve;
+/// - no entry deed or choice of its story world is due in front of it (the
+///   caller's half: a deed fires where the step is taken, so taking it first
+///   moves the deed);
 /// - none of its possible lines acts on a subject some step of the path can
 ///   leave in a carried state (`carried`).
 fn quiet_steps(
@@ -2024,10 +2057,14 @@ fn quiet_steps(
 
 /// Every `(verb, subject)` a step can put in the dated chronicle, whatever the
 /// order: its quest's own line, its objective's, the option it takes, and every
-/// effect its objective bundle or its quest's `on_complete` declares, gated or
-/// not. A superset: it decides which subjects the rules track and which steps
+/// effect its objective bundle, its quest's `on_complete` or the bundle of an
+/// entry deed due in front of it (`deeds`) declares, gated or not. A superset: it decides which subjects the rules track and which steps
 /// are quiet ([`quiet_steps`]), and a superset can only make fewer steps quiet.
-fn possible_beats(c: &Campaign, step: &PathStep) -> Vec<(HappeningVerb, String)> {
+fn possible_beats(
+    c: &Campaign,
+    step: &PathStep,
+    deeds: &[&[QuestEffect]],
+) -> Vec<(HappeningVerb, String)> {
     let mut out = Vec::new();
     let Some(q) = c
         .quests
@@ -2078,6 +2115,9 @@ fn possible_beats(c: &Campaign, step: &PathStep) -> Vec<(HappeningVerb, String)>
         effects(effs, &mut out);
     }
     effects(&q.on_complete, &mut out);
+    for d in deeds {
+        effects(d, &mut out);
+    }
     out.sort();
     out.dedup();
     out

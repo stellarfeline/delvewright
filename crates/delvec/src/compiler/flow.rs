@@ -303,6 +303,41 @@ pub struct StoryCtx {
     /// Each environment trigger the path performs to pay a flag a step reads,
     /// in path order — what [`Flow::trigger_debts`] answers for this world.
     pub triggers: Vec<TriggerDebt>,
+    /// The path position of each objective on the path: what the index of a
+    /// deed or a choice names. A deed or a choice belongs to the STEP at that
+    /// index, so a walk in another order ([`Walk`]) performs it in front of
+    /// that objective's step, wherever the order puts it.
+    pub slots: BTreeMap<String, usize>,
+    /// The deeds a debt of the path performs ([`Flow::story_debts`]): proven
+    /// performable where they stand by the debt walk, so their own gate is not
+    /// read again ([`Flow::deed_performable`]).
+    pub owed: BTreeSet<String>,
+}
+
+impl StoryCtx {
+    /// The entry deeds due in front of `step` (spec-0108 §4.1), in the order the
+    /// world performs them: those whose index is `step`'s place on the path.
+    pub fn deeds_before<'s>(&'s self, step: &str) -> impl Iterator<Item = &'s str> + 's {
+        let at = self.slots.get(step).copied();
+        self.deeds
+            .iter()
+            .filter(move |(i, _)| Some(*i) == at)
+            .map(|(_, a)| a.as_str())
+    }
+
+    /// Whether a deed or a choice is due in front of `step`.
+    pub fn fronts(&self, step: &str) -> bool {
+        self.deeds_before(step).next().is_some() || self.choices_before(step).next().is_some()
+    }
+
+    /// The dialogue choices due in front of `step`, as [`Self::deeds_before`].
+    fn choices_before<'s>(&'s self, step: &str) -> impl Iterator<Item = &'s PathChoice> + 's {
+        let at = self.slots.get(step).copied();
+        self.choices
+            .iter()
+            .filter(move |(i, _)| Some(*i) == at)
+            .map(|(_, c)| c)
+    }
 }
 
 /// A dialogue option a story world's path takes that completes no objective
@@ -582,6 +617,9 @@ pub struct Walk<'f, 'a> {
     /// The story world this walk plays (spec-0108 §4.1): what it credits, and
     /// the entry deeds it performs in front of which steps. `None` outside one.
     story: Option<std::sync::Arc<StoryCtx>>,
+    /// The entry deeds this walk has performed so far: a deed's producers are
+    /// credited from the step it is performed at, never before.
+    deeds_done: BTreeSet<String>,
 }
 
 impl Walk<'_, '_> {
@@ -602,8 +640,7 @@ impl Walk<'_, '_> {
                 None => {
                     self.flow.story_credit(g, &ctx.performs)
                         && !g.act.as_ref().is_some_and(|a| {
-                            ctx.deeds.iter().any(|(_, d)| d == a)
-                                && !ctx.deeds.iter().any(|(j, d)| d == a && *j <= self.taken)
+                            ctx.deeds.iter().any(|(_, d)| d == a) && !self.deeds_done.contains(a)
                         })
                 }
                 Some(_) => stance,
@@ -625,12 +662,12 @@ impl Walk<'_, '_> {
         self.st.flags = flags;
     }
 
-    /// The dialogue options the path takes in front of the next step
+    /// The dialogue options the path takes in front of `step`
     /// ([`StoryCtx::choices`]): their flags set, then every producer this walk
     /// credits saturated.
-    fn take_choices(&mut self, ctx: &StoryCtx) {
+    fn take_choices(&mut self, ctx: &StoryCtx, step: &PathStep) {
         let mut any = false;
-        for (_, c) in ctx.choices.iter().filter(|(i, _)| *i == self.taken) {
+        for c in ctx.choices_before(&step.objective) {
             self.st.flags.extend(c.sets.iter().cloned());
             any = true;
         }
@@ -642,34 +679,70 @@ impl Walk<'_, '_> {
         }
     }
 
+    /// The choices and entry deeds due in front of `step` — the place on the
+    /// path the world gave them, whatever order this walk is in — performed
+    /// here, each deed once and only where its own gate holds
+    /// ([`Flow::deed_performable`], the rule the story run placed it by).
+    /// Returns each deed performed with the pointer of every effect its bundle
+    /// fired, and the first deed whose gate is shut here, if one is.
+    fn perform_due(&mut self, step: &PathStep) -> (Vec<(String, Vec<String>)>, Option<String>) {
+        let mut deeds: Vec<(String, Vec<String>)> = Vec::new();
+        let mut shut = None;
+        let Some(ctx) = self.story.clone() else {
+            return (deeds, shut);
+        };
+        self.take_choices(&ctx, step);
+        for act in ctx.deeds_before(&step.objective) {
+            if self.deeds_done.contains(act) {
+                continue;
+            }
+            if !self
+                .flow
+                .deed_performable(act, &self.st, ctx.owed.contains(act))
+            {
+                shut.get_or_insert_with(|| act.to_string());
+                continue;
+            }
+            let from = self.st.fired.len();
+            self.flow.perform_act(&mut self.st, act, self.taken + 1);
+            self.deeds_done.insert(act.to_string());
+            deeds.push((act.to_string(), self.st.fired[from..].to_vec()));
+        }
+        if self.performed.is_none() {
+            let mut flags = std::mem::take(&mut self.st.flags);
+            self.flow
+                .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+            self.st.flags = flags;
+        }
+        (deeds, shut)
+    }
+
     /// Why `step` cannot be completed now, the choices and entry deeds due in
-    /// front of it performed first (on a clone) — the replay's own per-step test.
+    /// front of it performed first (on a clone) — the replay's own per-step
+    /// test. A deed due in front of it whose own gate is shut blocks it: the
+    /// world performs that deed there, so an order that reaches the step with
+    /// the deed unperformable is not an order this world plays.
     fn blocked_after_deeds(&self, step: &PathStep) -> Option<String> {
         match &self.story {
-            Some(ctx)
-                if ctx.deeds.iter().any(|(i, _)| *i == self.taken)
-                    || ctx.choices.iter().any(|(i, _)| *i == self.taken) =>
-            {
+            Some(ctx) if ctx.fronts(&step.objective) => {
                 let mut ahead = self.clone();
-                ahead.take_choices(ctx);
-                for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
-                    self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+                if let (_, Some(act)) = ahead.perform_due(step) {
+                    return Some(format!(
+                        "the entry deed `{act}` its world performs in front of it cannot be \
+                         performed here: the act's own gate is shut"
+                    ));
                 }
-                let mut flags = std::mem::take(&mut ahead.st.flags);
-                self.flow
-                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
-                ahead.st.flags = flags;
                 self.flow.step_blocked(&ahead.st, step)
             }
             _ => self.flow.step_blocked(&self.st, step),
         }
     }
 
-    /// Can `step` be completed now — the replay's own per-step test, and not
+    /// Can `step` be completed now — the replay's own per-step test, the
+    /// choices and entry deeds due in front of it performed first, and not
     /// already done.
     pub fn legal(&self, step: &PathStep) -> bool {
-        !self.st.done_obj.contains(&step.objective)
-            && self.flow.step_blocked(&self.st, step).is_none()
+        !self.st.done_obj.contains(&step.objective) && self.blocked_after_deeds(step).is_none()
     }
 
     /// Complete `step` (its guards are the caller's to have checked) and
@@ -677,21 +750,7 @@ impl Walk<'_, '_> {
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
         // A story world's entry deeds due in front of this step (spec-0108
         // §4.1): each elective ambient act it performs, fired once, here.
-        let mut deeds: Vec<(String, Vec<String>)> = Vec::new();
-        if let Some(ctx) = self.story.clone() {
-            self.take_choices(&ctx);
-            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
-                let from = self.st.fired.len();
-                self.flow.perform_act(&mut self.st, act, self.taken + 1);
-                deeds.push((act.clone(), self.st.fired[from..].to_vec()));
-            }
-            if self.performed.is_none() {
-                let mut flags = std::mem::take(&mut self.st.flags);
-                self.flow
-                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
-                self.st.flags = flags;
-            }
-        }
+        let (deeds, _) = self.perform_due(step);
         let before = self.st.clone();
         self.taken += 1;
         let mut st = std::mem::take(&mut self.st);
@@ -915,14 +974,14 @@ impl Walk<'_, '_> {
         })
     }
 
-    /// This walk with the entry deeds its story world performs in front of the
-    /// next step performed — the state the party holds as it takes that step.
+    /// This walk with the entry deeds its story world performs in front of
+    /// `step` performed — the state the party holds as it takes that step.
     /// The walk itself when none is due there.
-    pub fn with_due_deeds(&self) -> Self {
+    pub fn with_due_deeds(&self, step: &PathStep) -> Self {
         let mut ahead = self.clone();
         if let Some(ctx) = &self.story {
-            ahead.take_choices(ctx);
-            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+            ahead.take_choices(ctx, step);
+            for act in ctx.deeds_before(&step.objective) {
                 ahead = ahead.performing(act);
             }
         }
@@ -944,6 +1003,7 @@ impl Walk<'_, '_> {
     pub fn performing(&self, act: &str) -> Self {
         let mut ahead = self.clone();
         self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+        ahead.deeds_done.insert(act.to_string());
         if let Some(done) = ahead.performed.as_mut() {
             done.insert(act.to_string());
         }
@@ -1747,6 +1807,7 @@ impl<'a> Flow<'a> {
             taken: 0,
             performed: None,
             story: None,
+            deeds_done: BTreeSet::new(),
         }
     }
 
@@ -1766,6 +1827,7 @@ impl<'a> Flow<'a> {
             taken: 0,
             performed: Some(BTreeSet::new()),
             story: None,
+            deeds_done: BTreeSet::new(),
         }
     }
 

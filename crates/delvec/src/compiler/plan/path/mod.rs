@@ -1278,7 +1278,7 @@ pub(super) fn build_critical_path(
             for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
                 guaranteed = guaranteed.performing(t);
             }
-            let ahead = guaranteed.with_due_deeds();
+            let ahead = guaranteed.with_due_deeds(st);
             let taking: BTreeSet<String> = ahead.armed_objectives().into_iter().collect();
             let taking_open: BTreeSet<String> =
                 ahead.armed_objectives_unless_shut().into_iter().collect();
@@ -1362,7 +1362,7 @@ pub(super) fn build_critical_path(
         // of it (its entry deed); the objective itself is no act of the
         // party's, so it has no step.
         let fails = walk.failed(&st.objective)
-            || (path.story.is_some() && walk.with_due_deeds().failed(&st.objective));
+            || (path.story.is_some() && walk.with_due_deeds(st).failed(&st.objective));
         if fails {
         } else if path.expires(&st.objective) {
             // spec-0133 §8: in a story world that expires this objective, the step
