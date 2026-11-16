@@ -31,12 +31,13 @@
 //!    ([`Clock`], [`hour_burns`], the biome map).
 //! 4. **The sun can reach it.** Open sky stands on ground it can walk to, within
 //!    one aggro radius of where it is staged ([`sky_within_reach`]).
-//! 5. **Nothing on its head.** No `equipment.head` — except for a phantom, whose
-//!    burn a helmet does not stop (see below).
+//! 5. **Nothing in its protecting slot.** The slot the pinned game reads for
+//!    its species ([`sun_protection_slot`]: the head, or the body for a zombie
+//!    horse and a zombie nautilus) is empty (see below).
 //!
 //! A wave stack that declares a `mount` (spec-0135 §13) stages two bodies on
 //! each cell: the rider and the mount under it. The mount is asked the same five
-//! questions by its own species and its own `mount.equipment.head`, with the
+//! questions by its own species and its own `mount.equipment`, with the
 //! rider's cells, beats and reach — it stands where the rider stands and goes
 //! where the rider steers. Measured on the pinned server
 //! (`validation/festival-probe.mjs` T17,
@@ -69,21 +70,27 @@
 //! [Minecraft Wiki, *Undead*](https://minecraft.wiki/w/Undead)). That single
 //! exclusion is [`FIRE_IMMUNE`], stated here rather than smuggled into the data.
 //!
-//! ### 5. Why a helmet is the answer, and where it is not
+//! ### 5. Why a piece in the protecting slot is the answer
 //!
-//! Vanilla's burn tick checks the head slot first: a mob wearing head armour
-//! damages the helmet instead of igniting ("wearing head armor (the helmet has a
-//! 50% chance to lose 1 durability for every tick the zombie would normally be set
-//! on fire)" — [Minecraft Wiki, *Zombie*](https://minecraft.wiki/w/Zombie)). That
-//! is why `equipment.head` is the owner's sanctioned remedy, recorded on the DSL
-//! field itself, and why `set-time` never is: the delve's hour is a *pacing*
-//! decision, and moving it to save a mob spends a beat the author authored.
+//! The pinned jar's burn tick (`Mob.burnUndead`) reads one slot,
+//! `Mob.sunProtectionSlot()`: empty, the body ignites; filled with a piece that
+//! has durability, the piece takes 0–1 damage instead and the body burns once
+//! it breaks; filled with a piece without durability, nothing happens. The
+//! slot is `HEAD` for every burner but the two classes that override it to
+//! `BODY`, `ZombieHorse` and `ZombieNautilus`
+//! (`docs/reference/vehicles-animals-and-targets.md` §16). Measured on the
+//! pinned server (`validation/festival-probe.mjs` T17): a zombie horse in iron
+//! horse armour under open sky at daytime 1000 kept full health and its rider,
+//! and the armour took no damage; a helmeted phantom kept full health while its
+//! helmet wore down. That is why a head piece is the owner's sanctioned remedy
+//! for a head-protected species, recorded on the DSL field itself, horse armour
+//! for a zombie horse, and why `set-time` never is: the delve's hour is a
+//! *pacing* decision, and moving it to save a mob spends a beat the author
+//! authored.
 //!
-//! `minecraft:phantom` is the exception, and it is explicit: "Like zombies and
-//! skeletons, phantoms burn in sunlight. They burn even when equipped with helmets
-//! through commands" ([Minecraft Wiki, *Phantom*](https://minecraft.wiki/w/Phantom)).
-//! So the head slot is no exemption for a phantom and the diagnostic must not
-//! offer one — prescribing a fix that does not work is worse than not firing.
+//! A remedy is prescribed only where the body draws the slot, because `DW0898`
+//! refuses a piece the body does not show: a phantom's helmet would spare it,
+//! but its body draws no head, so it is prescribed a roof.
 //!
 //! ### 4. How far the sun counts as "reaching" it
 //!
@@ -175,8 +182,10 @@
 //!
 //! ## Prescription
 //!
-//! Put a helmet on the stack (`equipment.head`, drop chance 0 is emitted for you),
-//! or roof the ground the fight happens on. Never `set-time`.
+//! Fill the species' protecting slot where its body draws it (`equipment.head`,
+//! or `equipment.body` / `mount.equipment.body` horse armour for a zombie
+//! horse; drop chance 0 is emitted for you), or roof the ground the fight
+//! happens on. Never `set-time`.
 //!
 //! ## Known boundary
 //!
@@ -189,7 +198,7 @@
 use crate::compiler::failure::Failure;
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::{Campaign, Objective, QuestEffect, Verb, WorldTime, WorldWeather};
+use delvewright_dsl::{Campaign, EquipSlot, Objective, QuestEffect, Verb, WorldTime, WorldWeather};
 
 use crate::compiler::light::LightModel;
 use crate::compiler::nav::World;
@@ -216,14 +225,18 @@ const BURN_IN_DAYLIGHT_TAG: &str = "minecraft:burn_in_daylight";
 /// entirely immune to fire" — <https://minecraft.wiki/w/Undead>.
 const FIRE_IMMUNE: [&str; 1] = ["minecraft:wither_skeleton"];
 
-/// The one member whose burn a helmet does NOT stop.
+/// The species whose sun protection is NOT the head slot, and the slot it is.
 ///
-/// "Like zombies and skeletons, phantoms burn in sunlight. They burn even when
-/// equipped with helmets through commands" — <https://minecraft.wiki/w/Phantom>.
-/// Every other burner takes the head-slot durability hit instead of igniting
-/// (<https://minecraft.wiki/w/Zombie>), which is what makes `equipment.head` the
-/// sanctioned remedy for them and not for this one.
-const HELMET_PROOF: [&str; 1] = ["minecraft:phantom"];
+/// The pinned jar's burn tick (`Mob.burnUndead`) reads the one slot
+/// `Mob.sunProtectionSlot()` names: `HEAD` on `Mob`, overridden to `BODY` by
+/// exactly two classes, `ZombieHorse` and `ZombieNautilus`
+/// (`docs/reference/vehicles-animals-and-targets.md` §16). Every other burner
+/// is protected by its head slot, the phantom included: it overrides neither
+/// the slot nor the tick.
+const SUN_PROTECTION_OVERRIDES: [(&str, EquipSlot); 2] = [
+    ("minecraft:zombie_horse", EquipSlot::Body),
+    ("minecraft:zombie_nautilus", EquipSlot::Body),
+];
 
 /// Whether vanilla burns this entity type in daylight: in
 /// `#minecraft:burn_in_daylight` and not [`FIRE_IMMUNE`].
@@ -235,19 +248,65 @@ pub fn burns_in_daylight(entity: &str) -> bool {
         && crate::compiler::registry::entity_in_tag(entity, BURN_IN_DAYLIGHT_TAG)
 }
 
-/// Whether a helmet stops this entity type's burn: everything except a phantom.
-fn helmet_helps(entity: &str) -> bool {
-    !HELMET_PROOF.contains(&crate::compiler::registry::namespaced_entity(entity).as_str())
+/// The slot whose piece spares `entity` the sun: the pinned game's
+/// `sunProtectionSlot()` for its species ([`SUN_PROTECTION_OVERRIDES`], else
+/// the head). Vanilla's burn tick ignites the body only while that slot is
+/// empty; a piece there with durability is worn down instead (and the body
+/// burns once it breaks), a piece without it — horse armour — holds.
+pub fn sun_protection_slot(entity: &str) -> EquipSlot {
+    let id = crate::compiler::registry::namespaced_entity(entity);
+    SUN_PROTECTION_OVERRIDES
+        .iter()
+        .find(|(e, _)| *e == id)
+        .map_or(EquipSlot::Head, |&(_, slot)| slot)
 }
 
-/// Whether `equipment.head` is a remedy this rule may prescribe for `entity`:
-/// a helmet stops its burn **and** its body draws a head slot. A gate that names
-/// a remedy owes a check that the remedy is reachable, and `DW0898` refuses a
-/// head piece on a body that shows none (a zombie horse, a zombie nautilus), so
-/// the prescription is read from the same body table that refusal reads.
-fn head_piece_is_a_remedy(entity: &str) -> bool {
-    helmet_helps(entity)
-        && delvewright_dsl::equipment::shows_slot(entity, delvewright_dsl::EquipSlot::Head)
+/// Whether a body of `entity` wearing pieces in `worn` is spared the sun.
+fn sun_protected(entity: &str, worn: &BTreeSet<EquipSlot>) -> bool {
+    worn.contains(&sun_protection_slot(entity))
+}
+
+/// The slots a declaration fills.
+fn worn_slots(eq: Option<&delvewright_dsl::MobEquipment>) -> BTreeSet<EquipSlot> {
+    eq.map(|e| {
+        e.pieces()
+            .into_iter()
+            .filter_map(|(slot, piece)| piece.map(|_| slot))
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// The protecting slot this rule may prescribe for `entity`, when its body
+/// draws it. A gate that names a remedy owes a check that the remedy is
+/// reachable, and `DW0898` refuses a piece in a slot the body does not show (a
+/// phantom's head), so the prescription is read from the same body table that
+/// refusal reads.
+fn protection_remedy(entity: &str) -> Option<EquipSlot> {
+    let slot = sun_protection_slot(entity);
+    delvewright_dsl::equipment::shows_slot(entity, slot).then_some(slot)
+}
+
+/// The pieces `entity` can wear in `slot`, spelled for the remedy: "any item"
+/// when the slot draws a plain item, else every equippable item of the pinned
+/// item data `DW0898` accepts there (a zombie horse's `body`: the horse
+/// armours).
+fn fitting_pieces(entity: &str, slot: EquipSlot) -> String {
+    use delvewright_dsl::equipment::{PieceKind, body_row, judge};
+    let any = body_row(entity)
+        .and_then(|r| r.shown(slot))
+        .is_some_and(|s| s.kinds.contains(&PieceKind::Item));
+    if any {
+        return "any item".to_string();
+    }
+    let items = crate::compiler::registry::FullItemRegistry::v1_21_11();
+    let fits: Vec<String> = crate::compiler::registry::ItemEquippableTable::v1_21_11()
+        .items
+        .into_keys()
+        .filter(|item| judge(entity, slot, item, &items).is_some_and(|m| !m.any()))
+        .map(|item| format!("`{item}`"))
+        .collect();
+    fits.join(", ")
 }
 
 /// Whether the pinned game runs the sun-burn tick at this hour: the
@@ -788,8 +847,8 @@ pub(crate) struct Staged {
     pub(crate) cells: Vec<[i32; 3]>,
     /// Its aggro radius in blocks.
     pub(crate) radius: u32,
-    /// Does it already wear something on its head?
-    helmeted: bool,
+    /// The slots its declaration fills.
+    worn: BTreeSet<EquipSlot>,
     /// The body it rides, when its stack declares a `mount` (spec-0135 §13).
     /// The mount stands where the rider stands and goes where the rider steers,
     /// so it meets the sun the rider meets, and burns by its own species.
@@ -804,14 +863,15 @@ pub(crate) struct Staged {
 pub(crate) struct StagedMount {
     /// The mount's vanilla entity id as authored.
     entity: String,
-    /// Does the mount wear something on its head?
-    helmeted: bool,
+    /// The slots the mount's declaration fills.
+    worn: BTreeSet<EquipSlot>,
 }
 
 /// One body the sun is asked about: a staged body, or the mount it rides.
 struct Burner<'a> {
     entity: &'a str,
-    helmeted: bool,
+    /// The slots it fills.
+    worn: &'a BTreeSet<EquipSlot>,
     /// The rider's entity id, when this body is a mount.
     carries: Option<&'a str>,
 }
@@ -822,12 +882,12 @@ impl Staged {
     fn burners(&self) -> Vec<Burner<'_>> {
         std::iter::once(Burner {
             entity: &self.entity,
-            helmeted: self.helmeted,
+            worn: &self.worn,
             carries: None,
         })
         .chain(self.mount.as_ref().map(|m| Burner {
             entity: &m.entity,
-            helmeted: m.helmeted,
+            worn: &m.worn,
             carries: Some(&self.entity),
         }))
         .collect()
@@ -868,7 +928,7 @@ pub fn check_daylight_staging(
             if !burns_in_daylight(burner.entity) {
                 continue;
             }
-            if burner.helmeted && helmet_helps(burner.entity) {
+            if sun_protected(burner.entity, burner.worn) {
                 continue;
             }
             let sky = clock.sky_for(c, &body.beats, &body.dead_after);
@@ -981,10 +1041,10 @@ pub(crate) fn collect_staged(
                 entity: m.entity.clone(),
                 cells: mine,
                 radius: crate::compiler::nav::follow::mob_reach(w, m).0.max(0.0) as u32,
-                helmeted: m.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+                worn: worn_slots(m.equipment.as_ref()),
                 mount: m.mount.as_ref().map(|mt| StagedMount {
                     entity: mt.entity.clone(),
-                    helmeted: mt.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+                    worn: worn_slots(mt.equipment.as_ref()),
                 }),
                 beats: beats.clone(),
                 dead_after: dead_after.clone(),
@@ -1021,7 +1081,7 @@ pub(crate) fn collect_staged(
             entity: a.entity.clone(),
             cells: vec![pos],
             radius: crate::compiler::nav::follow::actor_reach(a).0.max(0.0) as u32,
-            helmeted: a.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+            worn: worn_slots(a.equipment.as_ref()),
             mount: None,
             beats,
             dead_after: Vec::new(),
@@ -1066,51 +1126,65 @@ fn burn_message(body: &Staged, burner: &Burner<'_>, exposure: &Exposure) -> Stri
         weather,
         dry,
     } = exposure;
-    let head = head_piece_is_a_remedy(entity);
-    let no_head = if helmet_helps(entity) {
-        ": its body draws no head slot, so a head piece is refused (`DW0898`)."
-    } else {
-        "."
-    };
-    let (staged, remedy) = match burner.carries {
-        None if head => (
+    let remedy_slot = protection_remedy(entity);
+    let protecting = sun_protection_slot(entity).field();
+    let unshown = format!(
+        "`{field}.{protecting}` is NOT a fix for this species: its sun protection is its \
+         `{protecting}` slot, and its body draws none, so a piece there is refused (`DW0898`).",
+        field = if burner.carries.is_some() {
+            "mount.equipment"
+        } else {
+            "equipment"
+        }
+    );
+    let (staged, remedy) = match (burner.carries, remedy_slot) {
+        (None, Some(slot)) => (
             format!("stages `{entity}`"),
-            "Give this stack `equipment.head` (any head item — vanilla damages the helmet \
-             instead of igniting the mob, and the compiler emits drop chance 0 so it can never \
-             be farmed), or roof the ground the fight happens on."
-                .to_string(),
+            format!(
+                "Give this stack `equipment.{}` ({} — vanilla's burn tick spares a body whose \
+                 `{}` slot is filled, wearing down a piece with durability instead of igniting \
+                 the mob, and the compiler emits drop chance 0 so it can never be farmed), or \
+                 roof the ground the fight happens on.",
+                slot.field(),
+                fitting_pieces(entity, slot),
+                slot.field()
+            ),
         ),
-        None => (
+        (None, None) => (
             format!("stages `{entity}`"),
             format!(
                 "Roof the ground the fight happens on, or stage this encounter somewhere the sky \
-                 does not reach. `equipment.head` is NOT a fix for this species{no_head}"
+                 does not reach. {unshown}"
             ),
         ),
-        Some(rider) => (
+        (Some(rider), slot) => (
             format!(
                 "summons its `{rider}` stack on `{entity}` (the stack's `mount`, which dies to \
                  the sun under its rider and leaves the rider to fight on foot)"
             ),
-            if head {
-                "Give this mount `mount.equipment.head` (drop chance 0 is emitted), roof the \
-                 ground the fight happens on, or choose a `mount.entity` outside \
-                 `#minecraft:burn_in_daylight`."
-                    .to_string()
-            } else {
-                format!(
+            match slot {
+                Some(slot) => format!(
+                    "Give this mount `mount.equipment.{}` ({} — vanilla's burn tick spares a \
+                     `{entity}` whose `{}` slot is filled; drop chance 0 is emitted), roof the \
+                     ground the fight happens on, or choose a `mount.entity` outside \
+                     `#minecraft:burn_in_daylight`.",
+                    slot.field(),
+                    fitting_pieces(entity, slot),
+                    slot.field()
+                ),
+                None => format!(
                     "Roof the ground the fight happens on, stage this encounter somewhere the sky \
                      does not reach, or choose a `mount.entity` outside \
-                     `#minecraft:burn_in_daylight`. `mount.equipment.head` is NOT a fix for this \
-                     species{no_head}"
-                )
+                     `#minecraft:burn_in_daylight`. {unshown}"
+                ),
             },
         ),
     };
-    let sanctioned = if head && burner.carries.is_none() {
-        "; the sanctioned fix is recorded on the `equipment.head` DSL field itself"
-    } else {
-        ""
+    let sanctioned = match remedy_slot {
+        Some(EquipSlot::Head) if burner.carries.is_none() => {
+            "; the sanctioned fix is recorded on the `equipment.head` DSL field itself"
+        }
+        _ => "",
     };
     let rain = match dry {
         Some(biome) => format!(
@@ -1169,12 +1243,61 @@ mod tests {
         assert!(burns_in_daylight("zombie"));
     }
 
-    /// A helmet answers every burner but one.
+    /// The slot the pinned jar's burn tick reads: the head, except for the two
+    /// classes that override `sunProtectionSlot()` to the body.
     #[test]
-    fn only_the_phantom_shrugs_off_a_helmet() {
-        assert!(helmet_helps("minecraft:zombie"));
-        assert!(helmet_helps("minecraft:bogged"));
-        assert!(!helmet_helps("minecraft:phantom"));
+    fn the_sun_protection_slot_is_the_jars() {
+        for e in [
+            "minecraft:zombie",
+            "minecraft:bogged",
+            "minecraft:skeleton",
+            "minecraft:drowned",
+            "minecraft:phantom",
+        ] {
+            assert_eq!(sun_protection_slot(e), EquipSlot::Head, "{e}");
+        }
+        assert_eq!(sun_protection_slot("zombie_horse"), EquipSlot::Body);
+        assert_eq!(
+            sun_protection_slot("minecraft:zombie_nautilus"),
+            EquipSlot::Body
+        );
+        // Every override names a burner, and a slot its body draws.
+        for (e, slot) in SUN_PROTECTION_OVERRIDES {
+            assert!(burns_in_daylight(e), "{e}");
+            assert_eq!(protection_remedy(e), Some(slot), "{e}");
+        }
+        // A phantom's head is its protection, and its body draws none.
+        assert_eq!(protection_remedy("minecraft:phantom"), None);
+    }
+
+    /// The remedy for a zombie horse names the horse armours, and only them.
+    #[test]
+    fn a_zombie_horse_is_offered_horse_armour() {
+        let fits = fitting_pieces("minecraft:zombie_horse", EquipSlot::Body);
+        for m in [
+            "copper",
+            "diamond",
+            "golden",
+            "iron",
+            "leather",
+            "netherite",
+        ] {
+            assert!(
+                fits.contains(&format!("`minecraft:{m}_horse_armor`")),
+                "{fits}"
+            );
+        }
+        assert_eq!(fits.matches('`').count(), 12, "{fits}");
+        assert_eq!(
+            fitting_pieces("minecraft:zombie", EquipSlot::Head),
+            "any item"
+        );
+        let nautilus = fitting_pieces("minecraft:zombie_nautilus", EquipSlot::Body);
+        assert!(
+            nautilus.contains("`minecraft:iron_nautilus_armor`"),
+            "{nautilus}"
+        );
+        assert!(!nautilus.contains("horse"), "{nautilus}");
     }
 
     /// The burning hours are the pinned timeline's `monsters_burn` window, and

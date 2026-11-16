@@ -177,10 +177,12 @@ fn unhelmeted_zombie_under_open_sky_at_noon_is_dw0496() {
 /// **The `DW0496` / `DW0898` pair** (spec-0067 §4.2, criterion 12). A zombie
 /// horse burns in daylight and its body draws no head slot, so the head piece
 /// the zombie is prescribed would itself be refused. The prescription is read
-/// from the body table: roofing, and never `equipment.head`. The zombie, whose
-/// body draws a head, is prescribed both.
+/// from the pinned game's sun-protection slot for the species and the body
+/// table: a zombie horse is spared by its `body` slot, which it draws, so it is
+/// prescribed horse armour and never `equipment.head`. The zombie, whose body
+/// draws a head, is prescribed both a head piece and a roof.
 #[test]
-fn the_prescription_names_a_head_piece_only_for_a_body_that_shows_one() {
+fn the_prescription_names_the_species_protecting_slot() {
     let tmp = TempCampaign::new("zombie-horse");
     campaign_with(tmp.path(), true, |_, quests| {
         set_mobs(
@@ -193,7 +195,12 @@ fn the_prescription_names_a_head_piece_only_for_a_body_that_shows_one() {
     let err = build(tmp.path()).expect_err("a zombie horse burns under open sky at noon");
     assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
     let horse = message_of(&err);
-    assert!(horse.contains("Roof the ground"), "names roofing: {horse}");
+    assert!(horse.contains("roof the ground"), "names roofing: {horse}");
+    assert!(
+        horse.contains("Give this stack `equipment.body`")
+            && horse.contains("`minecraft:iron_horse_armor`"),
+        "prescribes horse armour in the slot vanilla reads: {horse}"
+    );
     assert!(
         !horse.contains("Give this stack `equipment.head`"),
         "prescribes no head piece to a body that shows none: {horse}"
@@ -213,7 +220,8 @@ fn the_prescription_names_a_head_piece_only_for_a_body_that_shows_one() {
 /// it to death in fourteen seconds at daytime 1000 under open sky and leaves the
 /// rider on foot (`validation/festival-probe.mjs` T17). The mount is judged with
 /// the rider's cells, beats and reach, and the prescription is read from the
-/// mount's body: it draws no head slot, so no head piece is offered.
+/// mount's species: vanilla spares a zombie horse by its `body` slot, which its
+/// body draws, so horse armour is offered and no head piece is.
 #[test]
 fn a_helmeted_rider_on_a_burning_mount_is_dw0496() {
     let tmp = TempCampaign::new("mounted");
@@ -240,10 +248,63 @@ fn a_helmeted_rider_on_a_burning_mount_is_dw0496() {
         "prescribes a mount that does not burn: {message}"
     );
     assert!(
+        message.contains("Give this mount `mount.equipment.body`")
+            && message.contains("`minecraft:iron_horse_armor`"),
+        "offers the mount horse armour: {message}"
+    );
+    assert!(
         !message.contains("Give this mount `mount.equipment.head`")
             && !message.contains("Give this stack `equipment.head`"),
         "offers no head piece to a body that shows none: {message}"
     );
+}
+
+/// **Horse armour spares a zombie horse** (`validation/festival-probe.mjs`
+/// T17): the pinned jar's burn tick reads the slot `sunProtectionSlot()`
+/// names, which a zombie horse overrides to `BODY`; two zombie horses in iron
+/// horse armour under open sky at daytime 1000 held 25 health, no fire and
+/// their riders for 60 s, and the armour took no damage. The armoured mount
+/// clears; the same campaign with the `body` piece dropped is refused.
+#[test]
+fn a_zombie_horse_in_horse_armour_clears_dw0496() {
+    let mobs = |body: bool| {
+        let mut mount = serde_json::json!({ "entity": "minecraft:zombie_horse" });
+        if body {
+            mount["equipment"] = serde_json::json!({ "body": "minecraft:iron_horse_armor" });
+        }
+        serde_json::json!([{
+            "entity": "minecraft:zombie",
+            "count": 2,
+            "equipment": { "head": "minecraft:iron_helmet", "main_hand": "minecraft:iron_spear" },
+            "mount": mount
+        }])
+    };
+    let armoured = TempCampaign::new("mounted-armoured");
+    campaign_with(armoured.path(), true, |_, quests| {
+        set_mobs(quests, mobs(true))
+    });
+    build(armoured.path()).expect("horse armour spares the zombie horse");
+
+    let bare = TempCampaign::new("mounted-armour-dropped");
+    campaign_with(bare.path(), true, |_, quests| set_mobs(quests, mobs(false)));
+    let err = build(bare.path()).expect_err("without the body piece the mount burns");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+
+    // A wave of zombie horses alone, armoured, clears too: the slot is the
+    // species', not the mount field's.
+    let alone = TempCampaign::new("zombie-horse-armoured");
+    campaign_with(alone.path(), true, |_, quests| {
+        set_mobs(
+            quests,
+            serde_json::json!([{
+                "entity": "minecraft:zombie_horse",
+                "count": 1,
+                "name": "The Dead Destrier",
+                "equipment": { "body": "minecraft:iron_horse_armor" }
+            }]),
+        );
+    });
+    build(alone.path()).expect("horse armour spares a zombie horse that rides nothing");
 }
 
 /// The prescribed mount: a skeleton horse is outside the tag, and the helmeted
@@ -469,11 +530,13 @@ fn an_unhelmeted_skeleton_is_dw0496() {
     assert_eq!(code_of(&err), "DW0496");
 }
 
-/// A phantom burns *through* a helmet (wiki, 1.21.11: "They burn even when
-/// equipped with helmets through commands"), and its body draws no head slot,
-/// so the prescription names a roof and never the head piece — and the head
-/// piece itself is refused where it is declared (`DW0898`), so the pair of
-/// gates never prescribes what the other refuses.
+/// A phantom's sun protection is its head slot, as every burner's but the two
+/// body-protected ones (a helmeted phantom held under open sky at daytime 1000
+/// kept 20 health for 60 s while a bare one burned dead in 6 s,
+/// `validation/festival-probe.mjs` T17), but its body draws no head slot, so
+/// the prescription names a roof and never the head piece — and the head piece
+/// itself is refused where it is declared (`DW0898`), so the pair of gates
+/// never prescribes what the other refuses.
 #[test]
 fn a_phantom_is_prescribed_a_roof_and_refused_a_helmet() {
     let tmp = TempCampaign::new("phantom");
