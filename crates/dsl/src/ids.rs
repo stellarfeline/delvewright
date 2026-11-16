@@ -205,6 +205,11 @@ prefixed_id!(
     /// scoreboard objective and its PackTest template.
     BoardId, "board");
 prefixed_id!(
+    /// Race id: `race/<kebab>` (stage-5 `races` section, spec-0139). Unique
+    /// within the stage-5 race namespace; it names the race's progress
+    /// objective, its functions and its PackTest templates.
+    RaceId, "race");
+prefixed_id!(
     /// Pulse id: `pulse/<kebab>` (stage-5 `pulses` section, spec-0102). Unique
     /// within the stage-5 pulse namespace; it names the pulse's emitted
     /// function, its latch holder, its PackTest templates and its ledger row.

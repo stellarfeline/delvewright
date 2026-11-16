@@ -619,6 +619,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         let bl = local(b.id.as_str()).to_string();
         f(&format!("board.{bl}.title"), &mut b.title);
     }
+    // Stage 5 — a race's two action-bar lines (spec-0139).
+    for r in &mut c.quests.content.races {
+        let rl = local(r.id.as_str()).to_string();
+        f(&format!("race.{rl}.missed"), &mut r.missed);
+        if let Some(p) = r.passed.as_mut() {
+            f(&format!("race.{rl}.passed"), p);
+        }
+    }
     // Stage 5 — shops (v0.10, spec-0032): the dialog's title, and each button's
     // caption and tooltip. Keyed exactly as a dialogue node's label/tooltip are,
     // because they are the same two components of the same vanilla button codec.

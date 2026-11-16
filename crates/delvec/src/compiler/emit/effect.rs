@@ -849,6 +849,10 @@ pub(super) fn emit_quest_effect(
         Verb::DespawnVehicle { vehicle } => {
             body.extend(vehicle_despawn_effect_lines(plan, vehicle.as_str()));
         }
+        // spec-0139: the race verbs.
+        Verb::StartRace { .. } | Verb::EndRace { .. } => {
+            emit_race_verb(plan, eff, body);
+        }
         // --- DSL v0.4 effects ---
         Verb::Narrate(n) => {
             emit_narrate(&n.text, n.style, n.sound.as_deref(), who, body);

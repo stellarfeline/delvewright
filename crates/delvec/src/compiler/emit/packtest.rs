@@ -721,6 +721,15 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
     )];
     p.extend(super::quorum::after_drive(plan.campaign, o));
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
+    // spec-0139 §4: an objective that declares a course reads its race's
+    // finish latch, so the template owns it too — held, in both directions,
+    // so a shut gate is shut by the one axis the caller varies.
+    if let Some(r) = o.course() {
+        p.push(format!(
+            "scoreboard players set {} dw.sys 1",
+            super::race_over(r.as_str())
+        ));
+    }
     // spec-0133 §3: a limited objective's every guard also reads its expired
     // score ([`expired_term`]), so the template owns it too — clear, as the
     // objective is pending while the template drives it — in both directions,
