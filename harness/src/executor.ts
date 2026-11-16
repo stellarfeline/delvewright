@@ -126,6 +126,12 @@ export class MineflayerExecutor implements StepExecutor {
    */
   readonly completedObjectives = new Map<string, number>();
   /**
+   * Run at every step boundary before anything else the boundary owes (the
+   * party run, spec-0141: members join and leave, and the idler is read, at
+   * boundaries). Absent on a run walked alone.
+   */
+  boundaryHook: ((index: number) => Promise<void>) | undefined;
+  /**
    * Limited objectives whose anchored expiry marker has arrived (spec-0133), and
    * the step index executing when it did. Buffered from connect, like
    * {@link completedObjectives}.

@@ -92,7 +92,8 @@ test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branc
   // it is the one stage that must not run until everything else is proven.
   // `crush-death` follows it: its last trials also run after the proven path.
   // `pursuit` follows the critical path: it judges steps of that walk
-  // (spec-0132 §5).
+  // (spec-0132 §5). `party` is judged over the whole walk, once it is over
+  // (spec-0141 §6).
   assert.deepEqual([...STAGES], [
     "branch-run",
     "critical-path",
@@ -100,6 +101,7 @@ test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branc
     "die-retry",
     "death-loop",
     "crush-death",
+    "party",
   ]);
 });
 

@@ -9,9 +9,14 @@
 //! way, completes it before the window ends, steps the same `ticks + 1`, and
 //! asserts it done and never expired.
 //!
-//! The two share the objective's party scores, and each waits on the server's
-//! own clock, so each runs alone in its own test environment: no sibling's
-//! template can complete or expire the objective under it.
+//! A third, `party_limit_bar_<obj>` (spec-0141 §6), starts the clock, spawns a
+//! second member after the start, waits for the clock's first redraw and
+//! asserts the bar is shown to every player present — the late member
+//! included. A clock too short to redraw has no such template.
+//!
+//! The three share the objective's party scores, and each waits on the
+//! server's own clock, so each runs alone in its own test environment: no
+//! sibling's template can complete or expire the objective under it.
 
 use super::*;
 
@@ -204,6 +209,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let title = artifact_title(c);
+    let mut late = 0usize;
     for q in &c.quests.content.quests {
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
@@ -316,6 +322,69 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
                 lines(&b).into_bytes(),
             );
+
+            // -- a member who joins late is shown the bar (spec-0141 §6) ---
+            if !redraws(l.ticks) {
+                continue;
+            }
+            let name = party_limit_bar_name(oid);
+            // A player name is at most sixteen characters: the member is
+            // numbered, never named after the objective.
+            let member = format!("dwlb{late}p1");
+            late += 1;
+            let mut b = vec![
+                format!(
+                    "#> {title}: a member who joins after `{oid}`'s clock started is shown its \
+                     countdown bar (spec-0141 §6)"
+                ),
+                alone(ns, &name, out),
+                "# @dummy".to_string(),
+                format!("# @timeout {}", REDRAW_TICKS + 100),
+                String::new(),
+                format!("function {ns}:setup"),
+            ];
+            b.extend(hold.iter().cloned());
+            b.extend(open.iter().cloned());
+            b.push(format!("function {ns}:{start}"));
+            // The member arrives after the start, so the start's draw never
+            // saw them; the clock's next redraw is the only line that can.
+            b.push(format!("dummy {member} spawn"));
+            b.push(format!("await delay {REDRAW_TICKS}t"));
+            let bar = super::super::limit::bar_id(ns, oid);
+            b.push(format!(
+                "execute store result score #lbm_{safe}_b dw.sys run bossbar get {bar} players"
+            ));
+            b.push(format!(
+                "execute store result score #lbm_{safe}_n dw.sys if entity @a"
+            ));
+            b.push(format!(
+                "execute store success score #lbm_{safe} dw.sys if score #lbm_{safe}_b dw.sys = #lbm_{safe}_n dw.sys"
+            ));
+            b.push(format!("assert score #lbm_{safe} dw.sys matches 1"));
+            b.push(format!("dummy {member} leave"));
+            b.extend(super::super::limit::stop_settlement_lines(ns, oid));
+            b.extend(close.iter().cloned());
+            b.extend(give_back.iter().cloned());
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+                lines(&b).into_bytes(),
+            );
         }
     }
+}
+
+/// The ticks a late-member template waits after the clock starts: the first
+/// redraw is at 20, one more lets it land.
+const REDRAW_TICKS: u32 = 21;
+
+/// Whether a clock of `ticks` redraws its bar at least once before it runs
+/// out: one that does not is shown only at its start, to whoever is there,
+/// and has no later draw a late member could be shown.
+pub(super) fn redraws(ticks: u32) -> bool {
+    ticks > REDRAW_TICKS
+}
+
+/// The late-member template of the limit on `oid`.
+pub(super) fn party_limit_bar_name(oid: &str) -> String {
+    format!("party_limit_bar_{}", safe_obj_fn(oid))
 }

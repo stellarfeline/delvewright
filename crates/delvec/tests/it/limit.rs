@@ -297,8 +297,8 @@ fn the_countdown_is_drawn_and_removed_on_both_settlements() {
     assert!(act.contains(&format!("bossbar add {bar}")), "{act}");
     assert!(act.contains(&format!("bossbar set {bar} max 60")), "{act}");
     assert!(
-        act.contains(&format!("bossbar set {bar} players @a")),
-        "{act}"
+        act.contains(&format!("function {NS}:limit_show_o_exit")),
+        "the start draws the bar: {act}"
     );
     assert!(
         act.contains(&format!(
@@ -334,6 +334,68 @@ fn the_countdown_is_drawn_and_removed_on_both_settlements() {
     ] {
         assert!(delvewright_dsl::chrome::ALL.contains(&s));
     }
+}
+
+/// spec-0141 §6: a member who first joins after the clock started is shown
+/// its bar. The bar's players are restated on every redraw — the step the
+/// clock runs once a second — not only at the start, and the suite carries a
+/// two-member template that spawns the member after the start and asserts the
+/// bar reaches every player present after the first redraw.
+#[test]
+fn a_member_who_joins_after_the_start_is_shown_the_bar() {
+    let out = build(&fixture("late-bar", minute(), |_| {}));
+    let bar = format!("{NS}:limit_exit");
+    let show = func(&out, "limit_show_o_exit");
+    assert!(
+        show.lines()
+            .any(|l| l == format!("bossbar set {bar} players @a")),
+        "the redraw restates the bar's players: {show}"
+    );
+    let step = func(&out, "limit_tick_o_exit");
+    assert!(
+        step.contains(&format!("function {NS}:limit_show_o_exit")),
+        "the once-a-second step redraws: {step}"
+    );
+    let pt = template(&out, "party_limit_bar_o_exit");
+    let start = line_of(&pt, "function hello-world:activate_o_exit");
+    let spawn = line_of(&pt, "dummy dwlb0p1 spawn");
+    let wait = line_of(&pt, "await delay 21t");
+    let read = line_of(&pt, &format!("run bossbar get {bar} players"));
+    assert!(
+        start < spawn && spawn < wait && wait < read,
+        "the member arrives after the start and is read after a redraw: {pt}"
+    );
+    assert!(pt.contains("if entity @a"), "{pt}");
+    assert!(pt.contains("dummy dwlb0p1 leave"), "{pt}");
+    assert!(
+        pt.contains(&format!("bossbar remove {bar}")),
+        "the template stops the clock it started: {pt}"
+    );
+    let b = emit::absent_binding(
+        &Plan::build(
+            &parse_campaign(
+                &load_campaign_dir(&fixture("late-bar-b", minute(), |_| {}))
+                    .unwrap()
+                    .raw,
+            )
+            .unwrap(),
+            &PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap(),
+        )
+        .unwrap(),
+        &out,
+    );
+    assert_eq!((b.limits, b.limits_judged), (1, 1), "{}", b.line());
+    // A clock too short to redraw is shown once, to whoever is there: no
+    // template, and nothing to bind.
+    let mut short = minute();
+    short["ticks"] = json!(20);
+    let out = build(&fixture("late-bar-short", short, |_| {}));
+    assert!(
+        !out.contains_key(&format!(
+            "packtest-datapack/data/{NS}/test/party_limit_bar_o_exit.mcfunction"
+        )),
+        "a clock that never redraws owes no late-member template"
+    );
 }
 
 /// §8: two templates per limit, the expiry stepping `ticks + 1`.

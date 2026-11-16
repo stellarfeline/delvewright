@@ -540,6 +540,10 @@ pub struct AbsentBinding {
     pub distinct_checkpoints: usize,
     /// Whether the suite carries `party_class_arrives`.
     pub class_judged: bool,
+    /// Limited objectives whose clock redraws its bar at least once.
+    pub limits: usize,
+    /// Of those, the ones with a `party_limit_bar_<obj>` template.
+    pub limits_judged: usize,
 }
 
 impl AbsentBinding {
@@ -548,6 +552,7 @@ impl AbsentBinding {
         (self.split_collects == 0 || self.split_collect_judged)
             && self.grants_judged == self.grants
             && (self.distinct_checkpoints == 0 || !has_classes || self.class_judged)
+            && self.limits_judged == self.limits
     }
 
     /// The one line a build prints.
@@ -556,13 +561,16 @@ impl AbsentBinding {
             "absent-member binding (spec-0141): {} `collect`(s) of two or more, {} judged by the \
              two-member `party_collect` PackTest; {} grant(s), {} judged by a late-member \
              `party_grant` PackTest; {} checkpoint(s) off the entry column, {} judged by \
-             `party_class_arrives`",
+             `party_class_arrives`; {} limit clock(s) that redraw, {} judged by a late-member \
+             `party_limit_bar` PackTest",
             self.split_collects,
             usize::from(self.split_collect_judged),
             self.grants,
             self.grants_judged,
             self.distinct_checkpoints,
             usize::from(self.class_judged),
+            self.limits,
+            self.limits_judged,
         )
     }
 }
@@ -572,6 +580,15 @@ pub fn absent_binding(plan: &Plan, out: &BuildOutput) -> AbsentBinding {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let all = super::super::grant::grants(plan);
+    let limits: Vec<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter(|o| o.limit().is_some_and(|l| super::limit::redraws(l.ticks)))
+        .map(|o| o.id().as_str())
+        .collect();
     let distinct = campaign_spawn(plan).map_or(0, |entry| {
         plan.checkpoints
             .iter()
@@ -595,5 +612,15 @@ pub fn absent_binding(plan: &Plan, out: &BuildOutput) -> AbsentBinding {
             .count(),
         distinct_checkpoints: distinct,
         class_judged: out.contains_key(&party_class_template_path(ns)),
+        limits: limits.len(),
+        limits_judged: limits
+            .iter()
+            .filter(|oid| {
+                out.contains_key(&format!(
+                    "packtest-datapack/data/{ns}/test/{}.mcfunction",
+                    super::limit::party_limit_bar_name(oid)
+                ))
+            })
+            .count(),
     }
 }
