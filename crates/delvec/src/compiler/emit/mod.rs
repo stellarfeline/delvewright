@@ -45,7 +45,7 @@ mod board;
 mod boundary;
 mod branch;
 mod cast;
-mod census;
+pub(crate) mod census;
 mod checkpoint;
 mod class;
 mod coords;
