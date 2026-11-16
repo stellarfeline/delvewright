@@ -2467,6 +2467,12 @@ fn a_member_who_never_starts_is_not_waited_on() {
         2,
         "the bystander is asked on each of the two steps: {t}"
     );
+    // Asked before the dummy on every step, so it has been asked before the
+    // dummy's finish whatever the course's length.
+    let me = "execute as @a[tag=dw_pt_rb_pig_race,limit=1] run function \
+              hello-world:race_pig_race_body";
+    let order: Vec<&str> = t.lines().filter(|l| *l == asked || *l == me).collect();
+    assert_eq!(order, [asked.as_str(), me, asked.as_str(), me], "{t}");
     let over = at("assert score #rfin_pig_race dw.sys matches 1");
     assert!(spawn < started && started < over, "{t}");
     assert!(t.contains(&format!("assert score {idle} dw.rc.pig_race matches 0")));

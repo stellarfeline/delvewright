@@ -18,8 +18,8 @@ use super::*;
 /// out of turn reds it.
 ///
 /// `race_<r>_bystander` spawns a second player beside the dummy, stood above
-/// every checkpoint, and asks the body function as both on every step the
-/// dummy runs the course: when the dummy finishes, the race is over and the
+/// every checkpoint, and asks the body function as both — the bystander
+/// first — on every step the dummy runs the course: when the dummy finishes, the race is over and the
 /// bystander was never on the course. A race that waits on a present player
 /// who never started reds it.
 pub(super) fn emit_race_packtests(plan: &Plan, out: &mut BuildOutput) {
@@ -149,7 +149,9 @@ pub(super) fn emit_race_packtests(plan: &Plan, out: &mut BuildOutput) {
         let idle = format!("dwrcb{races_seen}");
         races_seen += 1;
         let them = format!("@a[name={idle},limit=1]");
-        let both = [&me, &them].map(|sel| {
+        // The bystander is asked first on every step, so it has been asked
+        // before the dummy's finish even on a course of one checkpoint.
+        let both = [&them, &me].map(|sel| {
             format!(
                 "execute as {sel} run function {ns}:{}",
                 super::super::race_body_fn(id)
