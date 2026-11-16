@@ -337,6 +337,7 @@ pub(super) fn quest_completion_fns(
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
+    let crossings = super::teleport::crossings(plan, branch_transport);
     let mut fns: Vec<(String, String)> = Vec::new();
     for q in &c.quests.content.quests {
         let q_area = plan.quest_area(q.id.as_str()).unwrap_or("");
@@ -494,23 +495,30 @@ pub(super) fn quest_completion_fns(
             // after this completion's own bundle and before its quest is asked.
             body.extend(super::quorum::member_completion_lines(plan, oid));
             body.extend(super::limit::failure_completion_lines(c, oid));
-            // Inter-area transport: if completing this objective moves the player
-            // into a different area on the critical path, teleport them to that
-            // area's entry spawn (areas are AREA_SPACING apart across void). Runs
-            // after gate effects so the destination area is already unlocked.
-            if let Some(pos) = plan.transport.get(oid) {
-                body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
+            // Inter-area transport: if completing this objective moves the party
+            // into a different area on the critical path, the crossing carries
+            // every member present to that area's entry point, each onto a seat
+            // of their own (`cross_<area>`; areas are AREA_SPACING apart across
+            // void). Runs after gate effects so the destination area is already
+            // unlocked.
+            if let Some(call) = plan
+                .transport
+                .get(oid)
+                .and_then(|pos| super::teleport::crossing_call(plan, &crossings, *pos))
+            {
+                body.push(call);
             }
             // A crossing that happens only on ONE branch. The exported
             // path never walks it, so it cannot be unconditional — it is gated on
             // exactly the flag assignment that selects its branch, the same
-            // `#party` predicate a branch-gated dialogue option uses. Prefix
-            // conditions do not rebind `@s`, so the acting player is still the
-            // one carried. Empty for every campaign whose branches cross only
-            // where the exported path already does (byte-identity).
+            // `#party` predicate a branch-gated dialogue option uses; the
+            // crossing carries the whole party. Empty for every campaign whose
+            // branches cross only where the exported path already does.
             let mut emitted: BTreeSet<String> = BTreeSet::new();
             for row in branch_transport.get(oid).into_iter().flatten() {
-                let tp = format!("teleport @s {} {} {}", row.pos[0], row.pos[1], row.pos[2]);
+                let Some(tp) = super::teleport::crossing_call(plan, &crossings, row.pos) else {
+                    continue;
+                };
                 let mut cmd = String::new();
                 for f in &row.set {
                     cmd.push_str(&format!(

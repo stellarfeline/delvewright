@@ -107,6 +107,18 @@ pub fn places(plan: &Plan) -> Vec<(String, [i32; 3])> {
             out.push((format!("the party teleport `{}` seats a member", c.path), s));
         }
     }
+    // A crossing is a party carry onto an area's entry point: every seat it
+    // fixed beside the party teleports'.
+    if let Some(m) = plan.party_seats.get() {
+        for (mark, seats) in m {
+            if plan.party_carries.iter().any(|c| c.to == *mark) {
+                continue;
+            }
+            for s in seats {
+                out.push((format!("the crossing onto {mark:?} seats a member"), *s));
+            }
+        }
+    }
     out
 }
 

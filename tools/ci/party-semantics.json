@@ -194,6 +194,11 @@
       "evidence": "Resolved to literal coordinates, components or ticks at build time.",
       "semantics": "A place, a stack, a camera move or a clock value the holding surface uses."
     },
+    "Clue": {
+      "class": "no-runtime",
+      "evidence": "`compiler::clue::check_presented` reads it at the build and writes `validation/clues.json` (`DW1136`, `DW1137`); nothing in the datapack is emitted from it.",
+      "semantics": "States what tells the player a step's answer, for the build to confirm it is presented before the step. It compiles to no command, so the party's size cannot change it."
+    },
     "CollectBy": {
       "class": "declared",
       "evidence": "`emit::stake`: the owner's id is compared on collection.",
@@ -566,8 +571,8 @@
     },
     "Quest": {
       "class": "party",
-      "evidence": "`emit::quest`: `dw.qa_<q>`, `dw.q_<q>` on `#party`; `tellraw @a`; `tests/it/party.rs::no_per_player_progression_scoreboard_remains`.",
-      "semantics": "A quest is active, and done, for the whole party. Its announcement and completion are told to every player present."
+      "evidence": "`emit::quest`: `dw.qa_<q>`, `dw.q_<q>` on `#party`; `tellraw @a`; `tests/it/party.rs::no_per_player_progression_scoreboard_remains`. A crossing is `function <ns>:cross_<area>` in `complete_<obj>`, the party carry's own body (`emit::teleport::party_carry_lines`), with the owed line `cross_owed` in the tick; `tests/it/party_crossing.rs`; one solo PackTest `party_cross_<area>` per area crossed into.",
+      "semantics": "A quest is active, and done, for the whole party. Its announcement and completion are told to every player present. When a completion leads on to a step in another area, the crossing carries every member present to that area's entry point, each onto a seat of their own, whoever completed it; a member who was away, on a death screen, waiting out a respawn or still choosing a class is carried once they are a member present again, onto the checkpoint armed since the crossing, else onto the entry point."
     },
     "QuestEffect": {
       "class": "declared",

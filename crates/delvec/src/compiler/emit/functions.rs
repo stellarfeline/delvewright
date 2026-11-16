@@ -338,7 +338,9 @@ pub(super) fn emit_functions(
     }
     // Each player's own place across a cutscene (`cutscene::CS_ID`).
     setup.extend(cutscene_place_objectives(plan));
-    setup.extend(party_teleport_objectives(plan));
+    // Every crossing the datapack performs (`cross_<area>`): a party carry.
+    let crossings = teleport::crossings(plan, branch_transport);
+    setup.extend(party_teleport_objectives(plan, &crossings));
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
     // straddling chunk z=-1) are not reliably loaded within the same tick, so
@@ -1341,6 +1343,9 @@ pub(super) fn emit_functions(
     // spec-0141 §3.2: a member behind the party's grants is handed the next
     // one. Empty for a campaign that issues none → byte-identical.
     tick.extend(grant_tick(plan));
+    // A member behind the party's crossings is carried to where the party
+    // is. Empty for a campaign that never crosses → byte-identical.
+    tick.extend(teleport::crossing_tick(plan, &crossings));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
@@ -1536,7 +1541,8 @@ pub(super) fn emit_functions(
     fns.extend(moves::hop_fns(plan));
     fns.extend(moves::cadence_fns(plan));
     fns.extend(teleport_fns(plan));
-    fns.extend(teleport::party_teleport_helper_fns(plan));
+    fns.extend(teleport::crossing_fns(plan, &crossings));
+    fns.extend(teleport::party_teleport_helper_fns(plan, &crossings));
     fns.extend(grant_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));
