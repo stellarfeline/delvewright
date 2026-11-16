@@ -1170,6 +1170,61 @@ fn the_rounds_leave_no_state_with_a_direction_to_fly() {
     );
 }
 
+/// **A closure's work is within its world's ceiling** (`DW1042`,
+/// [`super::Ceiling`]): the ceiling counts every cell the window's envelope
+/// index holds a body could rest in, each at most one node's launches, on the
+/// ground that every state a closure reaches is such a cell and each is
+/// charged once. Held here directly: every invariance world's closure has
+/// every state among the index's cells, and its work at most its states times
+/// one node's most, which is at most the ceiling. Perturbation: a rest state
+/// the index leaves out, or a node charged twice.
+#[test]
+fn a_closures_work_is_within_its_worlds_ceiling() {
+    let worlds = invariance_worlds();
+    let (mut states, mut worlds_n, mut tightest) = (0usize, 0usize, 0.0f64);
+    for (name, w, roots) in &worlds {
+        let r = w.body_reach(roots);
+        let memo = w.graph_memo(&super::ReachParams::shipped(w.unbounded_fall));
+        let rest: BTreeSet<[i32; 3]> = (0..memo.dense.dims[0])
+            .flat_map(|x| (0..memo.dense.dims[2]).map(move |z| (x, z)))
+            .flat_map(|(x, z)| {
+                let col = (x * memo.dense.dims[2] + z) as usize;
+                let (lo, rest) = (memo.dense.lo, memo.columns.rest(col).to_vec());
+                rest.into_iter().map(move |y| [lo[0] + x, y, lo[2] + z])
+            })
+            .collect();
+        assert_eq!(r.ceiling.rest_cells, rest.len() as u64, "{name}");
+        let outside: Vec<[i32; 3]> = r
+            .states
+            .iter()
+            .map(|(c, _)| c)
+            .filter(|c| !rest.contains(c))
+            .collect();
+        assert!(
+            outside.is_empty(),
+            "{name}: {} state(s) the ceiling does not count, the first {:?}",
+            outside.len(),
+            outside.first()
+        );
+        let work = r.simulated + r.credited;
+        let per_state = r.states.iter().count() as u64 * r.ceiling.per_node;
+        assert!(
+            work <= per_state && per_state <= r.ceiling.work(),
+            "{name}: work {work}, {per_state} by its states, ceiling {}",
+            r.ceiling.work()
+        );
+        tightest = tightest.max(work as f64 / r.ceiling.work().max(1) as f64);
+        states += r.states.iter().count();
+        worlds_n += 1;
+    }
+    eprintln!(
+        "ceiling: {worlds_n} world(s), {states} state(s), every one a counted rest cell; the \
+         most work took {:.3} of its ceiling",
+        tightest
+    );
+    assert!(states > 0 && tightest > 0.0, "the cases bind nothing");
+}
+
 /// **The summarised sea is the closure expanded cell by cell** (ADR-0037 §2):
 /// every invariance world asked of the closure that floods the plain sea by
 /// component and computes its dives on read, and of the closure that expands

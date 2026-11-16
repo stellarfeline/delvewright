@@ -431,17 +431,7 @@ fn verify_bodies_can_leave(
         binding.hatches = binding.hatches.max(hatches);
         binding.hatch_pockets += shut.len();
         hatch_pockets.extend(shut);
-        binding.reach.configurations += rb.configurations;
-        for i in 0..4 {
-            binding.reach.states[i] += rb.states[i];
-        }
-        for i in 0..6 {
-            binding.reach.edges[i] += rb.edges[i];
-        }
-        binding.reach.simulated += rb.simulated;
-        binding.reach.credited += rb.credited;
-        binding.reach.unbounded_fall |= rb.unbounded_fall;
-        binding.reach.digests.extend(rb.digests);
+        binding.reach.merge(rb);
         binding.route_cells += route_cells;
         binding.link_exits += link_exits;
         binding.reached += reached;
@@ -823,18 +813,24 @@ impl World {
 }
 
 /// `DW1042`'s refusal (spec-0113 §5.3): the configuration count, the work, the
-/// ceiling.
+/// ceiling and what it is computed from ([`Ceiling`]).
 pub fn reach_budget_failure(reach: &ReachBinding, budget: u64) -> Failure {
     Failure {
         code: DW_REACH_BUDGET,
         message: format!(
-            "the reach graph's work passed its budget: {} launch state(s) simulated and {} \
-             template arc(s) credited over {} configuration(s), past the ceiling of {budget} \
-             (`metrics::REACH_BUDGET_STATES`). The graph is refused rather than truncated — a \
-             proof over a partial graph proves nothing — and the ceiling is the engine's, so \
-             this build is one the engine cannot yet afford; it is not something the campaign \
-             wrote wrong",
-            reach.simulated, reach.credited, reach.configurations,
+            "the reach graph's work passed its ceiling: {} launch state(s) simulated and {} \
+             template arc(s) credited over {} configuration(s), one closure past a ceiling of \
+             {budget}. A configuration's ceiling is its own world's size — the cells of its \
+             window a body could rest in ({} over the configurations), each charged at most {} \
+             launch(es) — and a closure flies each node's launches once, so a closure past it \
+             charged some launch twice. The graph is refused rather than truncated — a proof \
+             over a partial graph proves nothing — and this is a defect of the engine; it is \
+             not something the campaign wrote wrong",
+            reach.simulated,
+            reach.credited,
+            reach.configurations,
+            reach.ceiling.rest_cells,
+            reach.ceiling.per_node,
         ),
     }
 }

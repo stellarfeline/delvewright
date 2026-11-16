@@ -719,6 +719,10 @@ fn check_batch_invariants(
     // world it was written over (`DW1042`): never the whole island again.
     let since = before.map(crate::compiler::light::geometry_world);
     let relight = crate::compiler::light::relight_with(plan, assembled, &geometry, since.as_ref());
+    crate::note!(
+        "after world-edits batch `{bid}`: {}",
+        relight.binding.cost.line()
+    );
     if let Some(diag) = relight.diagnostics.first() {
         return Err(Failure {
             code: diag.code,

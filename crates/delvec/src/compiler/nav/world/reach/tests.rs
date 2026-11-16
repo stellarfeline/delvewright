@@ -308,27 +308,25 @@ fn the_two_escapes_are_seen() {
 }
 
 /// spec-0113 A10 / §5.3: the budget is refused, never truncated. The Bell
-/// yard's closure at the shipped budget completes; at a budget under its own
-/// work it stops, says so, and `DW0921`'s judgement refuses it as `DW1042`.
+/// yard's closure under its world's own ceiling completes; at a budget under
+/// its own work it stops, says so, and `DW0921`'s judgement refuses it as
+/// `DW1042`.
 #[test]
 fn a_graph_over_budget_is_refused() {
     let w = bell_yard();
     let full = w.body_reach(&[[5, 1, 5]]);
     assert_eq!(full.over_budget, None);
     let work = full.simulated + full.credited;
-    assert!(
-        work < delvewright_dsl::metrics::REACH_BUDGET_STATES,
-        "{work}"
-    );
+    assert!(work > 0 && work <= full.ceiling.work(), "{work}");
     let mut p = ReachParams::shipped(false);
-    p.budget = work / 2;
+    p.budget = Some(work / 2);
     let partial = w.body_reach_at(&[[5, 1, 5]], &p);
     assert_eq!(partial.over_budget, Some(work / 2));
     let mut b = ReachBinding::default();
     b.add(&w, &partial);
     let f = crate::compiler::nav::reach_budget_failure(&b, work / 2);
     assert_eq!(f.code.id(), "DW1042");
-    assert!(f.message.contains("past the ceiling"), "{}", f.message);
+    assert!(f.message.contains("past a ceiling"), "{}", f.message);
 }
 
 /// The finer launch set the convergence test (spec-0113 A7) builds beside the
