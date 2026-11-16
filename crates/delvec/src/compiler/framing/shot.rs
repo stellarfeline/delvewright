@@ -5,7 +5,7 @@
 //! The sight line is not a shot's own: [`sight`] puts the subject on the
 //! proof frame (the action-safe rectangle below) and asks the one sight rule,
 //! [`super::in_sight`], whether it is in view — the rule a review frame's
-//! manifest ([`super::resolve_targets`]) and `DW0863` (`promise`) ask too.
+//! manifest ([`super::resolve_targets`]) and `DW0863` (`clue`) ask too.
 //!
 //! ## The proof frame (§5.1)
 //!

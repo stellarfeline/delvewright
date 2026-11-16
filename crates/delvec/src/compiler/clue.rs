@@ -11,12 +11,13 @@
 //!
 //! # The main line
 //!
-//! The walks are [`crate::compiler::acts`]'s: the exported critical path and
-//! every realised branch's own path. The critical path holds exactly the
-//! quests the campaign's completion depends on, so every act on it is on the
-//! main line. A branch's path is everything its world completes, an optional
-//! strand included; its main line is the quests its ending depends on
-//! ([`crate::compiler::acts::ActWalk::main`]).
+//! The main line is derived, never declared here: the quests of the stage-4
+//! **spine** ([`delvewright_dsl::QuestPlanContent::spine`], the one authority
+//! on which quests a body cannot reach the finale without). An objective is
+//! on the main line when its quest is; a trigger is when the objective the
+//! path performs it in front of is. The walks are
+//! [`crate::compiler::acts`]'s: the exported critical path and every realised
+//! branch's own path, which carries the optional strands its world completes.
 //!
 //! # Presented, and before
 //!
@@ -463,6 +464,7 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
     }
     let triggers = &c.quests.content.triggers;
     let setters = sole_setters(c);
+    let spine = c.quest_plan.content.spine();
     let walked: Vec<Walked<'_>> = walks
         .walks
         .iter()
@@ -530,11 +532,7 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                     .map(|(_, id)| *id)
                     .or_else(|| wd.at_step.values().next_back().copied()),
             };
-            let on_main = |oid: &str| match (&w.main, objectives.get(oid)) {
-                (None, _) => true,
-                (Some(m), Some((q, _))) => m.contains(*q),
-                (Some(_), None) => false,
-            };
+            let on_main = |oid: &str| objectives.get(oid).is_some_and(|(q, _)| spine.contains(*q));
             if !carrier.is_some_and(on_main) {
                 continue;
             }
@@ -554,6 +552,11 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                 && s.what == "trigger"
             {
                 frontier.push(t.requires_flags.iter().map(|f| f.as_str()).collect());
+                // A trigger takes what is forced before the objective it is
+                // performed in front of: that objective's own flags too.
+                if let Some((_, o)) = carrier.and_then(|x| objectives.get(x)) {
+                    frontier.push(o.requires_flags().iter().map(|f| f.as_str()).collect());
+                }
             } else if let Some((_, o)) = objectives.get(s.id.as_str()) {
                 frontier.push(o.requires_flags().iter().map(|f| f.as_str()).collect());
             }

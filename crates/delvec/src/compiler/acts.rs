@@ -101,49 +101,6 @@ pub struct ActWalk {
     /// Every objective step of the walk, placed or not, as `(step, id)` in
     /// path order.
     pub steps: Vec<(usize, String)>,
-    /// **The walk's main line** (spec-0143 §4): the quests a run of this walk
-    /// cannot finish without. `None` = every quest on it — the exported
-    /// critical path, which holds exactly the quests the campaign's completion
-    /// depends on. A branch's path is everything its world completes, an
-    /// optional strand included, so it names the quests its ending depends
-    /// on ([`main_line`]).
-    pub main: Option<std::collections::BTreeSet<String>>,
-}
-
-/// **The main line of a path that is not rooted at the finale**: of the quests
-/// in `on_walk`, every quest that can end the delve
-/// ([`crate::compiler::flow::quest_can_end_the_delve`]) and the stage-4 finale,
-/// with everything they transitively `depends_on`. `None` — every quest —
-/// when the walk carries none of those, so nothing on it reads as optional by
-/// default.
-pub fn main_line(
-    c: &delvewright_dsl::Campaign,
-    on_walk: &std::collections::BTreeSet<String>,
-) -> Option<std::collections::BTreeSet<String>> {
-    let plan = &c.quest_plan.content;
-    let mut stack: Vec<&str> = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .filter(|q| crate::compiler::flow::quest_can_end_the_delve(q))
-        .map(|q| q.id.as_str())
-        .chain(std::iter::once(plan.finale.as_str()))
-        .filter(|q| on_walk.contains(*q))
-        .collect();
-    if stack.is_empty() {
-        return None;
-    }
-    let mut out = std::collections::BTreeSet::new();
-    while let Some(q) = stack.pop() {
-        if !on_walk.contains(q) || !out.insert(q.to_string()) {
-            continue;
-        }
-        if let Some(pq) = plan.quests.iter().find(|x| x.id.as_str() == q) {
-            stack.extend(pq.depends_on.iter().map(|d| d.as_str()));
-        }
-    }
-    Some(out)
 }
 
 /// Every walk's acts, derived once per plan.
@@ -275,7 +232,6 @@ pub fn acts_of_from(
             .enumerate()
             .filter_map(|(i, s)| s.objective().map(|o| (i, o.to_string())))
             .collect(),
-        main: None,
     }
 }
 
@@ -327,20 +283,6 @@ fn derive_walks(
                 &cp.transport_by_step,
             );
             walk.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
-            let c = plan.campaign;
-            let on_walk: std::collections::BTreeSet<String> = c
-                .quests
-                .content
-                .quests
-                .iter()
-                .filter(|q| {
-                    q.objectives
-                        .iter()
-                        .any(|o| walk.steps.iter().any(|(_, id)| id == o.id().as_str()))
-                })
-                .map(|q| q.id.as_str().to_string())
-                .collect();
-            walk.main = main_line(c, &on_walk);
             out.walks.push(walk);
         }
     }

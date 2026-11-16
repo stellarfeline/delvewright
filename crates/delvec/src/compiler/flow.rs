@@ -3526,7 +3526,7 @@ fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
 /// `on_objective_complete`, and every list nested inside them) carries a
 /// `campaign-complete`. Syntactic: a gated ending still counts, which only
 /// moves a quest later in a branch walk.
-pub(crate) fn quest_can_end_the_delve(q: &delvewright_dsl::Quest) -> bool {
+fn quest_can_end_the_delve(q: &delvewright_dsl::Quest) -> bool {
     fn ends(effs: &[QuestEffect]) -> bool {
         effs.iter().any(|e| {
             matches!(e.verb, Verb::CampaignComplete { .. })

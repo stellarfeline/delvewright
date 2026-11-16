@@ -138,6 +138,7 @@ mod grammar_shape_orient;
 mod grammar_staging;
 mod grammar_version_fence;
 mod grammar_zones;
+mod clue_presented;
 mod guidance_followed;
 mod gym;
 mod hand_camera;

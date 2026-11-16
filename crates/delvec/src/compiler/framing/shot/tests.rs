@@ -196,7 +196,7 @@ fn a_mannequin_100_blocks_off_is_sent_and_refused_as_not_drawn() {
 // hides what is behind it (the pinned occlusion table). Every consumer of that
 // question gives its answer: a cutscene shot's sight (`shot::sight`,
 // `DW1033`), an act's sight from where the party stands
-// (`promise::act_unfound`, `DW0863`), the shut-way eye
+// (`clue::unseen`, `DW0863`), the shut-way eye
 // (`nav::eye_meets`, `DW1053`/`DW1054`), and a review frame's manifest
 // (`framing::resolve_targets`, over a grid of the same blocks). The same
 // generated cases are asked of each, red on any difference. The blocks are
@@ -295,9 +295,8 @@ fn every_consumer_of_in_sight_answers_alike() {
             &world,
         )
         .occluded();
-        let act = !crate::compiler::promise::act_unfound(&world, from, target, body, None)
-            .iter()
-            .any(|why| why.contains("hidden"));
+        let act = !crate::compiler::clue::unseen(&world, from, target, body)
+            .is_some_and(|why| why.contains("hidden"));
         let t = [super::super::Target {
             id: "t".into(),
             kind: "anchor",
@@ -355,7 +354,7 @@ fn every_consumer_of_in_sight_answers_alike() {
     println!(
         "in-sight agreement: {} case(s), {seen} seen and {hidden} hidden, {through} with a \
          looked-through block on the centre line; 5 consumer(s): the frame grid's world, \
-         framing::shot::sight and promise::act_unfound asked every case, the shut-way eye \
+         framing::shot::sight and clue::unseen asked every case, the shut-way eye \
          (nav::eye_meets) {cell_cases}, the review frame's manifest (framing::resolve_targets) \
          {framed}",
         seen + hidden

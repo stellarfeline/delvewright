@@ -576,12 +576,11 @@ fn validate_loaded_with(
                 examined.push(gbind.line());
                 diags.extend(gd);
             }
-            // An objective keeps the promise its prompt makes (DW0860-DW0863):
+            // An objective keeps the promise its prompt makes (DW0860-DW0862):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
-            // it, a hint the emitter will never show, and a fight the party is
-            // given no way to find. Error tier throughout - each judges what the
-            // document says. The
+            // it, and a hint the emitter will never show. Error tier throughout -
+            // each judges what the document says. The
             // binding line states what it examined, including the zeroes.
             {
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
