@@ -121,31 +121,36 @@ pub const SERVED: &[Site] = &[
         matches: |name, _| name.starts_with("cs_") || name.starts_with("rw_"),
     },
     Site {
-        site: "refresh",
-        rule: "a line of a function that runs on every tick or every refresh of a live \
-               surface (a health bar's audience, a pulse's listeners, a highlight's team, an \
-               area's mitigation, a boundary's return, the guidance refresh): a member who \
-               arrives is reached on the next one",
-        matches: |name, _| {
-            name == "setup"
-                || name == "setup_finish"
-                || name.starts_with("hb_")
-                || name.starts_with("pulse_")
-                || name.starts_with("hl_")
-                || name.starts_with("guide_")
-                || name.starts_with("compass_")
-                || name.starts_with("journal_")
-                || name.starts_with("boundary")
-                || name.starts_with("area_")
-                || name.starts_with("mitigat")
-                || name.starts_with("stealth_")
-                || name.starts_with("lethal_")
-                || name.starts_with("limit_show_")
-                || name.starts_with("race_")
-                || name.starts_with("census_")
-                || name.starts_with("class_")
-                || name.starts_with("clock")
-                || name.starts_with("atmos")
+        site: "health bar",
+        rule: "a fight's bar is drawn for the players within its range on every refresh \
+               (`hb_<key>`, from the tick): a member who arrives is reached on the next one",
+        matches: |name, _| name.starts_with("hb_"),
+    },
+    Site {
+        site: "blow's scratch mark",
+        rule: "an assembly's strike marks the players standing in its box, strikes the marked \
+               and takes the mark off in the same function; the mark never outlives the tick, \
+               so no member carries or misses it",
+        matches: |name, line| name.starts_with("asm_") && command(line).starts_with("tag @a["),
+    },
+    Site {
+        site: "race start",
+        rule: "a start takes the on-course tag off the players present, and the tick puts it \
+               on every player present while the race runs; a member who was away at the start \
+               is a racer from their first tick back, as one who was there is",
+        matches: |name, line| {
+            name.starts_with("race_")
+                && name.ends_with("_start")
+                && command(line).starts_with("tag @a remove ")
+        },
+    },
+    Site {
+        site: "stealth grace",
+        rule: "a stealth beat's start zeroes the grace clock of the players present; the \
+               beat's per-tick judge runs as every player in play and keeps each one's clock \
+               from then on",
+        matches: |name, line| {
+            name.starts_with("stealth_begin_") && line.contains("scoreboard players set @s ")
         },
     },
     Site {
@@ -168,18 +173,6 @@ pub const SERVED: &[Site] = &[
         rule: "an objective's or the campaign's advancement is a toast for the players \
                present; progress is the party's (`#party`) and is not read off it",
         matches: |_, line| command(line).starts_with("advancement grant @a"),
-    },
-    Site {
-        site: "party reset",
-        rule: "a start that clears every present player's entry of a per-run score or tag (a \
-               race's, a board's, a stealth beat's grace): an absent member holds no live entry \
-               of that run, and one who arrives is given theirs by the surface's own tick",
-        matches: |_, line| {
-            let c = command(line);
-            c.starts_with("scoreboard players reset @a")
-                || (c.starts_with("tag @a") && c.contains(" remove "))
-                || c.starts_with("scoreboard players set @a")
-        },
     },
     Site {
         site: "limit countdown",
