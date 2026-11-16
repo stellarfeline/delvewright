@@ -251,8 +251,7 @@ pub fn waypoints_json(
                     key == k && by_step.get(leg.to_step).copied().unwrap_or(false)
                 })
             };
-            let heard =
-                listening.leg_vibrations_beside(&leg.cells, &walked, &crouched, &loose);
+            let heard = listening.leg_vibrations_beside(&leg.cells, &walked, &crouched, &loose);
             if !heard.is_empty() {
                 leg_json["vibrations"] = json!(
                     heard
@@ -318,9 +317,7 @@ pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening
             for k in v["shriekers"].as_array().into_iter().flatten() {
                 shriekers.insert(k.to_string());
             }
-            withheld += v["withheld"]["shriekers"]
-                .as_array()
-                .map_or(0, Vec::len);
+            withheld += v["withheld"]["shriekers"].as_array().map_or(0, Vec::len);
         }
     }
     format!(

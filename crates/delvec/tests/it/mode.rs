@@ -575,7 +575,10 @@ fn a_journal_template_owns_the_mode_its_pages_read() {
         let lines: Vec<&str> = t.lines().collect();
         let first = lines
             .iter()
-            .position(|l| l.starts_with(&format!("function {NS}:journal_rewrite")) || l.starts_with(&format!("function {NS}:guide_refresh")))
+            .position(|l| {
+                l.starts_with(&format!("function {NS}:journal_rewrite"))
+                    || l.starts_with(&format!("function {NS}:guide_refresh"))
+            })
             .unwrap_or_else(|| panic!("`{name}` writes the book:\n{t}"));
         assert!(
             lines[..first].contains(&own),

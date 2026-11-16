@@ -90,12 +90,18 @@ fn the_gallery_withholds_the_shriek_on_the_legs_a_free_body_can_reach() {
 
     for anchor in ["anchor/cabin-roof", "anchor/exit"] {
         let v = floor(&leg_to(&pos_of("anchor", anchor)));
-        assert_eq!(v["sensor"], marshal["sensor"], "{anchor}: the same sensor: {v}");
+        assert_eq!(
+            v["sensor"], marshal["sensor"],
+            "{anchor}: the same sensor: {v}"
+        );
         assert!(
             v["shriekers"].as_array().unwrap().is_empty(),
             "{anchor}: a free body can take the click, so no shriek is predicted: {v}"
         );
-        assert_eq!(v["withheld"]["shriekers"], marshal["shriekers"], "{anchor}: {v}");
+        assert_eq!(
+            v["withheld"]["shriekers"], marshal["shriekers"],
+            "{anchor}: {v}"
+        );
         let by: Vec<&str> = v["withheld"]["by"]
             .as_array()
             .unwrap()

@@ -785,10 +785,11 @@ impl Listening {
                         .iter()
                         .copied()
                         .filter(|s| {
-                            cells.range(
-                                [s[0] - 8, s[1] - 8, s[2] - 8]..=[s[0] + 8, s[1] + 8, s[2] + 8],
-                            )
-                            .any(|c| dist_sq(*c, *s) <= LISTENER_RADIUS_SQ)
+                            cells
+                                .range(
+                                    [s[0] - 8, s[1] - 8, s[2] - 8]..=[s[0] + 8, s[1] + 8, s[2] + 8],
+                                )
+                                .any(|c| dist_sq(*c, *s) <= LISTENER_RADIUS_SQ)
                         })
                         .collect(),
                 };
@@ -1241,8 +1242,14 @@ mod tests {
         let near = FreeBodyKey::Actor("actor/spider".into());
         let far = FreeBodyKey::Wave("wave/far".into());
         let l = Listening::of(&blocks, &[]).with_free_bodies(vec![
-            (near.clone(), FreeReach::Cells([[6, 1, 3]].into_iter().collect())),
-            (far.clone(), FreeReach::Cells([[5, 1, 12]].into_iter().collect())),
+            (
+                near.clone(),
+                FreeReach::Cells([[6, 1, 3]].into_iter().collect()),
+            ),
+            (
+                far.clone(),
+                FreeReach::Cells([[5, 1, 12]].into_iter().collect()),
+            ),
         ]);
         let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
         let all = vec![true; route.len()];
@@ -1257,7 +1264,10 @@ mod tests {
             }]
         );
         // Not loose on this leg, or loose and out of reach: the shrieker stands.
-        for loose in [&(|_: &FreeBodyKey| false) as &dyn Fn(&FreeBodyKey) -> bool, &|k| *k == far] {
+        for loose in [
+            &(|_: &FreeBodyKey| false) as &dyn Fn(&FreeBodyKey) -> bool,
+            &|k| *k == far,
+        ] {
             let v = l.leg_vibrations_beside(&route, &all, &[], loose);
             assert_eq!(v[0].shriekers, vec![[5, 0, 10]]);
             assert!(v[0].withheld.is_empty());
@@ -1396,6 +1406,8 @@ mod tests {
             vec![Vibration {
                 sensor: [163, 63, 622],
                 shriekers: vec![],
+                withheld: vec![],
+                contested_by: vec![],
             }],
             "a sensor the walk must pass is still predicted"
         );
