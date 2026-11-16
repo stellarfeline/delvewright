@@ -183,6 +183,17 @@ delvewright_dsl::dw_code! {
     /// A box armed by a quest beat and killed on completion is not in a contest with
     /// one down another arm of the story.
     ///
+    /// **One box is not two.** A left-click and a right-click of one block on one
+    /// cell, each boxed in every state
+    /// ([`crate::compiler::pressable::PressPlan::shares_box_with`]),
+    /// are summoned as ONE `minecraft:interaction` wearing both riders' tags.
+    /// There is no second entity for the pick to tie with, and the entity keeps
+    /// a left-click in `attack` and a right-click in `interaction`, separately
+    /// (`docs/reference/click-attribution.md`), so a `use` and a `strike` on one
+    /// pumpkin each hear their own click. Two presses on one button would both
+    /// hear one click, and a box that comes and goes with its owner's window
+    /// would move for both: those do not share, and stay a contest.
+    ///
     /// **Boundary.** Affordance-against-affordance only. A body over an affordance is
     /// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
     /// neither is re-litigated here (one code, one rule).
@@ -248,6 +259,12 @@ pub(crate) struct Affordance {
     /// block on one cell are one body that one press reaches (spec-0117
     /// criterion 2), not a contest.
     pub(crate) own_block: Option<String>,
+    /// The press this affordance is, as its index in [`Plan::presses`]: two
+    /// presses that share one click box
+    /// ([`crate::compiler::pressable::PressPlan::shares_box_with`]) are one
+    /// `minecraft:interaction`, which keeps a left-click and a right-click in
+    /// two records of its own, not a contest.
+    pub(crate) press: Option<usize>,
 }
 
 /// When an affordance's `minecraft:interaction` box exists.
@@ -486,7 +503,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     // nothing a ray picks among entities. Its click box, where it has one, is
     // the affordance — fitted to the block, standing in the states the press
     // table says.
-    for p in plan.presses() {
+    for (pi, p) in plan.presses().iter().enumerate() {
         // A block pressed on its own is pressed at its outline; a body that
         // stands nearer the eye takes the click from it exactly as from a box.
         let size = match &p.click_box {
@@ -522,6 +539,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             pos: p.cell,
             arming,
             own_block: (p.click_box.is_none() && p.form == Form::Own).then(|| p.block.clone()),
+            press: Some(pi),
         });
     }
     // spec-0082 assemblies: a declared hitbox is a compiler-summoned
@@ -542,6 +560,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             // persistent reading, the conservative direction for a contest.
             arming: Arming::Persistent,
             own_block: None,
+            press: None,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -655,6 +674,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
                 pos: b.pos,
                 arming: Arming::Persistent,
                 own_block: None,
+                press: None,
             }),
     );
     for body in pressable_bodies(plan) {
@@ -708,7 +728,11 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
                 (0..3).all(|i| x[i].overlaps(y[i]))
             };
             let one_body = a.own_block.is_some() && a.own_block == b.own_block && a.pos == b.pos;
-            if contest && !one_body && can_share_a_moment(a, b, order) {
+            let one_box = match (a.press, b.press) {
+                (Some(i), Some(j)) => plan.presses()[i].shares_box_with(&plan.presses()[j]),
+                _ => false,
+            };
+            if contest && !one_body && !one_box && can_share_a_moment(a, b, order) {
                 return Err(affordance_contest_error(a, b));
             }
         }
@@ -801,13 +825,16 @@ fn affordance_contest_error(a: &Affordance, b: &Affordance) -> Failure {
              before the button is read, so a `strike` trigger sharing a cell with a rest point \
              loses its swings to that rest point's entity exactly as two right-clicks would. \
              Prescription: give one of the two its own anchor, at least one cell clear of the \
-             other. Merging them into one hitbox is NOT available: a trigger rides an existing \
-             set only where the compiler owns that set for the whole run — a `close-gate` seal, a \
-             sealed shortcut door, an NPC's own dialogue body — and an affordance armed by a \
-             quest beat, or killed when an objective completes, would hand the trigger a lifetime \
-             its own declaration never asked for, silent at both ends. Do NOT make either box \
-             non-pickable to break the tie: an affordance the party cannot click is a beat they \
-             cannot reach.",
+             other; or, where one is a left-click (`strike`) and the other a right-click (`use`, \
+             `interact`), give both the same `prop` block on this cell, one the game reports no \
+             press of (stone, a carved pumpkin): they then ride ONE box, whose `attack` and \
+             `interaction` records keep the two clicks apart, each reaching its own press. No \
+             other merge is available: two presses on one button would both answer one click; a \
+             box armed by a quest beat, or killed when an objective completes or a block's window \
+             opens, would hand its rider a lifetime its own declaration never asked for, silent \
+             at both ends; and a block pressed on its own is reached past no box. Do NOT make \
+             either box non-pickable to break the tie: an affordance the party cannot click is a \
+             beat they cannot reach.",
             a.kind, a.id, a.anchor, b.kind, b.id, b.anchor, a.pos,
         ),
     }
