@@ -516,12 +516,14 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW1042`: **the reach graph's work passed its budget** (spec-0113 §5.3):
-    /// launches simulated plus template arcs credited, for one configuration,
-    /// past `metrics::REACH_BUDGET_STATES`. The graph is refused rather than
+    /// `DW1042`: **the reach graph's work passed its ceiling** (spec-0113
+    /// §5.3): launches simulated plus template arcs credited, for one
+    /// configuration, past the ceiling its own world's size gives it
+    /// (`reach::Ceiling`: the window's cells a body could rest in, each
+    /// charged at most one node's launches). The graph is refused rather than
     /// truncated: an untraversed graph is a vacuity, and a green over a partial
-    /// one is not a pass. A property of the ENGINE's cost, not of anything the
-    /// campaign wrote wrong.
+    /// one is not a pass. A defect of the ENGINE, not of anything the campaign
+    /// wrote wrong.
     pub const DW_REACH_BUDGET: DwCode = DwCode::new("DW1042", ExitTier::Build).about_the_engine();
 }
 

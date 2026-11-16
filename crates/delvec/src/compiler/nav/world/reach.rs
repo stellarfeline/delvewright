@@ -19,8 +19,8 @@
 //! answers exactly as the template did, so it is credited without a tick; a
 //! launch whose record meets anything else is flown over the real world.
 //!
-//! The work is bounded and the bound refused, never truncated
-//! ([`DW_REACH_BUDGET`]).
+//! The work is bounded by the world's own size ([`Ceiling`]) and the bound
+//! refused, never truncated ([`DW_REACH_BUDGET`]).
 
 use super::World;
 use crate::compiler::nav::world::Ambient;
@@ -1128,6 +1128,14 @@ impl Codes for Local<'_> {
 /// game's own sine table).
 pub const FACING_STEP_DEG: f64 = 1.0;
 
+/// The facings a water node's climbs out are flown at ([`World::climb_out`]):
+/// every sixteenth of a turn.
+const CLIMB_OUT_FACINGS: u32 = 16;
+
+/// The heights in its cell a water node's climbs out start from
+/// ([`World::climb_out`]): its foot and its top.
+const CLIMB_OUT_LIFTS: [f64; 2] = [0.05, 0.6];
+
 /// How a launch leaves its cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Mode {
@@ -1297,8 +1305,10 @@ pub struct ReachParams {
     /// Whether no fall kills (a kit reduces fall damage, §4.2).
     pub unbounded_fall: bool,
     /// The work past which a closure is refused rather than finished
-    /// (`DW1042`): launches simulated plus template arcs credited.
-    pub budget: u64,
+    /// (`DW1042`): launches simulated plus template arcs credited. `None` is
+    /// the world's own ceiling ([`Ceiling`]); a test lowers it to make a
+    /// partial closure.
+    pub budget: Option<u64>,
 }
 
 impl ReachParams {
@@ -1308,8 +1318,21 @@ impl ReachParams {
             facing_step: FACING_STEP_DEG,
             strafes: vec![-1.0, 0.0, 1.0],
             unbounded_fall,
-            budget: delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            budget: None,
         }
+    }
+
+    /// The most work one node of the graph can be charged in one closure:
+    /// every launch of the larger launch set (a standing node's, or a holding
+    /// node's), or a water node's climbs out — whichever is more. Each launch
+    /// is either flown or credited as one member of one template arc, and a
+    /// closure flies a node's launches once.
+    fn per_node(&self) -> u64 {
+        let launches = shared_launch_set(false, self)
+            .len()
+            .max(shared_launch_set(true, self).len());
+        let climbs = CLIMB_OUT_FACINGS as usize * CLIMB_OUT_LIFTS.len();
+        launches.max(climbs) as u64
     }
 
     fn key(&self) -> String {
@@ -3453,9 +3476,9 @@ impl World {
     ) {
         let body = Attributes::PLAYER;
         let world = Sim(&memo.dense);
-        for k in 0..16 {
-            let yaw = f64::from(k) * 22.5 - 180.0;
-            for lift in [0.05, 0.6] {
+        for k in 0..CLIMB_OUT_FACINGS {
+            let yaw = f64::from(k) * (360.0 / f64::from(CLIMB_OUT_FACINGS)) - 180.0;
+            for lift in CLIMB_OUT_LIFTS {
                 out.simulated += 1;
                 let mut st = State::standing(
                     [
@@ -4062,13 +4085,18 @@ impl World {
     /// standable cell first, as [`World::walk_region`] snaps them; a start
     /// with none within [`crate::compiler::nav::SNAP_RADIUS`] contributes nothing.
     pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Arc<Reach> {
-        self.body_reach_snapped_within(starts, delvewright_dsl::metrics::REACH_BUDGET_STATES)
+        self.body_reach_snapped_within(starts, None)
     }
 
     /// [`World::body_reach_snapped`] under a work ceiling of `budget` rather
-    /// than the shipped one: the closure a proof that must refuse a partial
-    /// graph (`DW1042`) reads, and the ceiling a test lowers to make one.
-    pub fn body_reach_snapped_within(&self, starts: &[[i32; 3]], budget: u64) -> Arc<Reach> {
+    /// than the world's own ([`Ceiling`], `None`): the closure a proof that
+    /// must refuse a partial graph (`DW1042`) reads, and the ceiling a test
+    /// lowers to make one.
+    pub fn body_reach_snapped_within(
+        &self,
+        starts: &[[i32; 3]],
+        budget: Option<u64>,
+    ) -> Arc<Reach> {
         let seats: Vec<[i32; 3]> = starts
             .iter()
             .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
@@ -4088,7 +4116,7 @@ impl World {
     pub fn body_reach_snapped_since(
         &self,
         starts: &[[i32; 3]],
-        budget: u64,
+        budget: Option<u64>,
         base: &World,
     ) -> (Arc<Reach>, Arc<Reach>) {
         let prior = base.body_reach_snapped_within(starts, budget);
@@ -4169,6 +4197,11 @@ impl World {
         since: Option<&Since>,
     ) -> Arc<Reach> {
         let memo = self.graph_memo(params);
+        let ceiling = Ceiling {
+            rest_cells: memo.columns.heights.len() as u64,
+            per_node: params.per_node(),
+        };
+        let budget = params.budget.unwrap_or_else(|| ceiling.work());
         let start: Vec<[i32; 3]> = roots
             .iter()
             .copied()
@@ -4182,16 +4215,19 @@ impl World {
             if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
                 // A lower ceiling than the closure was taken under refuses
                 // it (`DW1042`): that copy, and only that one, is its own.
-                if c.charged() > params.budget {
+                if c.charged() > budget {
                     let mut r = (**c).clone();
-                    r.over_budget = Some(params.budget);
+                    r.over_budget = Some(budget);
                     return Arc::new(r);
                 }
                 crate::compiler::notes::mark("reach closure: reused");
                 return Arc::clone(c);
             }
         }
-        let mut reach = Reach::default();
+        let mut reach = Reach {
+            ceiling,
+            ..Reach::default()
+        };
         let mut visits = chunks::Visits::default();
         let mut fresh: Vec<[i32; 3]> = Vec::new();
         self.close(
@@ -4221,8 +4257,8 @@ impl World {
             // The budget is refused, never truncated (`DW1042`): a closure
             // whose round passed it stops there and says so, and every proof
             // that reads it refuses the build.
-            if reach.charged() > params.budget {
-                reach.over_budget = Some(params.budget);
+            if reach.charged() > budget {
+                reach.over_budget = Some(budget);
                 reach.portals = visits.report();
                 return Arc::new(reach);
             }
@@ -4828,6 +4864,29 @@ pub struct JumpMiss {
     pub rules: Rules,
 }
 
+/// **The work a closure can be charged at most** (`DW1042`), computed from
+/// the world it is taken over: every cell of the window a body could rest in
+/// ([`Columns`], a superset of the rest states), each charged at most once in a
+/// closure for at most the most one node's launches cost
+/// ([`ReachParams::per_node`]). A closure that passes it has flown some
+/// node's launches twice; it never passes it because the map is large, so the
+/// cost of a closure is stated, never capped by a hand constant.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Ceiling {
+    /// Cells of the window a body could rest in.
+    pub rest_cells: u64,
+    /// The most work one node is charged.
+    pub per_node: u64,
+}
+
+impl Ceiling {
+    /// The ceiling: rest cells times the most one node is charged.
+    #[must_use]
+    pub fn work(&self) -> u64 {
+        self.rest_cells.saturating_mul(self.per_node)
+    }
+}
+
 /// The closure of the reach graph from a set of roots.
 ///
 /// Its edge lists are kept by reach chunk ([`chunks`], ADR-0037 §2) and read
@@ -4866,6 +4925,8 @@ pub struct Reach {
     /// Set to the budget when the closure's work passed it (`DW1042`): the
     /// closure is then partial, and no proof may take a verdict over it.
     pub over_budget: Option<u64>,
+    /// The world's own ceiling the closure was taken under ([`Ceiling`]).
+    pub ceiling: Ceiling,
     /// The portal edges the closure joined — edges whose ends lie in
     /// different reach chunks — and the face cells they land on, at the chunk
     /// side it was taken at (ADR-0037 §2); a reader's growth adds its own.
@@ -5162,6 +5223,9 @@ pub struct ReachBinding {
     pub simulated: u64,
     /// Template arcs credited without a tick.
     pub credited: u64,
+    /// Each configuration's ceiling ([`Ceiling`]), summed: its rest cells,
+    /// and the most one node is charged.
+    pub ceiling: Ceiling,
     /// Whether every fall is survivable (§4.2).
     pub unbounded_fall: bool,
     /// The sha256 of each configuration's occupancy, in configuration order.
@@ -5185,6 +5249,8 @@ impl ReachBinding {
         }
         self.simulated += reach.simulated;
         self.credited += reach.credited;
+        self.ceiling.rest_cells += reach.ceiling.rest_cells;
+        self.ceiling.per_node = self.ceiling.per_node.max(reach.ceiling.per_node);
         self.unbounded_fall |= world.unbounded_fall;
         self.digests.push(
             world
@@ -5195,8 +5261,25 @@ impl ReachBinding {
         );
     }
 
+    /// Fold another binding in: its configurations follow this one's.
+    pub fn merge(&mut self, other: ReachBinding) {
+        self.configurations += other.configurations;
+        for (a, b) in self.states.iter_mut().zip(other.states) {
+            *a += b;
+        }
+        for (a, b) in self.edges.iter_mut().zip(other.edges) {
+            *a += b;
+        }
+        self.simulated += other.simulated;
+        self.credited += other.credited;
+        self.ceiling.rest_cells += other.ceiling.rest_cells;
+        self.ceiling.per_node = self.ceiling.per_node.max(other.ceiling.per_node);
+        self.unbounded_fall |= other.unbounded_fall;
+        self.digests.extend(other.digests);
+    }
+
     /// The work the graph took: launches simulated plus template arcs
-    /// credited — the count the budget bounds ([`REACH_BUDGET_STATES`]).
+    /// credited — the count each configuration's [`Ceiling`] bounds.
     pub fn work(&self) -> u64 {
         self.simulated + self.credited
     }
@@ -5208,7 +5291,8 @@ impl ReachBinding {
         format!(
             "reach binding: {} configuration(s); {} rest state(s) ({s} standing, {a} afloat, {u} \
              submerged, {h} holding); {} edge(s) ({w} walk, {f} fall, {j} jump, {d} dive, {c} climb, \
-             {x} exit); {} launch state(s) simulated, {} template arc(s) credited; {} of budget {}; \
+             {x} exit); {} launch state(s) simulated, {} template arc(s) credited; {} of ceiling {} \
+             ({} rest cell(s) over the configurations' windows × at most {} per node); \
              survivable fall {} (unbounded: {})",
             self.configurations,
             s + a + u + h,
@@ -5216,7 +5300,9 @@ impl ReachBinding {
             self.simulated,
             self.credited,
             self.work(),
-            delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            self.ceiling.work(),
+            self.ceiling.rest_cells,
+            self.ceiling.per_node,
             if self.unbounded_fall {
                 "any".to_string()
             } else {
@@ -5235,7 +5321,7 @@ impl ReachBinding {
         let [s, a, u, h] = self.states;
         let [w, f, j, d, c, x] = self.edges;
         serde_json::json!({
-            "budget": delvewright_dsl::metrics::REACH_BUDGET_STATES,
+            "ceiling": {"per_node": self.ceiling.per_node, "rest_cells": self.ceiling.rest_cells, "work": self.ceiling.work()},
             "configurations": self.configurations,
             "credited": self.credited,
             "edges": {"climb": c, "dive": d, "exit": x, "fall": f, "jump": j, "walk": w},

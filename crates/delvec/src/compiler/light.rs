@@ -1601,7 +1601,8 @@ pub fn final_world(
 
 /// **The cells the `DW0210` survey judges in one area**: every standing state
 /// of the reach graph from `starts`, snapped — or `DW1042` when the graph's
-/// work passed `budget` (the shipped ceiling in a build). A closure that
+/// work passed `budget` (`None` in a build: the world's own ceiling,
+/// [`crate::compiler::nav::Ceiling`]). A closure that
 /// stopped at its budget is partial, and a survey over it judges a part of
 /// the area and reports it as the whole: the cells it never reached read as
 /// neither dark nor lit, and the binding counts what it happened to reach.
@@ -1614,24 +1615,27 @@ pub(crate) fn surveyed_region(
     nav: &World,
     area: &str,
     starts: &[[i32; 3]],
-    budget: u64,
+    budget: Option<u64>,
     since: Option<&World>,
 ) -> Result<BTreeSet<[i32; 3]>, Failure> {
     let over = |reach: &crate::compiler::nav::Reach, budget: u64, which: &str| Failure {
         code: crate::compiler::nav::DW_REACH_BUDGET,
         message: format!(
             "the darkness survey (`DW0210`) of `{area}`{which} reads a reach graph whose work \
-             passed its budget: {} launch state(s) simulated and {} template arc(s) credited, \
+             passed its ceiling: {} launch state(s) simulated and {} template arc(s) credited, \
              {} of that work taken unchanged from the world the batch was written over, {} \
-             charged, past the ceiling of {budget} (`metrics::REACH_BUDGET_STATES`). The survey \
-             is refused rather than taken over a partial graph — a cell the closure never \
-             reached would be judged neither dark nor lit — and the ceiling is the engine's, so \
-             this build is one the engine cannot yet afford; it is not something the campaign \
-             wrote wrong",
+             charged, past the ceiling of {budget}. The ceiling is the world's own size — {} \
+             cell(s) of the window a body could rest in, each charged at most {} launch(es) — \
+             and a closure flies each node's launches once, so a closure past it charged some \
+             launch twice. The survey is refused rather than taken over a partial graph — a \
+             cell the closure never reached would be judged neither dark nor lit — and this is \
+             a defect of the engine; it is not something the campaign wrote wrong",
             reach.simulated,
             reach.credited,
             reach.inherited,
             reach.charged(),
+            reach.ceiling.rest_cells,
+            reach.ceiling.per_node,
         ),
     };
     let reach = match since {
@@ -1758,22 +1762,17 @@ pub fn relight_with(
         // Every cell a body can stand in — a ledge a body jumps to is a cell
         // that must be lit (spec-0113 §5.1) — over a whole reach graph, or no
         // survey at all (`DW1042`).
-        let reachable: BTreeSet<[i32; 3]> = match surveyed_region(
-            nav,
-            &area.area_id,
-            &starts,
-            delvewright_dsl::metrics::REACH_BUDGET_STATES,
-            since,
-        ) {
-            Ok(r) => r
-                .into_iter()
-                .filter(|cell| in_bounds(*cell, amin, amax))
-                .collect(),
-            Err(f) => {
-                out.diagnostics.push(f);
-                continue;
-            }
-        };
+        let reachable: BTreeSet<[i32; 3]> =
+            match surveyed_region(nav, &area.area_id, &starts, None, since) {
+                Ok(r) => r
+                    .into_iter()
+                    .filter(|cell| in_bounds(*cell, amin, amax))
+                    .collect(),
+                Err(f) => {
+                    out.diagnostics.push(f);
+                    continue;
+                }
+            };
         if reachable.is_empty() {
             continue; // nothing a player can stand on / reach in this area
         }
@@ -2763,7 +2762,7 @@ mod tests {
 
     /// A nav world whose solid set is every non-air cell of `map`.
     /// **A survey over a partial reach graph is refused** (`DW1042`): the
-    /// same room surveyed under the shipped ceiling is every standing cell of
+    /// same room surveyed under its own ceiling is every standing cell of
     /// it, and under a ceiling of one launch it is no survey at all — never
     /// the part the closure reached before it stopped.
     #[test]
@@ -2771,17 +2770,11 @@ mod tests {
         let map = room(7, 4, 7, true);
         let nav = nav_of(&map);
         let start = [[3, 1, 3]];
-        let whole = surveyed_region(
-            &nav,
-            "area/room",
-            &start,
-            delvewright_dsl::metrics::REACH_BUDGET_STATES,
-            None,
-        )
-        .expect("the room's graph is far under the shipped ceiling");
+        let whole = surveyed_region(&nav, "area/room", &start, None, None)
+            .expect("the room's graph is under its own ceiling");
         assert_eq!(whole, nav.body_region(&start));
         assert!(whole.len() >= 25, "{}", whole.len());
-        let partial = surveyed_region(&nav, "area/room", &start, 1, None);
+        let partial = surveyed_region(&nav, "area/room", &start, Some(1), None);
         let f = partial.expect_err("a closure past its ceiling is no survey");
         assert_eq!(f.code.id(), "DW1042");
         assert!(f.message.contains("`area/room`"), "{}", f.message);
@@ -2816,11 +2809,7 @@ mod tests {
         };
         let (base, nav) = pair(0);
         let start = [[5, 1, 5]];
-        let (prior, reach) = nav.body_reach_snapped_since(
-            &start,
-            delvewright_dsl::metrics::REACH_BUDGET_STATES,
-            &base,
-        );
+        let (prior, reach) = nav.body_reach_snapped_since(&start, None, &base);
         assert_eq!(prior.over_budget, None);
         let whole = reach.simulated + reach.credited;
         assert!(
@@ -2838,9 +2827,9 @@ mod tests {
             budget < whole,
             "a ceiling both fit under, which the whole does not: {budget} of {whole}"
         );
-        assert!(surveyed_region(&nav, "area/room", &start, budget, Some(&base)).is_ok());
+        assert!(surveyed_region(&nav, "area/room", &start, Some(budget), Some(&base)).is_ok());
         let (_, fresh) = pair(200);
-        let f = surveyed_region(&fresh, "area/room", &[[205, 1, 5]], budget, None)
+        let f = surveyed_region(&fresh, "area/room", &[[205, 1, 5]], Some(budget), None)
             .expect_err("surveyed whole, the cut world is past the ceiling its charge fits");
         assert_eq!(f.code.id(), "DW1042");
         assert!(f.message.contains("charged"), "{}", f.message);

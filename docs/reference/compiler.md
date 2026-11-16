@@ -70,8 +70,11 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 10. Its survey reads a whole reach graph or refuses
-  `DW1042` (`light::surveyed_region`): a closure that passed its budget is
-  partial and is never surveyed. After a world-edits batch the re-check's
+  `DW1042` (`light::surveyed_region`): a closure that passed its ceiling is
+  partial and is never surveyed. The ceiling is the world's own size
+  (`nav::Ceiling`): the cells of the graph's window a body could rest in,
+  each charged at most one node's launches; a closure flies each node's
+  launches once, so its cost scales with the map and no host constant caps it. After a world-edits batch the re-check's
   survey is charged against the world the batch was written over (the
   earlier world's survey taken first, under the same ceiling): it pays for the
   flights the batch's writes reach and the states they open, never for the
@@ -4335,7 +4338,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `configurations`, `states` (rest states, by kind), `edges` (by kind: walk,
   fall, jump, dive, climb, exit), `simulated` (launch states flown through the
   simulator), `credited` (template arcs credited from a flat, open floor),
-  `budget` (`dsl::metrics::REACH_BUDGET_STATES`), `unbounded_fall` and
+  `ceiling` (`{rest_cells, per_node, work}`, `nav::Ceiling` summed over the
+  configurations: the windows' cells a body could rest in, the most one node
+  is charged, and their product), `unbounded_fall` and
   `occupancy_sha256` — one canonical hash per configuration of the occupancy
   its graph was built over, in configuration order, so the record names what
   it measured. Written whenever `DW0921` is
