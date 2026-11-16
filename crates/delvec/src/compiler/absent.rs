@@ -22,7 +22,8 @@
 //! What it does not read: a line the root `tick` holds (it is restated every
 //! tick, so a member who arrives is reached on their first), a line that tells
 //! the present what happened (`tellraw`, `title`, `playsound`, `stopsound`,
-//! `particle`, `dialog` — a beat is told to those who were there), and the body
+//! `particle`, `dialog` — a beat is told to those who were there), a write
+//! narrowed to a box or a distance (the bodies standing in a place), and the body
 //! of a function dispatched `as @a` (counted, [`AbsentCensus::dispatched`]).
 
 use std::collections::BTreeMap;
@@ -252,15 +253,50 @@ pub const PICKS: &[Site] = &[
     },
 ];
 
-/// The final command of a line: what follows the last ` run ` of an `execute`,
-/// else the line itself.
+/// The final command of a line: what follows the last ` run ` of an `execute`
+/// that stands outside every bracket, brace and quoted string (a ` run ` in an
+/// authored line is text), else the line itself.
 pub fn command(line: &str) -> &str {
     let line = line.trim();
     if !line.starts_with("execute ") {
         return line;
     }
-    match line.rfind(" run ") {
-        Some(i) => &line[i + 5..],
+    let bytes = line.as_bytes();
+    let mut depth = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut last: Option<usize> = None;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => quote = Some(b'"'),
+            b'\'' if matches!(bytes[i - 1], b' ' | b':' | b'=' | b',' | b'[' | b'{') => {
+                quote = Some(b'\'')
+            }
+            b'[' | b'{' => depth += 1,
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            b' ' if depth == 0 && line[i..].starts_with(" run ") => {
+                last = Some(i + 5);
+                i += 4;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    match last {
+        Some(at) => &line[at..],
         None => "",
     }
 }
@@ -268,6 +304,14 @@ pub fn command(line: &str) -> &str {
 /// Whether a selector's arguments limit how many it selects.
 fn limited(args: &str) -> bool {
     selector_terms(args).any(|t| t.starts_with("limit="))
+}
+
+/// Whether a selector's arguments narrow it to a place: a box or a distance.
+fn positional(args: &str) -> bool {
+    selector_terms(args).any(|t| {
+        t.split_once('=')
+            .is_some_and(|(k, _)| matches!(k, "x" | "y" | "z" | "dx" | "dy" | "dz" | "distance"))
+    })
 }
 
 /// Every selector `line` holds as a word of its own, as `(kind, args)`. A
@@ -369,7 +413,9 @@ pub fn writes_every_present_player(line: &str) -> bool {
     }
     let first = first_selector(cmd);
     match first {
-        Some(('a', args)) => !limited(&args),
+        // A box or a distance is the bodies standing in a place on that tick:
+        // a fact about the place, owed to nobody who was not in it.
+        Some(('a', args)) => !limited(&args) && !positional(&args),
         Some(('s', _)) => {
             let head = &line.trim()[..line.trim().len() - cmd.len()];
             head.contains(" as @a ") || head.contains(" as @a[")
@@ -496,11 +542,26 @@ pub fn census(out: &BuildOutput) -> AbsentCensus {
     c
 }
 
+/// Every `(function, line)` of a refusal, one to a line, so one build names
+/// the whole set an emitter owes.
+fn listed(lines: &[(String, String)]) -> String {
+    const SHOWN: usize = 12;
+    let mut out: String = lines
+        .iter()
+        .take(SHOWN)
+        .map(|(name, line)| format!("\n  `{name}`: `{line}`"))
+        .collect();
+    if lines.len() > SHOWN {
+        out.push_str(&format!("\n  … and {} more", lines.len() - SHOWN));
+    }
+    out
+}
+
 /// [`census`], refusing a tree with an unserved write (`DW1126`) or an unnamed
 /// pick (`DW1127`).
 pub fn check(out: &BuildOutput) -> Result<AbsentCensus, AbsentRefusal> {
     let c = census(out);
-    if let Some((name, line)) = c.unserved.first() {
+    if !c.unserved.is_empty() {
         return Err(AbsentRefusal {
             code: DW_ABSENT_UNSERVED,
             message: format!(
@@ -508,26 +569,27 @@ pub fn check(out: &BuildOutput) -> Result<AbsentCensus, AbsentRefusal> {
                  report it. A delve is played by one to four players who may join late or drop \
                  out, and {} command(s) this build ships write lasting state onto the players \
                  present on one tick with nothing named that reaches a member who was absent. \
-                 The first is in `{name}`: `{line}`. The emitter that wrote it must serve the \
-                 absent member (issue it as a grant, restate it on a refresh, or repair it at \
-                 the member's return), and the site must be named with that rule in \
-                 `absent::SERVED`. Nothing in the campaign repairs this.",
-                c.unserved.len()
+                 The emitter that wrote each must serve the absent member (issue it as a grant, \
+                 restate it on a refresh, or repair it at the member's return), and the site \
+                 must be named with that rule in `absent::SERVED`. Nothing in the campaign \
+                 repairs this. The command(s):{}",
+                c.unserved.len(),
+                listed(&c.unserved)
             ),
         });
     }
-    if let Some((name, line)) = c.unnamed.first() {
+    if !c.unnamed.is_empty() {
         return Err(AbsentRefusal {
             code: DW_PICK_UNNAMED,
             message: format!(
                 "ENGINE SELF-CHECK FAILED — this is a defect in delvec, not in the campaign; \
                  report it. {} command(s) this build ships pick one player among several (`@p`, \
-                 `@r`, a `limit=`) with no rule named for a party of two to four. The first is \
-                 in `{name}`: `{line}`. The emitter that wrote it must address every player, \
-                 the acting player (`@s`) or the party holder, or the site must be named in \
-                 `absent::PICKS` with which player is picked and why. Nothing in the campaign \
-                 repairs this.",
-                c.unnamed.len()
+                 `@r`, a `limit=`) with no rule named for a party of two to four. The emitter \
+                 that wrote each must address every player, the acting player (`@s`) or the \
+                 party holder, or the site must be named in `absent::PICKS` with which player \
+                 is picked and why. Nothing in the campaign repairs this. The command(s):{}",
+                c.unnamed.len(),
+                listed(&c.unnamed)
             ),
         });
     }
@@ -546,6 +608,17 @@ mod tests {
             "give @a minecraft:torch 1"
         );
         assert_eq!(command("execute as @a if entity @s"), "");
+        // A ` run ` inside an authored line is text.
+        assert_eq!(
+            command(
+                "execute as @e[tag=x] run give @a minecraft:paper[custom_name={\"text\":\"how to run fast\"}] 1"
+            ),
+            "give @a minecraft:paper[custom_name={\"text\":\"how to run fast\"}] 1"
+        );
+        assert_eq!(
+            command("execute if score #a dw.sys matches 1 run execute as @a run tag @s add x"),
+            "tag @s add x"
+        );
     }
 
     #[test]
@@ -561,8 +634,12 @@ mod tests {
         assert!(writes_every_present_player(
             "execute as @a at @s run tag @s add dw_x"
         ));
-        assert!(writes_every_present_player(
+        // A box is the bodies in a place, owed to nobody else.
+        assert!(!writes_every_present_player(
             "effect give @a[x=1,dx=2] minecraft:speed 5 0 true"
+        ));
+        assert!(writes_every_present_player(
+            "effect give @a[tag=!dw_cutscene] minecraft:speed 5 0 true"
         ));
     }
 

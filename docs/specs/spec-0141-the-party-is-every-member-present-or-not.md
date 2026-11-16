@@ -44,7 +44,7 @@ A `collect` of `count: n` completed when one player's inventory held `n`. Three 
 `give-item` with `carrier: all` (the default) under a party or scheduled audience emitted `give @a`. A member who was away never held the stack — and where a later objective needs it in a hand, had nothing to do. It now emits `function <ns>:grant_<i>`:
 
 - `grant_<i>` gives every present player the stack and counts the issue on `#all` and on each player it reached (`dw.gr.<i>`, and the total `dw.gr`);
-- the tick's one owed line runs `grant_owed` as each player who has taken a class (every player, in a campaign with no classes) whose total is not the party's; `grant_owed` hands that player one stack of each grant they are behind on, and counts it.
+- the tick's owed line runs `grant_owed` as each player who has taken a class (every player, in a campaign with no classes) whose total is not the party's; `grant_owed` hands that player one stack of each grant they are behind on, and counts it.
 
 A grant is keyed by the stack it gives. `carrier: one`, a solo audience (`on_death`, `on_kill`, a shop offer, a presser trigger, `audience: actor`) and a give under an `in` box are not grants: they name who is given. For one player who never leaves, the stack arrives on the same tick as before. A single player who was offline when a scheduled beat handed out a stack now holds it on return, which before was lost.
 
@@ -59,7 +59,7 @@ Two shapes in a shipped datapack assume one player who is always there, and `com
 - **a lasting write onto every present player** outside the root `tick` — a command of `absent::LASTING` aimed at `@a`, or at `@s` under an `execute … as @a` of the same line — which must stand at a site `absent::SERVED` names with what reaches a member who was away, or the build is refused (`DW1126`);
 - **a pick of one player** — `@p`, `@r`, a player-typed `@n`, a player selector with `limit=` — which must stand at a site `absent::PICKS` names with which player is picked and why, or the build is refused (`DW1127`).
 
-Both are engine self-checks: the campaign cannot cause or repair them, and the message says so. A line of the root `tick` is restated every tick and is counted, not judged; a telling is for the present by §1 and is not read; the body of a function dispatched `as @a` is counted, not read. The build prints the census's binding line and writes `validation/absent-census.json`.
+Both are engine self-checks: the campaign cannot cause or repair them, and the message says so. A line of the root `tick` is restated every tick and is counted, not judged; a telling is for the present by §1 and is not read; a write narrowed to a box or a distance is the bodies standing in a place and is not read; the body of a function dispatched `as @a` is counted, not read. The build prints the census's binding line and writes `validation/absent-census.json`.
 
 ## 5. The party's PackTests **[authored, on spec-0018's templates]**
 
@@ -82,7 +82,7 @@ The build prints `absent-member binding (spec-0141): …` with each denominator.
 
 1. **The record covers the surface.** `python3 tools/ci/check-party-semantics.py --delvec <delvec>` exits 0 and prints the unit count it classified equal to the unit count of the export; a row removed from the record, and a unit row naming no unit, each turn it red (`tools/tests/test_check_party_semantics.py`).
 2. **A collect counts the party.** `crates/delvec/tests/it/absent.rs`: the tick of a campaign with a `collect` sums every player's held count into `#hold dw.sys` and completes on the sum; the gallery's suite carries `party_collect`, whose two members hold the count between them.
-3. **A party give is a grant.** `absent.rs`: a `carrier: all` give under an objective's completion emits `function <ns>:grant_<i>` and no `give @a` in the bundle; `grant_<i>` gives `@a` and counts the issue on `#all` and on `@a`; the tick carries one owed line; a `carrier: one` give and a shop offer's give stay `give @s`; a campaign with no party give emits none of it.
+3. **A party give is a grant.** `absent.rs`: a `carrier: all` give under an objective's completion emits `function <ns>:grant_<i>` and no `give @a` in the bundle; `grant_<i>` gives `@a` and counts the issue on `#all` and on `@a`; the tick carries one owed line behind the line that creates its entry; a `carrier: one` give and a shop offer's give stay `give @s`; a campaign with no party give emits none of it.
 4. **A late class arrives at the checkpoint.** `absent.rs`: `class_apply_<c>` of a campaign with a checkpoint carries the seat dispatch after its entry teleport, and of a campaign with none does not.
 5. **The census binds and reds.** `absent.rs`: over every fixture family the census reports no unserved write and no unnamed pick; a `tag @a add` planted in a completion bundle is `DW1126` naming it, and an `execute at @p` planted there is `DW1127` naming it; `@p` inside an authored line is not a pick.
 6. **PackTest.** The gallery build emits `party_collect`, one `party_grant_<i>` per grant and `party_class_arrives`, and they run green in tier 2.

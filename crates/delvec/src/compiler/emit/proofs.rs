@@ -445,19 +445,7 @@ pub(super) fn check_finished_tree(
     // names with its rule, or the build is refused (`DW1126`, `DW1127`: an
     // engine self-check). Feature-blind, read off the shipped bytes, and run on
     // every build.
-    if std::env::var("DW_ABSENT_DUMP").is_ok() {
-        let c = crate::compiler::absent::census(out);
-        for (f, l) in &c.unserved {
-            eprintln!("UNSERVED {f}: {}", l.chars().take(220).collect::<String>());
-        }
-        for (f, l) in &c.unnamed {
-            eprintln!("UNNAMED {f}: {}", l.chars().take(220).collect::<String>());
-        }
-        eprintln!("SERVED {:?} NAMED {:?}", c.served, c.named);
-    }
     let absent = match crate::compiler::absent::check(out) {
-        Ok(c) if std::env::var("DW_ABSENT_DUMP").is_ok() => c,
-        Err(_) if std::env::var("DW_ABSENT_DUMP").is_ok() => crate::compiler::absent::census(out),
         Ok(c) => c,
         Err(e) => {
             return Err(BuildFailure::Diagnostic {

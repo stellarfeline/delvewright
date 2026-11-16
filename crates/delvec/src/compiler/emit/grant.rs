@@ -146,17 +146,25 @@ pub(crate) fn owed_players(plan: &Plan) -> &'static str {
     }
 }
 
-/// The tick's one owed line: a player whose total is not the party's runs
-/// [`GRANT_OWED_FN`]. Empty for a campaign that issues no grant.
+/// The tick's owed lines: every player's total is given its entry, and a
+/// player whose total is not the party's runs [`GRANT_OWED_FN`]. Empty for a campaign that issues no grant.
 pub(super) fn grant_tick(plan: &Plan) -> Vec<String> {
     if grants(plan).is_empty() {
         return Vec::new();
     }
-    vec![format!(
-        "execute as {} unless score @s {GRANT_TOTAL} = {GRANT_PARTY} {GRANT_TOTAL} run function {}:{GRANT_OWED_FN}",
-        owed_players(plan),
-        plan.namespace
-    )]
+    // The entry is created first: a comparison against an entry that does not
+    // exist is false whatever it asks (`DW0495`).
+    vec![
+        format!(
+            "scoreboard players add {} {GRANT_TOTAL} 0",
+            owed_players(plan)
+        ),
+        format!(
+            "execute as {} unless score @s {GRANT_TOTAL} = {GRANT_PARTY} {GRANT_TOTAL} run function {}:{GRANT_OWED_FN}",
+            owed_players(plan),
+            plan.namespace
+        ),
+    ]
 }
 
 /// The grant functions: per grant the issue and the hand-over, and the owed
@@ -168,7 +176,7 @@ pub(super) fn grant_fns(plan: &Plan) -> Vec<(String, String)> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    let mut owed = vec![format!("scoreboard players add @s {GRANT_TOTAL} 0")];
+    let mut owed: Vec<String> = Vec::new();
     for (i, stack) in all.iter().enumerate() {
         let obj = grant_objective(i);
         out.push((
