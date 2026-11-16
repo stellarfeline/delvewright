@@ -39,6 +39,10 @@
 //       refused move with, and — the body gone — whether moves reported on from
 //       where the client thinks it is are taken, against moves resumed from
 //       where the server holds it.
+//   T17 a mounted spear zombie as a build summons a wave's mounted stack: a
+//       zombie horse carrying a helmeted iron-spear zombie, in a walled pen open
+//       to the sky and in the same pen roofed, at daytime 1000. Is the mount
+//       still alive and still under its rider, read every 2 s for 60 s.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1235,6 +1239,61 @@ async function t16(bot) {
   await rcon.probe(`fill ${B.x1} ${FLOOR_Y} ${B.z1} ${B.x2} ${FLOOR_Y} ${B.z2} minecraft:stone`)
 }
 
+// ---- T17: a mount under the sun ---------------------------------------------------
+// The summon a build emits for a wave stack declared with a mount
+// (`emit::mount::ride_on`): the mount, with the rider in `Passengers`, both
+// persistent; the rider helmeted (so the rider's own burn is answered), the
+// mount bare (a zombie horse's body draws no head slot, `DW0898`).
+async function t17(bot) {
+  await home(bot)
+  await clearBodies()
+  await rcon.run(`gamemode creative ${BOT}`)
+  await rcon.run('time set 1000')
+  const pens = [
+    { name: 'sky', x: H.x + 20, roof: false },
+    { name: 'roof', x: H.x - 20, roof: true },
+  ]
+  for (const p of pens) {
+    const z = H.z
+    // A 9 x 9 floor walled four high, open above; the roofed pen is capped over the walls.
+    await rcon.run(`fill ${p.x - 5} ${FLOOR_Y + 1} ${z - 5} ${p.x + 5} ${FLOOR_Y + 4} ${z + 5} minecraft:stone`)
+    await rcon.run(`fill ${p.x - 4} ${FLOOR_Y + 1} ${z - 4} ${p.x + 4} ${FLOOR_Y + 4} ${z + 4} minecraft:air`)
+    if (p.roof) await rcon.run(`fill ${p.x - 5} ${FLOOR_Y + 5} ${z - 5} ${p.x + 5} ${FLOOR_Y + 5} ${z + 5} minecraft:stone`)
+    for (const dz of [-1, 1]) {
+      await rcon.run(
+        `summon minecraft:zombie_horse ${p.x + 0.5} ${FLOOR_Y + 1} ${z + dz + 0.5} {Tags:["dw_mount","dw_t17_${p.name}_m"],PersistenceRequired:1b,` +
+          `Passengers:[{id:"minecraft:zombie",Tags:["dw_t17_${p.name}_r"],PersistenceRequired:1b,` +
+          `equipment:{mainhand:{id:"minecraft:iron_spear",count:1},head:{id:"minecraft:iron_helmet",count:1}},drop_chances:{mainhand:0.0f,head:0.0f}}]}`,
+      )
+    }
+  }
+  begin('T17-mount-in-the-sun', 'two zombie horses each carrying a helmeted iron-spear zombie in a walled pen open to the sky, two more in the same pen roofed; daytime 1000, clear; mounts alive, riders aboard, mount health and fire, every 2 s for 60 s')
+  row(`daytime=${await rcon.probe('time query daytime')}`)
+  for (let s = 0; s <= 60; s += 2) {
+    const fields = [`t=${s}s`]
+    for (const p of pens) {
+      const mounts = await countOf(`@e[tag=dw_t17_${p.name}_m]`)
+      const riders = await countOf(`@e[tag=dw_t17_${p.name}_r]`)
+      await rcon.probe(`scoreboard players set #aboard ${OBJ} 0`)
+      await rcon.probe(`execute as @e[tag=dw_t17_${p.name}_r] on vehicle if entity @s[tag=dw_mount] run scoreboard players add #aboard ${OBJ} 1`)
+      const aboard = await score('#aboard')
+      const hp = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_m,limit=1]`, 'Health'))
+      const fire = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_m,limit=1]`, 'Fire'))
+      const riderHp = parseNum(await entityGet(`@e[tag=dw_t17_${p.name}_r,limit=1]`, 'Health'))
+      fields.push(`${p.name}: mounts=${mounts} riders=${riders} aboard=${aboard} mountHealth=${f1(hp)} mountFire=${fire ?? '-'} riderHealth=${f1(riderHp)}`)
+    }
+    row(...fields)
+    if (s < 60) await sleep(2000)
+  }
+  for (const p of pens) {
+    await rcon.probe(`kill @e[tag=dw_t17_${p.name}_r]`)
+    await rcon.probe(`kill @e[tag=dw_t17_${p.name}_m]`)
+    await rcon.probe(`fill ${p.x - 5} ${FLOOR_Y + 1} ${H.z - 5} ${p.x + 5} ${FLOOR_Y + 5} ${H.z + 5} minecraft:air`)
+  }
+  await rcon.run('time set noon')
+  await rcon.run(`gamemode survival ${BOT}`)
+}
+
 async function teardown(bot) {
   try {
     await clearBodies()
@@ -1276,6 +1335,7 @@ try {
   if (wants('T14')) await t14(bot)
   if (wants('T15')) await t15(bot)
   if (wants('T16')) await t16(bot)
+  if (wants('T17')) await t17(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)

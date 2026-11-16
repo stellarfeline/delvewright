@@ -21,4 +21,4 @@
 
 [engine]
 repo = "stellarfeline/delvewright"
-ref = "delvec--v1.16.1"
+ref = "delvec--v1.17.0"

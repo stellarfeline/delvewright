@@ -34,6 +34,17 @@
 //! 5. **Nothing on its head.** No `equipment.head` — except for a phantom, whose
 //!    burn a helmet does not stop (see below).
 //!
+//! A wave stack that declares a `mount` (spec-0135 §13) stages two bodies on
+//! each cell: the rider and the mount under it. The mount is asked the same five
+//! questions by its own species and its own `mount.equipment.head`, with the
+//! rider's cells, beats and reach — it stands where the rider stands and goes
+//! where the rider steers. Measured on the pinned server
+//! (`validation/festival-probe.mjs` T17,
+//! `docs/reference/vehicles-animals-and-targets.md` §16): a zombie horse
+//! carrying a helmeted spear zombie under open sky at daytime 1000 burned from
+//! 24 health to dead in 14 s and left the rider on foot; the same pair roofed
+//! lost nothing in 60 s.
+//!
 //! ### 1. Which bodies burn — Mojang's list, never ours
 //!
 //! `#minecraft:burn_in_daylight` is a **built-in vanilla `entity_type` tag**, and
@@ -779,10 +790,48 @@ pub(crate) struct Staged {
     pub(crate) radius: u32,
     /// Does it already wear something on its head?
     helmeted: bool,
+    /// The body it rides, when its stack declares a `mount` (spec-0135 §13).
+    /// The mount stands where the rider stands and goes where the rider steers,
+    /// so it meets the sun the rider meets, and burns by its own species.
+    mount: Option<StagedMount>,
     /// Where it enters the fight.
     pub(crate) beats: Vec<Beat>,
     /// The `kill` objectives after which it is dead for good.
     pub(crate) dead_after: Vec<Pos>,
+}
+
+/// The mount a staged rider is summoned on.
+pub(crate) struct StagedMount {
+    /// The mount's vanilla entity id as authored.
+    entity: String,
+    /// Does the mount wear something on its head?
+    helmeted: bool,
+}
+
+/// One body the sun is asked about: a staged body, or the mount it rides.
+struct Burner<'a> {
+    entity: &'a str,
+    helmeted: bool,
+    /// The rider's entity id, when this body is a mount.
+    carries: Option<&'a str>,
+}
+
+impl Staged {
+    /// The bodies of this stack the sun can burn: the body itself, then its
+    /// mount.
+    fn burners(&self) -> Vec<Burner<'_>> {
+        std::iter::once(Burner {
+            entity: &self.entity,
+            helmeted: self.helmeted,
+            carries: None,
+        })
+        .chain(self.mount.as_ref().map(|m| Burner {
+            entity: &m.entity,
+            helmeted: m.helmeted,
+            carries: Some(&self.entity),
+        }))
+        .collect()
+    }
 }
 
 /// The state the sun reaches the body in, named in the message.
@@ -815,50 +864,53 @@ pub fn check_daylight_staging(
     let light = LightModel::from_shared(std::sync::Arc::clone(blocks));
     let ground = Ground::of(plan);
     for body in &staged {
-        if !burns_in_daylight(&body.entity) {
-            continue;
+        for burner in body.burners() {
+            if !burns_in_daylight(burner.entity) {
+                continue;
+            }
+            if burner.helmeted && helmet_helps(burner.entity) {
+                continue;
+            }
+            let sky = clock.sky_for(c, &body.beats, &body.dead_after);
+            // The witness names the declared state when it is one the fight can
+            // burn in: that is the state the author wrote and the party plays in.
+            let declared = (c.world.content.time, c.world.content.weather);
+            let Some(&time) = (sky.times.contains(&declared.0) && hour_burns(declared.0))
+                .then_some(&declared.0)
+                .or_else(|| sky.times.iter().find(|&&t| hour_burns(t)))
+            else {
+                continue;
+            };
+            let clear = sky.weathers.contains(&WorldWeather::Clear);
+            let Some(cell) = sky_within_reach(world, &light, &body.cells, body.radius, &|cell| {
+                clear || ground.dry_biome(&sky, cell).is_some()
+            }) else {
+                continue;
+            };
+            let dry_biome = ground.dry_biome(&sky, cell);
+            let dry = dry_biome.is_some();
+            let biome = dry_biome.unwrap_or_default();
+            let weather = if dry && sky.weathers.contains(&declared.1) {
+                declared.1
+            } else if clear {
+                WorldWeather::Clear
+            } else {
+                sky.weathers[0]
+            };
+            return Err(Failure {
+                code: DW_DAYLIGHT_BURNS_STAGING,
+                message: burn_message(
+                    body,
+                    &burner,
+                    &Exposure {
+                        cell,
+                        time,
+                        weather,
+                        dry: (dry && weather != WorldWeather::Clear).then_some(biome),
+                    },
+                ),
+            });
         }
-        if body.helmeted && helmet_helps(&body.entity) {
-            continue;
-        }
-        let sky = clock.sky_for(c, &body.beats, &body.dead_after);
-        // The witness names the declared state when it is one the fight can
-        // burn in: that is the state the author wrote and the party plays in.
-        let declared = (c.world.content.time, c.world.content.weather);
-        let Some(&time) = (sky.times.contains(&declared.0) && hour_burns(declared.0))
-            .then_some(&declared.0)
-            .or_else(|| sky.times.iter().find(|&&t| hour_burns(t)))
-        else {
-            continue;
-        };
-        let clear = sky.weathers.contains(&WorldWeather::Clear);
-        let Some(cell) = sky_within_reach(world, &light, &body.cells, body.radius, &|cell| {
-            clear || ground.dry_biome(&sky, cell).is_some()
-        }) else {
-            continue;
-        };
-        let dry_biome = ground.dry_biome(&sky, cell);
-        let dry = dry_biome.is_some();
-        let biome = dry_biome.unwrap_or_default();
-        let weather = if dry && sky.weathers.contains(&declared.1) {
-            declared.1
-        } else if clear {
-            WorldWeather::Clear
-        } else {
-            sky.weathers[0]
-        };
-        return Err(Failure {
-            code: DW_DAYLIGHT_BURNS_STAGING,
-            message: burn_message(
-                body,
-                &Exposure {
-                    cell,
-                    time,
-                    weather,
-                    dry: (dry && weather != WorldWeather::Clear).then_some(biome),
-                },
-            ),
-        });
     }
     Ok(())
 }
@@ -930,6 +982,10 @@ pub(crate) fn collect_staged(
                 cells: mine,
                 radius: crate::compiler::nav::follow::mob_reach(w, m).0.max(0.0) as u32,
                 helmeted: m.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+                mount: m.mount.as_ref().map(|mt| StagedMount {
+                    entity: mt.entity.clone(),
+                    helmeted: mt.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+                }),
                 beats: beats.clone(),
                 dead_after: dead_after.clone(),
             });
@@ -966,6 +1022,7 @@ pub(crate) fn collect_staged(
             cells: vec![pos],
             radius: crate::compiler::nav::follow::actor_reach(a).0.max(0.0) as u32,
             helmeted: a.equipment.as_ref().is_some_and(|e| e.head.is_some()),
+            mount: None,
             beats,
             dead_after: Vec::new(),
         });
@@ -993,15 +1050,15 @@ pub(crate) fn kill_objectives(c: &Campaign, wave: &str) -> Vec<Pos> {
 
 /// The diagnostic text: what is staged, the state and cell the sun gets in at,
 /// and the two fixes — plus the one that is forbidden.
-fn burn_message(body: &Staged, exposure: &Exposure) -> String {
+fn burn_message(body: &Staged, burner: &Burner<'_>, exposure: &Exposure) -> String {
     let Staged {
         owner,
         kind,
-        entity,
         cells,
         radius,
         ..
     } = body;
+    let entity = burner.entity;
     let at = cells[0];
     let Exposure {
         cell,
@@ -1009,19 +1066,48 @@ fn burn_message(body: &Staged, exposure: &Exposure) -> String {
         weather,
         dry,
     } = exposure;
-    let remedy = if head_piece_is_a_remedy(entity) {
-        "Give this stack `equipment.head` (any head item — vanilla damages the helmet instead \
-         of igniting the mob, and the compiler emits drop chance 0 so it can never be farmed), \
-         or roof the ground the fight happens on."
-    } else if helmet_helps(entity) {
-        "Roof the ground the fight happens on, or stage this encounter somewhere the sky does \
-         not reach. `equipment.head` is NOT a fix for this species: its body draws no head \
-         slot, so a head piece is refused (`DW0898`)."
+    let head = head_piece_is_a_remedy(entity);
+    let no_head = if helmet_helps(entity) {
+        ": its body draws no head slot, so a head piece is refused (`DW0898`)."
     } else {
-        "Roof the ground the fight happens on, or stage this encounter somewhere the sky does \
-         not reach. `equipment.head` is NOT a fix for this species."
+        "."
     };
-    let sanctioned = if head_piece_is_a_remedy(entity) {
+    let (staged, remedy) = match burner.carries {
+        None if head => (
+            format!("stages `{entity}`"),
+            "Give this stack `equipment.head` (any head item — vanilla damages the helmet \
+             instead of igniting the mob, and the compiler emits drop chance 0 so it can never \
+             be farmed), or roof the ground the fight happens on."
+                .to_string(),
+        ),
+        None => (
+            format!("stages `{entity}`"),
+            format!(
+                "Roof the ground the fight happens on, or stage this encounter somewhere the sky \
+                 does not reach. `equipment.head` is NOT a fix for this species{no_head}"
+            ),
+        ),
+        Some(rider) => (
+            format!(
+                "summons its `{rider}` stack on `{entity}` (the stack's `mount`, which dies to \
+                 the sun under its rider and leaves the rider to fight on foot)"
+            ),
+            if head {
+                "Give this mount `mount.equipment.head` (drop chance 0 is emitted), roof the \
+                 ground the fight happens on, or choose a `mount.entity` outside \
+                 `#minecraft:burn_in_daylight`."
+                    .to_string()
+            } else {
+                format!(
+                    "Roof the ground the fight happens on, stage this encounter somewhere the sky \
+                     does not reach, or choose a `mount.entity` outside \
+                     `#minecraft:burn_in_daylight`. `mount.equipment.head` is NOT a fix for this \
+                     species{no_head}"
+                )
+            },
+        ),
+    };
+    let sanctioned = if head && burner.carries.is_none() {
         "; the sanctioned fix is recorded on the `equipment.head` DSL field itself"
     } else {
         ""
@@ -1036,7 +1122,7 @@ fn burn_message(body: &Staged, exposure: &Exposure) -> String {
     };
     let (burn_off, burn_on) = delvewright_dsl::celestial::monsters_burn_switches();
     format!(
-        "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \
+        "{kind} `{owner}` {staged} at [{}, {}, {}], and vanilla burns that species in \
          daylight (`#minecraft:burn_in_daylight`). The fight can stand in `{}` with `{}`, an \
          hour the pinned game burns undead in (its `minecraft:day` timeline keeps \
          `monsters_burn` on from tick {burn_on} to tick {burn_off}), \
