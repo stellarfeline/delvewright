@@ -422,6 +422,13 @@ async function main(): Promise<number> {
   // anything can fight: the executor refuses to classify a body without it,
   // because the only alternative is a list of entity names in the harness.
   executor.useNonCombatants(criticalPath.nonCombatants.kinds);
+  // Whose death the story reads (format 14): no harness act harms one.
+  executor.useStoryBodies(criticalPath.storyBodies.bodies);
+  process.stderr.write(
+    `story bodies: ${criticalPath.storyBodies.bodies.length} row(s) over ` +
+      `${criticalPath.storyBodies.examined} wave(s), actor(s) and census(es) examined` +
+      `${criticalPath.storyBodies.bodies.length === 0 ? " — none: no harness act is withheld from any body" : ""}\n`,
+  );
   // spec-0101 §5.4: the watching bodies the walk judges at its waypoints. The
   // record's count is stated before the run, zero included.
   executor.useWatchers(criticalPath.watchers);

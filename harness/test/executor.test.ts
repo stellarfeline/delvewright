@@ -98,6 +98,8 @@ const CONFIG: BotConfig = {
 function attach(bot: FakeBot, env: Record<string, string | undefined> = {}): MineflayerExecutor {
   const executor = new MineflayerExecutor(CONFIG, env);
   executor.useNonCombatants(new Set(["mannequin", "villager"]));
+  // No body of these fixtures is a story body unless a test says so.
+  executor.useStoryBodies([]);
   executor.attachBot(bot as unknown as Bot);
   return executor;
 }
@@ -2390,9 +2392,27 @@ class CombatFakeBot extends InteractFakeBot {
     };
   }
 
+  /** Body id → the `@s[…]` selector terms it matches, as the server would
+   * answer an `execute as <uuid> if entity @s[…]` about it. */
+  readonly matches = new Map<number, Set<string>>();
+
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
     if (echoBracket(this, message)) return;
+    // A question about one body: the `tellraw` runs only when the body
+    // matches the terms, and a body that is gone is "No entity was found".
+    const asked = /^\/execute as uuid-(\d+) if entity @s\[(.+)\] run tellraw \S+ (\{.*\})$/.exec(message);
+    if (asked) {
+      const id = Number(asked[1]);
+      if (!this.entities[id]) {
+        this.emit("messagestr", "No entity was found");
+        return;
+      }
+      if (this.matches.get(id)?.has(asked[2]!)) {
+        this.emit("messagestr", (JSON.parse(asked[3]!) as { text: string }).text);
+      }
+      return;
+    }
     // The fake server answers the census the way a real one does: by TAG. Only
     // mobs in `entities` carry the wave tag here, so anything a test parks beside
     // the encounter is invisible to it — which is the whole point.
@@ -3425,6 +3445,77 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   bot.emit("health");
   await within("settleStaging(executor)", settleStaging(executor));
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 2, "no refund was added");
+});
+
+// --- a harness act never decides a story outcome (format 14) ---------------
+
+const GOAT_ROW = {
+  select: "tag=dw_wave_goat_admiral",
+  of: "wave/goat-admiral",
+  reads: ["its `on_kill`"],
+  waves: ["wave/goat-admiral"],
+};
+
+test("a story body that hits the bot is left standing and its blows are refunded", async () => {
+  // The town's world/17: the goat The Admiral followed the wheat in the bot's
+  // hand and rammed it while the step waited out the goats' window. The staged
+  // removal struck it, its `on_kill` failed the goats task, and the expiry
+  // the step waited for never came — the harness had chosen the outcome.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useStoryBodies([GOAT_ROW]);
+  const [goat] = bot.waveIds();
+  bot.matches.set(goat!, new Set([GOAT_ROW.select]));
+  bot.emit("health");
+  bot.emit("entityHurt", bot.entity, bot.entities[goat!]);
+  bot.health = 18; // a ram
+  bot.emit("health");
+  await within("settleStaging(executor)", settleStaging(executor));
+
+  assert.deepEqual(bot.stagedBlows, [], "no blow was dealt to the story body");
+  assert.ok(bot.entities[goat!], "the goat still stands");
+  assert.deepEqual(
+    executor.storyBodiesSpared.map((s) => s.of),
+    [["wave/goat-admiral: its `on_kill`"]],
+  );
+  assert.deepEqual(
+    bot.calls.filter((c) => c.startsWith("chat(/effect ")),
+    ["chat(/effect give @s minecraft:instant_health 1 0 true)"],
+    "the ram's two points are given back",
+  );
+  assert.ok(
+    executor.stagedBodies().some((r) => /left standing as a story body/.test(r.why)),
+    "the refund names the body as left standing",
+  );
+});
+
+test("a story body of the wave the `kill` step under way fights is that step's to strike", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useStoryBodies([GOAT_ROW]);
+  const [goat] = bot.waveIds();
+  bot.matches.set(goat!, new Set([GOAT_ROW.select, "tag=dw_wave_goat_admiral"]));
+  executor.fightTag = "dw_wave_goat_admiral";
+  bot.emit("entityHurt", bot.entity, bot.entities[goat!]);
+  await within("settleStaging(executor)", settleStaging(executor));
+  assert.deepEqual(bot.stagedBlows, [goat], "the path's own fight strikes it");
+  assert.deepEqual(executor.storyBodiesSpared, []);
+});
+
+test("a body no story row matches is removed as before", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useStoryBodies([GOAT_ROW]);
+  const [zombie] = bot.waveIds();
+  bot.emit("entityHurt", bot.entity, bot.entities[zombie!]);
+  await within("settleStaging(executor)", settleStaging(executor));
+  assert.deepEqual(bot.stagedBlows, [zombie]);
 });
 
 test("which wave a body is of is the server's tag, not a radius around the anchor", async () => {

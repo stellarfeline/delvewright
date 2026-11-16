@@ -1470,6 +1470,107 @@ pub fn non_combatants_json(c: &Campaign) -> Value {
     o
 }
 
+/// **The bodies whose death the campaign reads as story** — the
+/// `story_bodies` block of `critical-path.json` (format 14).
+///
+/// A body is one when its death writes something the story reads: a wave's
+/// or an actor's `on_kill`, a census that counts it (by its tag or by its
+/// kind: a body killed is a body that never walks into the box), and every
+/// actor, the cast the campaign places by name. No act of the harness — a
+/// staged removal, a staged clear outside the path's own `kill` of the
+/// wave, a defence while a step waits — may kill or harm one: the harness
+/// would be choosing a story outcome the path does not perform. The path's
+/// own `kill` step of a wave is its act, and the harness performs it.
+///
+/// Each row is a selector the harness asks the server about a body with
+/// (`select`, the terms the census itself counts by,
+/// `emit::census::census_terms`), what it stands for (`of`), every read
+/// that makes it story (`reads`), and the waves whose bodies it can match
+/// (`waves`, so a re-seated wave is judged by the same statement). Rows are
+/// keyed by selector, in selector order (ADR-0006). `examined` is the
+/// binding count: the waves, actors and censuses the statement was asked of.
+pub fn story_bodies_json(plan: &Plan) -> Value {
+    use delvewright_dsl::CensusOf;
+    let c = plan.campaign;
+    let content = &c.quests.content;
+    // select -> (of, reads, waves)
+    let mut rows: BTreeMap<String, (String, Vec<String>, BTreeSet<String>)> = BTreeMap::new();
+    let mut add = |select: String, of: &str, read: String, waves: &[&str]| {
+        let row = rows
+            .entry(select)
+            .or_insert_with(|| (of.to_string(), Vec::new(), BTreeSet::new()));
+        if !row.1.contains(&read) {
+            row.1.push(read);
+        }
+        row.2.extend(waves.iter().map(|w| w.to_string()));
+    };
+    for w in &content.waves {
+        if w.on_kill.is_some() {
+            add(
+                format!("tag={}", plan::wave_tag(w.id.as_str())),
+                w.id.as_str(),
+                "its `on_kill`".to_string(),
+                &[w.id.as_str()],
+            );
+        }
+    }
+    for a in &content.actors {
+        let of = CensusOf::Actor(a.id.clone());
+        let Some(select) = crate::compiler::emit::census::census_terms(plan, &of) else {
+            continue;
+        };
+        add(
+            select.clone(),
+            a.id.as_str(),
+            "an actor: a member of the cast the campaign places by name".to_string(),
+            &[],
+        );
+        if a.on_kill.is_some() {
+            add(select, a.id.as_str(), "its `on_kill`".to_string(), &[]);
+        }
+    }
+    let mut censuses = 0usize;
+    for s in &content.state {
+        let Some(k) = &s.counts else { continue };
+        censuses += 1;
+        if k.of.counts_the_party() {
+            continue;
+        }
+        let Some(select) = crate::compiler::emit::census::census_terms(plan, &k.of) else {
+            continue;
+        };
+        let of = match &k.of {
+            CensusOf::Wave(w) => w.as_str().to_string(),
+            CensusOf::Actor(a) => a.as_str().to_string(),
+            CensusOf::Npc(n) => n.as_str().to_string(),
+            CensusOf::Kind(kind) => kind.clone(),
+            CensusOf::Riders(v) => v.as_str().to_string(),
+        };
+        let waves: Vec<&str> = content
+            .waves
+            .iter()
+            .filter(|w| k.of.may_count_wave(w))
+            .map(|w| w.id.as_str())
+            .collect();
+        add(
+            select,
+            &of,
+            format!("`{}` counts it", s.id.as_str()),
+            &waves,
+        );
+    }
+    let bodies: Vec<Value> = rows
+        .into_iter()
+        .map(|(select, (of, reads, waves))| {
+            json!({ "select": select, "of": of, "reads": reads, "waves": waves })
+        })
+        .collect();
+    json!({
+        "bodies": bodies,
+        "examined": content.waves.len() + content.actors.len() + censuses,
+    })
+}
+
 /// The validation-only combat plan the bot ladder reads (spec-0023 §1/§3/§4).
 ///
 /// Lives under `validation/` like the waypoint export — excluded from the

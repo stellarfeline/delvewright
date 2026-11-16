@@ -44,6 +44,7 @@ function pathWith(aftermath: unknown): Record<string, unknown> {
     format_version: CRITICAL_PATH_FORMAT_VERSION,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
+    story_bodies: { bodies: [], examined: 0 },
     steps: [
       { action: "select-class", class: "class/wanderer", command: "/trigger dw.class set 1", pursuers: [] },
       {

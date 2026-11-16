@@ -3199,7 +3199,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, `13`
+  version**; `format_version` is the **contract's own** version, `14`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. **A `kill` step may
   carry `unattended`** (format 13): the triggers this path has not performed by that step (a trigger it performs later is still listed: a body may fire it first) whose
@@ -3445,6 +3445,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the collision is stated in `ambiguous[]` (`kind`, `why`, naming the NPCs) — the
   one direction that cannot soft-lock a delve, said out loud instead of decided in
   silence. The harness prints every ambiguity at load.
+
+  **`story_bodies` — whose death the story reads** (format 14,
+  `combat::story_bodies_json`). A block of `bodies[]` and `examined` (the
+  waves, actors and censuses the statement was asked of). Each row is a body
+  whose death writes something the story reads — a wave's or an actor's
+  `on_kill`, a census that counts it (by tag, or by kind: a body killed never
+  walks into the box), and every actor — as `select` (the selector terms the
+  census itself counts by, `emit::census::census_terms`), `of`, `reads` (every
+  read, in words) and `waves` (the waves whose bodies it can match), keyed and
+  ordered by selector. No act of the harness kills or harms one: a body that
+  hits the bot is asked of the server by UUID against these selectors, and a
+  story body is left standing with its own blows refunded; a body of the wave
+  the `kill` step under way fights is that step's to strike. Required: a path
+  without the block is refused.
 
   **`watchers[]` — the watching bodies** (spec-0101 §5.4). Written only for a
   campaign in which some body watches — an NPC watches by default — with the
@@ -3807,7 +3821,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   entry deed no step kind drives is a `mock` step on that path, and a dialogue
   option the path takes that completes no objective is a `choose` step
   (`flow::Flow::story_debts`: the path performs every act the flags it reads,
-  and its selection's choice, come from); a world whose deed
+  and its selection's choice, come from; `flow::Flow::item_debts`: every item
+  an `interact` presents with `requires_item` reaches the party's hands on the
+  path in front of the step — every class's kit, a `collect` or a `kill` whose
+  wave drops it that the path takes, a `give-item` its walk fires, or one of a
+  trigger it performs; a `loot` fill is no supply — and one that does not is
+  `DW0204` naming the step and the item, on the critical path and on every
+  story world's path); a world whose deed
   has no bundle function to mock it by, or changes nothing the replay can name,
   and a world whose run is incoherent or fires no ending, carries `path: null` and
   its `path_reason`; a

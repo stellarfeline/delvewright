@@ -125,6 +125,8 @@ taking is given back with instant health, rounded UP to vanilla's units
 whole of what a refund can hide — and named in `staged_removals`. Route falls and lethal volumes are
 mechanism, not bodies: nothing they take is refunded, and they still kill the bot.
 
+A **story body** is never struck by the harness. The compiler states, in `critical-path.json`'s `story_bodies` (format 14), every body whose death the story reads — a wave's or an actor's `on_kill`, a census that counts it, every actor — as the selector the census itself counts by. A body that hits the bot is asked of the server by UUID against those selectors before any blow; a story body is left standing, its own blows are refunded as above (named `left standing as a story body`), and the log says so; a single blow of 20 or more from one still kills. A body of the wave the `kill` step under way fights is that step's to strike: that death is the act the path performs there.
+
 A body the server has already announced dead is not standing and is never struck: what hit the bot is a shot it loosed as it fell, and `/damage` on a dying body is refused (`Target is invulnerable to the given damage type`). Its blow is still refunded. A blow refused because the body died between the hit and the blow is named in `staged_removals` as `the body died before the blow landed`.
 
 Every command whose refusal the harness reads is sent between two `/tellraw @s` markers written in one synchronous turn (`harness/src/command-reply.ts`). The server answers one player's commands in arrival order, so the lines between a command's markers are its reply and never the reply of another command in flight. A reply whose closing marker does not arrive within 5 s is reported as unobserved, never as accepted.

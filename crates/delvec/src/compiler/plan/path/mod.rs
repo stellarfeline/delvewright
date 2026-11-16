@@ -634,9 +634,18 @@ fn choices_before(
 ///   for `4`'s reason: a format-12 bot would refuse the key, and one that
 ///   ignored it would die there and judge a world the run left.
 ///
+/// * `14` — the path carries `story_bodies`
+///   ([`crate::compiler::combat::story_bodies_json`]): the bodies whose death
+///   the story reads — a wave's or an actor's `on_kill`, a census that counts
+///   it, every actor — each as the selector the harness asks the server about
+///   a body with. No act of the harness kills or harms one outside the path's
+///   own `kill` of its wave. A format change for `4`'s reason: a format-13 bot
+///   would refuse the key, and one that ignored it would stage a story body
+///   away and decide the outcome the path is proving.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 13;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 14;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).

@@ -111,9 +111,16 @@ import type { GateTerm } from "./death-loop.ts";
  *   taken. The die-retry stage takes no death there. A format-12 bot would
  *   refuse the key.
  *
+ * * `14` — the path carries `story_bodies`: the bodies whose death the story
+ *   reads (an `on_kill`, a census that counts them, every actor), each as the
+ *   selector the bot asks the server about a body with. No act of the harness
+ *   kills or harms one outside the path's own `kill` of its wave. Required: a
+ *   bot without it would have to guess which bodies are story, and that guess
+ *   is the compiler's knowledge written where it cannot be right.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 13;
+export const CRITICAL_PATH_FORMAT_VERSION = 14;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -773,6 +780,28 @@ export interface NonCombatants {
   readonly reason?: string;
 }
 
+/**
+ * One row of the compiler's statement of which bodies the story reads the
+ * death of (format 14, `combat::story_bodies_json`).
+ */
+export interface StoryBody {
+  /** The selector terms that pick the bodies, asked of the server with `@s[…]`. */
+  readonly select: string;
+  /** What the row stands for: a wave, an actor, an NPC or a kind. */
+  readonly of: string;
+  /** Every read of the death that makes it story, in the compiler's words. */
+  readonly reads: readonly string[];
+  /** The waves whose bodies the row can match. */
+  readonly waves: readonly string[];
+}
+
+/** The `story_bodies` block: the rows and the binding count. */
+export interface StoryBodies {
+  readonly bodies: readonly StoryBody[];
+  /** Waves, actors and censuses the statement was asked of. */
+  readonly examined: number;
+}
+
 export interface CriticalPath {
   readonly version: string;
   /** Contract version; see {@link CRITICAL_PATH_FORMAT_VERSION}. */
@@ -780,6 +809,8 @@ export interface CriticalPath {
   readonly campaignId: string;
   /** Who the bot may never swing at. Required — see the format-4 note. */
   readonly nonCombatants: NonCombatants;
+  /** Whose death the story reads. Required — see the format-14 note. */
+  readonly storyBodies: StoryBodies;
   readonly steps: readonly Step[];
   /**
    * Every watching body (spec-0101 §5.4). The compiler writes the key only for a
@@ -1942,7 +1973,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   const root = requireObject(raw, "");
   rejectUnknownKeys(
     root,
-    ["version", "format_version", "campaign_id", "non_combatants", "steps", "watchers"],
+    ["version", "format_version", "campaign_id", "non_combatants", "story_bodies", "steps", "watchers"],
     "",
   );
 
@@ -1985,6 +2016,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   });
 
   const nonCombatants = parseNonCombatants(root["non_combatants"], "/non_combatants");
+  const storyBodies = parseStoryBodies(root["story_bodies"], "/story_bodies");
   const watchers = parseWatchers(root["watchers"], "/watchers");
 
   return {
@@ -1992,6 +2024,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
     formatVersion: CRITICAL_PATH_FORMAT_VERSION,
     campaignId,
     nonCombatants,
+    storyBodies,
     steps,
     watchers,
   };
@@ -2127,6 +2160,41 @@ function parseNonCombatants(value: unknown, pointer: string): NonCombatants {
     unbound,
     ...(typeof reason === "string" ? { reason } : {}),
   };
+}
+
+/** The `story_bodies` block (format 14), or a refusal. Required whole. */
+function parseStoryBodies(value: unknown, pointer: string): StoryBodies {
+  const obj = requireObject(value, pointer);
+  rejectUnknownKeys(obj, ["bodies", "examined"], pointer);
+  const rawBodies = obj["bodies"];
+  if (!Array.isArray(rawBodies)) {
+    fail(`${pointer}/bodies`, `must be an array, got ${describe(rawBodies)}`);
+  }
+  const strings = (v: unknown, at: string): string[] => {
+    if (!Array.isArray(v)) fail(at, `must be an array, got ${describe(v)}`);
+    return v.map((x, i) => {
+      if (typeof x !== "string" || x.length === 0) {
+        fail(`${at}/${i}`, `must be a non-empty string, got ${describe(x)}`);
+      }
+      return x;
+    });
+  };
+  const bodies = rawBodies.map((b, i) => {
+    const at = `${pointer}/bodies/${i}`;
+    const row = requireObject(b, at);
+    rejectUnknownKeys(row, ["select", "of", "reads", "waves"], at);
+    const reads = strings(row["reads"], `${at}/reads`);
+    if (reads.length === 0) fail(`${at}/reads`, "a story body states what reads its death");
+    return {
+      select: requireString(row, "select", at),
+      of: requireString(row, "of", at),
+      reads,
+      waves: strings(row["waves"], `${at}/waves`),
+    };
+  });
+  const examined = requireInteger(obj, "examined", pointer);
+  if (examined < 0) fail(`${pointer}/examined`, "must be a non-negative integer");
+  return { bodies, examined };
 }
 
 /** Parse `critical-path.json` text: JSON.parse then structural validation. */
