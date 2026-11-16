@@ -855,13 +855,26 @@ fn emit_all(
         code: f.code,
         message: f.message,
     })?;
-    // A party carry's seats, one per member, over the same world (`DW1141`).
-    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world).map_err(|f| {
-        BuildFailure::Diagnostic {
+    // The inter-area crossings that exist only on a branch. Computed here so
+    // `DW0494` fails the build before a single function is emitted, and before
+    // the seats: every crossing is a party carry, seated as one.
+    let branch_transport = branch_transport_overlay(plan)?;
+    let crossing_marks: Vec<([i32; 3], String)> = teleport::crossings(plan, &branch_transport)
+        .into_iter()
+        .map(|x| {
+            (
+                x.to,
+                format!("the crossing into area `{}` (`{}`)", x.area, x.fn_name()),
+            )
+        })
+        .collect();
+    // A party carry's seats, one per member, over the same world (`DW1141`):
+    // every party teleport's and every crossing's.
+    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world, &crossing_marks)
+        .map_err(|f| BuildFailure::Diagnostic {
             code: f.code,
             message: f.message,
-        }
-    })?;
+        })?;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //
@@ -1160,9 +1173,6 @@ fn emit_all(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
-    // The inter-area crossings that exist only on a branch. Computed
-    // here so `DW0494` fails the build before a single function is emitted.
-    let branch_transport = branch_transport_overlay(plan)?;
 
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
@@ -1648,6 +1658,22 @@ fn emit_all(
     crate::note!("{}", fresh.line());
     put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
 
+    // ---- a template owns every gate it drives through ----
+    // Read off the finished tree, after every emitter and every pass that
+    // writes into a template, so the drive it writes before is the one the
+    // shipped body holds and it reaches templates not yet written
+    // (`crate::compiler::batchstate::own_gates`); `DW0807` judges the result.
+    let own = crate::compiler::batchstate::own_gates(
+        &plan.namespace,
+        &mut out,
+        &packtest::start_ledger(plan),
+    );
+    crate::note!("{}", own.line());
+    put_json(
+        &mut out,
+        "validation/packtest-own-gates.json",
+        &own.to_json(),
+    );
     // ---- the quota the delve's own sources need ----
     // Last of the writers, over the finished tree: every tick repeats work
     // that grows with the campaign and cannot move to a later tick, so when a

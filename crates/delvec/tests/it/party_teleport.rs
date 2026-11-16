@@ -333,14 +333,17 @@ fn the_packtest_carries_two_members_far_apart_onto_two_seats_alone() {
         "{t}"
     );
     assert!(t.contains(&format!("function {NS}:{name}")), "{t}");
-    // One player on each of the first two seats, read at the seats the
-    // function writes.
+    // The template's two members seated, each on a seat of its own, read at
+    // every seat the function writes.
     let s = seat_words(&body);
-    for (i, p) in s.iter().take(2).enumerate() {
-        let at = format!("execute positioned {p} store result score #ptp_0_s{i} dw.sys");
+    for p in &s {
+        let at = format!(
+            "execute positioned {p} as @a[tag=dw_t_ptp0m,distance=..0.25] run scoreboard players \
+             add #ptp_0_on dw.sys 1"
+        );
         assert!(t.contains(&at), "{at}\n{t}");
-        assert!(t.contains(&format!("assert score #ptp_0_s{i} dw.sys matches 1")));
     }
+    assert!(t.contains("assert score #ptp_0_on dw.sys matches 2"), "{t}");
 }
 
 /// The `x y z` words of each `tp @a[…]` line, as written.

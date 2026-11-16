@@ -184,6 +184,15 @@ pub const SERVED: &[Site] = &[
         matches: |name, _| name.starts_with("teleport_"),
     },
     Site {
+        site: "crossing",
+        rule: "a crossing (`cross_<area>`) carries the members present into another area, each \
+               onto a seat of their own, and writes the party's crossing count onto each member \
+               carried. A member who was away is behind that count, and the tick's owed line \
+               carries them once they are back: onto the checkpoint armed since the crossing, \
+               else onto the last crossing's entry point",
+        matches: |name, _| name.starts_with("cross_"),
+    },
+    Site {
         site: "limit countdown",
         rule: "a limited objective's countdown bar is given its players on every redraw \
                (`limit_show_<obj>`, once a second while the clock runs): a member who joins \

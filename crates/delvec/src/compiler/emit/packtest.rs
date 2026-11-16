@@ -55,6 +55,23 @@ mod watching;
 mod wave;
 mod world;
 
+/// The party ledger at the campaign's start, objective → value: the lines of
+/// [`quest::fresh_ledger`], the one authority on it, read back (a later line
+/// for one objective wins, as it does on the server).
+pub(super) fn start_ledger(plan: &Plan) -> BTreeMap<String, i32> {
+    let mut start = BTreeMap::new();
+    for line in quest::fresh_ledger(plan) {
+        let t: Vec<&str> = line.split_whitespace().collect();
+        if let ["scoreboard", "players", "set", h, obj, v] = t.as_slice()
+            && *h == plan::PARTY
+            && let Ok(v) = v.parse::<i32>()
+        {
+            start.insert((*obj).to_string(), v);
+        }
+    }
+    start
+}
+
 /// What the build's proofs established that the suite stands its templates on:
 /// each locked strike's plan (spec-0094) and each watcher's drawable cell
 /// (spec-0101). They travel from the proof to the template, never re-derived.
@@ -319,6 +336,8 @@ pub(super) fn emit_packtest(
     party::emit_party_class_packtest(plan, out);
     // DSL v0.88: a teleport of the party carries two members far apart.
     party::emit_party_teleport_packtests(plan, out);
+    // A crossing carries every member, and owes the one who was away.
+    party::emit_party_crossing_packtests(plan, out);
 
     // Last, over every template the emitters above wrote: a template that
     // re-runs `setup` and then the load takes the settled setup.
