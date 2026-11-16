@@ -1,0 +1,17 @@
+{
+  "code": "DW1118",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/races/1/checkpoints/0/at/offset",
+      "value": [
+        0,
+        30,
+        2
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lane's checkpoint raised thirty blocks over the lane. Its box holds no cell a body stands in or floats on, so nobody could be credited it. Refused at build, naming the race, the checkpoint and its box. It declares no unit."
+}

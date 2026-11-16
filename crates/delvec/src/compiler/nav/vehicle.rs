@@ -950,6 +950,7 @@ const RIDE_TRIES: usize = 256;
 /// vehicle — a medium cell other than the seat — and a cart is left only
 /// where its run ends, because the rails take it there. `walks(a, b)` is the
 /// leg proof's own walk.
+#[allow(clippy::too_many_arguments)]
 pub fn ride_of(
     world: &World,
     vi: usize,
@@ -991,7 +992,35 @@ pub fn ride_of(
     // where the last left it — and the ride proper is planned on from there.
     let mut lead: Vec<[i32; 3]> = Vec::new();
     let mut root = root;
-    for b in course {
+    // A cart is not steered: its rails carry it along one run, so its course
+    // is that run, and the checkpoints lie on it in order or the leg is off
+    // its course. The ride is then the run it always was.
+    let staged: &[crate::compiler::nav::race::CellBox] = if v.medium == VehicleMedium::Rails {
+        let tree = if boards {
+            world.medium_tree_avoiding(v, &kept)
+        } else {
+            world.medium_tree_from(v, root, &kept)
+        };
+        let run = tree
+            .keys()
+            .filter_map(|m| World::medium_path(&tree, *m))
+            .max_by_key(Vec::len)
+            .unwrap_or_default();
+        let mut at = 0;
+        for b in course {
+            let Some(k) = run[at..]
+                .iter()
+                .position(|m| crate::compiler::nav::race::cell_in_box(*m, b))
+            else {
+                return Err(RideMiss::OffCourse);
+            };
+            at += k;
+        }
+        &[]
+    } else {
+        course
+    };
+    for b in staged {
         let tree = if boards && lead.is_empty() {
             world.medium_tree_avoiding(v, &kept)
         } else {
