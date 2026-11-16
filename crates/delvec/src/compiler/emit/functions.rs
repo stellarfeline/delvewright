@@ -205,6 +205,9 @@ pub(super) fn emit_functions(
     // spec-0135 §13: each board's objective, headed by its title; shown only
     // when the story shows it. Empty without a board → byte-identical.
     setup.extend(board_setup(plan));
+    // spec-0139: each race's scores, at rest. Empty without a race →
+    // byte-identical.
+    setup.extend(race_setup(plan));
     // spec-0032: a named datum's shadow score — the value it was last announced at.
     // Party-scoped ones are seeded here beside the datum itself, so a world that
     // has just loaded announces nothing.
@@ -1305,6 +1308,9 @@ pub(super) fn emit_functions(
     // spec-0136: every body in the air takes its tick's step of the arc. Empty
     // for a campaign with no `hop` → byte-identical.
     tick.extend(moves::tick_lines(plan));
+    // spec-0139: every racer of a running race is asked for its next
+    // checkpoint. Empty for a campaign with no race → byte-identical.
+    tick.extend(race_tick(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
@@ -1356,6 +1362,7 @@ pub(super) fn emit_functions(
     fns.extend(emit_pulse_functions(plan, pulses));
     fns.extend(emit_vehicle_functions(plan));
     fns.extend(board_fns(plan));
+    fns.extend(race_fns(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

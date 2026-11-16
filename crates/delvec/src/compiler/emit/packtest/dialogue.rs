@@ -220,6 +220,16 @@ pub(super) fn emit_one_dialogue_mask_packtest(
                 ));
             }
             joint.drive(plan, objective.requires_state(), &mut satisfied, &mut terms);
+            // spec-0139 §4: an objective that declares a course completes only
+            // once its race is over, and that term hides the option too.
+            if let Some(r) = objective.course() {
+                let over = format!(
+                    "scoreboard players set {} dw.sys",
+                    super::super::race_over(r.as_str())
+                );
+                satisfied.push(format!("{over} 1"));
+                terms.push((vec![format!("{over} 0")], vec![format!("{over} 1")]));
+            }
         }
         if terms.is_empty() {
             continue;

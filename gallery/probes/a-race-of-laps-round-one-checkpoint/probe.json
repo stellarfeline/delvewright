@@ -1,0 +1,13 @@
+{
+  "code": "DW1117",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/races/1/laps",
+      "value": 2
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lane's race, which has one checkpoint, run for two laps. The checkpoint after it would be the one the racer already stands in, and both laps would be credited where it stands. Refused at validation, at the race's `laps`. It declares no unit."
+}

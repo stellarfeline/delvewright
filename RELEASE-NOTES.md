@@ -47,6 +47,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
 - A `particle` and a `play-sound` can happen at staged bodies: `at: {"bodies": [...], "up"?}` and `at: {"at": "bodies", "bodies": [...]}`.
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
+- `races[]` on stage 5: `{id, checkpoints, laps?, racers?, board?, grace_ticks?, missed, passed?}` — a course of checkpoints every racer, a player or a listed actor, is credited in order; the `start-race` and `end-race` verbs; every objective kind takes `course`, and `move-actor` takes `along`.
 
 ### Changed
 

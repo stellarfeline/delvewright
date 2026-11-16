@@ -37,6 +37,7 @@ mod nested_anchor_refs;
 mod npc_lifecycle_shared;
 mod on_kill;
 mod press_answers;
+mod race;
 mod riders;
 mod roundtrip;
 mod schema;

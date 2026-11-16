@@ -47,6 +47,14 @@ pub fn board_rows(c: &crate::envelope::Campaign, board: &str) -> u32 {
             }
         }
     });
+    // spec-0139: a race that places its finishers here places every player
+    // and every actor it lists.
+    for r in &c.quests.content.races {
+        if r.board.as_ref().is_some_and(|b| b.as_str() == board) {
+            players = true;
+            bodies.extend(r.racers.iter().map(|a| a.as_str().to_string()));
+        }
+    }
     let party = if players { crate::wave::MAX_PARTY } else { 0 };
     party + bodies.len() as u32
 }

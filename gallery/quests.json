@@ -2910,6 +2910,7 @@
             },
             {
               "actor": "actor/standard-bearer",
+              "along": "race/the-march",
               "happening": {
                 "subject": "actor/standard-bearer",
                 "text": "The bearer carries the colours up to the vantage.",
@@ -3862,6 +3863,10 @@
                 "verb": "loses"
               },
               "type": "damage"
+            },
+            {
+              "race": "race/the-march",
+              "type": "start-race"
             }
           ],
           "obj/climb-the-loft": [
@@ -4347,6 +4352,7 @@
             "after": [
               "obj/reach-the-hall-end"
             ],
+            "course": "race/up-the-lane",
             "happening": {
               "text": "the yard's loose hen is caught",
               "verb": "dies"
@@ -4364,6 +4370,7 @@
             ],
             "anchor": "anchor/long-hall-hen-run",
             "count": 1,
+            "course": "race/round-the-paddock",
             "dropped_by": "wave/yard-hen",
             "happening": {
               "subject": "anchor/long-hall-hen-run",
@@ -4404,6 +4411,7 @@
               "done": "The lever is thrown; water mutters somewhere under the flags.",
               "not_yet": "The lever is pinned; it will not move yet."
             },
+            "course": "race/down-the-basin",
             "happening": {
               "subject": "anchor/long-hall-far-bank",
               "text": "the party rows the basin and throws the sluice lever on its far bank",
@@ -4442,6 +4450,7 @@
             "after": [
               "obj/open-the-crate"
             ],
+            "course": "race/down-the-yard",
             "happening": {
               "subject": "npc/groom",
               "text": "The groom tells the party the cart still runs.",
@@ -4459,6 +4468,7 @@
               "obj/ask-the-groom"
             ],
             "anchor": "anchor/long-hall-line-end",
+            "course": "race/along-the-line",
             "happening": {
               "text": "the party rides the cart to the end of its line",
               "verb": "arrives"
@@ -4525,6 +4535,28 @@
             {
               "board": "board/hall-race",
               "type": "show-board"
+            },
+            {
+              "race": "race/the-march",
+              "type": "end-race"
+            }
+          ],
+          "obj/ask-the-groom": [
+            {
+              "race": "race/along-the-line",
+              "type": "start-race"
+            }
+          ],
+          "obj/catch-the-hen": [
+            {
+              "race": "race/round-the-paddock",
+              "type": "start-race"
+            }
+          ],
+          "obj/open-the-crate": [
+            {
+              "race": "race/down-the-yard",
+              "type": "start-race"
             }
           ],
           "obj/reach-the-hall-end": [
@@ -4546,6 +4578,10 @@
               },
               "type": "spawn-wave",
               "wave": "wave/yard-hen"
+            },
+            {
+              "race": "race/up-the-lane",
+              "type": "start-race"
             }
           ],
           "obj/ride-clover": [
@@ -4560,6 +4596,10 @@
               },
               "board": "board/hall-race",
               "type": "place-on-board"
+            },
+            {
+              "race": "race/down-the-basin",
+              "type": "start-race"
             }
           ],
           "obj/row-the-basin": [
@@ -4577,6 +4617,156 @@
           "quest": "quest/near-hall",
           "type": "quest-complete"
         }
+      }
+    ],
+    "races": [
+      {
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/vantage",
+              "offset": [
+                2,
+                0,
+                0
+              ]
+            },
+            "extent": [
+              1,
+              1,
+              1
+            ]
+          }
+        ],
+        "grace_ticks": 100,
+        "id": "race/the-march",
+        "missed": "That checkpoint is further on. Go back for the one you missed.",
+        "racers": [
+          "actor/standard-bearer"
+        ]
+      },
+      {
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/long-hall-jenny",
+              "offset": [
+                0,
+                0,
+                2
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "id": "race/up-the-lane",
+        "missed": "That checkpoint is further on. Go back for the one you missed."
+      },
+      {
+        "board": "board/hall-race",
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/long-hall-paddock",
+              "offset": [
+                -1,
+                0,
+                1
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "at": {
+              "anchor": "anchor/long-hall-paddock",
+              "offset": [
+                -2,
+                0,
+                2
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "id": "race/round-the-paddock",
+        "laps": 2,
+        "missed": "That checkpoint is further on. Go back for the one you missed.",
+        "passed": "Checkpoint"
+      },
+      {
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/long-hall-slip",
+              "offset": [
+                2,
+                -1,
+                2
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "id": "race/down-the-basin",
+        "missed": "That checkpoint is further on. Go back for the one you missed."
+      },
+      {
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/long-hall-stable",
+              "offset": [
+                0,
+                0,
+                2
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "id": "race/down-the-yard",
+        "missed": "That checkpoint is further on. Go back for the one you missed."
+      },
+      {
+        "checkpoints": [
+          {
+            "at": {
+              "anchor": "anchor/long-hall-cart",
+              "offset": [
+                0,
+                0,
+                5
+              ]
+            },
+            "extent": [
+              0,
+              1,
+              0
+            ]
+          }
+        ],
+        "id": "race/along-the-line",
+        "missed": "That checkpoint is further on. Go back for the one you missed."
       }
     ],
     "shops": [

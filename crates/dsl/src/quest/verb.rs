@@ -149,6 +149,21 @@ pub enum Verb {
         /// The board (stage-5 `boards` ref).
         board: crate::BoardId,
     },
+    /// **Starts a stage-5 race** (spec-0139 §3): every player and every
+    /// actor the race lists stands at no checkpoint passed, and the race
+    /// credits them from this tick on. A race started again starts over.
+    StartRace {
+        /// The race (stage-5 `races` ref).
+        race: crate::RaceId,
+    },
+    /// **Ends a stage-5 race** (spec-0139 §3) as its own end does: it is
+    /// over, nobody is credited a checkpoint of it or told of one missed
+    /// until it is started again, and what was placed on its board stays.
+    /// Nothing happens to a race that is not running.
+    EndRace {
+        /// The race (stage-5 `races` ref).
+        race: crate::RaceId,
+    },
     /// Seats a stage-5 vehicle at its mark (spec-0135 §2): the body the
     /// vehicle's seat function places, by the function every load runs. A
     /// vehicle already standing is removed first, so a seat is one body.
@@ -676,6 +691,12 @@ pub enum Verb {
         actor: ActorId,
         /// The destination mark: an anchor and an optional offset (spec-0066).
         to: Mark,
+        /// **The walk runs a race's course** (spec-0139 §5): through one
+        /// cell of each of the named race's checkpoints, in order and for
+        /// every lap, and on to `to`. The actor is one of that race's
+        /// `racers` (`DW1117`). Absent, the walk goes straight to `to`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        along: Option<crate::RaceId>,
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
@@ -1258,6 +1279,8 @@ impl Verb {
             Verb::HideBoard { .. } => "hide-board",
             Verb::PlaceOnBoard { .. } => "place-on-board",
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
+            Verb::StartRace { .. } => "start-race",
+            Verb::EndRace { .. } => "end-race",
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
             Verb::RecordOutcome { .. } => "record-outcome",
@@ -1363,6 +1386,9 @@ impl Verb {
             | Verb::DespawnWave { .. }
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            // spec-0139: a race is started and ended for every racer.
+            | Verb::StartRace { .. }
+            | Verb::EndRace { .. }
             // spec-0135 §13: the sidebar is every player's.
             | Verb::ShowBoard { .. }
             | Verb::HideBoard { .. }
@@ -1451,6 +1477,9 @@ impl Verb {
             | Verb::DespawnWave { .. }
             | Verb::SeatVehicle { .. }
             | Verb::DespawnVehicle { .. }
+            // spec-0139: whether a race runs is a score a proof reads.
+            | Verb::StartRace { .. }
+            | Verb::EndRace { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
             | Verb::SpawnAssembly { .. }

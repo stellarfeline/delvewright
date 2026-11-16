@@ -899,6 +899,9 @@ pub enum RideMiss {
     /// Its seat, or a cart's whole run, lies in a volume the leg keeps out of:
     /// a rider there would complete an armed objective out of turn.
     KeptOut,
+    /// Its medium reaches no cell of a checkpoint of the course the leg
+    /// runs, from the checkpoint before it (spec-0139 §6).
+    OffCourse,
 }
 
 impl RideMiss {
@@ -917,6 +920,11 @@ impl RideMiss {
                  volume of an objective armed on this leg, so a rider would complete that \
                  objective from the saddle; end the medium, or move the objective's anchor, so \
                  the ride stops short and the party walks in"
+            }
+            RideMiss::OffCourse => {
+                "the leg runs a race's course, and its medium inside `bounds` reaches no cell \
+                 of one of the checkpoints from the one before it; build the medium through \
+                 every checkpoint in order, widen `bounds`, or move the checkpoint onto it"
             }
             RideMiss::NoLeave => {
                 "the party walks to the leg's end from no cell a rider stands on after leaving it, \
@@ -942,6 +950,7 @@ const RIDE_TRIES: usize = 256;
 /// vehicle — a medium cell other than the seat — and a cart is left only
 /// where its run ends, because the rails take it there. `walks(a, b)` is the
 /// leg proof's own walk.
+#[allow(clippy::too_many_arguments)]
 pub fn ride_of(
     world: &World,
     vi: usize,
@@ -950,6 +959,7 @@ pub fn ride_of(
     walks: &dyn Fn([i32; 3], [i32; 3]) -> bool,
     goal: [i32; 3],
     seat_act: Option<&dyn Fn([i32; 3]) -> bool>,
+    course: &[crate::compiler::nav::race::CellBox],
 ) -> Result<RideTake, RideMiss> {
     if !world.seat_in_medium(v) || !v.within(v.seat) {
         return Err(RideMiss::Unseated);
@@ -977,14 +987,66 @@ pub fn ride_of(
         }
         RideFrom::Aboard(at) => (at, at, false),
     };
-    let tree = if boards {
+    // spec-0139 §6: a ride that runs a course goes first through one medium
+    // cell of each checkpoint, in order — the nearest along the medium from
+    // where the last left it — and the ride proper is planned on from there.
+    let mut lead: Vec<[i32; 3]> = Vec::new();
+    let mut root = root;
+    // A cart is not steered: its rails carry it along one run, so its course
+    // is that run, and the checkpoints lie on it in order or the leg is off
+    // its course. The ride is then the run it always was.
+    let staged: &[crate::compiler::nav::race::CellBox] = if v.medium == VehicleMedium::Rails {
+        let tree = if boards {
+            world.medium_tree_avoiding(v, &kept)
+        } else {
+            world.medium_tree_from(v, root, &kept)
+        };
+        let run = tree
+            .keys()
+            .filter_map(|m| World::medium_path(&tree, *m))
+            .max_by_key(Vec::len)
+            .unwrap_or_default();
+        let mut at = 0;
+        for b in course {
+            let Some(k) = run[at..]
+                .iter()
+                .position(|m| crate::compiler::nav::race::cell_in_box(*m, b))
+            else {
+                return Err(RideMiss::OffCourse);
+            };
+            at += k;
+        }
+        &[]
+    } else {
+        course
+    };
+    for b in staged {
+        let tree = if boards && lead.is_empty() {
+            world.medium_tree_avoiding(v, &kept)
+        } else {
+            world.medium_tree_from(v, root, &kept)
+        };
+        let Some((_, stop)) = tree
+            .keys()
+            .filter(|m| crate::compiler::nav::race::cell_in_box(**m, b))
+            .filter_map(|m| Some((World::medium_path(&tree, *m)?.len(), *m)))
+            .min()
+        else {
+            return Err(RideMiss::OffCourse);
+        };
+        let path = World::medium_path(&tree, stop).ok_or(RideMiss::OffCourse)?;
+        lead.extend(path.into_iter().skip(usize::from(!lead.is_empty())));
+        root = stop;
+    }
+    let tree = if boards && lead.is_empty() {
         world.medium_tree_avoiding(v, &kept)
     } else {
         world.medium_tree_from(v, root, &kept)
     };
     // A ride from the seat moves the vehicle; one that goes on from aboard
-    // may act, or leave, where it is.
-    let shortest = if boards { 2 } else { 1 };
+    // — or from the last checkpoint of a course — may act, or leave, where
+    // it is.
+    let shortest = if boards && lead.is_empty() { 2 } else { 1 };
     let mut longest = 0usize;
     let mut rides: Vec<(usize, [i32; 3])> = Vec::new();
     for m in tree.keys() {
@@ -1004,10 +1066,13 @@ pub fn ride_of(
         });
     }
     let take = |m: [i32; 3], leave: [i32; 3], stays: bool| -> Result<RideTake, RideMiss> {
+        let tail = World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?;
+        let mut medium = lead.clone();
+        medium.extend(tail.into_iter().skip(usize::from(!lead.is_empty())));
         Ok(RideTake {
             vehicle: vi,
             board,
-            medium: World::medium_path(&tree, m).ok_or(RideMiss::NoMedium)?,
+            medium,
             leave,
             boards,
             stays,
@@ -1097,6 +1162,7 @@ pub fn boardable_seats(
             walks,
             goal,
             acts.as_ref().map(|f| f as &dyn Fn([i32; 3]) -> bool),
+            &[],
         )
         .is_ok()
         {
@@ -1193,7 +1259,16 @@ mod tests {
         let b = boat([1, 1, 0], ([-10, -5, -5], [20, 5, 5]));
         let (from, goal) = ([-3, 1, 0], [10, 1, 0]);
         assert_eq!(
-            ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| false, goal, None),
+            ride_of(
+                &w,
+                0,
+                &b,
+                RideFrom::Foot(from),
+                &|_, _| false,
+                goal,
+                None,
+                &[]
+            ),
             Err(RideMiss::NoBoard)
         );
         // Boarded, and no leaving cell walks on to the goal.
@@ -1205,12 +1280,22 @@ mod tests {
                 RideFrom::Foot(from),
                 &|a, _| a == from,
                 goal,
-                None
+                None,
+                &[],
             ),
             Err(RideMiss::NoLeave)
         );
-        let ride =
-            ride_of(&w, 0, &b, RideFrom::Foot(from), &|_, _| true, goal, None).expect("a ride");
+        let ride = ride_of(
+            &w,
+            0,
+            &b,
+            RideFrom::Foot(from),
+            &|_, _| true,
+            goal,
+            None,
+            &[],
+        )
+        .expect("a ride");
         assert_eq!(ride.medium[0], b.seat);
         assert!(ride.leave[0] >= 8, "left on the far shore: {ride:?}");
         // Two boats at one dock seat four; one seats two.
