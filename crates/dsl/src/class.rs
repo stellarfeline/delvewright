@@ -242,9 +242,10 @@ crate::dw_code! {
 }
 
 /// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
-/// and `minecraft:stripped_oak_log` are the same item to every comparison here.
-/// Same rule [`crate::is_potion_bearing_item`] applies to its own list.
-fn ns_item(id: &str) -> String {
+/// and `minecraft:stripped_oak_log` are the same item to every comparison of
+/// item provenance. Same rule [`crate::is_potion_bearing_item`] applies to its
+/// own list.
+pub fn ns_item(id: &str) -> String {
     if id.contains(':') {
         id.to_string()
     } else {
@@ -303,28 +304,39 @@ fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
     }
 
     for w in &quests.waves {
-        for m in &w.mobs {
-            for drop in &m.drops {
-                match (drop.item(), drop.slot()) {
-                    (Some(item), _) => {
-                        src.insert(ns_item(item));
-                    }
-                    // A worn piece drops the item the same mob's `equipment`
-                    // declares in that slot (`DW0490` already refuses a slot the
-                    // equipment leaves empty, so this lookup is total on a
-                    // campaign that got that far).
-                    (None, Some(slot)) => {
-                        if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
-                            src.insert(ns_item(eq.item()));
-                        }
-                    }
-                    (None, None) => {}
-                }
-            }
-        }
+        src.extend(wave_drop_items(w));
     }
 
     src
+}
+
+/// **Every item a wave's bodies drop when the party kills them**, namespaced
+/// ([`ns_item`]) — the one answer to "what does killing this fight put in a
+/// player's hands", read by the class-blind provenance census
+/// ([`item_gate_class_checks`]) and by the path's item supply (the compiler's
+/// `Flow::item_debts`).
+pub fn wave_drop_items(w: &crate::Wave) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for m in &w.mobs {
+        for drop in &m.drops {
+            match (drop.item(), drop.slot()) {
+                (Some(item), _) => {
+                    out.insert(ns_item(item));
+                }
+                // A worn piece drops the item the same mob's `equipment`
+                // declares in that slot (`DW0490` already refuses a slot the
+                // equipment leaves empty, so this lookup is total on a
+                // campaign that got that far).
+                (None, Some(slot)) => {
+                    if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
+                        out.insert(ns_item(eq.item()));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+    }
+    out
 }
 
 /// `DW0849`: **an item gate a class cannot bring.**

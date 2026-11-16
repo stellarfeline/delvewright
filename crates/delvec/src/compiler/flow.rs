@@ -1473,6 +1473,107 @@ impl<'a> Flow<'a> {
         out
     }
 
+    /// **The items `p` presents that nothing on it has handed the party** —
+    /// the item half of the path-performs-what-it-reads rule, beside the
+    /// flags [`Self::story_debts`] and [`Self::trigger_debts`] pay.
+    ///
+    /// An `interact` with `requires_item` completes only for a player holding
+    /// the item, so the item must reach the party's hands on the path, in
+    /// front of the step: in every class's kit (the party starts with what
+    /// every class carries), a `collect` of it the path takes, a `kill` the
+    /// path takes whose wave drops it ([`delvewright_dsl::wave_drop_items`]),
+    /// a `give-item` the walk of `p` fires (an objective's or a quest's bundle,
+    /// an entry deed — a purchase, an elective trigger), or a `give-item` of a
+    /// trigger the path performs to pay a flag ([`Self::trigger_debts`]). A
+    /// `loot` container is no supply: no step of any path opens one. The
+    /// direction is generous: a gated `give-item` of a performed trigger
+    /// counts, and an item presented once stays held.
+    ///
+    /// Each entry is `(step index, sentence)`; empty when every presented
+    /// item has a supply on the path. `DW0204` on the path that carries one.
+    pub fn item_debts(&self, p: &Playthrough) -> Vec<(usize, String)> {
+        use delvewright_dsl::{EffectSite, ns_item};
+        let c = self.c;
+        let mut gives: BTreeMap<String, String> = BTreeMap::new();
+        let mut trigger_gives: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        delvewright_dsl::for_each_campaign_effect(c, &mut |path, site, eff| {
+            let Some(item) = eff.give_item() else { return };
+            gives.insert(path.to_string(), ns_item(item));
+            if let EffectSite::Trigger { trigger } = site {
+                trigger_gives
+                    .entry(trigger.clone())
+                    .or_default()
+                    .insert(ns_item(item));
+            }
+        });
+        let classes = &c.classes.content.classes;
+        let mut held: BTreeSet<String> = classes
+            .first()
+            .map(|first| {
+                first
+                    .kit
+                    .iter()
+                    .map(|k| ns_item(&k.item))
+                    .filter(|it| {
+                        classes
+                            .iter()
+                            .all(|cl| cl.kit.iter().any(|k| ns_item(&k.item) == *it))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let debts = self.trigger_debts(p);
+        let mut w = self.walk_for(p);
+        let mut out: Vec<(usize, String)> = Vec::new();
+        for (i, step) in p.steps.iter().enumerate() {
+            for d in debts.iter().filter(|d| d.step == i) {
+                held.extend(trigger_gives.get(&d.trigger).into_iter().flatten().cloned());
+            }
+            // An objective the story settles (failed, or lapsed by its clock)
+            // is never presented: the party performs nothing at it.
+            let settled =
+                w.st.failed.contains(&step.objective) || w.st.expired.contains(&step.objective);
+            let j = w.take(step);
+            for (_, fired) in &j.deeds {
+                held.extend(fired.iter().filter_map(|f| gives.get(f)).cloned());
+            }
+            let obj = self.objective(&step.objective);
+            if let Some(Objective::Interact {
+                requires_item: Some(raw),
+                ..
+            }) = obj
+                && !settled
+                && !held.contains(&ns_item(raw))
+            {
+                out.push((
+                    i,
+                    format!(
+                        "step {} (`{}`) presents `{raw}` (its `requires_item`), and nothing \
+                         earlier on the path puts one in the party's hands — no `collect` of it, \
+                         no `kill` whose wave drops it, no `give-item` the path fires, and not \
+                         every class's kit; a `loot` fill is no supply, since no step of the path \
+                         takes from it",
+                        i + 1,
+                        step.objective
+                    ),
+                ));
+            }
+            held.extend(j.fired.iter().filter_map(|f| gives.get(f)).cloned());
+            match obj {
+                Some(Objective::Collect { item, .. }) => {
+                    held.insert(ns_item(item));
+                }
+                Some(Objective::Kill { wave, .. }) => {
+                    if let Some(wv) = c.quests.content.waves.iter().find(|x| x.id == *wave) {
+                        held.extend(delvewright_dsl::wave_drop_items(wv));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
     /// **The flags taking `step` reads**: its objective's `requires_flags`,
     /// and for a `talk-to` the taken option's own `requires` — the reads a path
     /// owes an act for when nothing on it sets them ([`Self::trigger_debts`],
