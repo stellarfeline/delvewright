@@ -1237,6 +1237,15 @@ pub(super) fn prove_world(
                     warnings.extend(table.notice(&reads, "build"));
                 }
                 if !routes.is_empty() {
+                    // DW1140: a despawn the path fires before its actor can
+                    // stand. The binding is printed before the verdict.
+                    let (despawns, verdict) = crate::compiler::waypoints::check_despawns(
+                        plan,
+                        &plan.path_firing,
+                        &routes,
+                    );
+                    crate::note!("{}", despawns.line());
+                    verdict?;
                     let free = crate::compiler::waypoints::free_bodies(
                         plan,
                         &plan.critical_path,
@@ -1636,6 +1645,11 @@ fn prove_branch_world(
     );
     crate::compiler::nav::verify_exported_routes(world, &routes).map_err(label)?;
     crate::compiler::notes::mark("branch world: routes planned and verified");
+    if !routes.is_empty() {
+        crate::compiler::waypoints::check_despawns(plan, &cp.firing, &routes)
+            .1
+            .map_err(label)?;
+    }
     let waypoints = (!routes.is_empty()).then(|| {
         let free = crate::compiler::waypoints::free_bodies(plan, &cp.steps, &cp.firing, &routes);
         crate::compiler::waypoints::waypoints_json(

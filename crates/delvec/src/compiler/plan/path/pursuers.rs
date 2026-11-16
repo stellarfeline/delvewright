@@ -19,8 +19,9 @@
 //!
 //! An `unleash-actor` the path cannot date — a trigger the path does not
 //! perform, a trap, a reaction bundle, an `on_kill`, a shop — may fire at any
-//! step, so its actor is a pursuer of every step from the path's first, and
-//! the row says `undated: true`. A `despawn-actor` the path cannot date may
+//! step, so its actor is a pursuer of every step from the path's first — a
+//! dated despawn does not end that, since the arrival may come again after it
+//! — and the row says `undated: true`. A `despawn-actor` the path cannot date may
 //! never fire, so it removes nothing.
 
 use super::*;
@@ -202,14 +203,18 @@ pub(crate) fn pursuers_by_step(
             entrance_ticks: delvewright_dsl::entrance::entrance_ticks(a),
             undated,
         };
-        let mut loose = undated;
+        // What the dated lines leave loose as each step begins. An undated
+        // unleash may fire at any step — after a dated despawn too — so no
+        // despawn takes its body out: it is loose on every step.
+        let mut dated_loose = false;
         let mut k = 0;
         for (i, slot) in out.iter_mut().enumerate() {
             // Every event at an earlier step has happened as step `i` begins.
             while k < events.len() && events[k].0 < i {
-                loose = events[k].1;
+                dated_loose = events[k].1;
                 k += 1;
             }
+            let loose = undated || dated_loose;
             let despawned_here = events.iter().any(|(s, u)| *s == i && !*u);
             // A path-frame step stands nowhere — the class is chosen, the
             // completion asserted, an act mocked — so nothing is walked on it.
@@ -819,9 +824,184 @@ pub(crate) fn free_bodies_by_step(
     out
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1140`: a `despawn-actor` a proven path certainly fires before any
+    /// line that places its actor can have fired on that path — the despawn
+    /// removes nothing, and a body that arrives after it stays. Names the
+    /// actor, the line, the step and the first step an arrival can come.
+    pub const DW_DESPAWN_BEFORE_ARRIVAL: DwCode = DwCode::new("DW1140", ExitTier::Build);
+}
+
+/// Whether some body of an actor with these arrivals can stand by the
+/// completion of step `d`: an exact arrival at a step's completion (`from` is
+/// the step after it) at that step or an earlier one — within one step a
+/// despawn is taken to follow an arrival, as the pursuers are walked — and an
+/// arrival that is not exact (it comes during a walk, from `from` on) by the
+/// walk of step `d`.
+pub(crate) fn arrived_by(arrivals: &[Arrival], d: usize) -> bool {
+    arrivals
+        .iter()
+        .any(|a| if a.exact { a.from <= d + 1 } else { a.from <= d })
+}
+
+/// What [`check_despawns_follow_arrivals`] judged on one path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DespawnBinding {
+    /// `despawn-actor` lines the path certainly fires at a dated step.
+    pub judged: usize,
+    /// Of those, the ones an arrival of their actor can precede.
+    pub after_arrival: usize,
+}
+
+impl DespawnBinding {
+    /// The line a build prints for the exported path.
+    pub fn line(&self) -> String {
+        format!(
+            "despawn binding (DW1140): {} despawn-actor line(s) the exported path certainly \
+             fires judged, {} with an arrival of their actor able to come before them, {} refused",
+            self.judged,
+            self.after_arrival,
+            self.judged - self.after_arrival
+        )
+    }
+}
+
+/// **`DW1140`: a despawn the path fires before its actor can be there.** For
+/// every `despawn-actor` the path certainly fires at a dated step `d`, some
+/// line that places its actor — a `spawn-actor` (the puppet) or an
+/// `unleash-actor` (the twin; an `ambush` desugars to both) — must be able to
+/// fire by `d` on this path ([`arrived_by`]): one dated at a step up to `d`;
+/// one in a trigger the path does not perform, from `sprung(trigger)` — the
+/// first step whose walk can spring it — when that is up to `d`, or from the
+/// first step when no walk is known to spring it; and any other line the path
+/// cannot date (a trap, a reaction bundle, an `on_kill`, a shop), which may
+/// fire at any step. A despawn that tidies a body an optional act may have
+/// brought in is therefore legal; one that every placing line on the path
+/// follows is refused, because on that play order its beat — a death or a
+/// departure the story states — never happens, and the body it was written
+/// to remove arrives after it and stays.
+pub(crate) fn check_despawns_follow_arrivals(
+    c: &Campaign,
+    firing: &PathFiring,
+    sprung: &dyn Fn(&str) -> Option<usize>,
+) -> (DespawnBinding, Result<(), Failure>) {
+    fn walk<'a>(
+        list: &'a [QuestEffect],
+        base: &str,
+        reaction: bool,
+        owner: &EffectRootOwner<'a>,
+        out: &mut Vec<(String, EffectRootOwner<'a>, bool, &'a QuestEffect)>,
+    ) {
+        for (i, e) in list.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if matches!(
+                e.verb,
+                Verb::SpawnActor { .. } | Verb::UnleashActor { .. } | Verb::DespawnActor { .. }
+            ) {
+                out.push((path.clone(), *owner, reaction, e));
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
+                walk(nested, &format!("{path}/{seg}"), r, owner, out);
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        walk(list, &site.path, false, &site.owner, &mut lines);
+    });
+    let mut arrivals: BTreeMap<&str, Vec<Arrival>> = BTreeMap::new();
+    let mut despawns: Vec<(&str, &str, usize)> = Vec::new();
+    for (pointer, owner, reaction, e) in &lines {
+        match &e.verb {
+            Verb::SpawnActor { actor } | Verb::UnleashActor { actor } => {
+                let arrival = match (owner, dated(owner, pointer, *reaction, firing)) {
+                    (_, Some(When::At(s))) => Arrival {
+                        from: s + 1,
+                        exact: true,
+                    },
+                    (EffectRootOwner::Trigger(t), Some(When::Undated)) if !*reaction => Arrival {
+                        from: sprung(t.id.as_str()).unwrap_or(0),
+                        exact: false,
+                    },
+                    (_, Some(When::Undated)) => Arrival {
+                        from: 0,
+                        exact: false,
+                    },
+                    (_, None) => continue,
+                };
+                arrivals.entry(actor.as_str()).or_default().push(arrival);
+            }
+            Verb::DespawnActor { actor, .. } => {
+                if let Some(When::At(d)) = dated(owner, pointer, *reaction, firing)
+                    && firing.fires(pointer)
+                {
+                    despawns.push((actor.as_str(), pointer.as_str(), d));
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut b = DespawnBinding {
+        judged: despawns.len(),
+        ..DespawnBinding::default()
+    };
+    let mut verdict = Ok(());
+    for (actor, pointer, d) in despawns {
+        let list = arrivals.get(actor).map_or(&[][..], Vec::as_slice);
+        if arrived_by(list, d) {
+            b.after_arrival += 1;
+            continue;
+        }
+        if verdict.is_err() {
+            continue;
+        }
+        let first = list
+            .iter()
+            .map(|a| if a.exact { a.from - 1 } else { a.from })
+            .min();
+        let when = match first {
+            Some(s) => format!(
+                "the first line that places it can fire at step {s}, after the despawn"
+            ),
+            None => "no line on this path places it at all".to_string(),
+        };
+        verdict = Err(Failure::new(
+            DW_DESPAWN_BEFORE_ARRIVAL,
+            format!(
+                "`despawn-actor` of `{actor}` at `{pointer}` fires at step {d} of the path, and \
+                 the actor cannot be standing then: {when} (a `spawn-actor` or `unleash-actor` \
+                 of it, an `ambush` that names it included). On this play order the despawn \
+                 removes nothing and its beat never happens, and a body that arrives later \
+                 stays. Move the despawn to a beat after the actor's arrival, or bring the \
+                 actor in before it"
+            ),
+        ));
+    }
+    (b, verdict)
+}
+
 #[cfg(test)]
 mod free_body_tests {
     use super::*;
+
+    /// `DW1140`'s arithmetic: a despawn at step 3's completion follows an
+    /// exact arrival at step 3 (its `from` is 4) and one sprung by the walk
+    /// of step 3, and precedes one sprung by step 4's walk or at step 4's
+    /// completion — the gallery's rafter spider, despawned at the muster's
+    /// clearing and loosed by an ambush a later walk springs.
+    #[test]
+    fn a_despawn_follows_only_an_arrival_that_can_come_by_its_step() {
+        let exact = |from| Arrival { from, exact: true };
+        let walk = |from| Arrival { from, exact: false };
+        assert!(arrived_by(&[exact(4)], 3));
+        assert!(arrived_by(&[walk(3)], 3));
+        assert!(arrived_by(&[walk(0)], 0));
+        assert!(!arrived_by(&[exact(5)], 3));
+        assert!(!arrived_by(&[walk(4)], 3));
+        assert!(!arrived_by(&[], 3));
+        assert!(arrived_by(&[walk(4), exact(2)], 3));
+    }
 
     #[test]
     fn an_exact_arrival_is_loose_from_the_step_after_its_beat_until_a_despawn() {

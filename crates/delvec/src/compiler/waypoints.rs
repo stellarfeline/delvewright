@@ -38,18 +38,11 @@ const PLAYER_OCCUPANCY: i32 = 2;
 /// from its corner. Authored over the harness's leg-following tolerance.
 const SPRING_MARGIN: f64 = 2.0;
 
-/// **The free bodies loose on each step of a path** ([`plan::free_bodies_by_step`]),
-/// an `approach` trigger the path does not perform dated by its routes: the
-/// first leg (by the step it walks to) with a route cell within the trigger's
-/// range of its point, widened by [`SPRING_MARGIN`]. An approach no route
-/// comes near, and every other trigger the path does not perform, may fire
-/// from the path's first step.
-pub(crate) fn free_bodies(
-    plan: &Plan,
-    steps: &[crate::compiler::plan::Step],
-    firing: &crate::compiler::plan::PathFiring,
-    routes: &[LegRoute],
-) -> Vec<(crate::compiler::plan::FreeBodyKey, Vec<bool>)> {
+/// **The step whose walk first springs each `approach` trigger**, dated by a
+/// path's routes: the first leg (by the step it walks to) with a route cell
+/// within the trigger's range of its point, widened by [`SPRING_MARGIN`]. An
+/// approach no route comes near is absent.
+fn sprung_steps(plan: &Plan, routes: &[LegRoute]) -> std::collections::BTreeMap<String, usize> {
     let mut sprung: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for t in plan.campaign.quests.content.all_triggers() {
         let delvewright_dsl::TriggerOn::Approach { range } = t.on else {
@@ -77,7 +70,39 @@ pub(crate) fn free_bodies(
             sprung.insert(t.id.as_str().to_string(), s);
         }
     }
+    sprung
+}
+
+/// **The free bodies loose on each step of a path** ([`plan::free_bodies_by_step`]),
+/// an `approach` trigger the path does not perform dated by its routes
+/// ([`sprung_steps`]). An approach no route comes near, and every other
+/// trigger the path does not perform, may fire from the path's first step.
+pub(crate) fn free_bodies(
+    plan: &Plan,
+    steps: &[crate::compiler::plan::Step],
+    firing: &crate::compiler::plan::PathFiring,
+    routes: &[LegRoute],
+) -> Vec<(crate::compiler::plan::FreeBodyKey, Vec<bool>)> {
+    let sprung = sprung_steps(plan, routes);
     crate::compiler::plan::free_bodies_by_step(plan.campaign, steps, firing, &|t| {
+        sprung.get(t).copied()
+    })
+}
+
+/// **`DW1140` over one path** ([`plan::check_despawns_follow_arrivals`]): every
+/// `despawn-actor` the path certainly fires can follow an arrival of its actor,
+/// an `approach` trigger the path does not perform dated by its routes as
+/// [`free_bodies`] dates it.
+pub(crate) fn check_despawns(
+    plan: &Plan,
+    firing: &crate::compiler::plan::PathFiring,
+    routes: &[LegRoute],
+) -> (
+    crate::compiler::plan::DespawnBinding,
+    Result<(), crate::compiler::failure::Failure>,
+) {
+    let sprung = sprung_steps(plan, routes);
+    crate::compiler::plan::check_despawns_follow_arrivals(plan.campaign, firing, &|t| {
         sprung.get(t).copied()
     })
 }

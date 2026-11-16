@@ -577,7 +577,10 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
         assert_eq!(first["pursuers"][0]["undated"], json!(true));
     }
 
-    // An undated unleash — a trap-free trigger the path never performs.
+    // An undated unleash — a trap-free trigger the path never performs. It may
+    // fire at any step (spec-0132 §5.3), after the dated despawn at
+    // `obj/door` too, so that despawn does not end it: only the step whose
+    // completion fires the despawn is walked beside nobody.
     let mut c = base();
     beat(&mut c, "obj/talk").retain(|e| e.actor_ref().is_none_or(|a| a.as_str() != SLEEPER));
     let hum = c
@@ -606,12 +609,13 @@ fn pursuers_are_the_outrun_bodies_loose_while_a_step_is_walked() {
             ("rest", true),
             ("obj/key", true),
             ("obj/door", false),
-            ("obj/shrine", false),
+            ("obj/shrine", true),
             ("assert-complete", false),
         ],
-        "undated from the first standing step, until the dated despawn"
+        "undated from the first standing step on; a dated despawn does not cancel it"
     );
     assert_eq!(cp["steps"][1]["pursuers"][0]["undated"], json!(true));
+    assert_eq!(cp["steps"][6]["pursuers"][0]["undated"], json!(true));
 }
 
 /// Criterion 9's perturbation, and DW1082's second arm: an `outrun` actor
