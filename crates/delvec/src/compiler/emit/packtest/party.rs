@@ -524,6 +524,84 @@ fn party_class_template_path(ns: &str) -> String {
     format!("packtest-datapack/data/{ns}/test/party_class_arrives.mcfunction")
 }
 
+/// Generated **party-teleport** PackTests (DSL v0.88), one per distinct
+/// `teleport` whose subject is the party: two members standing far apart, on
+/// either side of the mark and well out of reach of it, are both carried, each
+/// onto a seat of their own.
+///
+/// The claim a single dummy cannot make: `tp @s` and a move of every member
+/// are the same command to a party of one. The template spawns a second
+/// member, puts the two 48 blocks either side of the mark, asserts nobody
+/// stands within 8 blocks of it, runs the campaign's real `teleport_<key>`,
+/// and counts one player on each of the first two seats.
+///
+/// Batch model: the teleport moves every player on the server, so the
+/// template runs alone, in its own test environment
+/// ([`super::limit::alone`]); own member, own scratch holders
+/// (`#ptp_<k>_*`), no `await`.
+pub(super) fn emit_party_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use super::super::teleport::{party_seats, teleport_cell, teleport_fn};
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for eff in all_campaign_effects(c) {
+        if eff.party_teleport().is_none() {
+            continue;
+        }
+        let name = teleport_fn(eff);
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let Some(to) = teleport_cell(plan, eff) else {
+            continue;
+        };
+        let seats = party_seats(plan, to);
+        let k = seen.len() - 1;
+        let (pin, me) = pin_dummy(&format!("dw_t_ptp{k}"));
+        let other = format!("dwptp{k}p1");
+        let other_sel = format!("@a[name={other},limit=1]");
+        let template = format!("party_{name}");
+        let mut b = packtest_header(&format!(
+            "{}: `{name}` carries every member of the party, wherever they stand, each onto a \
+             seat of their own",
+            artifact_title(c)
+        ));
+        b.insert(1, super::limit::alone(ns, &template, out));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("dummy {other} spawn"));
+        if !plan.classes.is_empty() {
+            b.push(format!("scoreboard players set {me} dw.classed 1"));
+            b.push(format!("scoreboard players set {other_sel} dw.classed 1"));
+        }
+        let [x, y, z] = to.map(f64::from);
+        b.push(format!("tp {me} {} {y} {}", x + 48.5, z + 0.5));
+        b.push(format!("tp {other_sel} {} {y} {}", x - 47.5, z + 0.5));
+        // Bound, not assumed: nobody stands near the mark before the move.
+        b.push(format!(
+            "execute positioned {} {y} {} store result score #ptp_{k}_near dw.sys if entity \
+             @a[distance=..8]",
+            x + 0.5,
+            z + 0.5
+        ));
+        b.push(format!("assert score #ptp_{k}_near dw.sys matches 0"));
+        b.push(format!("function {ns}:{name}"));
+        for (i, seat) in seats.iter().take(2).enumerate() {
+            let [sx, sy, sz] = super::super::coords::ent_xyz(*seat);
+            b.push(format!(
+                "execute positioned {sx} {sy} {sz} store result score #ptp_{k}_s{i} dw.sys if \
+                 entity @a[distance=..0.5]"
+            ));
+            b.push(format!("assert score #ptp_{k}_s{i} dw.sys matches 1"));
+        }
+        b.push(format!("dummy {other} leave"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{template}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
 /// What the absent-member templates bound on one build (spec-0141 §5), counted
 /// off the emitted suite.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

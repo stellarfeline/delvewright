@@ -1162,7 +1162,11 @@ pub(super) fn emit_quest_effect(
             // A call into the generated function, exactly as `volley` and
             // `collapse` do: the body is proven geometry, and a body that only
             // ever exists inline is a body no runtime test can call.
-            if teleport_command(plan, eff).is_some() {
+            // A party teleport's body is its own function too (its seats are
+            // proven geometry), called the same way.
+            if teleport_command(plan, eff).is_some()
+                || (eff.party_teleport().is_some() && teleport_cell(plan, eff).is_some())
+            {
                 body.push(format!("function {ns}:{}", teleport_fn(eff)));
             }
         }

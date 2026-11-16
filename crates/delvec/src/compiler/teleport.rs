@@ -119,9 +119,10 @@ delvewright_dsl::dw_code! {
 /// The binding ledger for the teleport proof.
 #[derive(Clone, Debug, Default)]
 pub struct TeleportGate {
-    /// `teleport` effects the campaign declared, at every nesting depth.
+    /// `teleport` effects the campaign declared, at every nesting depth, of a
+    /// box or of the party.
     pub declared: usize,
-    /// Of those, the ones whose `from` volume resolved to a box on the solved
+    /// Of those, the box teleports whose `from` volume resolved to a box on the solved
     /// layout. A gap is an unresolved anchor — already `DW0142`/`DW0360`,
     /// restated here so a reader of the ledger alone cannot mistake a dropped
     /// volume for a proven one.
@@ -147,12 +148,18 @@ pub struct TeleportGate {
     /// Critical-path legs a link carries on this build. Filled by the emitter
     /// from `DW0311`'s binding.
     pub legs_carried: usize,
+    /// Of the declared, the **party carries** (`from: "party"`, DSL v0.88)
+    /// whose mark resolved.
+    pub party: usize,
+    /// Seats fixed for them, over their distinct marks (`DW1141`). Filled by
+    /// the emitter.
+    pub party_seats: usize,
 }
 
 impl TeleportGate {
     /// Whether this proof matched nothing at all.
     pub fn unbound(&self) -> bool {
-        self.resolved == 0
+        self.resolved == 0 && self.party == 0
     }
 
     /// The ledger as the `validation/teleport-gate.json` artifact.
@@ -163,7 +170,9 @@ impl TeleportGate {
                 "resolved": self.resolved,
                 "links": self.links,
                 "gathers": self.gathers,
+                "party": self.party,
             },
+            "party_seats": self.party_seats,
             "legs_carried": self.legs_carried,
             "cells": self.cells,
             "affordances_examined": self.affordances,
@@ -208,10 +217,12 @@ fn volumes(plan: &Plan) -> (usize, Vec<Volume>) {
     let mut declared = 0usize;
     let mut out = Vec::new();
     for_each_campaign_effect(plan.campaign, &mut |path, _site, eff| {
+        if eff.teleport_to().is_some() {
+            declared += 1;
+        }
         let Some((from, _to)) = eff.teleport() else {
             return;
         };
-        declared += 1;
         if let Some((lo, hi)) = plan.zone_box(from) {
             out.push(Volume {
                 path: path.to_string(),
@@ -240,6 +251,8 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         links: plan.links.len(),
         gathers: plan.gathers.len(),
         legs_carried: 0,
+        party: plan.party_carries.len(),
+        party_seats: 0,
     };
     if vols.is_empty() && plan.loops.is_empty() {
         return Ok(gate);

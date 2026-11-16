@@ -1155,14 +1155,16 @@ impl QuestEffect {
             // decides WHAT moves and the destination decides WHERE — so a typo in
             // either is a dangling reference (`DW0142`), never a silently
             // zero-cell volume or a dropped command.
-            Verb::Teleport { from, to, .. } => vec![
-                ("from/anchor".to_string(), &from.anchor, None),
-                (
+            Verb::Teleport { from, to, .. } => from
+                .volume()
+                .map(|z| ("from/anchor".to_string(), &z.anchor, None))
+                .into_iter()
+                .chain([(
                     "to/anchor".to_string(),
                     &to.anchor,
                     Some(StationKind::Point),
-                ),
-            ],
+                )])
+                .collect(),
             Verb::BeginStealth { zones, .. } => zones
                 .iter()
                 .enumerate()
@@ -1532,11 +1534,29 @@ impl QuestEffect {
         }
     }
 
-    /// `(from, to)` if this is a `teleport` (DSL v0.10): the source volume and
-    /// the destination mark.
+    /// `(from, to)` if this is a `teleport` of a box (DSL v0.10): the source
+    /// volume and the destination mark. `None` for a party teleport
+    /// ([`Self::party_teleport`]).
     pub fn teleport(&self) -> Option<(&StealthZone, &Mark)> {
         match &self.verb {
-            Verb::Teleport { from, to, .. } => Some((from, to)),
+            Verb::Teleport { from, to, .. } => Some((from.volume()?, to)),
+            _ => None,
+        }
+    }
+
+    /// The destination mark if this is a `teleport` whose subject is the party
+    /// (`from: "party"`, DSL v0.88).
+    pub fn party_teleport(&self) -> Option<&Mark> {
+        match &self.verb {
+            Verb::Teleport { from, to } if from.is_party() => Some(to),
+            _ => None,
+        }
+    }
+
+    /// The destination mark of any `teleport`, of a box or of the party.
+    pub fn teleport_to(&self) -> Option<&Mark> {
+        match &self.verb {
+            Verb::Teleport { to, .. } => Some(to),
             _ => None,
         }
     }

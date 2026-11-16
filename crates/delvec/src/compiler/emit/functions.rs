@@ -338,6 +338,7 @@ pub(super) fn emit_functions(
     }
     // Each player's own place across a cutscene (`cutscene::CS_ID`).
     setup.extend(cutscene_place_objectives(plan));
+    setup.extend(party_teleport_objectives(plan));
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
     // straddling chunk z=-1) are not reliably loaded within the same tick, so
@@ -1535,6 +1536,7 @@ pub(super) fn emit_functions(
     fns.extend(moves::hop_fns(plan));
     fns.extend(moves::cadence_fns(plan));
     fns.extend(teleport_fns(plan));
+    fns.extend(teleport::party_teleport_helper_fns(plan));
     fns.extend(grant_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));

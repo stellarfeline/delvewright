@@ -854,6 +854,14 @@ fn emit_all(
         code: f.code,
         message: f.message,
     })?;
+    // A party carry's seats, one per member, over the same world (`DW1141`).
+    let party_seats =
+        crate::compiler::nav::fix_party_seats(plan, &world).map_err(|f| {
+            BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            }
+        })?;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //
@@ -1960,6 +1968,7 @@ fn emit_all(
         let mut gate = teleport_gate;
         gate.packtests = teleport_fns(plan).len();
         gate.legs_carried = legs_carried;
+        gate.party_seats = party_seats;
         put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
     }
     if let Some(gate) = &lethal_gate {

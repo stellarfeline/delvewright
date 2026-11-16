@@ -893,8 +893,13 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effect: Option<String>,
     },
-    /// Teleports **everything inside a declared volume** to an anchor (DSL v0.10,
-    /// spec-0031).
+    /// Teleports **everything inside a declared volume**, or **every member of
+    /// the party** wherever they stand, to a mark (DSL v0.10, spec-0031; the
+    /// party subject DSL v0.88).
+    ///
+    /// `from` names what moves: a box, or the keyword `"party"`
+    /// ([`TeleportFrom`]). The rest of this note is the box; the party subject
+    /// is described on [`TeleportFrom::Party`].
     ///
     /// **The selector is a region, never a block.** "Whoever is standing on this
     /// block" has three different answers for a player half a foot over the edge,
@@ -935,15 +940,9 @@ pub enum Verb {
     /// what *does* reset it was explicitly not measured, and inventing a
     /// mechanism from recall is the folklore this project forbids.
     Teleport {
-        /// The volume whose contents are moved, as an anchor-centred box
-        /// (`anchor ± extent`) — the same shape a `begin-stealth` zone, a
-        /// `damage` `in` filter and a `lethal_volumes[]` region take.
-        ///
-        /// Deliberately NOT a bare prefab `region` anchor, for the reason
-        /// [`Verb::Collapse`] records: the assembled model clears every
-        /// gate-region anchor's cells, so a volume described that way would
-        /// delete the geometry it names.
-        from: StealthZone,
+        /// What moves: the bodies inside an anchor-centred box, or every member
+        /// of the party ([`TeleportFrom`]).
+        from: TeleportFrom,
         /// The destination mark (spec-0066). Resolved to a literal cell at build
         /// time, so the emitted `tp` carries absolute coordinates and no runtime
         /// search.
@@ -1549,5 +1548,59 @@ impl Verb {
             | Verb::CampaignComplete { .. }
             | Verb::Sequence { .. } => false,
         }
+    }
+}
+
+/// **What a [`Verb::Teleport`] moves**: the bodies in a box, or the party.
+///
+/// One of two spellings of `from`, tried in order: the keyword `"party"`, or an
+/// anchor-centred box.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TeleportFrom {
+    /// `"party"`: **every member present, wherever they stand.**
+    ///
+    /// A member is a player who has taken a class (every player, in a campaign
+    /// with no classes), alive, and not waiting out a respawn. Each lands on a
+    /// cell of their own: the mark's cell, then the nearest safe standing cells
+    /// a body walks to from it, one per member, up to the party's four
+    /// (`DW1141` refuses a mark with fewer). A member watching a cutscene is
+    /// not moved under the camera: the place the cutscene returns them to
+    /// becomes their seat. A member on a death screen, one waiting out a
+    /// respawn and one still choosing a class are not moved; each comes back
+    /// where a respawn or a class seats them. A member who was not in the
+    /// world on the tick it fires is not owed the move.
+    Party(PartyWord),
+    /// The bodies inside an anchor-centred box (`anchor ± extent`) — the same
+    /// shape a `begin-stealth` zone, a `damage` `in` filter and a
+    /// `lethal_volumes[]` region take.
+    ///
+    /// Deliberately NOT a bare prefab `region` anchor, for the reason
+    /// [`Verb::Collapse`] records: the assembled model clears every
+    /// gate-region anchor's cells, so a volume described that way would
+    /// delete the geometry it names.
+    Volume(StealthZone),
+}
+
+/// The keyword `"party"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PartyWord {
+    /// Every member of the party.
+    Party,
+}
+
+impl TeleportFrom {
+    /// The box, when the subject is one.
+    pub fn volume(&self) -> Option<&StealthZone> {
+        match self {
+            TeleportFrom::Volume(z) => Some(z),
+            TeleportFrom::Party(_) => None,
+        }
+    }
+
+    /// Whether the subject is the party.
+    pub fn is_party(&self) -> bool {
+        matches!(self, TeleportFrom::Party(_))
     }
 }

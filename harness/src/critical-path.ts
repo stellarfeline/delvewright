@@ -2276,6 +2276,10 @@ function parseAftermathEntry(value: unknown, pointer: string): AftermathEntry {
       };
     case "position": {
       const from = ob["from"] as Record<string, unknown> | undefined;
+      // Absent: a teleport of the party, which carries every member.
+      if (from === undefined) {
+        return { path, verb, observable: { kind, to: vec(ob["to"], `${pointer}/observable/to`) } };
+      }
       if (typeof from !== "object" || from === null) {
         fail(`${pointer}/observable/from`, "must be an object with min and max");
       }
