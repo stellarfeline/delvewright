@@ -92,8 +92,9 @@ pub struct DarkBinding {
     pub excluded: usize,
     /// The stand-ins: places the plan masses, with no detail row.
     pub standins: usize,
-    /// The surveys taken, one per area with a start, and what their reach
-    /// graphs cost: the work charged and the ceilings it is held under
+    /// The surveys taken, one per area with a start (and, in a batch's
+    /// re-check, one more over the world before the batch), and what their
+    /// reach graphs cost: the work charged and the ceilings it is held under
     /// ([`crate::compiler::nav::Ceiling`]), summed.
     pub cost: SurveyCost,
 }
@@ -1659,13 +1660,7 @@ pub(crate) fn surveyed_region(
     starts: &[[i32; 3]],
     budget: Option<u64>,
     since: Option<&World>,
-) -> Result<
-    (
-        BTreeSet<[i32; 3]>,
-        std::sync::Arc<crate::compiler::nav::Reach>,
-    ),
-    Failure,
-> {
+) -> Result<Surveyed, Failure> {
     let over = |reach: &crate::compiler::nav::Reach, budget: u64, which: &str| Failure {
         code: crate::compiler::nav::DW_REACH_BUDGET,
         message: format!(
@@ -1686,20 +1681,36 @@ pub(crate) fn surveyed_region(
             reach.ceiling.per_node,
         ),
     };
-    let reach = match since {
+    let (prior, reach) = match since {
         Some(base) => {
             let (prior, reach) = nav.body_reach_snapped_since(starts, budget, base);
             if let Some(budget) = prior.over_budget {
                 return Err(over(&prior, budget, " over the world before the batch"));
             }
-            reach
+            (Some(prior), reach)
         }
-        None => nav.body_reach_snapped_within(starts, budget),
+        None => (None, nav.body_reach_snapped_within(starts, budget)),
     };
     if let Some(budget) = reach.over_budget {
         return Err(over(&reach, budget, ""));
     }
-    Ok((reach.standing(), reach))
+    Ok(Surveyed {
+        cells: reach.standing(),
+        prior,
+        reach,
+    })
+}
+
+/// A survey [`surveyed_region`] took: the cells it judges, its closure, and
+/// the closure over the world a batch was written over when one was taken.
+#[derive(Debug)]
+pub(crate) struct Surveyed {
+    /// Every standing state of the closure.
+    pub cells: BTreeSet<[i32; 3]>,
+    /// The closure over the world before the batch, taken first.
+    pub prior: Option<std::sync::Arc<crate::compiler::nav::Reach>>,
+    /// The closure the cells are read from.
+    pub reach: std::sync::Arc<crate::compiler::nav::Reach>,
 }
 
 /// **The cells a relight fixture may neither stand in nor hang from** — the
@@ -1812,7 +1823,14 @@ pub fn relight_with(
         // survey at all (`DW1042`).
         let reachable: BTreeSet<[i32; 3]> =
             match surveyed_region(nav, &area.area_id, &starts, None, since) {
-                Ok((r, reach)) => {
+                Ok(Surveyed {
+                    cells: r,
+                    prior,
+                    reach,
+                }) => {
+                    if let Some(p) = &prior {
+                        out.binding.cost.add(p);
+                    }
                     out.binding.cost.add(&reach);
                     r.into_iter()
                         .filter(|cell| in_bounds(*cell, amin, amax))
@@ -2820,7 +2838,11 @@ mod tests {
         let map = room(7, 4, 7, true);
         let nav = nav_of(&map);
         let start = [[3, 1, 3]];
-        let (whole, reach) = surveyed_region(&nav, "area/room", &start, None, None)
+        let Surveyed {
+            cells: whole,
+            reach,
+            ..
+        } = surveyed_region(&nav, "area/room", &start, None, None)
             .expect("the room's graph is under its own ceiling");
         assert!(reach.charged() > 0 && reach.charged() <= reach.ceiling.work());
         // The survey's cost is stated with the ceiling the world gives it.
