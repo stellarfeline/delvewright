@@ -315,6 +315,28 @@ export const methods = {
     this.nonCombatants = kinds;
   },
 
+  /**
+   * Adopt the compiler's statement of the bodies whose death the story reads
+   * (format 14). An empty list is a legitimate value; never calling this is a
+   * wiring bug, and {@link requireStoryBodies} refuses rather than guessing.
+   */
+  useStoryBodies(this: MineflayerExecutor, bodies: readonly import("../critical-path.ts").StoryBody[]): void {
+    this.storyBodies = bodies;
+  },
+
+  /** The story-body statement, or a refusal naming what is missing. */
+  requireStoryBodies(this: MineflayerExecutor): readonly import("../critical-path.ts").StoryBody[] {
+    if (!this.storyBodies) {
+      throw new Error(
+        "the executor was never told which bodies' death the story reads. That statement is " +
+          "`story_bodies` in `critical-path.json` (contract format 14), and the entrypoint must " +
+          "hand it over before the run starts — the only alternative is the harness guessing " +
+          "which bodies are story, which is the compiler's knowledge written where it cannot be right",
+      );
+    }
+    return this.storyBodies;
+  },
+
   /** The cast statement, or a refusal naming what is missing. */
   requireNonCombatants(this: MineflayerExecutor): ReadonlySet<string> {
     if (!this.nonCombatants) {
@@ -515,6 +537,8 @@ export const methods = {
     // silent zero this repository keeps finding. Hold the anchor's chunk open for
     // the whole step instead of hoping.
     await this.holdChunk(enc.pos, true);
+    // The bodies of this wave are the step's own to strike, story or not.
+    this.fightTag = step.tag === "" ? undefined : step.tag;
     try {
       // The muster goes FIRST, before anything the harness does to this wave.
       // The cohort it must read is the one the DELVE seated: the die-retry stage
@@ -580,6 +604,7 @@ export const methods = {
       await this.clearWave(step, enc);
       this.encounterPhases.set(enc.wave, "cleared");
     } finally {
+      this.fightTag = undefined;
       await this.holdChunk(enc.pos, false);
     }
   },

@@ -177,6 +177,7 @@ export async function runHatchStand(criticalPathFile: string): Promise<number> {
   // damage handler asks which kinds are never a combat target: the delve's own
   // statement, handed over as the critical-path run hands it.
   executor.useNonCombatants(criticalPath.nonCombatants.kinds);
+  executor.useStoryBodies(criticalPath.storyBodies.bodies);
   try {
     await executor.connect();
     const bot = executor.requireBot();

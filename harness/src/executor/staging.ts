@@ -3,6 +3,7 @@
 import type { Vec3Tuple } from "../critical-path.ts";
 import { INSTANT_HEALTH_UNIT } from "../sustain.ts";
 import { delay } from "./connection.ts";
+import { isRejection } from "../rejection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /**
@@ -31,6 +32,14 @@ export interface StagedRemoval {
   readonly performed: boolean;
   /** The refusal, or what stopped it. Present exactly when `performed` is false. */
   readonly detail?: string;
+}
+
+/** What the server said of one body against the story-body statement. */
+export interface StoryVerdict {
+  /** Each matching row, as `of: reads`; empty when the body is no story body. */
+  readonly of: readonly string[];
+  /** Whether the body carries the wave tag of the `kill` step under way. */
+  readonly ofFight: boolean;
 }
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
@@ -131,6 +140,34 @@ export const methods = {
       await this.refundBlows(kind, id);
       return;
     }
+    // **A story body is never harmed by the harness** (format 14). Its death
+    // writes what the story reads — an `on_kill`, a census, the cast — so a
+    // removal here would be the harness choosing an outcome the path does not
+    // perform: on the town, a goat that rammed the bot during the goats'
+    // window was struck, its `on_kill` failed the task, and the expiry the
+    // step waited for never came. Asked of the server by UUID against the
+    // compiler's own selectors; the body stays, and its blows are given back,
+    // the one defence that leaves the story as the path walks it. The path's
+    // own `kill` of the body's wave is its act, so a body of that wave is
+    // struck as before.
+    if (uuid && !this.stagingInFlight.has(id)) {
+      this.stagingInFlight.add(id);
+      let story: StoryVerdict;
+      try {
+        story = await this.storyVerdict(uuid);
+      } finally {
+        this.stagingInFlight.delete(id);
+      }
+      if (story.of.length > 0 && !story.ofFight) {
+        this.storyBodiesSpared.push({ kind, id, of: story.of });
+        process.stderr.write(
+          `[staged] ${kind}#${id}: ${why}, but it is a story body (${story.of.join("; ")}) — left ` +
+            `standing, its blows refunded\n`,
+        );
+        await this.refundBlows(kind, id, "left standing as a story body");
+        return;
+      }
+    }
     this.stagedIds.add(id);
     if (!uuid) {
       this.stagedRemovals.push({ kind, why, performed: false, detail: "the client has no UUID for it" });
@@ -170,6 +207,37 @@ export const methods = {
   },
 
   /**
+   * **Which story-body rows match this body, and whether it is of the `kill`
+   * step under way**, asked of the server by UUID: one bracket, one
+   * conditional `tellraw` per row of the compiler's `story_bodies` and one
+   * for {@link fightTag}. A bracket that never closed, or a refusal, is read
+   * as a story body — the direction that harms nothing.
+   */
+  async storyVerdict(this: MineflayerExecutor, uuid: string): Promise<StoryVerdict> {
+    const rows = this.requireStoryBodies();
+    const bot = this.requireBot();
+    if (rows.length === 0) return { of: [], ofFight: false };
+    const serial = ++this.storyAsks;
+    const mark = (what: string): string => `[dw:story ${serial} ${what}]`;
+    const ask = (select: string, what: string): string =>
+      `/execute as ${uuid} if entity @s[${select}] run tellraw ${bot.username} ` +
+      JSON.stringify({ text: mark(what) });
+    const commands = rows.map((r, i) => ask(r.select, String(i)));
+    if (this.fightTag !== undefined) commands.push(ask(`tag=${this.fightTag}`, "fight"));
+    const reply = await this.bracketed(commands);
+    const refused = reply.lines.find((l) => isRejection(l));
+    if (!reply.answered || refused !== undefined) {
+      const why = !reply.answered ? "the reply never closed" : `refused — ${refused}`;
+      return { of: [`unread (${why}), so treated as story`], ofFight: false };
+    }
+    const said = new Set(reply.lines.map((l) => l.trim()));
+    const of = rows
+      .filter((_, i) => said.has(mark(String(i))))
+      .map((r) => `${r.of}: ${r.reads.join(", ")}`);
+    return { of, ofFight: said.has(mark("fight")) };
+  },
+
+  /**
    * Staging rows that act on a body of the delve — not the ones that act on the
    * bot's own health (`kind: "player"`: a refund, or {@link holdFullHealth}).
    */
@@ -199,7 +267,12 @@ export const methods = {
    * body for is never refunded, so the delve's own hazards keep their reach. Each
    * effect is read by the shared rejection rule and named in `staged_removals`.
    */
-  async refundBlows(this: MineflayerExecutor, kind: string, id: number): Promise<void> {
+  async refundBlows(
+    this: MineflayerExecutor,
+    kind: string,
+    id: number,
+    fate = "removed",
+  ): Promise<void> {
     const dealt = this.damageBy.get(id) ?? 0;
     this.damageBy.delete(id);
     const bot = this.bot;
@@ -218,7 +291,7 @@ export const methods = {
       this.stagedRemovals.push({
         kind: "player",
         why:
-          `refund: ${kind}#${id} was removed after its blows took ${dealt.toFixed(1)} health; ` +
+          `refund: ${kind}#${id} was ${fate} after its blows took ${dealt.toFixed(1)} health; ` +
           `${heal} of it given back with instant health ${amp + 1}`,
         performed: refusal === undefined,
         detail: refusal,
