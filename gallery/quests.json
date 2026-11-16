@@ -2360,12 +2360,6 @@
             "after": [
               "obj/back-in-the-hall"
             ],
-            "clues": [
-              {
-                "by": "record",
-                "objective": "obj/hear-the-curator"
-              }
-            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -2387,12 +2381,6 @@
               "obj/answer-the-marshal"
             ],
             "announcement": "shown",
-            "clues": [
-              {
-                "by": "hint",
-                "objective": "obj/answer-the-marshal"
-              }
-            ],
             "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -4398,6 +4386,12 @@
             "after": [
               "obj/reach-the-hall-end"
             ],
+            "clues": [
+              {
+                "by": "hint",
+                "objective": "obj/reach-the-hall-end"
+              }
+            ],
             "course": "race/up-the-lane",
             "happening": {
               "text": "the yard's loose hen is caught",
@@ -4495,6 +4489,12 @@
           {
             "after": [
               "obj/open-the-crate"
+            ],
+            "clues": [
+              {
+                "by": "record",
+                "objective": "obj/hear-the-curator"
+              }
             ],
             "course": "race/down-the-yard",
             "happening": {

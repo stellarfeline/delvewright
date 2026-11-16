@@ -810,8 +810,8 @@ impl Walk<'_, '_> {
     /// [`Self::armed_objectives`] with a term on a datum the walk cannot date
     /// read as OPEN: every objective that may be armed now, its flags,
     /// `after` and quest decided and its numeric terms not shown shut. Read by
-    /// `DW0863`, which credits a `hint` clue only where the replay shows its
-    /// objective started.
+    /// `DW0863`, which withholds a line's credit only where the replay shows
+    /// the objective is not yet armed.
     pub fn armed_objectives_unless_shut(&self) -> Vec<String> {
         self.armed_where(true)
     }

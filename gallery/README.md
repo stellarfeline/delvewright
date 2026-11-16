@@ -209,8 +209,9 @@ holding them at once.
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
 | `a-barrel-in-a-row-of-barrels` | `DW0861` | `validate` | adopting a container the piece placed without naming what is in it |
 | `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
-| `a-clue-in-an-optional-bay` | `DW0863` | `build` | resting a main-line valve on a hint only an optional quest shows |
-| `a-clue-read-after-the-step` | `DW0863` | `build` | resting a step on a record the story writes two halls later |
+| `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
+| `a-clue-in-an-optional-bay` | `DW1137` | `build` | resting a main-line valve on a hint only an optional quest shows |
+| `a-clue-read-after-the-step` | `DW1137` | `build` | resting a step on a record the story writes two halls later |
 | `a-clue-that-names-no-text` | `DW1136` | `validate` | resting a step on the record of an objective that has none |
 | `a-bar-in-a-colour-the-game-lacks` | `DW0911` | `validate` | drawing a boss bar in `crimson`, a colour the pinned game's `bossbar` command does not list |
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |

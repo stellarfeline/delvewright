@@ -557,7 +557,7 @@ fn declare_effects(node: &mut serde_json::Value) {
 /// objective, ambush and story-node effect (`DW0481`); a `cast` entry per quest
 /// for every stage-2 NPC, standing at its own anchor and offering its tree's root
 /// (`DW0460`); a `title` and `hint` on every `kill`, and a `title` and
-/// `item_name` on a `collect` that adopts a container (`DW0860`–`DW0862`).
+/// `item_name` on a `collect` that adopts a container (`DW0860`–`DW0863`).
 ///
 /// A field the fixture states is left alone, so a test about one of these
 /// declarations writes its own and this never contradicts it. What it never

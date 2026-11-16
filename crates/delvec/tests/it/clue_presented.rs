@@ -1,5 +1,7 @@
-//! spec-0143: a step's clue is presented before the step (`DW0863`), and a
-//! clue names a text that exists (`DW1136`).
+//! spec-0143: a step that states its clue is judged by the clue rule — the
+//! clue is presented before the step (`DW1137`) and names a text that exists
+//! (`DW1136`) — instead of by the find-the-act rule (`DW0863`), which every
+//! step that states no clue still owes.
 //!
 //! The castle shape — four presses far apart and out of each other's sight,
 //! their order told by a note — is built on the hello-world keep: the note is
@@ -17,6 +19,7 @@ use delvec::compiler::clue;
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::nav::World;
 use delvec::compiler::plan::Plan;
+use delvec::compiler::promise;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{Campaign, parse_campaign};
 use serde_json::{Value, json};
@@ -182,7 +185,7 @@ fn four_fires_out_of_sight_pass_when_the_note_is_forced_first() {
     // each hidden from the one before it.
     for pair in at.windows(2) {
         assert_eq!(pair[1][0] - pair[0][0], 77);
-        let why = clue::unseen(&world, pair[0], pair[1], false).expect("out of sight");
+        let why = promise::unseen(&world, pair[0], pair[1], false).expect("out of sight");
         assert!(why.contains("past the 64 blocks"), "{why}");
     }
     let (b, r) = clue::judge(&plan, &world, &walks);
@@ -203,12 +206,23 @@ fn four_fires_out_of_sight_pass_when_the_note_is_forced_first() {
     );
     assert!(
         b.line().starts_with(
-            "DW0863 binding: 4 of 8 act(s) state 4 clue(s) — 4 on the main line of 1 walk(s)"
+            "DW1137 binding: 4 of 8 act(s) state 4 clue(s) — 4 on the main line of 1 walk(s)"
         ),
         "{}",
         b.line()
     );
+    // The find-the-act rule leaves the four fires to the clue rule: it counts
+    // them, and refuses none of them for standing out of sight.
+    let (found, found_refusals) = promise::judge_acts(&plan, &world, &walks);
+    assert_eq!(found.clued, 4, "{}", found.line());
+    assert!(
+        found_refusals
+            .iter()
+            .all(|f| !f.message.contains("trigger/fire-")),
+        "{found_refusals:?}"
+    );
     let ledger = b.to_json();
+    assert_eq!(ledger["code"], "DW1137");
     assert_eq!(ledger["examined"], 4);
     assert_eq!(ledger["rows"][0]["line"], "main");
     assert_eq!(
@@ -490,15 +504,14 @@ fn a_clue_names_a_text_that_exists() {
     );
 }
 
-/// spec-0143 criterion 8: the withdrawn rule. A step that states no clue is
-/// owed nothing, wherever it stands: the four fires far apart and walled off,
-/// with no clue, raise nothing.
+/// spec-0143 criterion 8: the scope. The same four fires, far apart and
+/// walled off, stating no clue: the clue rule judges nothing, and the
+/// find-the-act rule still refuses each of them — a trigger has no lines, and
+/// none is in sight. Only stating the clue moves a step to the clue rule.
 #[test]
-fn a_step_that_states_no_clue_is_owed_nothing() {
+fn a_step_that_states_no_clue_still_owes_being_found() {
     let dir = keep("no-clue", fires(json!([])), |objs, _| {
-        let mut n = note(json!(["obj/talk"]));
-        n.as_object_mut().unwrap().remove("hint");
-        objs.push(n);
+        objs.push(note(json!(["obj/talk"])));
         objs.push(grate(
             "obj/lift-the-grate",
             json!(["obj/find-the-note"]),
@@ -512,10 +525,16 @@ fn a_step_that_states_no_clue_is_owed_nothing() {
     let (b, r) = clue::judge(&plan, &world, &walks);
     assert!(r.is_empty(), "{r:?}");
     assert_eq!((b.stated, b.judged, b.refused), (0, 0, 0), "{}", b.line());
+    let (found, refusals) = promise::judge_acts(&plan, &world, &walks);
+    assert_eq!(found.clued, 0, "{}", found.line());
+    let fires: Vec<_> = refusals
+        .iter()
+        .filter(|f| f.message.contains("`trigger/fire-"))
+        .collect();
+    assert_eq!(fires.len(), 4, "{refusals:?}");
     assert!(
-        b.line()
-            .ends_with("8 act(s) state no clue and are owed nothing"),
-        "{}",
-        b.line()
+        fires.iter().all(|f| f.code == promise::DW_FIGHT_UNSIGNED
+            && f.message.contains("A trigger has no lines")),
+        "{fires:?}"
     );
 }

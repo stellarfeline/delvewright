@@ -707,7 +707,7 @@ pub(super) fn lit_set(
                     world.feet_y(c) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
                     f64::from(z) + 0.5,
                 ];
-                // The vantage is no occluder (the rule `clue::unseen` reads): the
+                // The vantage is no occluder (the rule `DW0863` reads): the
                 // cell the body stands in and its eye's own cell never stop a
                 // line; the block's own cells are the target's.
                 let eye_cell = [

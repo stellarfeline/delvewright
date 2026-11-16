@@ -1143,7 +1143,7 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
         hold["on_objective_complete"]["obj/watch"] = json!([]);
         hold["objectives"][1]["anchor"] = json!("spawn");
         // The bolt is out of sight of the decision once the vault's sign
-        // stands at spawn, so it is announced with a hint.
+        // stands at spawn, so it is announced with a hint (DW0863).
         for quest in q["content"]["quests"].as_array_mut().unwrap() {
             for o in quest["objectives"].as_array_mut().unwrap() {
                 if o["id"] == "obj/bolt" {

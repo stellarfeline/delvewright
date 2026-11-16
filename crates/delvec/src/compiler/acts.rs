@@ -1,7 +1,7 @@
 //! **The acts on every walked path** (spec-0104 §1): the one reading of "what
 //! the party must do, where, and from where it stands", shared by the rules
-//! that judge an act — that its stated clue is presented before it (`DW0863`,
-//! spec-0143).
+//! that judge an act — that it can be found (`DW0863`), and that a clue it
+//! states is presented before it (`DW1137`, spec-0143).
 //!
 //! An **act** is a thing the party must do at a place to advance a walked
 //! path: every objective step of every kind, and every `use`, `strike`,
@@ -62,7 +62,8 @@ pub struct Act {
 }
 
 /// A positioned step on a walk that is no act — an `approach` or `step`
-/// trigger the path walks through, a place on the route.
+/// trigger the path walks through, a place on the route: the leg that ends at
+/// it is walked all the same, and `DW0863` asks what guides it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pass {
     /// Its index among the walk's steps.

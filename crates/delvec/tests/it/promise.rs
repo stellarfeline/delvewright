@@ -1,6 +1,6 @@
 //! **An objective keeps the promise its prompt makes** (`DW0860`–`DW0862`,
-//! `DW0961`). A stated clue presented before its step (`DW0863`) is
-//! `clue_presented.rs`.
+//! `DW0961`; `DW0863` needs places and lives in `quiet_guidance.rs` and
+//! `guidance_followed.rs`).
 //!
 //! Fixture shape: hello-world's world/classes/npcs/dialogue, plus a two-quest DAG
 //! whose stage-5 document is supplied per test. Every test drives

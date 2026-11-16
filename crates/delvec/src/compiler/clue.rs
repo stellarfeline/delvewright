@@ -1,13 +1,16 @@
-//! **A step's clue is presented before the step** (`DW0863`, spec-0143).
+//! **A step's clue is presented before the step** (`DW1137`, spec-0143).
 //!
 //! The one module that answers "has the party been shown what this step's
 //! answer rests on". An act — an objective, or an environment trigger — states
 //! its clues ([`delvewright_dsl::Clue`]); this module confirms that on the
 //! **main line** every stated clue is presented before the party reaches the
 //! act, on every walked path that performs it. It judges nothing else: not
-//! whether the act can be found, not whether the clue is enough. An act that
-//! states no clue is owed nothing, and so is an act the main line never
-//! performs — an optional puzzle, where going to look for the clue is play.
+//! whether the clue is enough. A step that states a clue is judged here
+//! **instead of** by the find-the-act rule (`DW0863`,
+//! [`crate::compiler::promise`]): where a puzzle's step stands is the puzzle's.
+//! An act that states no clue is owed nothing by this rule and stays `DW0863`'s;
+//! an act the main line never performs — an optional puzzle, where going to
+//! look for the clue is play — is owed nothing by either.
 //!
 //! # The main line
 //!
@@ -35,7 +38,7 @@
 //!   by the time the walk reaches the act: the open page holds the line;
 //! * a `sight` clue is presented when its anchor's cell is in sight — the one
 //!   sight rule, [`crate::compiler::framing`]'s `in_sight`, within
-//!   [`SIGHT_BLOCKS`] — from a cell the party must stand on before the act:
+//!   [`crate::compiler::promise::SIGHT_BLOCKS`] — from a cell the party must stand on before the act:
 //!   the walk's entry cell, the place of a step forced before the act, the
 //!   act's own place, or a cell of the route into one of those.
 
@@ -47,14 +50,15 @@ use crate::compiler::acts::{ActWalk, ActWalks};
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
+use crate::compiler::promise::unseen;
 
 delvewright_dsl::dw_code! {
-    /// `DW0863`: a clue a main-line act states is not presented before the
+    /// `DW1137`: a clue a main-line act states is not presented before the
     /// party reaches the act (spec-0143 §4) — its text is on no journal page
     /// that every run reaching the act has opened, or its place is in sight
     /// from no cell the main line stands on before the act. Judged at the
     /// build, where the walks have places and the world has blocks.
-    pub const DW_CLUE_UNPRESENTED: DwCode = DwCode::new("DW0863", ExitTier::Build);
+    pub const DW_CLUE_UNPRESENTED: DwCode = DwCode::new("DW1137", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {
@@ -64,16 +68,6 @@ delvewright_dsl::dw_code! {
     /// no `record`, or a `sight` clue whose anchor resolves to no cell.
     pub const DW_CLUE_NAMES_NOTHING: DwCode = DwCode::new("DW1136", ExitTier::Build);
 }
-
-/// The one reach sight is given (spec-0104 §2.6): the farthest the pinned
-/// client draws a body of a block or less at the default *Entity Distance*
-/// (`64 × size × viewScale`, size clamped to at least 1), used for blocks as
-/// well.
-pub const SIGHT_BLOCKS: f64 = 64.0;
-
-/// The eye of a body standing on a cell: [`crate::compiler::nav::cell_center`]
-/// plus the standing eye height.
-const EYE_HEIGHT: f64 = 1.62;
 
 // ---------------------------------------------------------------------------
 // What is stated — the document's half (`DW1136`)
@@ -216,7 +210,7 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, StatedBinding) {
 }
 
 // ---------------------------------------------------------------------------
-// What is presented — the build's half (`DW0863`)
+// What is presented — the build's half (`DW1137`)
 // ---------------------------------------------------------------------------
 
 /// How one clue fared on one walk.
@@ -284,7 +278,7 @@ impl ClueBinding {
     /// The one line a build prints about this rule.
     pub fn line(&self) -> String {
         format!(
-            "DW0863 binding: {} of {} act(s) state {} clue(s) — {} on the main line of {} \
+            "DW1137 binding: {} of {} act(s) state {} clue(s) — {} on the main line of {} \
              walk(s), {} clue judgement(s): {} text clue(s) and {} sight clue(s) presented \
              before their act, {} refused; {} optional act(s) owed nothing; {} act(s) state no \
              clue and are owed nothing",
@@ -305,7 +299,7 @@ impl ClueBinding {
     /// The ledger a build writes to `validation/clues.json`.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "code": "DW0863",
+            "code": "DW1137",
             "walks": self.walks,
             "acts": self.acts,
             "stated": self.stated,
@@ -334,43 +328,7 @@ impl ClueBinding {
     }
 }
 
-/// **Why a target is not in sight from a cell**, or `None` when it is: past
-/// [`SIGHT_BLOCKS`], or every one of the nine lines stopped, from the eye of a
-/// body standing on `from`. `body` sights a body's two cells; otherwise the
-/// target is its one cell.
-pub fn unseen(world: &World, from: [i32; 3], target: [i32; 3], body: bool) -> Option<String> {
-    use crate::compiler::framing::{CellBox, in_sight};
-    let c = crate::compiler::nav::cell_center(from);
-    let eye = [c[0], c[1] + EYE_HEIGHT, c[2]];
-    let sight_box = if body {
-        CellBox::spanning(target, [target[0], target[1] + 1, target[2]])
-    } else {
-        CellBox::cell(target)
-    };
-    let at = sight_box.centre();
-    let d = ((eye[0] - at[0]).powi(2) + (eye[1] - at[1]).powi(2) + (eye[2] - at[2]).powi(2)).sqrt();
-    if d > SIGHT_BLOCKS {
-        return Some(format!(
-            "{d:.1} blocks away, past the {SIGHT_BLOCKS} blocks sight reaches"
-        ));
-    }
-    // The vantage is no occluder: the cell a step names and the eye's own
-    // cell never stop a line; the target's cells are the box's.
-    let eye_cell = [
-        eye[0].floor() as i32,
-        eye[1].floor() as i32,
-        eye[2].floor() as i32,
-    ];
-    let lines = in_sight(world, eye, &sight_box, &[from, eye_cell]);
-    (!lines.seen()).then(|| {
-        let first = lines.centre_block.map_or_else(String::new, |cell| {
-            format!(": the centre line is stopped first at {cell:?}")
-        });
-        format!("{d:.1} blocks away and hidden — all nine lines to it are stopped{first}")
-    })
-}
-
-/// **Every stated clue is presented before its act** (`DW0863`), over the
+/// **Every stated clue is presented before its act** (`DW1137`), over the
 /// plan's own walks. Every refusal is returned; the build reports the first as
 /// its verdict and the rest as further errors.
 pub fn check_presented(plan: &Plan, world: &World) -> (ClueBinding, Vec<Failure>) {
@@ -728,8 +686,8 @@ pub fn judge(plan: &Plan, world: &World, walks: &ActWalks) -> (ClueBinding, Vec<
                                 "on {}, the main line reaches {} `{}` before its clue is \
                                  presented: it states the clue `{}` ({}) at {}/{ci}, and {why}. \
                                  The engine confirms only that a stated clue is in the journal \
-                                 or was in sight before a main-line step; an optional step is \
-                                 owed nothing, and a step that states no clue is owed nothing.",
+                                 or was in sight before a main-line step; an optional step's \
+                                 clue is owed nothing.",
                                 w.label,
                                 s.what,
                                 s.id,

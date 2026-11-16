@@ -6,7 +6,8 @@
 //! one. The creator states what tells the player the answer, as a `clues`
 //! list on the act, and the engine confirms one thing only: that on the main
 //! line every stated clue has been **presented** before the party reaches the
-//! step (`DW0863`, `delvec`'s `compiler::clue`). Whether a player can reason
+//! step (`DW1137`, `delvec`'s `compiler::clue`), and judges the step by that
+//! rule instead of the find-the-act rule (`DW0863`). Whether a player can reason
 //! from the clue to the answer is judged in play, never by the engine.
 //!
 //! A clue is a text in the journal or a thing seen on the way:
@@ -17,7 +18,7 @@
 //! | `record` | the `record` of an objective that is over, on its finished journal page |
 //! | `sight` | a place the party sees before it reaches the step |
 //!
-//! An act with no `clues` states no clue and is owed nothing.
+//! An act with no `clues` states no clue, and the find-the-act rule judges it.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

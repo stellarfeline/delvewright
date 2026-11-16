@@ -124,7 +124,7 @@ pub fn mob_reach(w: &delvewright_dsl::Wave, mob: &delvewright_dsl::WaveMob) -> (
 /// holds or a player who hurt it, so it notices at the radius; any other mob
 /// at its [`mob_reach`]. The reading of a proof about a body the party meets
 /// fresh — a respawn point (`DW0478`), a way around an optional fight
-/// (`DW0380`), where a lapse waits.
+/// (`DW0380`), a fight found by reach (`DW0863`), where a lapse waits.
 pub fn mob_perception(
     w: &delvewright_dsl::Wave,
     mob: &delvewright_dsl::WaveMob,

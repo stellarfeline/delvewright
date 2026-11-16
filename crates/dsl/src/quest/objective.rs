@@ -100,8 +100,9 @@ pub enum Objective {
         /// **The clues this step's answer rests on** (spec-0143): what tells
         /// the player the answer — a journal text or a thing seen. On the main
         /// line each is presented before the party reaches this step
-        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
-        /// stated, and nothing is judged.
+        /// (`DW1137`), and the step is judged by that rule instead of the
+        /// find-the-act rule (`DW0863`); an optional step's clue is owed
+        /// nothing. Absent = no clue is stated.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
@@ -197,8 +198,9 @@ pub enum Objective {
         /// **The clues this step's answer rests on** (spec-0143): what tells
         /// the player the answer — a journal text or a thing seen. On the main
         /// line each is presented before the party reaches this step
-        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
-        /// stated, and nothing is judged.
+        /// (`DW1137`), and the step is judged by that rule instead of the
+        /// find-the-act rule (`DW0863`); an optional step's clue is owed
+        /// nothing. Absent = no clue is stated.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
@@ -291,8 +293,9 @@ pub enum Objective {
         /// **The clues this step's answer rests on** (spec-0143): what tells
         /// the player the answer — a journal text or a thing seen. On the main
         /// line each is presented before the party reaches this step
-        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
-        /// stated, and nothing is judged.
+        /// (`DW1137`), and the step is judged by that rule instead of the
+        /// find-the-act rule (`DW0863`); an optional step's clue is owed
+        /// nothing. Absent = no clue is stated.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
@@ -395,8 +398,9 @@ pub enum Objective {
         /// **The clues this step's answer rests on** (spec-0143): what tells
         /// the player the answer — a journal text or a thing seen. On the main
         /// line each is presented before the party reaches this step
-        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
-        /// stated, and nothing is judged.
+        /// (`DW1137`), and the step is judged by that rule instead of the
+        /// find-the-act rule (`DW0863`); an optional step's clue is owed
+        /// nothing. Absent = no clue is stated.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
@@ -595,8 +599,9 @@ pub enum Objective {
         /// **The clues this step's answer rests on** (spec-0143): what tells
         /// the player the answer — a journal text or a thing seen. On the main
         /// line each is presented before the party reaches this step
-        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
-        /// stated, and nothing is judged.
+        /// (`DW1137`), and the step is judged by that rule instead of the
+        /// find-the-act rule (`DW0863`); an optional step's clue is owed
+        /// nothing. Absent = no clue is stated.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the

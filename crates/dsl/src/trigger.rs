@@ -76,9 +76,9 @@ pub struct EnvTrigger {
     /// **The clues this press's answer rests on** (spec-0143): what tells the
     /// player the answer — a journal text or a thing seen. Where this trigger
     /// belongs to a main-line objective, each is presented before the story
-    /// reaches it (`DW0863`); a trigger of no main-line objective is owed
-    /// nothing.
-    /// Absent = no clue is stated, and nothing is judged.
+    /// reaches it (`DW1137`), and the press is judged by that rule instead of
+    /// the find-the-act rule (`DW0863`); a trigger of no main-line objective
+    /// is owed nothing. Absent = no clue is stated.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clues: Vec<crate::Clue>,
     /// The event that fires it.

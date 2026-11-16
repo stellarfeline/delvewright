@@ -1,0 +1,56 @@
+{
+  "code": "DW0863",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/on_objective_complete/obj~1answer-the-marshal/0"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_complete/3",
+      "value": {
+        "happening": {
+          "subject": "anchor/muster",
+          "text": "The muster forms up beyond the wall.",
+          "verb": "arrives"
+        },
+        "type": "spawn-wave",
+        "wave": "wave/muster",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_flags": [
+            "flag/hall-open"
+          ],
+          "requires_state": [
+            {
+              "op": "at-most",
+              "state": "state/labels-read",
+              "value": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/1/hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.far-hall.clear-the-muster.hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.far-hall.clear-the-muster.hint"
+    }
+  ],
+  "units": [],
+  "why": "The gallery's one kill objective with its hint removed, and the l10n sidecar following so the inventory stays exact; its title, its announcement and its compass stay, so it is announced and owes a way to be found. A wave is the one objective kind the compiler puts nothing in the world for - no marker, no prop, no name - so the emitted datapack is byte-for-byte a working delve in which the party is told to clear a muster and not told where it is. The fight is not found by the party either: the probe fires `wave/muster` from the near hall's completion at the Factor's counter, where the gallery fired it before it waited for the Marshal's answer, so it forms up at the muster line in the far hall, 12.8 blocks from the act against the wave's declared 10-block reach, and the bodies do not come to the act that spawned them - the second way a fight may be found (spec-0104 §4: in sight, and in reach). The refusal says both: that the muster is hidden, and that it is out of reach. In the gallery the Marshal's answer fires it beside her, within that reach. Only the hint goes, never the title: an unannounced objective is a hidden task, owed nothing (spec-0137 §3), so a fight with no title is not this refusal. It declares no unit: the hint is bound in the gallery proper, and what must not compile is an announced fight that is neither told nor within reach."
+}

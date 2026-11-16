@@ -221,7 +221,7 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
 `DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-on-a-title-exit-1-a-warning-on-a-hint-exit-0)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
-A hint that names an act other than its objective's is the `DW1045` warning, for the creator to adjudicate; a clue a main-line step states is presented before the step, `DW0863` (spec-0143, [`compiler::clue`](delvec/compiler/clue.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
+A hint that names an act other than its objective's is the `DW1045` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
@@ -234,7 +234,7 @@ A hint that names an act other than its objective's is the `DW1045` warning, for
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
-| Clue presented (`DW0863`, built) | Every clue a main-line act states (`clues`): a `record` or `hint` on a journal page every run reaching the act has opened, or a `sight` in a clear line from a cell the main line stands on before it; an optional act, and an act that states no clue, is owed nothing | Binding stated by every build |
+| Act found (`DW0863`, built) | Every act on every walked path but an unannounced objective's (a hidden task, owed nothing): announced with a hint and armed on the way to it, or one clear line of nine to it within 64 blocks from where the party stands; every place walked through before a later act: an announced objective armed on the way, or the next act in sight, or the next act a hidden task's | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
 | Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |
 
@@ -314,10 +314,11 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   object exists only so that reading it opens something. **Authored.** A glowing
   entity, floating label or beam over a target is the defect; so is a sign
   pointing at a destination, or a note, plaque or lectern whose only job is to
-  be read so that a gate opens. **Machine half**: a clue a main-line step
-  states is presented before the step (`DW0863`, spec-0143) — whether the
-  party can find an act is judged in play;
-  a hint
+  be read so that a gate opens. **Machine half** (spec-0104 §4): every act on
+  a walked path is in sight of where the party stands — a clear line within 64
+  blocks — or its objective carries a `title` and a `hint` and is armed while
+  the party walks to it, and no leg of the walk is left with neither
+  (`DW0863`); a hint
   names only what the party has been told (`DW0982`).
 - **L2 — Mystery comes from the telling and the events, never from obscured
   wording; whatever the text says of the world is true.** A line the player must

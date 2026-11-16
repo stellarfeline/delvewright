@@ -576,18 +576,19 @@ fn validate_loaded_with(
                 examined.push(gbind.line());
                 diags.extend(gd);
             }
-            // An objective keeps the promise its prompt makes (DW0860-DW0862):
+            // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
-            // it, and a hint the emitter will never show. Error tier throughout -
-            // each judges what the document says. The
+            // it, a hint the emitter will never show, and a fight the party is
+            // given no way to find. Error tier throughout - each judges what the
+            // document says. The
             // binding line states what it examined, including the zeroes.
             {
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
                 // DW1136 (spec-0143 §3): a stated clue names a text that
-                // exists. Whether it is presented before its act is DW0863's,
+                // exists. Whether it is presented before its act is DW1137's,
                 // at the build.
                 let (kd, kbind) = delvec::compiler::clue::check(&campaign);
                 examined.push(kbind.line());

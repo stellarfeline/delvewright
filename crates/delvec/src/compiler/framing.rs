@@ -38,7 +38,7 @@
 //! target" asks the rule, and nothing else answers it: a review frame, the
 //! frames manifest and the stand-back camera ([`resolve_targets`]), a cutscene
 //! shot ([`shot`], `DW1033`), an act's sight from where the party stands
-//! (`DW0863`, `clue`) and the shut-way eye (`DW1053`/`DW1054`,
+//! (`DW0863`, `promise`) and the shut-way eye (`DW1053`/`DW1054`,
 //! `nav::learned`), the last three inside the crate. [`resolve_targets`] is the one
 //! place a target is put on a frame, and the one public entry point to the
 //! question "is this target inside this camera's frame, and hidden there". Its
@@ -547,7 +547,7 @@ impl Lines {
 /// ([`Occupancy::hides`]), the box's own cells and the `vantage` cells
 /// excluded. A review frame asks it of its eye over its grid
 /// ([`resolve_targets`]); a shot asks it of its lens (`shot::sight`); `DW0863`
-/// (`clue`, spec-0143 §4) asks it of a standing body's eye, with no frame,
+/// (`promise`, spec-0104 §4) asks it of a standing body's eye, with no frame,
 /// because a player turns to look; the shut-way eye (`nav::learned`,
 /// spec-0118) asks it of every eye cell in the party's reach. `vantage` names
 /// the cells the eye stands in, which never stop its own line.
