@@ -165,8 +165,10 @@ pub(super) fn actor_puppet_summon(
             ns,
             has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
         );
+        // DSL v0.83: the body's variant, by the one emission rule.
+        let variant = delvewright_dsl::variant_nbt(&body, a.variant.as_ref());
         format!(
-            "summon {body} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            "summon {body} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}{variant}}}",
             p[0], p[1], p[2]
         )
     }
@@ -378,8 +380,10 @@ pub(super) fn actor_twin_summon(
     } else {
         String::new()
     };
+    // The twin is the same body: unleashing swaps the AI, not the coat.
+    let variant = delvewright_dsl::variant_nbt(&a.entity, a.variant.as_ref());
     format!(
-        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}{entrance_fields}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose}{loot},Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}{variant}{entrance_fields}}}",
         a.entity
     )
 }

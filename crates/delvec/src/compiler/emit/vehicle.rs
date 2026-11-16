@@ -94,6 +94,12 @@ pub(super) fn vehicle_summon(plan: &Plan, v: &VehiclePlan) -> String {
             nbt.push(attrs);
         }
     }
+    // DSL v0.83: the body's variant, by the one emission rule.
+    if let Some(var) =
+        delvewright_dsl::variant_nbt(&v.entity, decl.variant.as_ref()).strip_prefix(',')
+    {
+        nbt.push(var.to_string());
+    }
     format!(
         "summon {} {} {} {} {{{}}}",
         v.entity,

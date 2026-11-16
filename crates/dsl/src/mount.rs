@@ -24,6 +24,13 @@ pub struct Mount {
     /// The vanilla entity ridden, validated against the pinned registry
     /// (`DW0173`), e.g. `minecraft:zombie_horse`, `minecraft:pig`.
     pub entity: String,
+    /// The body's vanilla variant (DSL v0.83, [`crate::BodyVariant`]): its
+    /// coat, colour, collar, kind or trade, by the pinned game's own property
+    /// names and values. Absent = the type's default (a summon skips the
+    /// random pick), byte-identical. A property the body does not carry is
+    /// `DW1131`; a value it does not take is `DW1132`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<crate::BodyVariant>,
     /// What the mount wears, in the wave mob's shape (`DW0898` holds each
     /// piece to what the body shows); drop chances zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
