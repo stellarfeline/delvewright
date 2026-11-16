@@ -424,6 +424,46 @@ fn the_packtest_owes_a_mode_its_templates() {
     )));
 }
 
+/// `DW0807` across a mode: a limit template's window is the server's own
+/// clock, so every driver that can enter the mode holding its clock is shut
+/// for the whole wait. `obj/reach`'s clock is held by `mode/audience`, entered
+/// when `obj/talk` of the KEPT quest completes; a template that left
+/// `quest/greet-keeper` in progress — as `mode_audience_holds` does, by design
+/// — let a body left on the server complete the talk, enter the mode, hold the
+/// clock and never settle the expiry. The kept quest is closed before the
+/// clock starts, in each limit template that waits on it; the mode clock
+/// template opens it again on purpose, after.
+#[test]
+fn a_limit_template_shuts_every_other_quest_before_its_clock_runs() {
+    let out = build(&fixture("limit-shuts", |q| {
+        audience(q);
+        minute(q, json!("activation"));
+    }));
+    let shut = "scoreboard players set #party dw.qa_greet_keeper 0";
+    let opened = "scoreboard players set #party dw.qa_greet_keeper 1";
+    for name in [
+        "limit_o_reach_expires",
+        "limit_o_reach_done",
+        "party_limit_bar_o_reach",
+    ] {
+        let t = template(&out, name);
+        let lines: Vec<&str> = t.lines().collect();
+        let start = lines
+            .iter()
+            .position(|l| *l == format!("function {NS}:activate_o_reach"))
+            .unwrap_or_else(|| panic!("`{name}` starts the clock:\n{t}"));
+        let last_shut = lines[..start].iter().rposition(|l| *l == shut);
+        assert!(
+            last_shut.is_some(),
+            "`{name}` shuts the kept quest before the clock starts:\n{t}"
+        );
+        assert!(
+            !lines[last_shut.unwrap()..start].contains(&opened),
+            "…and nothing opens it again before the start:\n{t}"
+        );
+    }
+}
+
 #[test]
 fn the_binding_counts_what_the_build_read() {
     let dir = fixture("binding", |q| {
@@ -450,4 +490,105 @@ fn the_binding_counts_what_the_build_read() {
         gate.line()
             .starts_with("mode binding (DW1122–DW1124): 1 mode(s), 1 entered")
     );
+}
+
+/// The journal ledger hands the bot, per quest, the `#party dw.mode` ranges
+/// under which it is held — the same runs its guards read — and the score
+/// they are read on, so a held quest's pages are owed when the mode is left
+/// and not at its start. A quest no mode holds carries none, and a campaign
+/// with no mode names no score.
+#[test]
+fn the_journal_ledger_names_the_modes_that_hold_each_quest() {
+    let ledger = |out: &BuildOutput| -> Value {
+        serde_json::from_slice(
+            out.get("validation/journal-starts.json")
+                .expect("a campaign with a journal writes the ledger"),
+        )
+        .unwrap()
+    };
+    let held = |l: &Value, quest: &str| -> Vec<String> {
+        let q = l["quests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|q| q["quest"] == quest)
+            .unwrap_or_else(|| panic!("no `{quest}` in the ledger: {l}"));
+        q["held"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_string())
+            .collect()
+    };
+    let out = build(&fixture("ledger", |q| {
+        audience(q);
+        q["modes"] = json!([
+            {"id": "mode/audience", "keeps": ["quest/greet-keeper"]},
+            {"id": "mode/shrine", "keeps": ["quest/reach-shrine"]},
+            {"id": "mode/second-audience", "keeps": ["quest/greet-keeper"]},
+        ]);
+    }));
+    let l = ledger(&out);
+    assert_eq!(l["mode"], "dw.mode", "{l}");
+    assert_eq!(held(&l, "quest/reach-shrine"), ["1", "3"]);
+    assert_eq!(held(&l, "quest/greet-keeper"), ["2"]);
+    // The ledger's ranges are the guard's: each is one `unless` term.
+    let tick = func(&out, "tick");
+    let guard = dispatching(&tick, "complete_o_arrive")[0];
+    for r in held(&l, "quest/reach-shrine") {
+        assert!(
+            guard.contains(&format!(" unless score #party dw.mode matches {r}")),
+            "{guard}"
+        );
+    }
+
+    let none = build(&fixture("ledger-none", |q| {
+        audience(q);
+        q.as_object_mut().unwrap().remove("modes");
+        q["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+    }));
+    let l = ledger(&none);
+    assert!(l["mode"].is_null(), "{l}");
+    assert!(held(&l, "quest/reach-shrine").is_empty(), "{l}");
+}
+
+/// The journal's templates own the mode their pages' guards read
+/// (`DW0807`'s rule): a quest some mode holds is listed only in no mode, so a
+/// sibling template that left a mode on would otherwise decide what the book
+/// shows. Each writes `#party dw.mode 0` before its first rewrite, and puts the
+/// value it found back at its end.
+#[test]
+fn a_journal_template_owns_the_mode_its_pages_read() {
+    let out = build(&fixture("journal-mode", |q| {
+        audience(q);
+        q["modes"] = json!([
+            {"id": "mode/audience", "keeps": ["quest/greet-keeper"]},
+            {"id": "mode/shrine", "keeps": ["quest/reach-shrine"]},
+        ]);
+    }));
+    let own = "scoreboard players set #party dw.mode 0";
+    for name in ["guide_journal_pages", "guide_journal_join"] {
+        let t = template(&out, name);
+        let lines: Vec<&str> = t.lines().collect();
+        let first = lines
+            .iter()
+            .position(|l| {
+                l.starts_with(&format!("function {NS}:journal_rewrite"))
+                    || l.starts_with(&format!("function {NS}:guide_refresh"))
+            })
+            .unwrap_or_else(|| panic!("`{name}` writes the book:\n{t}"));
+        assert!(
+            lines[..first].contains(&own),
+            "`{name}` sets the map in no mode before it writes the book:\n{t}"
+        );
+        assert!(
+            lines[first..]
+                .iter()
+                .any(|l| l.starts_with("scoreboard players operation #party dw.mode = ")),
+            "`{name}` puts the mode back:\n{t}"
+        );
+    }
 }

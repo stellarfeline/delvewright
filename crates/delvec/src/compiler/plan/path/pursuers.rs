@@ -675,6 +675,187 @@ pub(crate) fn walk_modes(c: &Campaign, firing: &PathFiring) -> Result<ModeWalk, 
     Ok(out)
 }
 
+/// A body the campaign looses into the world with a mind of its own: a wave
+/// (every stack of it), or an actor's free twin. A puppet stands where it is
+/// put and makes no footstep, so an actor is a free body only once an
+/// `unleash-actor` of it fires.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FreeBodyKey {
+    /// A wave, by id.
+    Wave(String),
+    /// An actor's free twin, by id.
+    Actor(String),
+}
+
+impl FreeBodyKey {
+    /// The id as written.
+    pub fn id(&self) -> &str {
+        match self {
+            FreeBodyKey::Wave(w) | FreeBodyKey::Actor(w) => w,
+        }
+    }
+}
+
+/// When one arrival line of a free body may first put it in the world on this
+/// path: from step `from` on (at that step's walk or any later one), and
+/// whether that is exact — the line fires at a performed step's completion and
+/// at no other moment. Only an exact arrival is undone by a later despawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Arrival {
+    pub from: usize,
+    pub exact: bool,
+}
+
+/// The steps of a path `n` long a body with these arrivals is loose on:
+/// step `i` when some arrival may have come by `i` and, for an exact one, no
+/// despawn certainly fired after it and by `i` (`removals` are the first step
+/// each despawn has taken effect for). An arrival that is not exact may come
+/// after any despawn, so nothing takes its body out again.
+pub(crate) fn loose_steps(arrivals: &[Arrival], removals: &[usize], n: usize) -> Vec<bool> {
+    (0..n)
+        .map(|i| {
+            arrivals.iter().any(|a| {
+                a.from <= i && !(a.exact && removals.iter().any(|&r| a.from < r && r <= i))
+            })
+        })
+        .collect()
+}
+
+/// **Per free body, the steps of `steps` it may be loose while walked** — the
+/// bodies a vibration from somewhere other than the party can come from
+/// (spec-0100 §2.4: a mob's step sets a sensor off and never reaches a
+/// shrieker). Aligned 1:1 with `steps`, bodies in key order; a body the path
+/// never looses is absent.
+///
+/// A wave arrives with each `spawn-wave` of it, an actor's free twin with each
+/// `unleash-actor` (an `ambush` desugars to one). A line is dated as a
+/// pursuer's ([`dated`]): one a performed step's bundle fires arrives after
+/// that step, exactly; one in the bundle of a trigger the path does not
+/// perform arrives no earlier than `sprung(trigger)` — the first step whose
+/// walk can spring it — and at any step after; every other undatable line
+/// from the path's first step. A wave is never taken out again: a kill-count
+/// objective completes on one player's count while a party's extra bodies
+/// stand (spec-0134 §4), and a re-seat puts a cleared wave back. An actor is
+/// taken out by a `despawn-actor` the path certainly fires after an exact
+/// arrival ([`loose_steps`]).
+pub(crate) fn free_bodies_by_step(
+    c: &Campaign,
+    steps: &[Step],
+    firing: &PathFiring,
+    sprung: &dyn Fn(&str) -> Option<usize>,
+) -> Vec<(FreeBodyKey, Vec<bool>)> {
+    fn walk<'a>(
+        list: &'a [QuestEffect],
+        base: &str,
+        reaction: bool,
+        owner: &EffectRootOwner<'a>,
+        out: &mut Vec<(String, EffectRootOwner<'a>, bool, &'a QuestEffect)>,
+    ) {
+        for (i, e) in list.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if matches!(
+                e.verb,
+                Verb::SpawnWave { .. } | Verb::UnleashActor { .. } | Verb::DespawnActor { .. }
+            ) {
+                out.push((path.clone(), *owner, reaction, e));
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
+                walk(nested, &format!("{path}/{seg}"), r, owner, out);
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        walk(list, &site.path, false, &site.owner, &mut lines);
+    });
+    let mut arrivals: BTreeMap<FreeBodyKey, Vec<Arrival>> = BTreeMap::new();
+    let mut removals: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (pointer, owner, reaction, e) in &lines {
+        let key = match &e.verb {
+            Verb::SpawnWave { wave, .. } => FreeBodyKey::Wave(wave.as_str().to_string()),
+            Verb::UnleashActor { actor } => FreeBodyKey::Actor(actor.as_str().to_string()),
+            Verb::DespawnActor { actor, .. } => {
+                if let Some(When::At(s)) = dated(owner, pointer, *reaction, firing)
+                    && firing.fires(pointer)
+                {
+                    removals
+                        .entry(actor.as_str().to_string())
+                        .or_default()
+                        .push(s + 1);
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        let arrival = match (owner, dated(owner, pointer, *reaction, firing)) {
+            (_, Some(When::At(s))) => Arrival {
+                from: s + 1,
+                exact: true,
+            },
+            (EffectRootOwner::Trigger(t), Some(When::Undated)) if !*reaction => Arrival {
+                from: sprung(t.id.as_str()).unwrap_or(0),
+                exact: false,
+            },
+            (_, Some(When::Undated)) => Arrival {
+                from: 0,
+                exact: false,
+            },
+            (_, None) => continue,
+        };
+        arrivals.entry(key).or_default().push(arrival);
+    }
+    let mut out = Vec::new();
+    for (key, list) in arrivals {
+        let gone: &[usize] = match &key {
+            FreeBodyKey::Actor(a) => removals.get(a).map_or(&[], Vec::as_slice),
+            FreeBodyKey::Wave(_) => &[],
+        };
+        let loose = loose_steps(&list, gone, steps.len());
+        if loose.iter().any(|l| *l) {
+            out.push((key, loose));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod free_body_tests {
+    use super::*;
+
+    #[test]
+    fn an_exact_arrival_is_loose_from_the_step_after_its_beat_until_a_despawn() {
+        let a = [Arrival {
+            from: 3,
+            exact: true,
+        }];
+        assert_eq!(
+            loose_steps(&a, &[5], 7),
+            vec![false, false, false, true, true, false, false]
+        );
+        // A despawn before the arrival takes nothing out.
+        assert_eq!(
+            loose_steps(&a, &[2], 5),
+            vec![false, false, false, true, true]
+        );
+    }
+
+    /// The gallery's rafter spider: its `despawn-actor` fires at the muster's
+    /// clearing, and the ambush that looses it is sprung by a later walk — so
+    /// the despawn is spent before the body arrives, and the body stays.
+    #[test]
+    fn an_arrival_sprung_by_a_walk_is_never_taken_out() {
+        let a = [Arrival {
+            from: 4,
+            exact: false,
+        }];
+        assert_eq!(
+            loose_steps(&a, &[3, 5], 7),
+            vec![false, false, false, false, true, true, true]
+        );
+    }
+}
+
 #[cfg(test)]
 mod mode_tests {
     use super::*;

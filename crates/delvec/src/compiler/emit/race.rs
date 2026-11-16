@@ -12,9 +12,11 @@
 //!
 //! A racer credited the last checkpoint of the last lap has finished: it
 //! takes the next place on the race's board by the board's own placing
-//! function. A racer the body function has asked and that has not finished
-//! carries the tag `dw_rcg_<race>`. The race is over (`race_<race>_end`) when
-//! no racer in the world carries it, when its `grace_ticks` have passed since its
+//! function. A racer that has started — been credited its first checkpoint —
+//! and has not finished carries the tag `dw_rcg_<race>`; a body the race asks
+//! and that never starts never carries it, so it is not waited on. The race is
+//! over (`race_<race>_end`) when a racer finishes and no racer in the world
+//! carries it, when its `grace_ticks` have passed since its
 //! first finisher (a `schedule` the first finish makes and a start clears),
 //! or when an `end-race` says so; being over latches `#rfin_<race>`, the
 //! term an objective that declares the race its `course` waits on.
@@ -49,7 +51,7 @@ pub(crate) fn race_first(id: &str) -> String {
 }
 
 /// The tag a racer of race `id` carries while it is on the course: put on
-/// by the body function, taken off by its finish and by a start.
+/// by its first credit, taken off by its finish and by a start.
 pub(crate) fn race_on_course(id: &str) -> String {
     format!("dw_rcg_{}", plan::safe_local(id))
 }
@@ -182,14 +184,13 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
         ));
         // The body: seed a racer the start found absent, leave a finisher
         // alone, credit the next checkpoint, else tell a player what it
-        // missed.
+        // missed. It tags nobody: a body is on the course once credited.
         // `add … 0` creates an entry the start reset and keeps one that
         // stands: a comparison against no entry is never true.
         let mut body = vec![
             format!("scoreboard players add @s {p} 0"),
             format!("scoreboard players add @s {nx} 0"),
             format!("execute if score @s {p} matches {total}.. run return 0"),
-            format!("tag @s add {racing}"),
         ];
         for (j, (lo, hi)) in boxes.iter().enumerate() {
             body.push(format!(
@@ -210,6 +211,7 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         out.push((race_body_fn(id), lines(&body)));
         let mut pass = vec![
+            format!("tag @s add {racing}"),
             format!("scoreboard players add @s {p} 1"),
             format!("scoreboard players add @s {nx} 1"),
             format!("execute if score @s {nx} matches {n}.. run scoreboard players set @s {nx} 0"),
@@ -245,7 +247,7 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
             }
         }
         // The first finish starts the grace; every finish asks whether a
-        // racer in the world is still short of the finish.
+        // racer in the world that has started is still short of the finish.
         if let Some(g) = r.grace_ticks {
             finish.push(format!(
                 "execute unless score {first} dw.sys matches 1 run schedule function {end} {g}t \

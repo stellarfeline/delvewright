@@ -131,12 +131,14 @@ blocks: the build states the nearest body cell and its distance. The waypoint
 export carries the plain sensor and its shrieker on the legs that walk past them
 and the calibrated sensor on the legs up and down the stair, and the bot asserts
 each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
-No wave body stands within the sensor's reach while a leg that carries the
-shriek is walked: a mob's footstep sets the sensor off and a shrieker answers
-only a player, so a body there would take the click the party is owed. The
-walk to the Marshal is the one such leg before the muster is cleared, and the
-muster forms up only once she has the party's answer; every later leg past the
-floor comes after the muster is cleared.
+A mob's footstep sets the sensor off and a shrieker answers only a player, so
+the build predicts the shriek only on a leg no free body loose then can reach
+the sensor on. The walk to the Marshal is that leg: the muster forms up only
+once she has the party's answer, and the rafter spider's ambush is sprung only
+later, on the long gallery. The climb onto the cabin and the walk to the exit
+carry the sensor and withhold the shriek, naming the muster and the spider —
+the spider's `despawn-actor` fires at the muster's clearing, before the ambush
+that looses it, so it stays in the hall.
 A third sensor is set into the near hall's floor two cells south of the walk
 along the valves. Two legs pass within its earshot without predicting it: the
 walk from the emeralds to the first valve and the walk from the third valve to
@@ -210,6 +212,9 @@ holding them at once.
 | `a-barrel-in-a-row-of-barrels` | `DW0861` | `validate` | adopting a container the piece placed without naming what is in it |
 | `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
 | `a-fight-nobody-points-at` | `DW0863` | `validate` | requiring a fight and saying nothing about where it happens |
+| `a-clue-in-an-optional-bay` | `DW1137` | `build` | resting a main-line valve on a hint only an optional quest shows |
+| `a-clue-read-after-the-step` | `DW1137` | `build` | resting a step on a record the story writes two halls later |
+| `a-clue-that-names-no-text` | `DW1136` | `validate` | resting a step on the record of an objective that has none |
 | `a-bar-in-a-colour-the-game-lacks` | `DW0911` | `validate` | drawing a boss bar in `crimson`, a colour the pinned game's `bossbar` command does not list |
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
 | `a-zombie-that-digs-out` | `DW1081` | `validate` | making the sleeper on the long hall's porch a zombie that still enters the way its kind does — a kind with no entrance the engine knows |
@@ -691,6 +696,22 @@ game discards on peaceful, 2 inert, 2 in reach, 3 lines owed and 3 declared —
 and writes `validation/body-answers.json`, one row per body; the generated
 `v119_answer_box_hall_sentry` PackTest stands the box with the puppet and
 watches it go before the twin stands.
+
+## The hearth stone, struck and touched
+
+One block answers a left-click and a right-click, each with its own beat.
+The smooth stone slab at `anchor/hearth-stone` carries `trigger/strike-the-hearth`
+(a `strike`, answered to the striker) and `trigger/warm-at-the-hearth` (a
+`use`, narrated to the party), both naming the same `prop`. A slab is a block
+the game reports no press of, so each press's click box stands in every state,
+and the build summons ONE `minecraft:interaction` over it wearing both
+triggers' tags: the left-click lands in its `attack` record and the right-click
+in its `interaction` record, so neither press takes the other's. The press
+proof says how many boxes are shared and by how many presses
+(`validation/press-proof.json`, `shared_boxes`), and the generated
+`shared_box_<cell>` PackTest writes each record on the one box and reads which
+press fired. Two presses of one button on one box, or a bell under a strike's
+box, are still two bodies and still refused (`DW0878`).
 
 ## The heartbeat, and the drip
 

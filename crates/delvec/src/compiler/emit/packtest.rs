@@ -277,6 +277,9 @@ pub(super) fn emit_packtest(
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
     trigger::emit_answer_heard_packtests(plan, out);
+    // A left-click and a right-click on one block, one box: each reaches its
+    // own press. Emits nothing for a campaign with no shared box.
+    trigger::emit_shared_box_packtests(plan, out);
     loot::emit_loot_packtests(plan, out, containers);
     // spec-0111 §5.3: every filled holder entity's own body, driven.
     holders::emit_holder_packtests(plan, out, holders);

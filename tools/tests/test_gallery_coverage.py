@@ -715,3 +715,144 @@ def test_a_code_counts_only_where_the_run_refused_with_it():
     )
     r = mod.subprocess.CompletedProcess([], 3, lines, "")
     assert mod._codes(r) == ["DW0002"]
+
+
+def _sharded_gallery(tmp_path, monkeypatch, probes: int):
+    """A miniature gallery whose unwritten units are each discharged by one probe.
+
+    `horizon_<i>` is written nowhere; probe `p<i>` claims it, and one more probe
+    claims nothing (a demonstration). The verdict is green only when every
+    claiming probe was examined, so a shard set that drops a probe reds.
+    """
+    mod = _load_checker()
+    props = {"id": {"type": "string"}}
+    props.update({f"horizon_{i}": {"type": "string"} for i in range(probes)})
+    export = {
+        "world": {
+            "title": "Envelope_for_WorldContent",
+            "type": "object",
+            "properties": {"content": {"$ref": "#/$defs/WorldContent"}},
+            "$defs": {"WorldContent": {"type": "object", "properties": props}},
+        }
+    }
+    gallery = tmp_path / "gallery"
+    gallery.mkdir()
+    (gallery / "world.json").write_text(json.dumps(_doc({"id": "x"})))
+    patch = [{"doc": "world.json", "op": "replace", "path": "/content/id", "value": "y"}]
+    for i in range(probes):
+        (gallery / "probes" / f"p{i}").mkdir(parents=True)
+        (gallery / "probes" / f"p{i}" / "probe.json").write_text(
+            json.dumps(
+                {"code": "DW9999", "units": [f"WorldContent.horizon_{i}"], "why": "w", "patch": patch}
+            )
+        )
+    (gallery / "probes" / "demo").mkdir()
+    (gallery / "probes" / "demo" / "probe.json").write_text(
+        json.dumps({"code": "DW9999", "units": [], "why": "w", "patch": patch})
+    )
+    prefabs = tmp_path / "prefabs"
+    prefabs.mkdir()
+    monkeypatch.setattr(mod, "GALLERY", gallery)
+    monkeypatch.setattr(mod.gallery_domain, "GALLERY", gallery)
+    monkeypatch.setattr(mod, "schema_export", lambda _d: export)
+    monkeypatch.setattr(mod, "resolve_delvec", lambda *_a, **_k: pathlib.Path("/nonexistent/delvec"))
+    ran: list[str] = []
+
+    def run_probe(_delvec, dest, *_a):
+        ran.append(pathlib.Path(dest).name)
+        return (1, ["DW9999"], "validate")
+
+    monkeypatch.setattr(mod, "run_probe", run_probe)
+
+    def main(*argv: str) -> int:
+        monkeypatch.setattr(sys, "argv", ["check", "--prefabs", str(prefabs), *argv])
+        return mod.main()
+
+    return mod, gallery, main, ran
+
+
+def test_the_shards_together_state_the_whole_runs_verdict(tmp_path, monkeypatch):
+    """N shards then the aggregate: every probe run once, the report the whole run writes."""
+    mod, _gallery, main, ran = _sharded_gallery(tmp_path, monkeypatch, probes=7)
+    whole = tmp_path / "whole.json"
+    assert main("--report", str(whole)) == 0
+    assert sorted(ran) == sorted([f"p{i}" for i in range(7)] + ["demo"])
+
+    ran.clear()
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    for k in (1, 2, 3):
+        assert main("--shard", f"{k}/3", "--shard-report", str(shards / f"{k}.json")) == 0
+        examined = json.loads((shards / f"{k}.json").read_text())["probes"]
+        assert examined, f"shard {k} of 3 examined nothing"
+    assert sorted(ran) == sorted([f"p{i}" for i in range(7)] + ["demo"]), (
+        f"each probe runs in exactly one shard: {sorted(ran)}"
+    )
+
+    ran.clear()
+    agg = tmp_path / "agg.json"
+    assert main("--shard-reports", str(shards), "--report", str(agg)) == 0
+    assert ran == [], "the aggregate runs no probe"
+    assert json.loads(agg.read_text()) == json.loads(whole.read_text())
+
+
+def test_a_missing_shard_reds_the_aggregate(tmp_path, monkeypatch):
+    """Drop one shard's report: the probes it held were examined by nothing."""
+    _mod, _gallery, main, _ran = _sharded_gallery(tmp_path, monkeypatch, probes=7)
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    for k in (1, 2, 3):
+        main("--shard", f"{k}/3", "--shard-report", str(shards / f"{k}.json"))
+    (shards / "2.json").unlink()
+    with pytest.raises(SystemExit):
+        main("--shard-reports", str(shards))
+
+
+def test_a_shard_that_examined_a_different_partition_reds_the_aggregate(tmp_path, monkeypatch):
+    """A report naming a probe outside its partition (or missing one) is refused by name."""
+    _mod, _gallery, main, _ran = _sharded_gallery(tmp_path, monkeypatch, probes=7)
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    for k in (1, 2, 3):
+        main("--shard", f"{k}/3", "--shard-report", str(shards / f"{k}.json"))
+    assert main("--shard-reports", str(shards)) == 0
+    # Every probe is still examined somewhere; only shard 3's claim is wrong.
+    r = json.loads((shards / "3.json").read_text())
+    r["probes"] += json.loads((shards / "1.json").read_text())["probes"][:1]
+    (shards / "3.json").write_text(json.dumps(r))
+    with pytest.raises(SystemExit):
+        main("--shard-reports", str(shards))
+
+
+def test_a_shard_reported_twice_reds_the_aggregate(tmp_path, monkeypatch):
+    """N reports, one per K: a second report of shard 1 is not a set the matrix produced."""
+    _mod, _gallery, main, _ran = _sharded_gallery(tmp_path, monkeypatch, probes=7)
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    for k in (1, 2, 3):
+        main("--shard", f"{k}/3", "--shard-report", str(shards / f"{k}.json"))
+    (shards / "1b.json").write_text((shards / "1.json").read_text())
+    with pytest.raises(SystemExit):
+        main("--shard-reports", str(shards))
+
+
+def test_a_probe_changed_after_its_shard_ran_reds_the_aggregate(tmp_path, monkeypatch):
+    """The aggregate re-hashes each probe: a record of other files is not this probe's."""
+    _mod, gallery, main, _ran = _sharded_gallery(tmp_path, monkeypatch, probes=4)
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    for k in (1, 2):
+        main("--shard", f"{k}/2", "--shard-report", str(shards / f"{k}.json"))
+    assert main("--shard-reports", str(shards)) == 0
+    m = gallery / "probes" / "p0" / "probe.json"
+    m.write_text(m.read_text().replace('"why": "w"', '"why": "changed"'))
+    with pytest.raises(SystemExit):
+        main("--shard-reports", str(shards))
+
+
+def test_a_shard_with_no_probe_is_red(tmp_path, monkeypatch, capsys):
+    """More shards than probes: the empty shard examines nothing and says so."""
+    _mod, _gallery, main, _ran = _sharded_gallery(tmp_path, monkeypatch, probes=1)
+    with pytest.raises(SystemExit):
+        main("--shard", "3/3", "--shard-report", str(tmp_path / "3.json"))
+    assert "ZERO" in capsys.readouterr().err

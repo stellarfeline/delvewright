@@ -84,10 +84,18 @@ fn runs(numbers: &[usize]) -> Vec<String> {
 /// no mode and for a quest every mode keeps, so such a guard is
 /// byte-identical.
 pub(crate) fn held_term(c: &delvewright_dsl::Campaign, quest: &str) -> String {
-    runs(&c.quests.content.modes_holding(quest))
+    held_ranges(c, quest)
         .iter()
         .map(|r| format!(" unless score {} {MODE_SCORE} matches {r}", plan::PARTY))
         .collect()
+}
+
+/// **The `#party dw.mode` values under which `quest` is held**, as
+/// `matches` ranges: one per maximal run of the numbers of the modes that do
+/// not keep it. Empty for a quest no mode holds. [`held_term`] reads them, and
+/// the journal ledger hands them to the bot.
+pub(crate) fn held_ranges(c: &delvewright_dsl::Campaign, quest: &str) -> Vec<String> {
+    runs(&c.quests.content.modes_holding(quest))
 }
 
 /// [`held_term`] for the quest that holds objective `oid`.
@@ -103,14 +111,19 @@ pub(crate) fn holds_some(c: &delvewright_dsl::Campaign, quest: &str) -> bool {
 /// The line a PackTest that opens a guard of `quest` writes: the map in no
 /// mode. Empty for a quest no mode holds.
 pub(crate) fn mode_drive(c: &delvewright_dsl::Campaign, quest: &str) -> Vec<String> {
-    if holds_some(c, quest) {
-        vec![format!(
-            "scoreboard players set {} {MODE_SCORE} 0",
-            plan::PARTY
-        )]
-    } else {
-        Vec::new()
-    }
+    mode_drive_term(c, quest)
+        .map(|(obj, v)| vec![format!("scoreboard players set {} {obj} {v}", plan::PARTY)])
+        .unwrap_or_default()
+}
+
+/// The `#party` term [`mode_drive`] writes, as `(objective, value)`, for a
+/// template that saves and restores what it writes; `None` for a quest no
+/// mode holds.
+pub(crate) fn mode_drive_term(
+    c: &delvewright_dsl::Campaign,
+    quest: &str,
+) -> Option<(&'static str, i32)> {
+    holds_some(c, quest).then_some((MODE_SCORE, 0))
 }
 
 /// Every limited objective a mode can hold — its quest is not kept by some

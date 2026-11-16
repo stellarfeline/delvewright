@@ -581,8 +581,8 @@
     },
     "Race": {
       "class": "each",
-      "evidence": "`emit::race`: `dw.rc.<r>`/`dw.rn.<r>` per player, `dw_rcg_<r>` per racer; PackTests `race_<r>_in_order`, `race_<r>_skip`.",
-      "semantics": "Every player present is a racer with their own count; the race ends when every racer on the course has finished, or `grace_ticks` after the first. A player who is not in the world is not waited for."
+      "evidence": "`emit::race`: `dw.rc.<r>`/`dw.rn.<r>` per player, `dw_rcg_<r>` put on by a racer's credit; PackTests `race_<r>_in_order`, `race_<r>_skip`, `race_<r>_bystander`.",
+      "semantics": "Every player present may race, each with their own count; a player is a racer once credited the first checkpoint. The race ends when every racer that has started has finished, or `grace_ticks` after the first finish. A present player who never starts, and a player who is not in the world, is not waited for."
     },
     "RegionSubject": {
       "class": "parameter",

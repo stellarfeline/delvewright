@@ -1749,15 +1749,69 @@ jobs:
           path: determinism-linux-gallery.txt
           if-no-files-found: error
 
+  gallery-coverage-shard:
+    name: gallery coverage shard (${{ matrix.k }} of 6)
+    needs: [changes, delvec-binary, gallery-pieces]
+    # The probes' engine runs are the coverage gate's whole cost (2884 s over
+    # 313 probes on one runner, past 57 minutes at 315), so they are split:
+    # shard k of N runs the probes at positions k-1 modulo N of the sorted
+    # listing (`check-gallery-coverage.py --shard`), judges each, and writes
+    # its records. A matrix job skipped at JOB level is never expanded, so the
+    # job always runs and each STEP is guarded, as `rust partition` is.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Every shard runs to its end: the aggregate needs all N reports.
+      fail-fast: false
+      matrix:
+        k: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.gallery-coverage == 'true' || github.event_name != 'pull_request' }}
+      - uses: ./.github/actions/delvec-binary
+        if: ${{ needs.changes.outputs.gallery-coverage == 'true' || github.event_name != 'pull_request' }}
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      - uses: ./.github/actions/gallery-pieces
+        if: ${{ needs.changes.outputs.gallery-coverage == 'true' || github.event_name != 'pull_request' }}
+        with: { sha256: "${{ needs.gallery-pieces.outputs.sha256 }}" }
+      # A shard that examines zero probes is a red; its verdict on each probe
+      # is the whole run's (refused, with the code it names).
+      - name: shard k of N of the probes is refused with the codes they name
+        if: ${{ needs.changes.outputs.gallery-coverage == 'true' || github.event_name != 'pull_request' }}
+        env:
+          SHARD: ${{ matrix.k }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          python3 tools/ci/check-gallery-coverage.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --shard "$SHARD/$SHARDS" \
+            --shard-report "shard-$SHARD.json"
+      - uses: actions/upload-artifact@v4
+        if: ${{ needs.changes.outputs.gallery-coverage == 'true' || github.event_name != 'pull_request' }}
+        with:
+          name: gallery-coverage-shard-${{ matrix.k }}
+          path: shard-${{ matrix.k }}.json
+          if-no-files-found: error
+          retention-days: 3
+
   gallery-coverage:
     name: gallery coverage (every surface written or refused)
-    needs: [changes, delvec-binary, gallery-pieces]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-coverage == 'true'
+    needs: [changes, delvec-binary, gallery-pieces, gallery-coverage-shard]
+    # Runs whenever the family was reached, success or not — a required context
+    # skipped because a shard failed would PASS branch protection — and its
+    # first step turns a non-green shard into its own red.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.gallery-coverage == 'true') }}
     runs-on: ubuntu-latest
-    # The job's bound, so a reach graph that grows past its measured cost reds
-    # here instead of holding a runner for six hours.
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
+      - name: every shard is green
+        env:
+          SHARDS: ${{ needs.gallery-coverage-shard.result }}
+        run: |
+          echo "gallery coverage shards: $SHARDS"
+          [ "$SHARDS" = "success" ] || { echo "a gallery coverage shard is not green" >&2; exit 1; }
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -1775,15 +1829,23 @@ jobs:
           set -euo pipefail
           target/debug/delvec analyze gallery --prefabs gallery-prefabs
           target/debug/delvec build gallery -o gallery-out-en --prefabs gallery-prefabs
-      # The coverage gate. Reds when the schema export gains a unit the gallery
-      # does not write — i.e. precisely on the changes that grow authoring
-      # surface, and on no others.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gallery-coverage-shard-*
+          path: shard-reports
+          merge-multiple: true
+      # The coverage gate's verdict over every shard's records. Reds when the
+      # schema export gains a unit the gallery does not write — i.e. precisely
+      # on the changes that grow authoring surface, and on no others — and when
+      # the shards together did not examine every probe of this checkout
+      # exactly once, or a shard examined none.
       - name: every declared surface is written or proven refused
         run: |
           python3 tools/ci/check-gallery-coverage.py \
             --delvec target/debug/delvec \
             --prefabs gallery-prefabs \
             --build-out gallery-out-en \
+            --shard-reports shard-reports \
             --report gallery-coverage.json \
             --index gallery-coverage.md
       # spec-0141 §2: the same units, asked a second question — what each one

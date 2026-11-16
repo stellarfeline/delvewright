@@ -16,6 +16,12 @@
 // translation key, within a settle window. An owed objective already complete
 // when the quest is first seen active is counted, never judged.
 //
+// A quest a mode holds (spec-0140) is told nothing while the map is in that
+// mode: the ledger names the mode score and, per quest, the values of it under
+// which the quest is held. A quest seen active while held is owed its pages at
+// the first boundary the map has left the mode, not at its start; a quest no
+// mode holds is judged at its start as always.
+//
 // Assertions and bookkeeping only — no game logic (CLAUDE.md).
 
 import { readFile } from "node:fs/promises";
@@ -47,11 +53,15 @@ export interface JournalStart {
   readonly told: readonly JournalTold[];
   /** Objectives with no `after` behind a gate nothing serves: owed no page, counted. */
   readonly gated: readonly string[];
+  /** The mode score's `matches` ranges under which the quest is held; empty when no mode holds it. */
+  readonly held: readonly string[];
 }
 
 /** The ledger as the bot reads it. */
 export interface JournalLedger {
   readonly party: string;
+  /** The party score the map's mode is held in; `null` for a campaign with no mode. */
+  readonly mode: string | null;
   readonly quests: readonly JournalStart[];
 }
 
@@ -74,6 +84,7 @@ export function parseJournalLedger(raw: unknown): JournalLedger {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) bad("is not an object");
   const root = raw as Record<string, unknown>;
   const party = str(root["party"], "/party");
+  const mode = root["mode"] === null ? null : str(root["mode"], "/mode");
   const qs = root["quests"];
   if (!Array.isArray(qs)) bad("/quests is not an array");
   const quests = qs.map((q, i): JournalStart => {
@@ -86,6 +97,11 @@ export function parseJournalLedger(raw: unknown): JournalLedger {
     if (!Array.isArray(gated) || !gated.every((g) => typeof g === "string")) {
       bad(`${at}/gated is not an array of objective ids`);
     }
+    const held = o["held"];
+    if (!Array.isArray(held) || !held.every((r) => typeof r === "string" && /^\d+(\.\.\d+)?$/.test(r))) {
+      bad(`${at}/held is not an array of score ranges`);
+    }
+    if (held.length > 0 && mode === null) bad(`${at}/held names ranges of no mode score`);
     return {
       quest: str(o["quest"], `${at}/quest`),
       active: str(o["active"], `${at}/active`),
@@ -100,9 +116,10 @@ export function parseJournalLedger(raw: unknown): JournalLedger {
         };
       }),
       gated: gated as string[],
+      held: held as string[],
     };
   });
-  return { party, quests };
+  return { party, mode, quests };
 }
 
 /** Load the ledger beside a critical path; absent is a build with no journal. */
@@ -131,6 +148,41 @@ export function scoreIsOneCommand(holder: string, objective: string): string {
     `/execute if score ${holder} ${objective} matches 1 run tellraw @s ` +
     JSON.stringify({ text: scoreMarker(objective) })
   );
+}
+
+/**
+ * The command that says `[dw:journal <objective> <range>]` to the bot alone
+ * exactly when the holder's score matches `range`.
+ */
+export function scoreMatchesCommand(holder: string, objective: string, range: string): string {
+  return (
+    `/execute if score ${holder} ${objective} matches ${range} run tellraw @s ` +
+    JSON.stringify({ text: `[dw:journal ${objective} ${range}]` })
+  );
+}
+
+/** The commands that ask whether the map is in a mode holding `quest`: one per range. */
+export function heldCommands(ledger: JournalLedger, quest: JournalStart): string[] {
+  if (ledger.mode === null) return [];
+  const mode = ledger.mode;
+  return quest.held.map((r) => scoreMatchesCommand(ledger.party, mode, r));
+}
+
+/** Whether the replies to {@link heldCommands} say the quest is held. */
+export function isHeld(ledger: JournalLedger, quest: JournalStart, replies: readonly (readonly string[])[]): boolean {
+  if (ledger.mode === null) return false;
+  const mode = ledger.mode;
+  return quest.held.some((r, i) => (replies[i] ?? []).some((l) => l.trim() === `[dw:journal ${mode} ${r}]`));
+}
+
+/**
+ * What a step boundary owes a quest the run has not judged yet: nothing while
+ * it is not active; nothing yet while a mode holds it (its pages are owed when
+ * the mode is left); else its pages, now.
+ */
+export function journalStartDue(active: boolean, held: boolean): "not-started" | "held" | "owed" {
+  if (!active) return "not-started";
+  return held ? "held" : "owed";
 }
 
 /** The line {@link scoreIsOneCommand} tells. */
@@ -226,6 +278,10 @@ export interface JournalBinding {
   readonly baked: number;
   /** Objectives owed no page by the ledger (gated, nothing serves them). */
   readonly gated: number;
+  /** Quests first seen active while a mode held them, judged at the mode's leaving. */
+  readonly heldAtStart: number;
+  /** Of those, the ones the run never saw the mode leave: never judged. */
+  readonly stillHeld: number;
 }
 
 /** Count what the run judged. */
@@ -233,6 +289,7 @@ export function journalBinding(
   ledger: JournalLedger,
   started: ReadonlySet<string>,
   verdicts: readonly JournalVerdict[],
+  held: ReadonlyMap<string, number> = new Map(),
 ): JournalBinding {
   const n = (o: JournalVerdict["outcome"]) => verdicts.filter((v) => v.outcome === o).length;
   return {
@@ -245,6 +302,8 @@ export function journalBinding(
     doneBeforeRead: n("done-before-read"),
     baked: n("baked"),
     gated: ledger.quests.reduce((a, q) => a + q.gated.length, 0),
+    heldAtStart: held.size,
+    stillHeld: [...held.keys()].filter((q) => !started.has(q)).length,
   };
 }
 
@@ -254,7 +313,9 @@ export function journalBindingLine(b: JournalBinding): string {
     `journal binding: ${b.shown} of ${b.judged} owed page(s) shown at their quest's start, ` +
     `${b.missing} missing; ${b.started} of ${b.quests} quest(s) seen to start ` +
     `(${b.owing} owe a page), ${b.doneBeforeRead} owed objective(s) already complete when read, ` +
-    `${b.baked} unjudged in a --lang bake, ${b.gated} gated objective(s) owed no page` +
+    `${b.baked} unjudged in a --lang bake, ${b.gated} gated objective(s) owed no page, ` +
+    `${b.heldAtStart} quest(s) started under a mode that held them (judged at its leaving), ` +
+    `${b.stillHeld} never seen left` +
     (b.judged === 0 ? " — UNBOUND: no quest start the run saw owed a page" : "")
   );
 }
