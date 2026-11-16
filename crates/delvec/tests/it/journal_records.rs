@@ -647,6 +647,62 @@ fn the_ledger_says_what_each_world_leaves_written() {
     );
 }
 
+/// **A task the story loses before the party takes it settles failed.** An
+/// optional dare the party never takes, lost by the first step's bundle: no
+/// walk steps it, and the book writes its finished page under its settled
+/// score the moment the loss fires. The ledger said `open` — the walk has no
+/// step for it — so the bot, reading the page the book wrote, reported a
+/// record "shown while the task is open" (the festival town's pig race, lost
+/// at dusk).
+#[test]
+fn a_task_lost_before_it_is_taken_settles_failed() {
+    let dir = fixture(
+        "lost-dare",
+        |q| {
+            q["content"]["quests"].as_array_mut().unwrap().push(json!({
+                "id": "quest/dare", "trigger": {"type": "campaign-start"},
+                "happening": {"text": "the party hears of a dare", "verb": "learns"},
+                "objectives": [{"type": "reach-anchor", "id": "obj/dare", "anchor": "anchor/exit",
+                    "radius": 2, "announcement": "hidden", "requires_flags": ["flag/dared"],
+                    "record": "The keeper dared anyone to run the door.",
+                    "happening": happening("the party takes the dare")}],
+                "on_complete": []}));
+            common::objective_effects(q, 0, "obj/talk")
+                .push(json!({"type": "fail-objective", "objective": "obj/dare"}));
+        },
+        |_| {},
+    );
+    common::patch_file(&dir.join("quest-plan.json"), |p| {
+        p["content"]["quests"].as_array_mut().unwrap().push(json!({
+            "id": "quest/dare", "act": 1, "activity": ["reach"], "area": "area/keep",
+            "depends_on": [], "goal": "Run the keeper's dare.", "mandatory": false, "npcs": []}));
+    });
+    let out = build(&dir);
+    // The book: the dare's finished page, under its settled score.
+    let write = func(&out, "journal_write");
+    assert!(
+        write.lines().any(|l| l.contains("if score #party dw.os_dare matches 1")
+            && l.ends_with(&format!("{NS}:journal_done_dare"))),
+        "{write}"
+    );
+    // The ledger: no walk steps the dare, and every world settles it failed.
+    let ledger: Value =
+        serde_json::from_str(&text(&out, "validation/journal-records.json")).unwrap();
+    let rows: Vec<&Value> = ledger["worlds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|w| w["finished"].as_array().unwrap())
+        .filter(|r| r["objective"] == "obj/dare")
+        .collect();
+    assert!(!rows.is_empty(), "{ledger}");
+    for r in &rows {
+        assert_eq!(r["settles"], "failed", "{ledger}");
+    }
+    let path = text(&out, "validation/critical-path.json");
+    assert!(!path.contains("obj/dare"), "the walk steps the dare: {path}");
+}
+
 /// The one numbering's keys are the inventory's keys.
 #[test]
 fn every_site_key_is_an_inventory_key() {

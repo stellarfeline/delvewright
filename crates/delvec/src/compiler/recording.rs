@@ -367,10 +367,14 @@ impl<'a> Records<'a> {
                 .iter()
                 .enumerate()
                 .map(|(oi, o)| {
-                    let settles = if !pt.steps.iter().any(|s| s.objective == o.id()) {
-                        Settles::Open
-                    } else if run.failed.contains(o.id()) {
+                    // A `fail-objective` the walk fired settles its objective
+                    // whether or not the walk steps it: the story lost a task
+                    // the party never took, and the book writes its page
+                    // under the settled score all the same (spec-0137 §3).
+                    let settles = if run.failed.contains(o.id()) {
                         Settles::Failed
+                    } else if !pt.steps.iter().any(|s| s.objective == o.id()) {
+                        Settles::Open
                     } else if pt.expires(o.id()) {
                         Settles::Expired
                     } else {
