@@ -572,6 +572,66 @@ fn the_mend_is_packtested() {
     }
 }
 
+/// **The mend template shares no item with the flask it judges.** A flask of
+/// bread judged with a bread probe counts the flask's stack as the probe's (the
+/// untouched stack reads 7 + the flask, the flask 3 + the stack). Every item the
+/// template stands in a slot other than the flask's own is checked against the
+/// flask's item, over each flask item the probe roles use.
+///
+/// Binding: the slots read are counted, so a template that wrote no probe could
+/// not pass by having nothing to check.
+#[test]
+fn the_mend_probe_shares_no_item_with_the_flask() {
+    for flask_item in [
+        "minecraft:bread",
+        "minecraft:potion",
+        "minecraft:iron_sword",
+        "minecraft:shield",
+        "minecraft:bow",
+        "minecraft:iron_chestplate",
+    ] {
+        let mut c = fixture_campaign();
+        let f = c.classes.content.classes[0]
+            .kit
+            .iter_mut()
+            .find(|k| k.flask)
+            .unwrap();
+        f.item = flask_item.to_string();
+        if flask_item != "minecraft:potion" {
+            f.contents = None;
+        }
+        let out = build_campaign(&c);
+        let t = std::str::from_utf8(
+            out.get(&format!(
+                "packtest-datapack/data/{NS}/test/souls_bonfire_mend.mcfunction"
+            ))
+            .expect("the mend PackTest is emitted"),
+        )
+        .unwrap()
+        .to_string();
+        let mut probes = 0;
+        for l in t.lines() {
+            let Some(rest) = l.strip_prefix("item replace entity @s ") else {
+                continue;
+            };
+            let (slot, stack) = rest.split_once(" with ").unwrap();
+            if slot == "container.5" || slot == "container.6" {
+                continue; // the flask itself, and its marked empties
+            }
+            let id = stack.split(['[', ' ']).next().unwrap();
+            assert_ne!(
+                id, flask_item,
+                "the probe in `{slot}` is the flask's own item:\n{t}"
+            );
+            probes += 1;
+        }
+        assert_eq!(
+            probes, 7,
+            "seven probe slots read for a {flask_item} flask:\n{t}"
+        );
+    }
+}
+
 /// One authored `on_rest` bundle, two audiences (spec-0018). Resting is a PARTY
 /// event dispatched from the tick, so its player-facing effects address `@a` —
 /// the party rests together. A respawn belongs to the ONE player who died, so the

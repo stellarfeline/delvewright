@@ -301,8 +301,9 @@ fn every_v04_verb_emitted() {
     let talk = fn_body(&out, "complete_o_talk");
     // spec-0018: a quest beat arms the whole party (no `carrier: "one"` here).
     assert!(
-        talk.contains("give @a minecraft:paper[custom_name="),
-        "named give-item"
+        talk.lines().any(|l| l == "function v04-showcase:grant_0")
+            && fn_body(&out, "grant_0").starts_with("give @a minecraft:paper[custom_name="),
+        "named give-item, issued as a grant"
     );
     assert!(
         talk.contains("title @a subtitle {\"text\":\"The guard rises around you.\"}"),

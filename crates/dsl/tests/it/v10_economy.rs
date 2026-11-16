@@ -157,24 +157,20 @@ fn dw0919_two_purses_cannot_share_the_sidebar() {
     );
 }
 
-/// `DW0919`, second shape (spec-0076 §7.2) — a `party` datum's value lives on the
-/// `#party` holder, and the sidebar hides every `#`-prefixed holder, so the display
-/// would be an empty heading. Refused, with the scope named as the cause.
+/// A `party` datum stands: its value is the party's one line, drawn through a
+/// visible holder the engine names, so the scope is no shape of `DW0919`.
 #[test]
-fn dw0919_a_party_purse_cannot_stand() {
+fn a_party_purse_stands() {
     let party = displayed().replace(r#""scope": "player""#, r#""scope": "party""#);
     assert!(party.contains(r#""scope": "party""#));
     let diags = validate_campaign(&campaign(&party));
-    let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
-    assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
-        hit[0].message.contains("state/embers") && hit[0].message.contains("`#party`"),
-        "{}",
-        hit[0].message
+        diags.iter().all(|d| d.code != "DW0919"),
+        "a party purse is drawable: {diags:#?}"
     );
 }
 
-/// `DW0919`, third shape (spec-0076 §2, §7.1) — a `display` on a datum with no
+/// `DW0919`, second shape (spec-0076 §2, §7.1) — a `display` on a datum with no
 /// `name`: the slot's heading is the display name, and without one the objective's
 /// internal id would stand on screen, which is the one thing the slot must never
 /// show.

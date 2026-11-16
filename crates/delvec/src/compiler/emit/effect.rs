@@ -724,10 +724,16 @@ pub(super) fn emit_quest_effect(
             } else {
                 who
             };
-            body.push(format!(
-                "give {target} {}{comp} {}",
-                stack.item, stack.count
-            ));
+            // spec-0141 §3.2: a stack for the whole party is a grant — issued
+            // to every present player and counted, so a member who was away
+            // is handed theirs when they are back.
+            let given = format!("{}{comp} {}", stack.item, stack.count);
+            match grant_index(plan, &given) {
+                Some(i) if target == "@a" && is_party_grant(eff, aud) => {
+                    body.push(format!("function {ns}:{}", grant_fn(i)));
+                }
+                _ => body.push(format!("give {target} {given}")),
+            }
             // The taking empties the actor's slot in the same bundle, after the
             // give, so the thing is never in two places.
             if let Some(from) = source.taken() {

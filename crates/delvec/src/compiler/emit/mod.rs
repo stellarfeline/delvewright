@@ -57,6 +57,7 @@ mod ending;
 mod equipment;
 mod firework;
 mod functions;
+pub(crate) mod grant;
 pub(super) mod guidance;
 mod holders;
 mod lane;
@@ -74,7 +75,7 @@ mod objective;
 mod onkill;
 mod packtest;
 mod race;
-pub use packtest::{PartyBinding, party_binding};
+pub use packtest::{AbsentBinding, PartyBinding, absent_binding, party_binding};
 mod piece;
 mod press;
 pub use press::gate_blocks;
@@ -123,6 +124,7 @@ use ending::*;
 pub(crate) use equipment::*;
 use firework::*;
 use functions::*;
+use grant::*;
 use holders::*;
 use lane::*;
 use lethal::*;
@@ -1441,6 +1443,8 @@ fn emit_all(
     let party = packtest::party_binding(plan, &out);
     crate::note!("{}", party.line());
     put_json(&mut out, "validation/party-division.json", &party.to_json());
+    // spec-0141 §5: the absent-member templates state what they bound.
+    crate::note!("{}", packtest::absent_binding(plan, &out).line());
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::compiler::creator). Its `.mcfunction`s are plain
@@ -2134,8 +2138,8 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0362`: a dialogue node declares more conditionally-visible options than the
-    /// variant-dialog encoding can carry. Validation-tier content-shape limit.
+    /// `DW0362`: a dialogue node declares more conditionally-visible options, or a
+    /// shop more gated offers, than the variant-dialog encoding can carry. Validation-tier content-shape limit.
     pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::new("DW0362", ExitTier::Build);
 }
 
