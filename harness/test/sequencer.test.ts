@@ -131,6 +131,7 @@ function path(steps: Step[]): CriticalPath {
       unbound: true,
       reason: "this fixture stages no NPC",
     },
+    storyBodies: { bodies: [], examined: 0 },
     steps,
     watchers: [],
   };

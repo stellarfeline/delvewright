@@ -291,6 +291,8 @@ export class MineflayerExecutor implements StepExecutor {
   readonly deadBodies = new Set<number>();
   /** Serial for {@link readServerPos}'s answer markers. */
   posReads = 0;
+  /** Serial of the story-body questions this run has asked ({@link storyVerdict}). */
+  storyAsks = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -448,6 +450,22 @@ export class MineflayerExecutor implements StepExecutor {
    * it through.
    */
   nonCombatants: ReadonlySet<string> | undefined;
+  /**
+   * The compiler's statement of the bodies whose death the story reads, off
+   * `critical-path.json` (format 14). No act of the harness kills or harms one
+   * outside the path's own `kill` of its wave ({@link fightTag}); the
+   * entrypoint must hand it over, and {@link requireStoryBodies} refuses a run
+   * that never did.
+   */
+  storyBodies: readonly import("./critical-path.ts").StoryBody[] | undefined;
+  /**
+   * The wave tag of the `kill` step under way, while one is: a body carrying it
+   * is the step's own to strike, story body or not, because that death is the
+   * act the path performs there.
+   */
+  fightTag: string | undefined;
+  /** Every story body a hit left standing, with what reads its death. */
+  readonly storyBodiesSpared: { kind: string; id: number; of: readonly string[] }[] = [];
   /**
    * spec-0023: the compiler's combat plan — which encounters are mandatory, what
    * the content bills each as, and which checkpoint governs a death at it.

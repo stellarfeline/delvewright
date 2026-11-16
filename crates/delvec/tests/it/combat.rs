@@ -1183,3 +1183,50 @@ fn a_kill_whose_wave_is_seated_at_once_carries_no_seat_date() {
     let kill = guards_kill(&path);
     assert!(kill.get("seat_ticks").is_none(), "{kill}");
 }
+
+/// Format 14: the path states every body whose death the story reads, as the
+/// selector the harness asks the server about a body with — so no act of the
+/// harness has to guess which bodies it may not harm. A wave with `on_kill` is
+/// one; the same wave without it is none.
+#[test]
+fn the_path_states_which_bodies_the_story_reads_the_death_of() {
+    let rows_of = |with_on_kill: bool| {
+        let tmp = TempCampaign::new();
+        let mut wave_id = String::new();
+        campaign_with(tmp.path(), |quests, _| {
+            // `wave/ambush`, which no rest re-seats, so an `on_kill` needs no
+            // `fires` (DW0915).
+            let w = &mut quests["content"]["waves"][1];
+            wave_id = w["id"].as_str().unwrap().to_string();
+            if with_on_kill {
+                w["on_kill"] = serde_json::json!({ "effects": [ { "type": "play-sound",
+                    "sound": "minecraft:entity.experience_orb.pickup" } ] });
+            }
+        });
+        let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+        let (path, _) = path_and_plan(&out);
+        (path["story_bodies"].clone(), wave_id)
+    };
+    let (sb, wave) = rows_of(true);
+    let tag = delvec::compiler::plan::wave_tag(&wave);
+    let row = sb["bodies"]
+        .as_array()
+        .expect("an array")
+        .iter()
+        .find(|r| r["of"] == wave.as_str())
+        .unwrap_or_else(|| panic!("the `on_kill` wave is a story body: {sb}"));
+    assert_eq!(row["select"], format!("tag={tag}"), "{row}");
+    assert_eq!(row["reads"], serde_json::json!(["its `on_kill`"]), "{row}");
+    assert_eq!(row["waves"], serde_json::json!([wave]), "{row}");
+    assert!(sb["examined"].as_u64().unwrap() >= 1, "{sb}");
+
+    let (sb, wave) = rows_of(false);
+    assert!(
+        !sb["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["of"] == wave.as_str()),
+        "a wave whose death nothing reads is no story body: {sb}"
+    );
+}

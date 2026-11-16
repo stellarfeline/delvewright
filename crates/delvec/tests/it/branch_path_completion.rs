@@ -177,3 +177,47 @@ fn dw0204_refuses_a_branch_path_with_steps_past_the_ending() {
         );
     }
 }
+
+/// The gallery's case lock asks for an item that sits only in a `loot` fill:
+/// `obj/press-the-case` presents `minecraft:map`, which the reliquary-side
+/// loot holds and no step of any path hands over. DW0849 is satisfied (a
+/// class-blind source exists), and every path the plan walks is refused at
+/// the step, with the item and the step named — the town's forge anvil asked
+/// for a carved pumpkin in exactly this shape and reached the bot as a
+/// timeout. The as-committed gallery, whose case key is handed over by the
+/// curator's bundle, is green (`every_gallery_branch_path_ends_where_the_delve_ends`).
+#[test]
+fn dw0204_refuses_a_presented_item_no_step_on_the_path_hands_over() {
+    let dir = gallery_primary("item-only-in-loot", |_| {});
+    common::patch_file(&dir.join("quests.json"), |q| {
+        let o = &mut q["content"]["quests"][0]["objectives"][1];
+        assert_eq!(o["id"], "obj/press-the-case");
+        o["requires_item"] = serde_json::json!("minecraft:map");
+    });
+    let c = parse(&dir);
+    let msgs = dw0204(&c);
+    let on_item: Vec<&String> = msgs
+        .iter()
+        .filter(|m| m.contains("presents `minecraft:map` (its `requires_item`)"))
+        .collect();
+    assert!(
+        on_item
+            .iter()
+            .any(|m| m.starts_with("the exported critical path is not a playthrough")),
+        "the critical path is refused: {msgs:?}"
+    );
+    let worlds = Flow::new(&c).story_count();
+    assert!(worlds > 0, "the gallery has story worlds to walk");
+    assert_eq!(
+        on_item.len(),
+        worlds + 1,
+        "one refusal on the critical path and one per story world: {msgs:?}"
+    );
+    for m in &on_item {
+        assert!(
+            m.contains("(`obj/press-the-case`)"),
+            "the step is named: {m}"
+        );
+        assert!(m.contains("a `loot` fill is no supply"), "{m}");
+    }
+}

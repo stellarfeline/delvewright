@@ -189,6 +189,19 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 f.message(),
             ));
         } else {
+            // ... and every item a step presents reaches the party's hands on
+            // the path before it (`Flow::item_debts`).
+            for (i, why) in flow.item_debts(&path) {
+                diags.push(Diagnostic::error(
+                    codes::PATH_INCOHERENT,
+                    "quests",
+                    objective_path(c, &path.steps[i].objective),
+                    format!(
+                        "the exported critical path is not a playthrough any player can walk: \
+                         {why}. {ITEM_SUPPLY_REMEDY}"
+                    ),
+                ));
+            }
             // DW0358 (spec-0018): completability is proven with `min_players`
             // agents. n = 1 is the single-agent proof just made; n >= 2 must also
             // admit a real division of labour on that same playthrough.
@@ -234,6 +247,17 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
             if run.incoherent.is_some() {
                 continue;
             }
+            for (i, why) in flow.item_debts(&run.playthrough) {
+                diags.push(Diagnostic::error(
+                    codes::PATH_INCOHERENT,
+                    "quests",
+                    objective_path(c, &run.playthrough.steps[i].objective),
+                    format!(
+                        "world/{k}'s exported path (`validation/world-path-{k}.json`) is not a \
+                         playthrough any player can walk: {why}. {ITEM_SUPPLY_REMEDY}"
+                    ),
+                ));
+            }
             for why in &run.unpaid {
                 diags.push(Diagnostic::error(
                     codes::PATH_INCOHERENT,
@@ -259,6 +283,11 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
     diags.sort_by(|a, b| (&a.code, &a.path).cmp(&(&b.code, &b.path)));
     diags
 }
+
+/// The remedy every `DW0204` an unsupplied presented item raises states.
+const ITEM_SUPPLY_REMEDY: &str = "A step that presents an item is walked by a party that has \
+    been handed it on the same path: put a `collect` of the item, or a `give-item` in a bundle \
+    the path fires, in front of the step, or add it to every class's kit";
 
 /// The stage-5 JSON pointer of an objective, so a diagnostic points at the beat
 /// itself rather than at the document.

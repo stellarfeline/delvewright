@@ -688,6 +688,9 @@ pub(super) fn critical_path_json(
         // bot must still know not to swing back at a quest-giver when a fall
         // takes its health. See `combat::non_combatants`.
         "non_combatants": crate::compiler::combat::non_combatants_json(plan.campaign),
+        // Format 14: the bodies whose death the story reads, which no act of
+        // the harness may kill or harm. See `combat::story_bodies_json`.
+        "story_bodies": crate::compiler::combat::story_bodies_json(plan),
         "steps": steps
     })
 }

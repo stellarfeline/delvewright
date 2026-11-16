@@ -57,6 +57,17 @@ function validRaw(): Record<string, unknown> {
       examined: 2,
       unbound: false,
     },
+    story_bodies: {
+      bodies: [
+        {
+          select: "tag=dw_wave_goat",
+          of: "wave/goat",
+          reads: ["its `on_kill`"],
+          waves: ["wave/goat"],
+        },
+      ],
+      examined: 3,
+    },
     steps: [
       {
         action: "select-class",
@@ -1568,10 +1579,10 @@ test("format 13: a kill step carries the triggers its fight's bodies may fire wh
   }
 });
 
-test("format 13: the constant moved, and a format-12 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 13);
+test("format 14: the constant moved, and a format-13 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 14);
   const raw = validRaw();
-  raw["format_version"] = 12;
+  raw["format_version"] = 13;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
@@ -1654,4 +1665,33 @@ test("a ride step is refused without board, medium, leave or body, or with a rat
   }
   assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), kind: "llama" })), CriticalPathParseError);
   assert.throws(() => parseCriticalPath(withRide({ ...boatRide(), medium: [[8, 67, 3]] })), CriticalPathParseError);
+});
+
+// Format 14: the bodies whose death the story reads.
+test("format 14: `story_bodies` is parsed whole", () => {
+  const path = parseCriticalPath(validRaw());
+  assert.equal(path.storyBodies.examined, 3);
+  assert.deepEqual(path.storyBodies.bodies, [
+    { select: "tag=dw_wave_goat", of: "wave/goat", reads: ["its `on_kill`"], waves: ["wave/goat"] },
+  ]);
+});
+
+test("format 14: a path with no `story_bodies` is refused, never defaulted", () => {
+  const raw = validRaw();
+  delete raw["story_bodies"];
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/story_bodies",
+  );
+});
+
+test("format 14: a story body that states no read is refused", () => {
+  const raw = validRaw();
+  const sb = raw["story_bodies"] as { bodies: Record<string, unknown>[] };
+  sb.bodies[0]!["reads"] = [];
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && err.pointer === "/story_bodies/bodies/0/reads",
+  );
 });
