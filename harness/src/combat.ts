@@ -86,7 +86,13 @@ export interface MusterType {
 /** One declared stack, as the multiset comparison expects to find it. */
 export interface MusterProfile {
   readonly typeIndex: number;
+  /** Bodies of this stack one player meets: the declared `base`. */
   readonly count: number;
+  /**
+   * Bodies it adds for each further player present at the spawn (spec-0134
+   * §4): `count + perPlayer × (n − 1)` for `n` players. Absent is 0.
+   */
+  readonly perPlayer?: number;
   readonly mask: number;
   readonly label: string;
   readonly maxHealth?: number;
@@ -115,8 +121,13 @@ export interface MusterPlan {
   readonly scale: number;
   /** What a holder reads where the probe deliberately did not ask. */
   readonly unread: number;
-  /** Bodies the wave seats in total. */
+  /** Bodies the wave seats in total for one player. */
   readonly bodies: number;
+  /**
+   * The `dw.sys` holder a scaling wave's spawn writes the party size it
+   * seated for to (spec-0134 §4); absent for a wave of constants.
+   */
+  readonly partySize?: string;
   /** Declared facts this probe puts a question to — the binding count. */
   readonly checked: number;
   readonly types: readonly MusterType[];
@@ -197,6 +208,10 @@ function parseMusterPlan(v: unknown, pointer: string): MusterPlan {
     if (!Number.isInteger(count) || (count as number) <= 0) {
       throw new CombatPlanParseError(`${pp}/count`, "expected a positive integer");
     }
+    const perPlayer = pr["per_player"];
+    if (!Number.isInteger(perPlayer) || (perPlayer as number) < 0) {
+      throw new CombatPlanParseError(`${pp}/per_player`, "expected a non-negative integer");
+    }
     const mask = pr["mask"];
     if (!Number.isInteger(mask) || (mask as number) < 0) {
       throw new CombatPlanParseError(`${pp}/mask`, "expected a non-negative integer");
@@ -208,6 +223,7 @@ function parseMusterPlan(v: unknown, pointer: string): MusterPlan {
     return {
       typeIndex: typeIndex as number,
       count: count as number,
+      perPlayer: perPlayer as number,
       mask: mask as number,
       label,
       maxHealth: num(pr, "max_health", pp),
@@ -225,10 +241,27 @@ function parseMusterPlan(v: unknown, pointer: string): MusterPlan {
     scale,
     unread: int("unread"),
     bodies: int("bodies"),
+    ...partySizeOf(v, pointer),
     checked: int("checked"),
     types,
     profiles,
   };
+}
+
+/**
+ * The muster's `party_size`: required, a holder name for a wave that scales
+ * and `null` for one of constants.
+ */
+function partySizeOf(v: Record<string, unknown>, pointer: string): { partySize?: string } {
+  if (!("party_size" in v)) {
+    throw new CombatPlanParseError(`${pointer}/party_size`, "required: a holder name or null");
+  }
+  const x = v["party_size"];
+  if (x === null) return {};
+  if (typeof x !== "string" || x.length === 0) {
+    throw new CombatPlanParseError(`${pointer}/party_size`, "expected a holder name or null");
+  }
+  return { partySize: x };
 }
 
 /** The three functions the ladder calls to measure one wave by tag. */

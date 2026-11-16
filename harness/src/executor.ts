@@ -132,6 +132,12 @@ export class MineflayerExecutor implements StepExecutor {
    */
   boundaryHook: ((index: number) => Promise<void>) | undefined;
   /**
+   * How many players this run puts in the world: 1 walked alone, the walker
+   * and its members in a party run. A wave's seating that states a larger
+   * party than this is not one the run made (spec-0134 §4).
+   */
+  partyCap = 1;
+  /**
    * Limited objectives whose anchored expiry marker has arrived (spec-0133), and
    * the step index executing when it did. Buffered from connect, like
    * {@link completedObjectives}.

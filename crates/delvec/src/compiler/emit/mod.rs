@@ -162,8 +162,8 @@ use timed_gate::*;
 use trap::*;
 use trigger::*;
 use vehicle::*;
-pub(crate) use wave::party_threshold;
 use wave::*;
+pub(crate) use wave::{party_size, party_threshold};
 use world::*;
 
 /// The emitted build tree: relative path → file bytes.

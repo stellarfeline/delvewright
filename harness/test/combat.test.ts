@@ -105,6 +105,7 @@ const PLAN = {
         scale: 1000,
         unread: -1,
         bodies: 2,
+        party_size: null,
         checked: 4,
         types: [
           {
@@ -119,6 +120,7 @@ const PLAN = {
           {
             type: 0,
             count: 2,
+            per_player: 0,
             mask: 3,
             label: "2 × minecraft:drowned (stack 0)",
             max_health: 30,

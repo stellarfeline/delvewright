@@ -12,10 +12,10 @@ mod triggers;
 pub(in crate::compiler::plan) use ancestors::*;
 pub use mock::mock_function;
 pub(crate) use mock::path_mocks;
-pub use pursuers::{FreeBodyKey, Pursuer};
+pub use pursuers::{DW_DESPAWN_BEFORE_ARRIVAL, DespawnBinding, FreeBodyKey, Pursuer};
 pub(crate) use pursuers::{
-    check_courses_started, check_outrun_loose, check_ridden_vehicles_stand, free_bodies_by_step,
-    pursuers_by_step, walk_modes,
+    check_courses_started, check_despawns_follow_arrivals, check_outrun_loose,
+    check_ridden_vehicles_stand, free_bodies_by_step, pursuers_by_step, walk_modes,
 };
 pub use region::*;
 pub(crate) use triggers::*;

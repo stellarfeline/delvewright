@@ -209,17 +209,22 @@ hop through a timed gate are never split), and prints
 `[watch] <walk>: N stop(s) inserted on the proven route; it passes within reach of
 <ids>`. At every waypoint and stop of the proven path where some stand is within
 reach, the bot stops, lets the game run
-its watch line, and reads in one bracketed turn its own position and each body's
-live position as the server holds them (a body walking, removed or not yet
-summoned reads empty and is not judged) and whether it wears the class a class
-watch names. A body is live from the tick its walk's arrival restores the tag,
+its watch line, and reads in one bracketed turn every player in the world — name,
+tags and feet, its own among them — and each body's live position as the server
+holds them (a body walking, removed or not yet summoned reads empty and is not
+judged). A body is live from the tick its walk's arrival restores the tag,
 and the watch line has not yet run on it in that tick, so a body seen live is
-judged only after two more game ticks, and only if it has not moved since. For
-each body it can draw that stands within `within − 0.25` of it
-and at least one block away horizontally, it then asks the server whether
+judged only after two more game ticks, and only if it has not moved since. A body
+is judged where the bot stands within `within − 0.25` of it, against whom the
+watch line draws (`watchTargets`): the nearest present player not in a cutscene,
+wearing the class a class watch names, within reach of the body — in a party run
+often a member, not the bot (spec-0141) — and any within 0.25 of that distance,
+since a read that close cannot tell the server's nearest-sort apart; not judged
+when that player stands on the boundary of reach or less than one block away
+horizontally. It then asks the server whether
 `@e[<body>,tag=dw_watch,y_rotation=<yaw±2>]` matches, `yaw` the game's own bearing
-from the body's feet to the bot's (`judgeWatchers`, `harness/src/executor/watch.ts`;
-the arithmetic in `harness/src/watch.ts`). A denial fails the critical-path stage
+from the body's feet to one of those players' (`judgeWatchers`,
+`harness/src/executor/watch.ts`; the arithmetic in `harness/src/watch.ts`). A denial fails the critical-path stage
 with the body's yaw read beside the bearing; it is recorded, never thrown into the
 walk, so the walk's recovery never reads it as a stalled hop. The bot judges the
 yaw and never the pitch: the expected pitch needs the body's eye height, which the
