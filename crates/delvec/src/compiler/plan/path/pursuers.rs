@@ -493,3 +493,184 @@ pub(crate) fn check_courses_started(c: &Campaign, firing: &PathFiring) -> Result
     }
     Ok(())
 }
+
+/// What one path does with the map's mode (spec-0140 §5).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ModeWalk {
+    /// The spans a mode is on over the path: `(mode, entered at step, left
+    /// at step)`, the last `None` for a mode still on when the path ends.
+    pub spans: Vec<(String, usize, Option<usize>)>,
+    /// Objective steps the path performs while a mode is on, each judged for
+    /// its quest being one the mode keeps.
+    pub judged: usize,
+}
+
+/// **A path that performs an objective a mode holds** (spec-0140 §5,
+/// `DW1124`): the map's mode is replayed along the path as the emitted
+/// functions move it, and every objective step performed while a mode is on
+/// belongs to a quest that mode keeps.
+///
+/// Dated as a race's lines are ([`check_courses_started`]). An `enter-mode`
+/// the path certainly fires at a step puts the map in the mode from that
+/// step's completion; one the path cannot date — a trigger it does not
+/// perform, a reaction bundle — enters nothing on this path. The mode is
+/// left where the emitted settlement leaves it — at the entry itself, or at
+/// the completion of a quest it keeps, when no kept quest is started and not
+/// complete — at another mode's entry, and at a `leave-mode` the path
+/// certainly fires; a `leave-mode` it cannot date leaves nothing.
+pub(crate) fn walk_modes(c: &Campaign, firing: &PathFiring) -> Result<ModeWalk, PlanError> {
+    fn walk<'a>(
+        list: &'a [QuestEffect],
+        base: &str,
+        reaction: bool,
+        owner: &EffectRootOwner<'a>,
+        out: &mut Vec<(String, EffectRootOwner<'a>, bool, &'a QuestEffect)>,
+    ) {
+        for (i, e) in list.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if matches!(e.verb, Verb::EnterMode { .. } | Verb::LeaveMode { .. }) {
+                out.push((path.clone(), *owner, reaction, e));
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
+                walk(nested, &format!("{path}/{seg}"), r, owner, out);
+            }
+        }
+    }
+    let q = &c.quests.content;
+    let mut out = ModeWalk::default();
+    if q.modes.is_empty() {
+        return Ok(out);
+    }
+    let mut lines = Vec::new();
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        walk(list, &site.path, false, &site.owner, &mut lines);
+    });
+    // Step → the mode lines the path certainly fires there, in bundle order.
+    let mut events: BTreeMap<usize, Vec<(bool, &str)>> = BTreeMap::new();
+    for (pointer, owner, reaction, e) in &lines {
+        let (enters, mode) = match &e.verb {
+            Verb::EnterMode { mode } => (true, mode.as_str()),
+            Verb::LeaveMode { mode } => (false, mode.as_str()),
+            _ => continue,
+        };
+        if let Some(When::At(s)) = dated(owner, pointer, *reaction, firing)
+            && firing.fires(pointer)
+        {
+            events.entry(s).or_default().push((enters, mode));
+        }
+    }
+    if events.is_empty() {
+        return Ok(out);
+    }
+    // The step each quest the path completes is complete at, and the
+    // objectives each step performs.
+    let done_at: BTreeMap<&str, usize> = q
+        .quests
+        .iter()
+        .filter(|x| firing.quests.contains(x.id.as_str()))
+        .filter_map(|x| {
+            let s = x
+                .objectives
+                .iter()
+                .filter_map(|o| firing.obj_step.get(o.id().as_str()).copied())
+                .max()?;
+            Some((x.id.as_str(), s))
+        })
+        .collect();
+    let mut performed: BTreeMap<usize, Vec<(&str, &str)>> = BTreeMap::new();
+    for x in &q.quests {
+        for o in &x.objectives {
+            if let Some(&s) = firing.obj_step.get(o.id().as_str()) {
+                performed
+                    .entry(s)
+                    .or_default()
+                    .push((x.id.as_str(), o.id().as_str()));
+            }
+        }
+    }
+    // Whether quest `k` is started and not complete once step `t` is done.
+    let in_progress = |k: &str, t: usize| -> bool {
+        let Some(x) = q.quests.iter().find(|x| x.id.as_str() == k) else {
+            return false;
+        };
+        let started = match &x.trigger {
+            delvewright_dsl::Trigger::CampaignStart => true,
+            delvewright_dsl::Trigger::QuestComplete { quest } => {
+                done_at.get(quest.as_str()).is_some_and(|&s| s <= t)
+            }
+        };
+        started && done_at.get(k).is_none_or(|&s| s > t)
+    };
+    let last = performed
+        .keys()
+        .chain(events.keys())
+        .copied()
+        .max()
+        .unwrap_or(0);
+    // The mode the map is in, and the step it was entered at.
+    let mut on: Option<(&delvewright_dsl::Mode, usize)> = None;
+    for t in 0..=last {
+        if let Some((m, from)) = on {
+            for &(quest, objective) in performed.get(&t).map(Vec::as_slice).unwrap_or(&[]) {
+                out.judged += 1;
+                if !m.keeps(quest) {
+                    return Err(PlanError::new(
+                        crate::compiler::mode::DW_PATH_WALKS_HELD,
+                        format!(
+                            "the path performs objective `{objective}` of quest `{quest}` at \
+                             step {t} while the map is in mode `{}`, which does not keep that \
+                             quest: the mode is entered at step {from} and nothing has left it \
+                             by step {t}, so the objective is held — not told, not completable \
+                             — and the path stops there. A mode that interrupts a line is \
+                             ordered by the quest graph: give the quest the mode keeps a \
+                             `quest-complete` trigger on what comes before it and let what \
+                             follows wait on its completion, enter the mode from a bundle of a \
+                             quest it keeps, add `{quest}` to the mode's `keeps`, or fire a \
+                             `leave-mode` of `{}` at a beat before the objective",
+                            m.id, m.id
+                        ),
+                    ));
+                }
+            }
+        }
+        let settle = |on: &mut Option<(&delvewright_dsl::Mode, usize)>,
+                      spans: &mut Vec<(String, usize, Option<usize>)>| {
+            if let Some((m, from)) = *on
+                && !m.keeps.iter().any(|k| in_progress(k.as_str(), t))
+            {
+                spans.push((m.id.as_str().to_string(), from, Some(t)));
+                *on = None;
+            }
+        };
+        for &(enters, mode) in events.get(&t).map(Vec::as_slice).unwrap_or(&[]) {
+            let Some(m) = q.mode(mode) else { continue };
+            match (enters, on) {
+                (true, Some((cur, _))) if cur.id == m.id => {}
+                (true, prev) => {
+                    if let Some((cur, from)) = prev {
+                        out.spans.push((cur.id.as_str().to_string(), from, Some(t)));
+                    }
+                    on = Some((m, t));
+                    settle(&mut on, &mut out.spans);
+                }
+                (false, Some((cur, from))) if cur.id == m.id => {
+                    out.spans.push((cur.id.as_str().to_string(), from, Some(t)));
+                    on = None;
+                }
+                (false, _) => {}
+            }
+        }
+        // A kept quest completed at this step asks the mode whether anything
+        // it keeps is still in progress.
+        if let Some((m, _)) = on
+            && m.keeps.iter().any(|k| done_at.get(k.as_str()) == Some(&t))
+        {
+            settle(&mut on, &mut out.spans);
+        }
+    }
+    if let Some((m, from)) = on {
+        out.spans.push((m.id.as_str().to_string(), from, None));
+    }
+    Ok(out)
+}

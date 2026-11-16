@@ -17,7 +17,7 @@ use super::*;
 
 /// The function the clock of `o` (in quest `q`) starts in, and the latch that
 /// keeps it from running twice.
-fn start_of(q: &delvewright_dsl::Quest, o: &Objective) -> Option<(String, String)> {
+pub(super) fn start_of(q: &delvewright_dsl::Quest, o: &Objective) -> Option<(String, String)> {
     let l = o.limit()?;
     Some(match &l.from {
         delvewright_dsl::LimitFrom::Activation => (
@@ -79,7 +79,7 @@ fn first_flag(effs: &[QuestEffect]) -> Option<String> {
 /// and numeric terms alike, through [`packtest_gate_drive`], the one authority
 /// that opens a gate in a template — so no kind's template reads a term a
 /// sibling left behind (`DW0807`).
-fn open_and_close(
+pub(super) fn open_and_close(
     plan: &Plan,
     q: &delvewright_dsl::Quest,
     o: &Objective,
@@ -140,6 +140,8 @@ fn open_and_close(
         ));
     }
     open.push(format!("scoreboard players set {p} {qa} 1"));
+    // spec-0140: the map in no mode, so nothing holds the objective.
+    open.extend(super::super::mode::mode_drive(c, q.id.as_str()));
     (open, close)
 }
 
@@ -174,7 +176,7 @@ pub(super) fn alone(ns: &str, name: &str, out: &mut BuildOutput) -> String {
 ///   the objective the template means to see expire. The template takes the
 ///   item from every player first — it runs alone, so no running sibling is
 ///   touched (`compiler::solo`).
-fn held_still(plan: &Plan, o: &Objective) -> (Vec<String>, Vec<String>) {
+pub(super) fn held_still(plan: &Plan, o: &Objective) -> (Vec<String>, Vec<String>) {
     let ns = &plan.namespace;
     let q = &plan.campaign.quests.content;
     let (mut hold, mut give_back) = (Vec::new(), Vec::new());
