@@ -444,7 +444,7 @@ export interface CollectStep extends PresentationMarkers, Pursued {
    */
   readonly droppedBy?: string;
   /**
-   * The world supplies the item (DSL v0.80): a fish off a line, a creature in
+   * The world supplies the item (DSL v0.81): a fish off a line, a creature in
    * a bucket. Nothing stands at `pos` to open; the bot stands there and is
    * handed the item by command, in place of the vanilla act a player performs.
    */

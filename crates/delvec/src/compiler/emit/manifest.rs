@@ -412,7 +412,7 @@ pub(super) fn critical_path_json(
                     {
                         obj.insert("dropped_by".to_string(), json!(w));
                     }
-                    // v0.80: present only on a gathered collect, so every
+                    // v0.81: present only on a gathered collect, so every
                     // other `critical-path.json` is byte-identical.
                     if *gathered
                         && let Some(obj) = v.as_object_mut()

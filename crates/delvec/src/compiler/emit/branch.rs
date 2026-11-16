@@ -124,6 +124,12 @@ pub(super) fn branch_paths(
                 code: e.failure.code,
                 message: format!("{}: {}", row.label(), e.failure.message),
             })?;
+        // spec-0140 §5: a story world's path is held to the mode it is in,
+        // as the exported path is (`DW1124`).
+        plan::walk_modes(plan.campaign, &cp.firing).map_err(|e| BuildFailure::Diagnostic {
+            code: e.failure.code,
+            message: format!("{}: {}", row.label(), e.failure.message),
+        })?;
         let routes = legs
             .iter()
             .find(|(slug, _, _)| *slug == r.branch.slug)

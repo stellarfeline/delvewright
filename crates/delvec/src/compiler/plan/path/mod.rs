@@ -15,6 +15,7 @@ pub(crate) use mock::path_mocks;
 pub use pursuers::Pursuer;
 pub(crate) use pursuers::{
     check_courses_started, check_outrun_loose, check_ridden_vehicles_stand, pursuers_by_step,
+    walk_modes,
 };
 pub use region::*;
 pub(crate) use triggers::*;
@@ -106,7 +107,7 @@ pub enum Step {
         /// walks the fight's ground and waits for the pickup instead of opening
         /// a block that is not there.
         dropped: Option<String>,
-        /// The world supplies the item (DSL v0.80): there is nothing at
+        /// The world supplies the item (DSL v0.81): there is nothing at
         /// `pos` to open, and the harness hands the party the item by command
         /// there, standing in for the vanilla act a player performs.
         gathered: bool,
@@ -656,7 +657,7 @@ fn choices_before(
 ///   away and decide the outcome the path is proving.
 ///
 /// * `15` — a `collect` step carries `gathered: true` when the world supplies
-///   its item (DSL v0.80): nothing stands at `pos` to open, and the harness
+///   its item (DSL v0.81): nothing stands at `pos` to open, and the harness
 ///   hands the party the item by command there. A format change for `4`'s
 ///   reason: a format-14 bot would refuse the key, and one that ignored it
 ///   would open a chest that is not there.

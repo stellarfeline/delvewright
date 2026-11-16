@@ -1255,7 +1255,7 @@ pub(super) fn emit_verb_packtests(
         write("collect_own_stack", b);
     }
 
-    // v0.80: a gathered collect places nothing, and possession completes it
+    // v0.81: a gathered collect places nothing, and possession completes it
     // however the item arrived. The first one, in declared order: open its
     // gate and tick, so its activation has run, and assert no chest stands at
     // its anchor; then the item arrives by `give` — no holder, no drop, the

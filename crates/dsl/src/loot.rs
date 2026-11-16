@@ -414,7 +414,7 @@ pub(crate) fn container_declaration_checks(c: &Campaign, d: &mut Vec<Diagnostic>
 }
 
 crate::dw_code! {
-    /// (DSL v0.80) A `collect` whose item the world supplies (`gathered`)
+    /// (DSL v0.81) A `collect` whose item the world supplies (`gathered`)
     /// also declares a field that places the item — a `holder` fill, a
     /// wave's `dropped_by`, an `item_name` stamped on a stack, `fill_count`
     /// padding: the engine places nothing for a gathered item, so the field
@@ -422,7 +422,7 @@ crate::dw_code! {
     pub const DW_GATHERED_PLACED: DwCode = DwCode::new("DW1121", ExitTier::Build);
 }
 
-/// `DW1121` over every `collect` declaring `gathered` (DSL v0.80): no field
+/// `DW1121` over every `collect` declaring `gathered` (DSL v0.81): no field
 /// that places the item stands beside it. A `slot` is `DW1035`'s
 /// ([`collect_slot_checks`]).
 pub(crate) fn collect_gathered_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {

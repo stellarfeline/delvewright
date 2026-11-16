@@ -20,6 +20,13 @@
 // - an owed cue must arrive, at the bot's own position;
 // - every cue packet heard, owed or not, must arrive at the bot's own position.
 //
+// "The bot's own position" is the one the server held for it in the tick that
+// played the cue, not where the bot stands when the packet reaches it: a bot
+// walking through a completion cube is a stall's length further on by then (the
+// cue sounds on the cube's face, the bot is inside it). Each sound event carries
+// the positions the server may have held (`ServerView`, `sound-heard.ts`), and the
+// cue must land at one of them.
+//
 // The compiler states the cues, the objectives that owe them, the world spawn
 // and the range (`validation/cues.json`); the harness derives nothing.
 //
@@ -126,6 +133,11 @@ export type CueEvent =
       readonly volume: number;
       readonly pitch: number;
       readonly bot: Vec3 | null;
+      /**
+       * The positions the server may have held for the bot when it played the
+       * sound, oldest first, `bot` last (`ServerView.heldAt`); empty without a bot.
+       */
+      readonly held: readonly Vec3[];
     };
 
 /** How close a packet's volume and pitch must be to the ledger's to be a cue. */
@@ -141,6 +153,10 @@ export interface CueVerdict {
   readonly heard: Vec3 | null;
   /** The bot's position when the cue (or, unheard, its marker) arrived. */
   readonly bot: Vec3 | null;
+  /** How many positions the server may have held for the bot when it played the cue. */
+  readonly held: number;
+  /** The held position the cue landed at, or `null` when it landed at none. */
+  readonly heldAt: Vec3 | null;
   /** The bot's distance from the world spawn there, or `null` when unknown. */
   readonly fromSpawn: number | null;
   readonly ok: boolean;
@@ -215,6 +231,8 @@ export function judgeCues(ledger: CueLedger, events: readonly CueEvent[]): CueJu
         sound,
         heard: null,
         bot: e.bot,
+        held: 0,
+        heldAt: null,
         fromSpawn: fromSpawn(ledger, e.bot),
         ok: false,
         detail:
@@ -241,9 +259,23 @@ function fmtSpawn(d: number | null): string {
   return d === null ? "world spawn unknown" : `${d.toFixed(1)} blocks from the world spawn`;
 }
 
+/** Where the server held the bot, when that is not where the packet found it. */
+function heldNote(at: Vec3 | null, bot: Vec3 | null): string {
+  if (!at || !bot || distance(at, bot) < 1 / 16) return "";
+  return (
+    ` on arrival, held by the server at ${JSON.stringify(round8(at))} when it played it ` +
+    `(${distance(at, bot).toFixed(1)} blocks back along the bot's path)`
+  );
+}
+
 function verdictOf(ledger: CueLedger, kind: CueKind, token: string | null, e: CueEvent): CueVerdict {
   if (e.kind !== "sound") throw new Error("a cue verdict is of a sound");
-  const ok = heardAt(e.pos, e.bot);
+  // The held position nearest the sound, of those it landed at.
+  const at =
+    e.held
+      .filter((p) => heardAt(e.pos, p))
+      .reduce<Vec3 | null>((m, p) => (m === null || distance(p, e.pos) < distance(m, e.pos) ? p : m), null);
+  const ok = at !== null;
   const who = token === null ? `a ${kind} cue` : `${token}'s ${kind} cue`;
   const bot = JSON.stringify(e.bot && round8(e.bot));
   const d = fromSpawn(ledger, e.bot);
@@ -253,12 +285,16 @@ function verdictOf(ledger: CueLedger, kind: CueKind, token: string | null, e: Cu
     sound: ledger.cues[kind],
     heard: e.pos,
     bot: e.bot,
+    held: e.held.length,
+    heldAt: at,
     fromSpawn: d,
     ok,
     detail: ok
-      ? `${who} ${e.name} arrived at ${JSON.stringify(round8(e.pos))}, the bot at ${bot} (${fmtSpawn(d)})`
+      ? `${who} ${e.name} arrived at ${JSON.stringify(round8(e.pos))}, the bot at ${bot}` +
+        `${heldNote(at, e.bot)} (${fmtSpawn(d)})`
       : `${who} ${e.name} arrived at ${JSON.stringify(round8(e.pos))}, NOT at the bot (${bot}, ` +
-        `tolerance ${SOUND_POS_TOLERANCE}; ${fmtSpawn(d)})`,
+        `nor at any of the ${e.held.length} position(s) the server may have held for it when ` +
+        `it played the sound; tolerance ${SOUND_POS_TOLERANCE}; ${fmtSpawn(d)})`,
   };
 }
 

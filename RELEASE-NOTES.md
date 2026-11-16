@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.80.0
+## delvewright-dsl 0.81.0
 
 ### Highlights
 
@@ -47,6 +47,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - Six verbs move a staged body: `hop {height?}`, `pose {pose}`, `turn {by}`, `face {to}`, `hold {slot, item?}`, `resize {scale}`. The body is the effect's `audience`, which can name an NPC (`{"npc": id}`) or a cast (`{"bodies": [...]}`).
 - A `particle` and a `play-sound` can happen at staged bodies: `at: {"bodies": [...], "up"?}` and `at: {"at": "bodies", "bodies": [...]}`.
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
+- `modes[]` on stage 5: `{id, keeps}` — a state of the map in which every quest but the ones it keeps is held: not told, not completable, its clocks standing still; the `enter-mode` and `leave-mode` verbs; a mode leaves by itself when none of its kept quests is in progress.
 - `races[]` on stage 5: `{id, checkpoints, laps?, racers?, board?, grace_ticks?, missed, passed?}` — a course of checkpoints every racer, a player or a listed actor, is credited in order; the `start-race` and `end-race` verbs; every objective kind takes `course`, and `move-actor` takes `along`.
 
 ### Changed

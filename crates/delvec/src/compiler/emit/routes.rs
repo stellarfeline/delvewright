@@ -568,6 +568,11 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // **spec-0140: the modes the build read, and the exported path's
+            // walk through them.** A campaign with no mode prints no line.
+            if crate::compiler::mode::declares_one(plan) {
+                crate::note!("{}", crate::compiler::mode::gate(plan).line());
+            }
             // **spec-0092: a lightning bolt strikes clear of every posted body and
             // every block it would rewrite** (`DW0958`, `DW0959`). Asked where the
             // firework is, for the firework's reason: its reach rule reads

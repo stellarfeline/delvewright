@@ -189,7 +189,7 @@ export const methods = {
   },
 
   /**
-   * A **gathered** collect (DSL v0.80): the world supplies the item — a fish
+   * A **gathered** collect (DSL v0.81): the world supplies the item — a fish
    * off a line, a creature in a bucket — and the engine places nothing. The
    * bot walks to where the act is done
    * and is handed the item by command there, as a census puts its bodies in:

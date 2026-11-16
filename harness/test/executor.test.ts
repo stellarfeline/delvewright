@@ -4985,7 +4985,7 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
   );
 });
 
-// --- a gathered collect: the world supplies the item (DSL v0.80) ---------------
+// --- a gathered collect: the world supplies the item (DSL v0.81) ---------------
 
 /** A fake server on which the item arrives only by `/give`, completing the objective. */
 class GatherFakeBot extends InteractFakeBot {

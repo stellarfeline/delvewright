@@ -150,7 +150,7 @@ fn activation_lines(
             if dropped_by.is_some() {
                 return cmds;
             }
-            // v0.80: a gathered item comes from an act of the world (a line,
+            // v0.81: a gathered item comes from an act of the world (a line,
             // a bucket); the engine places nothing for it.
             if o.collect_gathered() {
                 return cmds;

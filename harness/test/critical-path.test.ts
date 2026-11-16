@@ -1336,7 +1336,7 @@ test("a stand with no click height, an unknown kind or an unknown key is refused
   }
 });
 
-// --- format 15: a collect whose item the world supplies (DSL v0.80) ---
+// --- format 15: a collect whose item the world supplies (DSL v0.81) ---
 
 test("a gathered collect carries `gathered`; any value but true is refused", () => {
   const raw = withCollect(undefined);

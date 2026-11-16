@@ -307,6 +307,17 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"end-race","race":"race/dash"}),
             None,
         ),
+        // spec-0140: a mode is not a story subject.
+        (
+            "enter-mode",
+            serde_json::json!({"type":"enter-mode","mode":"mode/aside"}),
+            None,
+        ),
+        (
+            "leave-mode",
+            serde_json::json!({"type":"leave-mode","mode":"mode/aside"}),
+            None,
+        ),
         // spec-0135 §13: a board is not a story subject.
         (
             "show-board",

@@ -1,4 +1,4 @@
-//! DSL v0.80 `collect.gathered`: the world supplies the item, and the engine
+//! DSL v0.81 `collect.gathered`: the world supplies the item, and the engine
 //! places nothing (`DW1121` for a field that would place it).
 
 use crate::common;

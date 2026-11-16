@@ -1,4 +1,4 @@
-//! A `collect` whose item the world supplies (`gathered`, DSL v0.80).
+//! A `collect` whose item the world supplies (`gathered`, DSL v0.81).
 //!
 //! A fished cod reaches the party's hands by a vanilla act — no kit, no chest,
 //! no drop, no `give-item` — so before `gathered` an `interact` presenting it

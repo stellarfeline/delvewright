@@ -450,7 +450,7 @@ pub enum Objective {
         /// still declare `drops[]`; those drops just cannot gate a quest.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dropped_by: Option<WaveId>,
-        /// **The world supplies the item** (DSL v0.80): the party gets it by
+        /// **The world supplies the item** (DSL v0.81): the party gets it by
         /// an act vanilla already provides — a fish on a line, a creature
         /// scooped into a bucket, a crop harvested, a trade — and the engine
         /// places nothing: no chest at `anchor`, no holder fill, no drop.
@@ -1235,7 +1235,7 @@ impl Objective {
         }
     }
 
-    /// Whether this is a `collect` whose item the world supplies (DSL v0.80):
+    /// Whether this is a `collect` whose item the world supplies (DSL v0.81):
     /// the engine places nothing for it. `false` on every other objective.
     pub fn collect_gathered(&self) -> bool {
         matches!(self, Objective::Collect { gathered: true, .. })
