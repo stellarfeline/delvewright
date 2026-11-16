@@ -287,6 +287,10 @@ pub struct Plan<'a> {
     /// **Every gather** — every other `teleport`. Read by the put-at population
     /// and by `DW0311`'s message; never leaned on by a route.
     pub gathers: Vec<crate::compiler::link::GatherPlan>,
+    /// **Every party carry** (`teleport` with `from: "party"`, DSL v0.88), in
+    /// [`crate::compiler::link::collect_party`] order. Empty for every campaign
+    /// that declares none.
+    pub party_carries: Vec<crate::compiler::link::PartyCarryPlan>,
     /// **Every vehicle** (spec-0135), resolved: kind, seat, bounds. Empty for
     /// every campaign that declares none.
     pub vehicles: Vec<crate::compiler::nav::vehicle::VehiclePlan>,
@@ -383,6 +387,11 @@ pub struct Plan<'a> {
     /// final world for the emitter, which holds no world, and exported on the
     /// trigger's step as `stand`.
     pub shot_stances: std::sync::OnceLock<BTreeMap<String, [i32; 3]>>,
+    /// **Each party carry's seats**, by its `to` cell: one safe standing cell
+    /// per member, the mark's own first, fixed from the build's final world
+    /// ([`crate::compiler::nav::fix_party_seats`]) for the emitter, which holds
+    /// no world. Derived by [`crate::compiler::nav::World::party_seats`].
+    pub party_seats: std::sync::OnceLock<BTreeMap<[i32; 3], Vec<[i32; 3]>>>,
     /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
     /// `validation/piece-mating.json`.
     ///
@@ -515,6 +524,16 @@ delvewright_dsl::dw_code! {
     /// put down in. The quantifiers differ and so do the remedies, which is why
     /// they are two codes.
     pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1142`: **a party carry and a crossing fire from one step.** An
+    /// objective's completion carries the whole party to a mark (a `teleport`
+    /// with `from: "party"`), and the next objective on the critical path
+    /// stands in another area, so the compiler's own crossing would carry the
+    /// party from the same completion: one step would put the party in two
+    /// places.
+    pub const DW_PARTY_CARRY_CROSSED: DwCode = DwCode::new("DW1142", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {
@@ -1095,6 +1114,7 @@ impl<'a> Plan<'a> {
         // static half of `DW0932` is judged here, where every link is known
         // and no block is needed.
         let (links, gathers) = crate::compiler::link::collect(campaign, &anchors);
+        let party_carries = crate::compiler::link::collect_party(campaign, &anchors);
         for l in &links {
             if let Some(message) = crate::compiler::link::static_fault(l) {
                 return Err(PlanError::new(DW_TELEPORT_LINK, message).with_warnings(warnings));
@@ -1383,6 +1403,7 @@ impl<'a> Plan<'a> {
             critical_path_live_links: cp.live_links_by_step,
             links,
             gathers,
+            party_carries,
             link_takes,
             perturb,
             checkpoints,
@@ -1425,6 +1446,7 @@ impl<'a> Plan<'a> {
             declared_courses: BTreeMap::new(),
             rides_aboard: BTreeSet::new(),
             shot_stances: std::sync::OnceLock::new(),
+            party_seats: std::sync::OnceLock::new(),
         };
         plan.vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, &plan.anchors);
         plan.declared_rides = campaign

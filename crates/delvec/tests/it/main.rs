@@ -188,6 +188,7 @@ mod optional_footing;
 mod packtest_batch;
 mod packtest_campaign;
 mod party;
+mod party_teleport;
 mod piece_exposure;
 mod pinned_content;
 mod place_generator;

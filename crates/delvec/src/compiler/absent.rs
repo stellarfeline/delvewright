@@ -175,6 +175,15 @@ pub const SERVED: &[Site] = &[
         matches: |_, line| command(line).starts_with("advancement grant @a"),
     },
     Site {
+        site: "party teleport",
+        rule: "a `teleport` of the party moves the members present on the tick it fires, each \
+               onto a seat of their own; the seat number it gives them is taken off in the same \
+               function. A member who was away is not owed the move: one who joins later \
+               arrives where the party respawns, as a class is taken, and one who returns \
+               stands where they left",
+        matches: |name, _| name.starts_with("teleport_"),
+    },
+    Site {
         site: "limit countdown",
         rule: "a limited objective's countdown bar is given its players on every redraw \
                (`limit_show_<obj>`, once a second while the clock runs): a member who joins \

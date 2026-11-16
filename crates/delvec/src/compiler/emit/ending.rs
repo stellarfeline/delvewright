@@ -69,9 +69,16 @@ pub(super) fn observation(plan: &Plan, eff: &QuestEffect) -> Option<Value> {
             block([lo[0], hi[1], lo[2]], [hi[0], hi[1], hi[2]], AIR)
         }
         Verb::Teleport { from, to } => {
-            let (lo, hi) = plan.zone_box(from)?;
             let cell = to.cell(anchor_point_any(plan, to.anchor.as_str())?);
-            json!({"kind": "position", "from": {"min": lo, "max": hi}, "to": cell})
+            match from.volume() {
+                Some(z) => {
+                    let (lo, hi) = plan.zone_box(z)?;
+                    json!({"kind": "position", "from": {"min": lo, "max": hi}, "to": cell})
+                }
+                // The party: every member moves, wherever they stood; the
+                // first member is put on the mark's own cell.
+                None => json!({"kind": "position", "to": cell}),
+            }
         }
         Verb::SpawnNpc { npc, .. } => {
             json!({"kind": "present", "tag": format!("dw_npc_{}", plan::safe_local(npc.as_str()))})

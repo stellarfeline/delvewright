@@ -95,6 +95,18 @@ pub fn places(plan: &Plan) -> Vec<(String, [i32; 3])> {
     for g in &plan.gathers {
         out.push((format!("the teleport `{}` lands", g.path), g.to));
     }
+    // A party carry: its mark, and every seat once the build has fixed them.
+    for c in &plan.party_carries {
+        let seats = plan
+            .party_seats
+            .get()
+            .and_then(|m| m.get(&c.to))
+            .cloned()
+            .unwrap_or_else(|| vec![c.to]);
+        for s in seats {
+            out.push((format!("the party teleport `{}` seats a member", c.path), s));
+        }
+    }
     out
 }
 

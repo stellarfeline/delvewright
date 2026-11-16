@@ -19,7 +19,8 @@ export type AftermathObservable =
   | { readonly kind: "block"; readonly first: Vec3; readonly last: Vec3; readonly block: string }
   | {
       readonly kind: "position";
-      readonly from: { readonly min: Vec3; readonly max: Vec3 };
+      /** The volume a box teleport carries; absent for a teleport of the party, which carries every member. */
+      readonly from?: { readonly min: Vec3; readonly max: Vec3 };
       readonly to: Vec3;
     }
   | { readonly kind: "time"; readonly daytime: number }
@@ -124,9 +125,11 @@ export function observeAftermath(
         // The teleport moves what its volume selector matches — a body whose
         // hitbox meets the box (`bodyInVolume`, the server's rule), not one whose
         // feet cell is inside it.
+        // A teleport of the party carries every member wherever they stood.
         if (
-          world.stoodAt === undefined ||
-          !bodyInVolume(world.stoodAt, { lo: p.from.min, hi: p.from.max })
+          p.from !== undefined &&
+          (world.stoodAt === undefined ||
+            !bodyInVolume(world.stoodAt, { lo: p.from.min, hi: p.from.max }))
         ) {
           return row(
             "not_observable",
@@ -141,7 +144,10 @@ export function observeAftermath(
           world.position[2] - target[2],
         );
         return d <= 1.5
-          ? row("observed", `carried from the volume to ${fmt(p.to)} (${d.toFixed(2)} away)`)
+          ? row(
+              "observed",
+              `carried from ${p.from === undefined ? "where the party stood" : "the volume"} to ${fmt(p.to)} (${d.toFixed(2)} away)`,
+            )
           : row("failed", `expected to stand within 1.5 of ${fmt(p.to)}, stood at ${fmt(world.position)}`);
       }
       case "time": {

@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.86.0
+## delvewright-dsl 0.88.0
 
 ### Highlights
 
@@ -50,6 +50,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A body's move, a `particle` and a `play-sound` take `repeat {times, every_ticks}` and `stagger_ticks`.
 - `modes[]` on stage 5: `{id, keeps}` — a state of the map in which every quest but the ones it keeps is held: not told, not completable, its clocks standing still; the `enter-mode` and `leave-mode` verbs; a mode leaves by itself when none of its kept quests is in progress.
 - `races[]` on stage 5: `{id, checkpoints, laps?, racers?, board?, grace_ticks?, missed, passed?}` — a course of checkpoints every racer, a player or a listed actor, is credited in order; the `start-race` and `end-race` verbs; every objective kind takes `course`, and `move-actor` takes `along`.
+- A `teleport` takes `from: "party"`: every player in the party is carried to the mark wherever they stand, each onto a spot of their own beside it.
 - Every objective kind and a trigger take `clues`: what tells the player the step's answer — a task's `record` or `hint` in the journal, or a thing in sight. A step that states a clue is judged by it instead of by being in sight or hinted: on the main line a build confirms each stated clue is presented before the party reaches the step, and an optional step's clue is owed nothing.
 
 ### Changed
