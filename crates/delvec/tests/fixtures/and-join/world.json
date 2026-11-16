@@ -27,6 +27,6 @@
     "title": "The Two Levers",
     "weather": "clear"
   },
-  "dsl_version": "0.78.0",
+  "dsl_version": "0.79.0",
   "stage": "world"
 }

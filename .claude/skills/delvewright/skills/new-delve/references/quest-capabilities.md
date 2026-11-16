@@ -14,6 +14,7 @@
 - [Bodies](#bodies)
 - [A boat, a cart, a mount](#a-boat-a-cart-a-mount)
 - [A board of places](#a-board-of-places)
+- [A race](#a-race)
 - [Sealed things, and pacing](#sealed-things-and-pacing)
 
 # Reference: what a quest can do
@@ -248,6 +249,16 @@ Run each of these; each names what it judges and how many objects it bound.
 ## A board of places
 
 - `boards[]` `{"id": "board/pig-race", "title": "The Pig Race"}` is a list in the sidebar of who finished in what order. `show-board` puts it up and `hide-board` takes it down. `place-on-board` gives the next place to whom its `audience` names: `"actor"` (the player whose act it is — the one who completed the objective), `{"actor": "actor/<id>"}` or `{"npc": "npc/<id>"}` (a named racer — put it in the racer's `move-actor` `on_arrive`). Each body is placed once, so the event may fire again. A wave cannot take a place, and an actor needs a `name` (`DW1116`). To place every player of a party, place them from an event that names each one, such as a `step` trigger with `"audience": "presser"` on a plate across the finish line.
+
+## A race
+
+- `races[]` is a course: `checkpoints` in the order a racer passes them, the last one the finish line. Each is a box, `{"at": {"anchor": …, "offset": […]}, "extent": [x, y, z]}` — say its centre from the nearest anchor, and make it as wide as the way and tall enough for a rider (`[3, 2, 3]` across a street). Everyone races: every player, on foot or mounted, and each actor listed in `racers`.
+- A racer is credited only its next checkpoint. One who cuts ahead gets nothing there and reads the race's `missed` line on the action bar, so write it as an instruction (`"You missed a checkpoint — go back."`). `passed` is shown with the count at every credit (`Checkpoint 2/6`). Stand the checkpoints so that every shortcut misses one; two in a row may not share a cell (`DW1118`).
+- `laps` runs the course again; it needs two checkpoints or more. `board` names the board every finisher takes the next place on — players and listed actors alike, so a race needs no `place-on-board` of its own; a listed actor needs a `name`.
+- Nothing is credited until a `start-race` fires, and that is where the start is declared: put it in the bundle of whatever starts the race — a `body-enters` trigger over a `riders` census starts it when the first player mounts. Keep the first checkpoint a few blocks from the start line, so nobody is in it before the start.
+- The race is over when every racer has finished, or `grace_ticks` after the first one did (600 is thirty seconds), or at an `end-race` — whichever comes first.
+- To make the race a task, put `"course": "race/<id>"` beside `"ride": "vehicle/<id>"` on an objective: the party's ride to it is proven through every checkpoint in order, and the objective completes only once the race is over — so its `on_objective_complete` is where the story says how it ended. A `start-race` must fire before it (`DW1119`). A course is proven ridden; one walked on foot is credited in play and cannot be an objective's `course` yet (`DW1117`).
+- A racing actor is walked round the course by `move-actor` with `"along": "race/<id>"`; its `to` is where it pulls up after the line. Seat it on a vehicle of its own (`rider`) to race mounted. Keep its `speed` at or under twice a player's.
 
 ## Sealed things, and pacing
 

@@ -176,7 +176,7 @@ fn a_walk_along_a_race_is_a_racers_and_a_course_is_ridden() {
     };
     assert_eq!(
         walk(false),
-        ["/content/quests/0/on_objective_complete/obj~1talk/0"]
+        ["/content/quests/0/on_objective_complete/obj/talk/0"]
     );
     assert!(walk(true).is_empty());
     // A course with no ride beside it.
@@ -210,8 +210,8 @@ fn every_reference_to_a_race_resolves() {
         at,
         [
             "/content/quests/0/objectives/0/course",
-            "/content/quests/0/on_objective_complete/obj~1talk/0",
-            "/content/quests/0/on_objective_complete/obj~1talk/1",
+            "/content/quests/0/on_objective_complete/obj/talk/0",
+            "/content/quests/0/on_objective_complete/obj/talk/1",
             "/content/races/0/board",
             "/content/races/0/racers/0",
         ]

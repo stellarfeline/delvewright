@@ -17,7 +17,8 @@ use crate::compiler::plan::Plan;
 
 delvewright_dsl::dw_code! {
     /// `DW1118`: a race's checkpoint no body can be in — its box holds no
-    /// cell a player stands in over the assembled world — or two checkpoints
+    /// cell a player stands in and no water a boat floats on, over the
+    /// assembled world — or two checkpoints
     /// that follow one another on the course share a cell, so one body is in
     /// both at once and the second is credited where the first was (spec-0139
     /// §6). The message names the race, the checkpoint and the box.
@@ -82,6 +83,19 @@ impl World {
         }
         best.map(|(_, c)| c)
     }
+
+    /// **Whether a racer can be in box `b`**: it holds a cell a player
+    /// stands in, or a cell of the water's surface, where a boat floats and
+    /// a swimmer's head is.
+    pub fn box_holds_a_racer(&self, b: &CellBox) -> bool {
+        if self.course_cell(b, &Footprint::player()).is_some() {
+            return true;
+        }
+        let (lo, hi) = b;
+        (lo[0]..=hi[0]).any(|x| {
+            ((lo[1] - 1)..=hi[1]).any(|y| (lo[2]..=hi[2]).any(|z| self.is_water_surface([x, y, z])))
+        })
+    }
 }
 
 /// **A checkpoint's box**: its mark's cell, give or take its extent. `None`
@@ -135,7 +149,7 @@ impl RaceGate {
     pub fn line(&self) -> String {
         format!(
             "race binding (DW1117–DW1119): {} race(s), {} checkpoint(s) judged for a cell a \
-             body stands in and for sharing none with the next, {} refused; {} actor racer(s); \
+             body stands in or floats on and for sharing none with the next, {} refused; {} actor racer(s); \
              {} objective(s) run a course; {} walk(s) follow one",
             self.races, self.checkpoints, self.refused, self.racers, self.courses, self.walks
         )
@@ -167,7 +181,6 @@ pub fn check(plan: &Plan, world: &World) -> (RaceGate, Vec<Failure>) {
         }
     });
     let mut findings = Vec::new();
-    let body = Footprint::player();
     for r in &q.races {
         gate.racers += r.racers.len();
         let boxes = lap_boxes(plan, r);
@@ -176,15 +189,15 @@ pub fn check(plan: &Plan, world: &World) -> (RaceGate, Vec<Failure>) {
         }
         for (k, b) in boxes.iter().enumerate() {
             gate.checkpoints += 1;
-            if world.course_cell(b, &body).is_none() {
+            if !world.box_holds_a_racer(b) {
                 gate.refused += 1;
                 findings.push(Failure {
                     code: DW_CHECKPOINT_UNPASSABLE,
                     message: format!(
                         "race `{}`: checkpoint {} (at `{}`, the box {:?}–{:?}) holds no cell \
-                         a body stands in over the assembled world — it is inside a wall, over \
-                         a drop or above the ground a racer runs on, and nobody could be \
-                         credited it. Centre it on the course's floor, or raise its `extent` \
+                         a body stands in or floats on over the assembled world — it is inside \
+                         a wall, over a drop or above the ground a racer runs on, and nobody \
+                         could be credited it. Centre it on the course's floor, or raise its `extent` \
                          until it reaches the ground.",
                         r.id,
                         k + 1,

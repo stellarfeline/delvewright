@@ -568,6 +568,12 @@ fn samples() -> Vec<(&'static str, Value)> {
             "fail-objective",
             json!({"type":"fail-objective","objective":"obj/talk"}),
         ),
+        // spec-0139: a race is started and ended for every racer.
+        (
+            "start-race",
+            json!({"type":"start-race","race":"race/dash"}),
+        ),
+        ("end-race", json!({"type":"end-race","race":"race/dash"})),
         // spec-0135 §13: the sidebar is the world's; a place is a body's.
         (
             "show-board",
