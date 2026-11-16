@@ -14,7 +14,7 @@
 use super::*;
 
 /// The `dw.sys` holder of a limited objective's seconds left.
-fn seconds_holder(oid: &str) -> String {
+pub(super) fn seconds_holder(oid: &str) -> String {
     format!("#lt_{}", plan::safe_local(oid))
 }
 
@@ -428,8 +428,11 @@ pub(super) fn quest_start_drivers(plan: &Plan) -> Vec<String> {
             } else {
                 ""
             };
+            // spec-0140: a held quest starts no clock until it is held no
+            // longer.
+            let held = super::mode::held_term(plan.campaign, q.id.as_str());
             format!(
-                "execute if score {} {} matches 1{arrived} unless score {} dw.sys matches 1 run function {ns}:{}",
+                "execute if score {} {} matches 1{held}{arrived} unless score {} dw.sys matches 1 run function {ns}:{}",
                 plan::PARTY,
                 quest_active_score(q.id.as_str()),
                 quest_start_latch(q.id.as_str()),

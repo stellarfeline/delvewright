@@ -591,6 +591,8 @@ impl QuestEffect {
             | Verb::PlaceOnBoard { .. }
             | Verb::StartRace { .. }
             | Verb::EndRace { .. }
+            | Verb::EnterMode { .. }
+            | Verb::LeaveMode { .. }
             // spec-0136's moves.
             | Verb::Hop { .. }
             | Verb::Pose { .. }

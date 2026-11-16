@@ -164,6 +164,7 @@ mod massing;
 mod metrics_standard;
 mod missing_library;
 mod missing_stage_document;
+mod mode;
 mod module_list;
 mod mounted_surface;
 mod move_npc_beat_scope;

@@ -32,6 +32,7 @@ mod l10n_surface;
 mod limit;
 mod matrix;
 mod metrics;
+mod mode;
 mod nested_anchor_refs;
 mod npc_lifecycle_shared;
 mod on_kill;

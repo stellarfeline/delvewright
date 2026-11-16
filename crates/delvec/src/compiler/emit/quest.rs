@@ -215,6 +215,8 @@ pub(super) fn serving_guard(
 ) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
+    // spec-0140: a quest a mode holds is served by no press while it is on.
+    g.push_str(&super::mode::held_term_of_objective(c, o.id().as_str()));
     g.push_str(&super::quorum::after_cond(c, o));
     g.push_str(&format!(
         " unless score {p} {} matches 1",
@@ -297,6 +299,13 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
 fn window_guard(plan: &Plan, o: &Objective, quest_active: &str, completes: bool) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
+    // spec-0140: a quest a mode holds is neither told nor completed while
+    // it is on. One term, in the window an objective is told in and the one
+    // it completes in alike.
+    g.push_str(&super::mode::held_term_of_objective(
+        plan.campaign,
+        o.id().as_str(),
+    ));
     g.push_str(&super::quorum::after_cond(plan.campaign, o));
     // The objective's whole gate, in gate field order: required flags, forbidden
     // flags, then (DSL v0.10) the numeric terms. Written through `gate_cond` so
@@ -582,6 +591,10 @@ pub(super) fn quest_completion_fns(
                 quest_active_score(dep.id.as_str())
             ));
         }
+        // spec-0140: a mode that keeps this quest is left when nothing it
+        // keeps is in progress any more — after the quests this one arms
+        // have started.
+        done.extend(super::mode::quest_completion_lines(plan, q.id.as_str()));
         fns.push((
             format!("complete_q_{}", plan::safe_local(q.id.as_str())),
             lines(&done),

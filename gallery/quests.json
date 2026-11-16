@@ -772,6 +772,14 @@
         ]
       }
     ],
+    "modes": [
+      {
+        "id": "mode/the-long-hall",
+        "keeps": [
+          "quest/long-hall"
+        ]
+      }
+    ],
     "on_death": [
       {
         "stake": "stake/tokens",
@@ -2832,6 +2840,10 @@
                 "verb": "arrives"
               },
               "type": "set-checkpoint"
+            },
+            {
+              "mode": "mode/the-long-hall",
+              "type": "leave-mode"
             }
           ],
           "obj/board-the-ferry": [
@@ -4521,6 +4533,10 @@
             {
               "race": "race/the-march",
               "type": "end-race"
+            },
+            {
+              "mode": "mode/the-long-hall",
+              "type": "enter-mode"
             }
           ],
           "obj/ask-the-groom": [
@@ -6597,6 +6613,6 @@
       }
     ]
   },
-  "dsl_version": "0.79.0",
+  "dsl_version": "0.81.0",
   "stage": "quests"
 }

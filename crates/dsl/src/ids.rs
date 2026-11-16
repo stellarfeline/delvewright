@@ -210,6 +210,11 @@ prefixed_id!(
     /// objective, its functions and its PackTest templates.
     RaceId, "race");
 prefixed_id!(
+    /// Mode id: `mode/<kebab>` (stage-5 `modes` section, spec-0140). Unique
+    /// within the stage-5 mode namespace; it names the mode's functions and
+    /// its PackTest templates.
+    ModeId, "mode");
+prefixed_id!(
     /// Pulse id: `pulse/<kebab>` (stage-5 `pulses` section, spec-0102). Unique
     /// within the stage-5 pulse namespace; it names the pulse's emitted
     /// function, its latch holder, its PackTest templates and its ledger row.

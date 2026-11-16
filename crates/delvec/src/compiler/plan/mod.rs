@@ -1358,6 +1358,9 @@ impl<'a> Plan<'a> {
         // step is `DW1119`.
         check_courses_started(campaign, &path_firing)
             .map_err(|e| e.with_warnings(warnings.clone()))?;
+        // spec-0140 §5: a step that performs an objective the mode then on
+        // holds is `DW1124`.
+        walk_modes(campaign, &path_firing).map_err(|e| e.with_warnings(warnings.clone()))?;
 
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 

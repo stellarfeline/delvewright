@@ -164,6 +164,23 @@ pub enum Verb {
         /// The race (stage-5 `races` ref).
         race: crate::RaceId,
     },
+    /// **Puts the map in a stage-5 mode** (spec-0140 §3): every quest the
+    /// mode does not keep is held — not told, not completable, its clocks
+    /// standing still — until the mode is left. The map is in one mode at a
+    /// time: entering one leaves whichever was on. A mode none of whose kept
+    /// quests is in progress is left the moment it is entered.
+    EnterMode {
+        /// The mode (stage-5 `modes` ref).
+        mode: crate::ModeId,
+    },
+    /// **Leaves a stage-5 mode** (spec-0140 §3) before its kept quests are
+    /// done: every quest it held is told and completable again, and each
+    /// held clock goes on from the second it showed. Nothing happens when
+    /// the map is not in that mode.
+    LeaveMode {
+        /// The mode (stage-5 `modes` ref).
+        mode: crate::ModeId,
+    },
     /// Seats a stage-5 vehicle at its mark (spec-0135 §2): the body the
     /// vehicle's seat function places, by the function every load runs. A
     /// vehicle already standing is removed first, so a seat is one body.
@@ -1281,6 +1298,8 @@ impl Verb {
             Verb::DespawnVehicle { .. } => "despawn-vehicle",
             Verb::StartRace { .. } => "start-race",
             Verb::EndRace { .. } => "end-race",
+            Verb::EnterMode { .. } => "enter-mode",
+            Verb::LeaveMode { .. } => "leave-mode",
             Verb::FillLoot { .. } => "fill-loot",
             Verb::ApplyEdits { .. } => "apply-edits",
             Verb::RecordOutcome { .. } => "record-outcome",
@@ -1389,6 +1408,9 @@ impl Verb {
             // spec-0139: a race is started and ended for every racer.
             | Verb::StartRace { .. }
             | Verb::EndRace { .. }
+            // spec-0140: the map's mode is the party's.
+            | Verb::EnterMode { .. }
+            | Verb::LeaveMode { .. }
             // spec-0135 §13: the sidebar is every player's.
             | Verb::ShowBoard { .. }
             | Verb::HideBoard { .. }
@@ -1480,6 +1502,9 @@ impl Verb {
             // spec-0139: whether a race runs is a score a proof reads.
             | Verb::StartRace { .. }
             | Verb::EndRace { .. }
+            // spec-0140: the mode the map is in is a score every guard reads.
+            | Verb::EnterMode { .. }
+            | Verb::LeaveMode { .. }
             | Verb::FillLoot { .. }
             | Verb::ApplyEdits { .. }
             | Verb::SpawnAssembly { .. }
