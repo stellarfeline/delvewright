@@ -11,5 +11,5 @@
     }
   ],
   "units": [],
-  "why": "One edit: the cart's run, the last task of the quest the long hall's mode keeps, waits on the flag the far hall's muster sets. The far hall is held while the mode is on, so nothing could set the flag: the line would never be ridden, the long hall never done and the mode never left. Refused at validation, at the objective's flag. It declares no unit."
+  "why": "One edit: the cart's run, the last task of the quest the long hall's mode keeps, waits on the flag the far hall's muster sets. The far hall is held while the mode is on, so nothing could set the flag: the line would never be ridden, the long hall never done and the mode never left. Refused at validation, at the objective's flag. The far hall also comes after the long hall, so the story model refuses the same edit beside it (`DW0482`, `DW1104`): the mode's rule is the one that names the flag and the mode. It declares no unit."
 }

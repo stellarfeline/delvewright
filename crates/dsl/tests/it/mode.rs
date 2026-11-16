@@ -202,3 +202,33 @@ fn an_objective_settled_before_every_entry_is_not_open_under_the_mode() {
         ["/content/quests/0/objectives/0/requires_flags/0"]
     );
 }
+
+/// spec-0140 §9: the worked example is the stage-5 shape, field for field —
+/// the last `json` block of the spec parses as the stage's content, and its
+/// mode keeps the quest whose objective runs the race.
+#[test]
+fn the_specs_worked_example_is_stage_five_content() {
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/specs/spec-0140-a-mode-holds-every-quest-but-the-ones-it-keeps.md"),
+    )
+    .unwrap();
+    let block = spec
+        .rsplit("```json\n")
+        .next()
+        .and_then(|rest| rest.split("```").next())
+        .expect("the spec carries a json block");
+    let content: delvewright_dsl::QuestsContent =
+        serde_json::from_str(&format!("{{{block}}}")).expect("the example parses");
+    let mode = content.mode("mode/pig-race").expect("the example's mode");
+    let quest = &content.quests[0];
+    assert!(mode.keeps(quest.id.as_str()));
+    assert!(quest.objectives.iter().any(|o| o.course().is_some()));
+    let enters = quest
+        .on_objective_complete
+        .values()
+        .flatten()
+        .filter(|e| matches!(e.verb, delvewright_dsl::Verb::EnterMode { .. }))
+        .count();
+    assert_eq!(enters, 1);
+}
