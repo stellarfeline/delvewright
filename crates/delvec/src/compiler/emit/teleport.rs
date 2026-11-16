@@ -189,7 +189,9 @@ fn party_keep_lines(plan: &Plan, to: [i32; 3]) -> Vec<String> {
     out.push(format!(
         "execute store result storage dw:cs tpp.id int 1 run scoreboard players get @s {CS_ID}"
     ));
-    out.push(format!("function {ns}:{TPP_KEEP_FN} with storage dw:cs tpp"));
+    out.push(format!(
+        "function {ns}:{TPP_KEEP_FN} with storage dw:cs tpp"
+    ));
     out
 }
 
@@ -330,7 +332,11 @@ pub(crate) fn crossings(plan: &Plan, overlay: &BranchTransportOverlay) -> Vec<Cr
     by_area
         .into_iter()
         .enumerate()
-        .map(|(i, (area, to))| Crossing { area, to, id: i + 1 })
+        .map(|(i, (area, to))| Crossing {
+            area,
+            to,
+            id: i + 1,
+        })
         .collect()
 }
 
@@ -395,7 +401,9 @@ pub(super) fn crossing_fns(plan: &Plan, crossings: &[Crossing]) -> Vec<(String, 
              scoreboard players set {XNEW} dw.sys 1"
         ));
         for line in cp_seat_dispatch(plan) {
-            let rest = line.strip_prefix("execute ").expect("a dispatch line is an execute");
+            let rest = line
+                .strip_prefix("execute ")
+                .expect("a dispatch line is an execute");
             owed.push(format!("execute if score {XNEW} dw.sys matches 1 {rest}"));
         }
         format!("execute if score {XNEW} dw.sys matches 0 ")

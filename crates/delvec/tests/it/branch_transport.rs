@@ -166,10 +166,8 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
     // bolt branch's own flag assignment (`flag/flee` set, `flag/wait` unset).
     let body = complete_fn(&out, "obj/bolt");
     let expected = format!(
-        "execute if score {p} {flee} matches 1 unless score {p} {wait} matches 1 run teleport @s {} {} {}",
-        LANDING_SPAWN[0],
-        LANDING_SPAWN[1],
-        LANDING_SPAWN[2],
+        "execute if score {p} {flee} matches 1 unless score {p} {wait} matches 1 run function \
+         hello-world:cross_area_landing",
         p = plan::PARTY,
         flee = plan::flag_score("flag/flee"),
         wait = plan::flag_score("flag/wait"),
@@ -178,10 +176,15 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
         body.lines().any(|l| l == expected),
         "expected branch-gated crossing\n  {expected}\nin complete_o_bolt:\n{body}"
     );
+    assert_eq!(
+        crate::party_crossing::crossing_landings(&out, "hello-world", body),
+        vec![LANDING_SPAWN],
+        "the branch's crossing carries the party onto the landing's entry point"
+    );
 
     // The hold path never crosses, so its own last beat carries no teleport.
     assert!(
-        !complete_fn(&out, "obj/walk-out").contains("teleport @s"),
+        !complete_fn(&out, "obj/walk-out").contains(":cross_"),
         "the hold branch stays in the keep and must gain no crossing"
     );
 }
@@ -212,16 +215,15 @@ fn the_branch_path_json_and_the_emission_agree() {
             ) else {
                 continue;
             };
-            let tail = format!(
-                "teleport @s {} {} {}",
-                dest[0].as_i64().unwrap(),
-                dest[1].as_i64().unwrap(),
-                dest[2].as_i64().unwrap()
-            );
+            let tail = [
+                dest[0].as_i64().unwrap() as i32,
+                dest[1].as_i64().unwrap() as i32,
+                dest[2].as_i64().unwrap() as i32,
+            ];
             let body = complete_fn(&out, oid);
             assert!(
-                body.lines().any(|l| l.ends_with(&tail)),
-                "branch `{slug}` promises `{tail}` at {oid}, but complete_o_{} does not deliver it:\n{body}",
+                crate::party_crossing::crossing_landings(&out, "hello-world", body).contains(&tail),
+                "branch `{slug}` promises a crossing onto `{tail:?}` at {oid}, but complete_o_{} does not deliver it:\n{body}",
                 plan::safe_local(oid)
             );
         }
@@ -338,7 +340,7 @@ fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
         }
         let body = std::str::from_utf8(bytes).unwrap();
         assert!(
-            !body.contains("run teleport @s"),
+            !body.contains("run function hello-world:cross_"),
             "{path} gained a flag-gated crossing:\n{body}"
         );
     }

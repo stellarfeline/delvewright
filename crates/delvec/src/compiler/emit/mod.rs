@@ -871,12 +871,10 @@ fn emit_all(
     // A party carry's seats, one per member, over the same world (`DW1141`):
     // every party teleport's and every crossing's.
     let party_seats = crate::compiler::nav::fix_party_seats(plan, &world, &crossing_marks)
-        .map_err(|f| {
-        BuildFailure::Diagnostic {
+        .map_err(|f| BuildFailure::Diagnostic {
             code: f.code,
             message: f.message,
-        }
-    })?;
+        })?;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //
