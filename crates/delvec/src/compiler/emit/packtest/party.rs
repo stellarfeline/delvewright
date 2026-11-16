@@ -482,8 +482,7 @@ fn first_distinct_checkpoint(plan: &Plan) -> Option<(usize, [i32; 3])> {
 pub(super) fn emit_party_class_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let c = plan.campaign;
-    let (Some(cl), Some(class)) = (plan.classes.first(), c.classes.content.classes.first())
-    else {
+    let (Some(cl), Some(class)) = (plan.classes.first(), c.classes.content.classes.first()) else {
         return;
     };
     let Some(entry) = campaign_spawn(plan) else {

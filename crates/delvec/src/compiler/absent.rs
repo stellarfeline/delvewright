@@ -595,7 +595,10 @@ mod tests {
 
     #[test]
     fn the_final_command_of_an_execute_is_read() {
-        assert_eq!(command("give @a minecraft:torch 1"), "give @a minecraft:torch 1");
+        assert_eq!(
+            command("give @a minecraft:torch 1"),
+            "give @a minecraft:torch 1"
+        );
         assert_eq!(
             command("execute if score #party dw.f_x matches 1 run give @a minecraft:torch 1"),
             "give @a minecraft:torch 1"
@@ -638,7 +641,9 @@ mod tests {
 
     #[test]
     fn a_telling_a_holder_write_and_one_player_are_not() {
-        assert!(!writes_every_present_player("tellraw @a {\"text\":\"give @a x\"}"));
+        assert!(!writes_every_present_player(
+            "tellraw @a {\"text\":\"give @a x\"}"
+        ));
         assert!(!writes_every_present_player(
             "scoreboard players set #party dw.f_x 1"
         ));
@@ -649,7 +654,9 @@ mod tests {
         assert!(!writes_every_present_player(
             "tag @a[tag=dw_t_x,limit=1] add dw_y"
         ));
-        assert!(!writes_every_present_player("tag @e[tag=dw_wave_x] add dw_y"));
+        assert!(!writes_every_present_player(
+            "tag @e[tag=dw_wave_x] add dw_y"
+        ));
     }
 
     #[test]

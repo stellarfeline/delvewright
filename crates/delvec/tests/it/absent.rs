@@ -51,7 +51,6 @@ fn build_dir(dir: &Path) -> BuildOutput {
     .expect("emission succeeds")
 }
 
-
 fn families() -> Vec<(&'static str, BuildOutput)> {
     vec![
         ("hello-world", build_dir(&common::hello_world_dir())),
@@ -112,7 +111,11 @@ fn a_collect_completes_on_what_the_party_holds() {
             .find(|o| o["type"] == "collect")
             .expect("the showcase declares a collect");
         o["count"] = serde_json::json!(3);
-        id = o["id"].as_str().unwrap().trim_start_matches("obj/").replace('-', "_");
+        id = o["id"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("obj/")
+            .replace('-', "_");
     });
     let out = build_dir(&dir);
     let tick = text(&out, &format!("{SHOWCASE}/tick.mcfunction"));
@@ -122,7 +125,8 @@ fn a_collect_completes_on_what_the_party_holds() {
         .position(|l| l.contains("store result score @s dw.hold if items entity @s container.*"))
         .expect("each player's held count is stored");
     assert_eq!(
-        lines[store - 1], "scoreboard players set #hold dw.sys 0",
+        lines[store - 1],
+        "scoreboard players set #hold dw.sys 0",
         "the party's count starts from nothing each tick"
     );
     assert!(
@@ -188,7 +192,10 @@ fn a_party_give_is_a_grant_owed_to_a_member_who_was_away() {
         talk.lines().any(|l| l == "function v04-showcase:grant_0"),
         "{talk}"
     );
-    assert!(!talk.contains("give @a"), "no bare party give is left: {talk}");
+    assert!(
+        !talk.contains("give @a"),
+        "no bare party give is left: {talk}"
+    );
     let grant = text(&out, &format!("{SHOWCASE}/grant_0.mcfunction"));
     let g: Vec<&str> = grant.lines().collect();
     assert!(g[0].starts_with("give @a minecraft:paper["), "{grant}");
@@ -261,8 +268,14 @@ fn a_party_give_is_a_grant_owed_to_a_member_who_was_away() {
             .position(|l| l.contains(needle))
             .unwrap_or_else(|| panic!("`{needle}` in:\n{pt}"))
     };
-    assert!(at("function v04-showcase:grant_0") < at("dummy dwpg0p1 spawn"), "{pt}");
-    assert!(at("dummy dwpg0p1 spawn") < at("run function v04-showcase:grant_owed"), "{pt}");
+    assert!(
+        at("function v04-showcase:grant_0") < at("dummy dwpg0p1 spawn"),
+        "{pt}"
+    );
+    assert!(
+        at("dummy dwpg0p1 spawn") < at("run function v04-showcase:grant_owed"),
+        "{pt}"
+    );
     assert!(pt.contains("assert score #pg_0_a dw.sys matches 1"), "{pt}");
     assert!(pt.contains("assert score #pg_0_b dw.sys matches 1"), "{pt}");
 }
@@ -296,7 +309,8 @@ fn a_give_that_names_its_player_stays_with_that_player() {
     let out = build_dir(&dir);
     let talk = text(&out, &format!("{SHOWCASE}/complete_o_talk.mcfunction"));
     assert!(
-        talk.lines().any(|l| l.starts_with("give @s minecraft:paper[")),
+        talk.lines()
+            .any(|l| l.starts_with("give @s minecraft:paper[")),
         "{talk}"
     );
     assert!(
@@ -332,7 +346,10 @@ fn a_class_taken_once_a_checkpoint_is_armed_arrives_on_it() {
             && lines[entry + 1].ends_with(":cp_seat_0"),
         "the seat dispatch follows the entry teleport: {apply}"
     );
-    let seats = out.keys().filter(|k| k.contains("/function/cp_seat_")).count();
+    let seats = out
+        .keys()
+        .filter(|k| k.contains("/function/cp_seat_"))
+        .count();
     assert_eq!(
         lines.iter().filter(|l| l.contains(":cp_seat_")).count(),
         seats,
@@ -340,7 +357,10 @@ fn a_class_taken_once_a_checkpoint_is_armed_arrives_on_it() {
     );
     // A campaign that declares no checkpoint has no dispatch.
     let plain = build_dir(&common::hello_world_dir());
-    for (p, b) in plain.iter().filter(|(p, _)| p.contains("/function/class_apply_")) {
+    for (p, b) in plain
+        .iter()
+        .filter(|(p, _)| p.contains("/function/class_apply_"))
+    {
         assert!(!String::from_utf8_lossy(b).contains("#cp"), "{p}");
     }
 }
@@ -361,14 +381,20 @@ fn every_family_s_writes_are_served_and_its_picks_named() {
         assert!(c.unnamed.is_empty(), "{name}: {:?}", c.unnamed);
         let ledger: serde_json::Value =
             serde_json::from_slice(out.get("validation/absent-census.json").unwrap()).unwrap();
-        assert_eq!(ledger["lasting_writes_onto_every_present_player"], c.writes, "{name}");
+        assert_eq!(
+            ledger["lasting_writes_onto_every_present_player"], c.writes,
+            "{name}"
+        );
         assert_eq!(ledger["picks_of_one_player"], c.picks, "{name}");
         assert_eq!(ledger["unserved"], 0);
         assert_eq!(ledger["unnamed"], 0);
         writes += c.writes;
         picks += c.picks;
     }
-    assert!(writes > 0 && picks > 0, "the families bind both rules: {writes} / {picks}");
+    assert!(
+        writes > 0 && picks > 0,
+        "the families bind both rules: {writes} / {picks}"
+    );
 }
 
 /// `DW1126`: a lasting write onto the players present, planted in a completion
@@ -378,14 +404,25 @@ fn a_planted_write_onto_the_present_is_dw1126() {
     let mut out = build_dir(&common::compiler_fixtures_dir().join("v04-showcase"));
     let path = format!("{SHOWCASE}/complete_o_talk.mcfunction");
     let body = text(&out, &path);
-    out.insert(path, format!("{body}tag @a add dw_was_there\n").into_bytes());
+    out.insert(
+        path,
+        format!("{body}tag @a add dw_was_there\n").into_bytes(),
+    );
     let c = absent::census(&out);
     assert_eq!(c.unserved.len(), 1, "{:?}", c.unserved);
     assert_eq!(c.unserved[0].1, "tag @a add dw_was_there");
     let refusal = absent::check(&out).expect_err("an unserved write is refused");
     assert_eq!(refusal.code.to_string(), "DW1126");
-    assert!(refusal.message.contains("ENGINE SELF-CHECK"), "{}", refusal.message);
-    assert!(refusal.message.contains("complete_o_talk"), "{}", refusal.message);
+    assert!(
+        refusal.message.contains("ENGINE SELF-CHECK"),
+        "{}",
+        refusal.message
+    );
+    assert!(
+        refusal.message.contains("complete_o_talk"),
+        "{}",
+        refusal.message
+    );
 }
 
 /// `DW1127`: a pick of one player planted in a completion bundle is refused by
@@ -404,14 +441,21 @@ fn a_planted_pick_of_one_player_is_dw1127() {
     assert_eq!(c.unnamed.len(), 1, "{:?}", c.unnamed);
     let refusal = absent::check(&out).expect_err("an unnamed pick is refused");
     assert_eq!(refusal.code.to_string(), "DW1127");
-    assert!(refusal.message.contains("ENGINE SELF-CHECK"), "{}", refusal.message);
+    assert!(
+        refusal.message.contains("ENGINE SELF-CHECK"),
+        "{}",
+        refusal.message
+    );
 
     let mut told = built;
     told.insert(
         path,
         format!("{body}tellraw @a {{\"text\":\"ask @p or @r , whoever is near\"}}\n").into_bytes(),
     );
-    assert!(absent::check(&told).is_ok(), "an authored line is not a selector");
+    assert!(
+        absent::check(&told).is_ok(),
+        "an authored line is not a selector"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -445,15 +489,26 @@ fn the_gallery_binds_the_census_and_carries_the_party_templates() {
         &std::fs::read(built.join("validation/absent-census.json")).unwrap(),
     )
     .unwrap();
-    assert!(ledger["lasting_writes_onto_every_present_player"].as_u64().unwrap() > 0);
+    assert!(
+        ledger["lasting_writes_onto_every_present_player"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
     assert!(ledger["picks_of_one_player"].as_u64().unwrap() > 0);
     let binding = log
         .lines()
         .find(|l| l.starts_with("absent-member binding (spec-0141): "))
         .unwrap_or_else(|| panic!("the build prints the binding line:\n{log}"));
     let tests = built.join("packtest-datapack/data/gallery/test");
-    assert!(tests.join("party_collect.mcfunction").is_file(), "{binding}");
-    assert!(tests.join("party_class_arrives.mcfunction").is_file(), "{binding}");
+    assert!(
+        tests.join("party_collect.mcfunction").is_file(),
+        "{binding}"
+    );
+    assert!(
+        tests.join("party_class_arrives.mcfunction").is_file(),
+        "{binding}"
+    );
     let grants = std::fs::read_dir(&tests)
         .unwrap()
         .filter(|e| {
