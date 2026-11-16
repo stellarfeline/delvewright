@@ -41,7 +41,7 @@ fn fixture(tag: &str, middle: Vec<Value>) -> PathBuf {
             "type": "interact", "id": "obj/feed", "anchor": "anchor/exit",
             "prop": {"block": "minecraft:torch"},
             "requires_item": "minecraft:cod", "after": [before],
-            "title": "Feed the cat", "hint": "The cat waits at the exit.",
+            "title": "Show the cat the cod", "hint": "The cat waits at the exit.",
             "answers": {"not_yet": "Not yet.", "missing_item": "The cat wants fish.",
                         "done": "Fed."},
             "happening": {"text": "the party feeds the cat", "verb": "loses"}
