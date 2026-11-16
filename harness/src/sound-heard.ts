@@ -8,7 +8,9 @@ type Vec3 = readonly [number, number, number];
  * How far (blocks, per axis) a sound may land from the bot and still be heard
  * where the bot is. The packet carries its position in eighths of a block, and
  * the body may move a step, or settle onto the floor after a teleport, between
- * the server playing the sound and the client reading it; a sound played at the
+ * one position it tells the server and the next (the containers' notice judges
+ * the bot standing still after a warp; the quest cues judge every position the
+ * server may have held, `ServerView` below); a sound played at the
  * command source instead of the player misses by the distance between them.
  */
 export const SOUND_POS_TOLERANCE = 1.5;
