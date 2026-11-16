@@ -19,7 +19,7 @@ pub(crate) fn board_objective(id: &str) -> String {
 }
 
 /// The `dw.sys` holder that counts the places board `id` has given.
-pub(super) fn board_counter(id: &str) -> String {
+pub(crate) fn board_counter(id: &str) -> String {
     format!("#bp_{}", plan::safe_local(id))
 }
 

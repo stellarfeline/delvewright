@@ -25,6 +25,7 @@ mod healthbar;
 mod holders;
 mod lane;
 mod lethal;
+mod race;
 pub(super) use lethal::emitted_lethal_templates;
 mod lightning;
 mod limit;
@@ -180,6 +181,9 @@ pub(super) fn emit_packtest(
     // spec-0135 §13: a board's places. Emits nothing without a board that
     // places a named body.
     board::emit_board_packtests(plan, out);
+    // spec-0139: a race's credit in order and its refusal of a skip. Emits
+    // nothing for a campaign that declares no race.
+    race::emit_race_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final

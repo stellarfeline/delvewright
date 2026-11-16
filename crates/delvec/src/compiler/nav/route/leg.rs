@@ -220,7 +220,15 @@ pub(crate) struct Carries<'p> {
     /// The ridden objectives that wait for their own rider
     /// ([`crate::compiler::plan::Plan::rides_aboard`]).
     pub(in crate::compiler::nav) aboard: &'p BTreeSet<String>,
+    /// The legs the campaign declares run as a race's course (spec-0139 §4):
+    /// objective id → the checkpoints' boxes, in the order passed.
+    pub(in crate::compiler::nav) courses:
+        &'p BTreeMap<String, Vec<crate::compiler::nav::race::CellBox>>,
 }
+
+/// The declared courses of a proof that carries none.
+#[cfg(test)]
+static NO_COURSES: BTreeMap<String, Vec<crate::compiler::nav::race::CellBox>> = BTreeMap::new();
 
 /// The declared rides of a proof that carries none.
 #[cfg(test)]
@@ -242,6 +250,7 @@ impl<'p> Carries<'p> {
             vehicles: &[],
             declared: &NO_RIDES,
             aboard: &NO_ABOARD,
+            courses: &NO_COURSES,
         }
     }
 
@@ -255,6 +264,7 @@ impl<'p> Carries<'p> {
             vehicles: &plan.vehicles,
             declared: &plan.declared_rides,
             aboard: &plan.rides_aboard,
+            courses: &plan.declared_courses,
         }
     }
 
@@ -887,8 +897,21 @@ fn ride_leg(
         RideOn::Leave(onward) if b == end.pos => onward(a),
         _ => walks(a, b),
     };
-    let ride =
-        crate::compiler::nav::vehicle::ride_of(leg, vi, v, start, &onward, end.pos, seat_act)?;
+    // spec-0139 §6: a leg that runs a race's course is ridden through its
+    // checkpoints first. A ride that only carries the party off a vehicle it
+    // sat in for another leg's act runs none.
+    let course: &[crate::compiler::nav::race::CellBox] = match on {
+        RideOn::Leave(_) => &[],
+        RideOn::Foot(_) | RideOn::Aboard(_) => carries
+            .steps
+            .get(end.src_step)
+            .and_then(Step::objective)
+            .and_then(|o| carries.courses.get(o))
+            .map_or(&[], Vec::as_slice),
+    };
+    let ride = crate::compiler::nav::vehicle::ride_of(
+        leg, vi, v, start, &onward, end.pos, seat_act, course,
+    )?;
     let seats = match on {
         // Aboard, the party is the one the boarding seated.
         RideOn::Aboard(seats) => seats,

@@ -293,6 +293,10 @@ pub struct Plan<'a> {
     /// **Every leg the campaign declares ridden** (spec-0135 §4): objective id
     /// → the vehicle its `ride` names, as an index into [`Plan::vehicles`].
     pub declared_rides: BTreeMap<String, usize>,
+    /// **Every leg the campaign declares run as a race's course** (spec-0139
+    /// §4): objective id → that race's checkpoints as boxes, once per lap,
+    /// in the order a racer passes them.
+    pub declared_courses: BTreeMap<String, Vec<crate::compiler::nav::race::CellBox>>,
     /// **The declared rides whose objective waits for its own rider**
     /// (spec-0135 §5): objective ids whose `requires_state` reads a `riders`
     /// census of the very vehicle the leg is ridden on, at one or more. Such
@@ -1350,6 +1354,10 @@ impl<'a> Plan<'a> {
         // despawned is `DW0311`.
         check_ridden_vehicles_stand(campaign, &path_firing)
             .map_err(|e| e.with_warnings(warnings.clone()))?;
+        // spec-0139 §4: a course whose race is not running at its objective's
+        // step is `DW1119`.
+        check_courses_started(campaign, &path_firing)
+            .map_err(|e| e.with_warnings(warnings.clone()))?;
 
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 
@@ -1411,6 +1419,7 @@ impl<'a> Plan<'a> {
             seats: std::sync::OnceLock::new(),
             vehicles: Vec::new(),
             declared_rides: BTreeMap::new(),
+            declared_courses: BTreeMap::new(),
             rides_aboard: BTreeSet::new(),
             shot_stances: std::sync::OnceLock::new(),
         };
@@ -1425,6 +1434,20 @@ impl<'a> Plan<'a> {
                 let id = o.ride()?;
                 let vi = plan.vehicles.iter().position(|v| v.id == id.as_str())?;
                 Some((o.id().as_str().to_string(), vi))
+            })
+            .collect();
+        plan.declared_courses = campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .filter_map(|o| {
+                let r = campaign.quests.content.race(o.course()?.as_str())?;
+                Some((
+                    o.id().as_str().to_string(),
+                    crate::compiler::nav::race::course_boxes(&plan, r),
+                ))
             })
             .collect();
         plan.rides_aboard = campaign
