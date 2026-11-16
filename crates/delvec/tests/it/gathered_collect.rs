@@ -44,7 +44,7 @@ fn fixture(tag: &str, middle: Vec<Value>) -> PathBuf {
             "title": "Feed the cat", "hint": "The cat waits at the exit.",
             "answers": {"not_yet": "Not yet.", "missing_item": "The cat wants fish.",
                         "done": "Fed."},
-            "happening": {"text": "the party feeds the cat", "verb": "gives"}
+            "happening": {"text": "the party feeds the cat", "verb": "loses"}
         }));
     });
     dir

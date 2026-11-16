@@ -19,7 +19,7 @@ fn quests(fields: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "collect", "id": "obj/fish", "item": "minecraft:cod", "count": 5,
+          {{ "type": "collect", "id": "obj/fish", "item": "minecraft:bread", "count": 5,
              "anchor": "anchor/exit", "gathered": true, "after": ["obj/talk"]{fields} }}
         ],
         "on_complete": [ {{ "type": "campaign-complete" }} ]
