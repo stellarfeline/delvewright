@@ -111,14 +111,19 @@ pub(crate) fn holds_some(c: &delvewright_dsl::Campaign, quest: &str) -> bool {
 /// The line a PackTest that opens a guard of `quest` writes: the map in no
 /// mode. Empty for a quest no mode holds.
 pub(crate) fn mode_drive(c: &delvewright_dsl::Campaign, quest: &str) -> Vec<String> {
-    if holds_some(c, quest) {
-        vec![format!(
-            "scoreboard players set {} {MODE_SCORE} 0",
-            plan::PARTY
-        )]
-    } else {
-        Vec::new()
-    }
+    mode_drive_term(c, quest)
+        .map(|(obj, v)| vec![format!("scoreboard players set {} {obj} {v}", plan::PARTY)])
+        .unwrap_or_default()
+}
+
+/// The `#party` term [`mode_drive`] writes, as `(objective, value)`, for a
+/// template that saves and restores what it writes; `None` for a quest no
+/// mode holds.
+pub(crate) fn mode_drive_term(
+    c: &delvewright_dsl::Campaign,
+    quest: &str,
+) -> Option<(&'static str, i32)> {
+    holds_some(c, quest).then_some((MODE_SCORE, 0))
 }
 
 /// Every limited objective a mode can hold — its quest is not kept by some

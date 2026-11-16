@@ -554,3 +554,41 @@ fn the_journal_ledger_names_the_modes_that_hold_each_quest() {
     assert!(l["mode"].is_null(), "{l}");
     assert!(held(&l, "quest/reach-shrine").is_empty(), "{l}");
 }
+
+/// The journal's templates own the mode their pages' guards read
+/// (`DW0807`'s rule): a quest some mode holds is listed only in no mode, so a
+/// sibling template that left a mode on would otherwise decide what the book
+/// shows. Each writes `#party dw.mode 0` before its first rewrite, and puts the
+/// value it found back at its end.
+#[test]
+fn a_journal_template_owns_the_mode_its_pages_read() {
+    let out = build(&fixture("journal-mode", |q| {
+        audience(q);
+        q["modes"] = json!([
+            {"id": "mode/audience", "keeps": ["quest/greet-keeper"]},
+            {"id": "mode/shrine", "keeps": ["quest/reach-shrine"]},
+        ]);
+    }));
+    let own = "scoreboard players set #party dw.mode 0";
+    for name in ["guide_journal_pages", "guide_journal_join"] {
+        let t = template(&out, name);
+        let lines: Vec<&str> = t.lines().collect();
+        let first = lines
+            .iter()
+            .position(|l| {
+                l.starts_with(&format!("function {NS}:journal_rewrite"))
+                    || l.starts_with(&format!("function {NS}:guide_refresh"))
+            })
+            .unwrap_or_else(|| panic!("`{name}` writes the book:\n{t}"));
+        assert!(
+            lines[..first].contains(&own),
+            "`{name}` sets the map in no mode before it writes the book:\n{t}"
+        );
+        assert!(
+            lines[first..]
+                .iter()
+                .any(|l| l.starts_with("scoreboard players operation #party dw.mode = ")),
+            "`{name}` puts the mode back:\n{t}"
+        );
+    }
+}

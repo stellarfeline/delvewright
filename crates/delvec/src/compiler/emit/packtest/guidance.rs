@@ -89,6 +89,13 @@ fn isolate(plan: &Plan, open: &[&Watched], d: &mut Drive) {
     for qi in &quests {
         let q = &c.quests.content.quests[*qi];
         d.put(&quest_active_score(q.id.as_str()), 1);
+        // spec-0140: every guard of a quest a mode holds reads the map's
+        // mode, so the template owns it (`DW0807`'s rule) — a sibling that
+        // left a mode on would otherwise decide what the journal, the compass
+        // and the highlight show.
+        if let Some((obj, v)) = super::super::mode::mode_drive_term(c, q.id.as_str()) {
+            d.put(obj, v);
+        }
         for o in &q.objectives {
             let follows = o
                 .after_edges()
