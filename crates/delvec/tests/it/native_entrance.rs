@@ -82,6 +82,21 @@ fn beat<'a>(c: &'a mut Campaign, objective: &str) -> &'a mut Vec<delvewright_dsl
         .unwrap_or_else(|| panic!("`{objective}` has a bundle"))
 }
 
+/// The bundle an objective's completion fires, opened empty when it has none.
+fn new_beat<'a>(c: &'a mut Campaign, objective: &str) -> &'a mut Vec<delvewright_dsl::QuestEffect> {
+    let key: delvewright_dsl::ObjectiveId =
+        serde_json::from_value(json!(objective)).expect("objective id parses");
+    c.quests
+        .content
+        .quests
+        .iter_mut()
+        .find(|q| q.objectives.iter().any(|o| o.id().as_str() == objective))
+        .unwrap_or_else(|| panic!("`{objective}` is declared"))
+        .on_objective_complete
+        .entry(key)
+        .or_default()
+}
+
 /// Every error validation raises (warnings are advisory).
 fn validation_errors(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -656,12 +671,12 @@ fn a_despawn_the_path_fires_before_its_actor_can_stand_is_dw1140() {
         for o in ["obj/talk", "obj/door"] {
             beat(&mut c, o).retain(|e| e.actor_ref().is_none_or(|a| a.as_str() != SLEEPER));
         }
-        beat(&mut c, "obj/key").push(effect(json!({
+        new_beat(&mut c, "obj/key").push(effect(json!({
             "type": "unleash-actor",
             "actor": SLEEPER,
             "happening": { "verb": "arrives", "text": "the sleeper digs out of the floor" }
         })));
-        beat(&mut c, despawn_at).push(effect(json!({
+        new_beat(&mut c, despawn_at).push(effect(json!({
             "type": "despawn-actor",
             "actor": SLEEPER,
             "style": "vanish",
