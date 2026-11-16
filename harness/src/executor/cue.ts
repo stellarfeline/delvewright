@@ -19,7 +19,10 @@ export const methods = {
     this.cueLog.push({ kind: "marker", token, bot: p ? [p.x, p.y, p.z] : null });
   },
 
-  /** Log a sound packet naming one of the ledger's cues, with where the bot stood. */
+  /**
+   * Log a sound packet naming one of the ledger's cues, with where the bot stood
+   * and every position the server may have held for it when it played the sound.
+   */
   observeCueSound(
     this: MineflayerExecutor,
     name: string,
@@ -30,13 +33,15 @@ export const methods = {
     const ledger = this.cueLedger;
     if (!ledger || !Object.values(ledger.cues).some((c) => bare(c) === bare(name))) return;
     const p = this.bot?.entity?.position;
+    const bot: [number, number, number] | null = p ? [p.x, p.y, p.z] : null;
     this.cueLog.push({
       kind: "sound",
       name,
       pos: [pos.x, pos.y, pos.z],
       volume,
       pitch,
-      bot: p ? [p.x, p.y, p.z] : null,
+      bot,
+      held: bot ? this.serverView.heldAt(bot) : [],
     });
   },
 
