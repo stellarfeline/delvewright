@@ -25,6 +25,7 @@ mod healthbar;
 mod holders;
 mod lane;
 mod lethal;
+mod race;
 pub(super) use lethal::emitted_lethal_templates;
 mod lightning;
 mod limit;
@@ -180,6 +181,9 @@ pub(super) fn emit_packtest(
     // spec-0135 §13: a board's places. Emits nothing without a board that
     // places a named body.
     board::emit_board_packtests(plan, out);
+    // spec-0139: a race's credit in order and its refusal of a skip. Emits
+    // nothing for a campaign that declares no race.
+    race::emit_race_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0108 §6.2: per (ending, witness world), the world after the final
@@ -721,6 +725,15 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
     )];
     p.extend(super::quorum::after_drive(plan.campaign, o));
     p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
+    // spec-0139 §4: an objective that declares a course reads its race's
+    // finish latch, so the template owns it too — held, in both directions,
+    // so a shut gate is shut by the one axis the caller varies.
+    if let Some(r) = o.course() {
+        p.push(format!(
+            "scoreboard players set {} dw.sys 1",
+            super::race_over(r.as_str())
+        ));
+    }
     // spec-0133 §3: a limited objective's every guard also reads its expired
     // score ([`expired_term`]), so the template owns it too — clear, as the
     // objective is pending while the template drives it — in both directions,

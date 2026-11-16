@@ -296,6 +296,17 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"despawn-vehicle","vehicle":"vehicle/gull"}),
             None,
         ),
+        // spec-0139: a race is not a story subject.
+        (
+            "start-race",
+            serde_json::json!({"type":"start-race","race":"race/dash"}),
+            None,
+        ),
+        (
+            "end-race",
+            serde_json::json!({"type":"end-race","race":"race/dash"}),
+            None,
+        ),
         // spec-0135 §13: a board is not a story subject.
         (
             "show-board",

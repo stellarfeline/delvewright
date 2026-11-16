@@ -140,7 +140,11 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     let ways = Ways::of(plan);
     for (eff, seal) in crate::compiler::timeline::walk(plan) {
         let Verb::MoveActor {
-            actor, to, speed, ..
+            actor,
+            to,
+            speed,
+            along,
+            ..
         } = &eff.verb
         else {
             continue;
@@ -262,9 +266,67 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     .unwrap_or(start_anchor)
             }
         };
-        let leg_ways = ways.leg(plan, start, target);
-        let cells = match leg_world.find_walk_fp(start, target, &fp, &leg_ways) {
-            Some(cells) => cells,
+        // spec-0139 §5: a walk `along` a race goes through one cell of each
+        // of its checkpoints, in order and for every lap, before it goes on
+        // to its mark. `lead` is that stretch, ending on the cell the last
+        // stretch to the mark starts from.
+        let mut lead: Vec<[i32; 3]> = Vec::new();
+        // The index in the finished route of each checkpoint's cell: the
+        // rendered line is smoothed between them and never across one.
+        let mut stops: Vec<usize> = Vec::new();
+        let mut walk_from = start;
+        if let Some(race) = along
+            && let Some(r) = plan.campaign.quests.content.race(race.as_str())
+        {
+            for (k, b) in crate::compiler::nav::race::course_boxes(plan, r)
+                .iter()
+                .enumerate()
+            {
+                let n = r.checkpoints.len().max(1);
+                let unwalked = |why: String| Failure {
+                    code: DW_ACTOR_UNROUTABLE,
+                    message: format!(
+                        "move-actor: actor `{}` ({}) is walked along `{race}`, and {why}. Widen \
+                         the course for this body, move the checkpoint onto ground it walks, \
+                         or drop `along`",
+                        actor.as_str(),
+                        a.entity,
+                    ),
+                };
+                let stop = leg_world.course_cell(b, &fp).ok_or_else(|| {
+                    unwalked(format!(
+                        "checkpoint {} (lap {}) holds no cell its footprint stands in",
+                        k % n + 1,
+                        k / n + 1
+                    ))
+                })?;
+                let seg_ways = ways.leg(plan, walk_from, stop);
+                let seg = leg_world
+                    .find_walk_fp(walk_from, stop, &fp, &seg_ways)
+                    .ok_or_else(|| {
+                        unwalked(format!(
+                            "it has no walk from {walk_from:?} to checkpoint {} (lap {}) at \
+                             {stop:?}",
+                            k % n + 1,
+                            k / n + 1
+                        ))
+                    })?;
+                if lead.is_empty() {
+                    lead.extend(seg);
+                } else {
+                    lead.extend(seg.into_iter().skip(1));
+                }
+                stops.push(lead.len() - 1);
+                walk_from = stop;
+            }
+        }
+        let leg_ways = ways.leg(plan, walk_from, target);
+        let cells = match leg_world.find_walk_fp(walk_from, target, &fp, &leg_ways) {
+            Some(cells) if lead.is_empty() => cells,
+            Some(cells) => {
+                lead.extend(cells.into_iter().skip(1));
+                lead
+            }
             // Unroutable in the timeline-correct world. Which diagnostic depends on
             // *why*: if the open world routes it, the campaign's own `close-gate` is
             // what makes it impossible (DW0410) — otherwise the geometry simply does
@@ -318,7 +380,24 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         // A puppet crosses open ground the same way a villager does — smoothing
         // belongs to a walked body, not to the verb that first needed it. Swept at
         // the footprint THIS leg was routed under, which for an actor is its own.
-        let walked = smooth_walk(leg_world, &cells, &fp, body_w, &leg_ways);
+        // spec-0139 §5: a walk along a course is smoothed stretch by stretch,
+        // so the line passes through every checkpoint's cell.
+        let walked = if stops.is_empty() {
+            smooth_walk(leg_world, &cells, &fp, body_w, &leg_ways)
+        } else {
+            let mut line: Vec<[i32; 3]> = Vec::new();
+            let mut from = 0;
+            for &end in stops.iter().chain(std::iter::once(&(cells.len() - 1))) {
+                if end == from && !line.is_empty() {
+                    continue;
+                }
+                let ways_here = ways.leg(plan, cells[from], cells[end]);
+                let part = smooth_walk(leg_world, &cells[from..=end], &fp, body_w, &ways_here);
+                line.extend(part.into_iter().skip(usize::from(!line.is_empty())));
+                from = end;
+            }
+            line
+        };
         let (waypoints, exact) = resample_body(&walked, speed.unwrap_or(DEFAULT_SPEED), body_w);
         // Seed: the facing the puppet already has — the exit yaw of the previous
         // leg **on this branch**, else the actor's declared spawn `facing`

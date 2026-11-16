@@ -54,6 +54,7 @@ mod lethal;
 mod limit;
 mod movement;
 mod npc;
+pub mod race;
 mod respawn;
 mod sea;
 mod seat;

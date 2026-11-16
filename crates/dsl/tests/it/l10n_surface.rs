@@ -256,6 +256,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Vehicle", "entity", Reference),
     ("Mount", "entity", Reference),
     ("Board", "title", Inventoried),
+    ("Race", "missed", Inventoried),
+    ("Race", "passed", Inventoried),
     ("Vehicle", "name", Inventoried),
     ("QuestEffect", "block", Reference),
     ("QuestEffect", "place", Reference),

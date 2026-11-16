@@ -1,0 +1,17 @@
+{
+  "code": "DW1118",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/races/2/checkpoints/1/at/offset",
+      "value": [
+        -1,
+        0,
+        1
+      ]
+    }
+  ],
+  "units": [],
+  "why": "One edit: the paddock race's second checkpoint moved onto its first. A body standing there is in both, and is credited the second where it was credited the first: the course has one checkpoint fewer than it declares. Refused at build, naming the race, the two checkpoints and their boxes. It declares no unit."
+}

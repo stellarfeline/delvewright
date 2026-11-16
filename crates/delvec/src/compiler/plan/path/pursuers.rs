@@ -401,3 +401,95 @@ pub(crate) fn check_ridden_vehicles_stand(
     }
     Ok(())
 }
+
+/// **A course whose race is not running when the path reaches it** (spec-0139
+/// §4, `DW1119`): the objective's `course` names a race, and of the
+/// `start-race` and `end-race` lines of that race the path fires before the
+/// objective's step, none is a start or the last is an end. Dated as a
+/// vehicle's lines are ([`check_ridden_vehicles_stand`]): a `start-race` the
+/// path cannot date — a trigger's, a dialogue option's — may fire at any
+/// step, so it starts the race for every step; an `end-race` the path cannot
+/// date, or does not certainly fire, ends nothing.
+pub(crate) fn check_courses_started(c: &Campaign, firing: &PathFiring) -> Result<(), PlanError> {
+    fn walk<'a>(
+        list: &'a [QuestEffect],
+        base: &str,
+        reaction: bool,
+        owner: &EffectRootOwner<'a>,
+        out: &mut Vec<(String, EffectRootOwner<'a>, bool, &'a QuestEffect)>,
+    ) {
+        for (i, e) in list.iter().enumerate() {
+            let path = format!("{base}/{i}");
+            if matches!(e.verb, Verb::StartRace { .. } | Verb::EndRace { .. }) {
+                out.push((path.clone(), *owner, reaction, e));
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                let r = reaction || matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught");
+                walk(nested, &format!("{path}/{seg}"), r, owner, out);
+            }
+        }
+    }
+    let courses: Vec<(&str, &str)> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter_map(|o| Some((o.id().as_str(), o.course()?.as_str())))
+        .collect();
+    if courses.is_empty() {
+        return Ok(());
+    }
+    let mut lines = Vec::new();
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        walk(list, &site.path, false, &site.owner, &mut lines);
+    });
+    for &(objective, race) in &courses {
+        let Some(&at) = firing.obj_step.get(objective) else {
+            continue;
+        };
+        let mut events: Vec<(usize, bool)> = Vec::new();
+        let mut started_undated = false;
+        for (pointer, owner, reaction, e) in &lines {
+            let (starts, r) = match &e.verb {
+                Verb::StartRace { race } => (true, race),
+                Verb::EndRace { race } => (false, race),
+                _ => continue,
+            };
+            if r.as_str() != race {
+                continue;
+            }
+            match dated(owner, pointer, *reaction, firing) {
+                Some(When::At(s)) if s < at && (starts || firing.fires(pointer)) => {
+                    events.push((s, starts));
+                }
+                Some(When::Undated) if starts => started_undated = true,
+                _ => {}
+            }
+        }
+        if started_undated {
+            continue;
+        }
+        events.sort_by_key(|(s, _)| *s);
+        let why = match events.last().copied() {
+            Some((_, true)) => continue,
+            Some((s, false)) => format!(
+                "an `end-race` fires at step {s} and no `start-race` starts it again before \
+                 step {at}"
+            ),
+            None => format!("no `start-race` of it fires before step {at}"),
+        };
+        return Err(PlanError::new(
+            crate::compiler::nav::race::DW_COURSE_NOT_STARTED,
+            format!(
+                "objective `{objective}` runs the course of `{race}`, and that race is not \
+                 running when the path reaches it: {why}. The party would ride the course \
+                 credited nothing, and the objective would never complete. Fire a \
+                 `start-race` of `{race}` at a beat before the objective — in the bundle of \
+                 the step before it, or from a trigger the party trips on the way — or drop \
+                 the objective's `course`"
+            ),
+        ));
+    }
+    Ok(())
+}

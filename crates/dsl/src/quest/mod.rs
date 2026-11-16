@@ -163,6 +163,11 @@ pub struct QuestsContent {
     /// so such a campaign stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<crate::Board>,
+    /// Races (spec-0139): an ordered course of checkpoints every racer passes
+    /// in order, started and ended by the story. Empty/absent for every
+    /// campaign that declares none, so such a campaign stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub races: Vec<crate::Race>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The

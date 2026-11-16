@@ -191,7 +191,10 @@ fn anchors() -> serde_json::Value {
         "anchor/crate": { "pos": [11, 4, 4] },
         "anchor/crate-alongside": { "pos": [10, 3, 4] },
         "anchor/crate-two": { "pos": [11, 4, 6] },
-        "anchor/crate-two-alongside": { "pos": [12, 3, 6] }
+        "anchor/crate-two-alongside": { "pos": [12, 3, 6] },
+        "anchor/cp-bridge": { "pos": [9, 4, 7] },
+        "anchor/cp-east": { "pos": [14, 4, 7] },
+        "anchor/cp-high": { "pos": [9, 7, 4] }
     })
 }
 
@@ -2193,5 +2196,341 @@ fn the_reseat_template_moves_a_body_nobody_rides() {
     assert!(
         seat < down && down < moved && moved < reseat,
         "the body is set riderless after its seat and before it is moved: {t}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0139: a race's course
+// ---------------------------------------------------------------------------
+
+/// A race over the bay: `checkpoints` are anchors, each a one-column box.
+fn race(checkpoints: &[&str], more: &str) -> String {
+    let cps: Vec<String> = checkpoints
+        .iter()
+        .map(|a| format!(r#"{{ "at": {{ "anchor": "anchor/{a}" }}, "extent": [0, 1, 0] }}"#))
+        .collect();
+    format!(
+        r#""races": [ {{ "id": "race/pig-race", "checkpoints": [ {} ],
+            "missed": "You missed a checkpoint — go back."{more} }} ]"#,
+        cps.join(", ")
+    )
+}
+
+const START_RACE: &str = r#"{ "type": "start-race", "race": "race/pig-race" }"#;
+
+/// The bay a course is ridden over: the bridge across the pool, a pig, a
+/// carrot on a stick in the kit, and the exit's leg declared ridden and run
+/// as the race's course.
+fn course_bay(race: String) -> Bay {
+    Bay {
+        bridge: true,
+        ride: Some("vehicle/race-pig"),
+        carrot: true,
+        gate: r#", "course": "race/pig-race""#,
+        more: Box::leak(race.into_boxed_str()),
+        ..Bay::default()
+    }
+}
+
+fn course_build(tag: &str, bay: Bay, talk: &str) -> Result<BuildOutput, (String, String)> {
+    let (dir, lib) = write(tag, bay, pig(), talk);
+    // A refusal the plan itself makes (`DW1119`) is read off the plan.
+    let c = campaign(&dir);
+    let prefabs = PrefabRegistry::load_dir(&lib).unwrap();
+    if let Err(e) = Plan::build(&c, &prefabs) {
+        return Err((e.failure.code.to_string(), e.failure.message));
+    }
+    match try_build(&dir, &lib) {
+        Ok(out) => Ok(out),
+        Err(BuildFailure::Diagnostic { code, message }) => Err((code.to_string(), message)),
+        Err(e) => panic!("expected a build or a diagnostic, got {e:?}"),
+    }
+}
+
+/// Where in a ride's medium the first cell of column `[x, z]` stands.
+fn passes(medium: &[serde_json::Value], x: i64, z: i64) -> Option<usize> {
+    medium.iter().position(|c| {
+        let c = cell(c);
+        c[0] == x && c[2] == z
+    })
+}
+
+/// spec-0139 criterion 4: a leg declared a race's course is one ride whose
+/// medium passes a cell of every checkpoint in the order the race writes
+/// them, whatever the shorter way is; the race is emitted with its body, its
+/// start and its end; and the objective waits for the race to be over.
+/// Perturbation: the same two checkpoints written the other way round are
+/// passed the other way round.
+#[test]
+fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
+    let out = course_build(
+        "course-in-order",
+        course_bay(race(&["cp-bridge", "cp-east"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let r = rides(&out);
+    assert_eq!(r.len(), 1, "one ride carries the course: {r:#?}");
+    let medium = r[0]["medium"].as_array().unwrap();
+    let (a, b) = (
+        passes(medium, 9, 7).expect("the bridge checkpoint"),
+        passes(medium, 14, 7).expect("the east checkpoint"),
+    );
+    assert!(a < b, "the bridge checkpoint is passed first: {medium:?}");
+
+    let back = course_build(
+        "course-reversed",
+        course_bay(race(&["cp-east", "cp-bridge"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let r = rides(&back);
+    let medium = r[0]["medium"].as_array().unwrap();
+    let east = passes(medium, 14, 7).expect("the east checkpoint");
+    let bridge = medium
+        .iter()
+        .rposition(|c| cell(c)[0] == 9 && cell(c)[2] == 7)
+        .expect("the bridge checkpoint");
+    assert!(
+        east < bridge,
+        "written the other way round, the east checkpoint is passed first and the ride comes \
+         back for the bridge: {medium:?}"
+    );
+
+    let body = function(&out, "race_pig_race_body");
+    let line = |starts: &str| {
+        body.lines()
+            .find(|l| l.starts_with(starts))
+            .unwrap_or_else(|| panic!("no line `{starts}…` in the body: {body}"))
+    };
+    let credit = line("execute if score @s dw.rn.pig_race matches 0 if entity @s[x=9,dx=0,");
+    assert!(
+        credit.ends_with(",z=7,dz=0] run return run function hello-world:race_pig_race_pass"),
+        "{credit}"
+    );
+    let second = line("execute if score @s dw.rn.pig_race matches 1 if entity @s[x=14,dx=0,");
+    assert!(second.ends_with("race_pig_race_pass"), "{second}");
+    let missed = line(
+        "execute if score @s dw.rn.pig_race matches ..0 if entity \
+         @s[type=minecraft:player,x=14,dx=0,",
+    );
+    assert!(
+        missed.contains(",z=7,dz=0] run return run title @s actionbar "),
+        "a player in the second checkpoint with the first unpassed reads `missed`: {missed}"
+    );
+    assert_eq!(
+        body.lines().filter(|l| l.contains("actionbar")).count(),
+        1,
+        "the first checkpoint is never further on than a racer's next: {body}"
+    );
+    assert!(function(&out, "race_pig_race_pass").contains(
+        "execute if score @s dw.rc.pig_race matches 2.. run return run function \
+             hello-world:race_pig_race_finish"
+    ));
+    let finish = function(&out, "race_pig_race_finish");
+    assert!(
+        finish.contains(
+            "execute unless entity @a[tag=dw_rcg_pig_race] run function \
+             hello-world:race_pig_race_end"
+        ),
+        "{finish}"
+    );
+    assert!(
+        function(&out, "race_pig_race_end")
+            .contains("scoreboard players set #rfin_pig_race dw.sys 1")
+    );
+    let tick = function(&out, "tick");
+    assert!(
+        tick.contains(
+            "execute if score #ron_pig_race dw.sys matches 1 as @a run function \
+             hello-world:race_pig_race_body"
+        ),
+        "{tick}"
+    );
+    // The objective completes only once the race is over, and is told before.
+    let guarded: Vec<&str> = tick
+        .lines()
+        .filter(|l| l.contains("#rfin_pig_race dw.sys matches 1"))
+        .collect();
+    assert!(
+        !guarded.is_empty() && guarded.iter().all(|l| l.contains("complete_o_exit")),
+        "the exit's completion waits on the race, and nothing else does: {guarded:#?}"
+    );
+}
+
+/// spec-0139 criterion 5: the grace, the board and the listed actors are in
+/// the finish — the first finish schedules the end, every finish places its
+/// racer, and the race is over when no player and no listed actor is short.
+#[test]
+fn a_finish_places_its_racer_and_starts_the_grace() {
+    let more = format!(
+        "{}, {}, {}",
+        race(
+            &["cp-bridge", "cp-east"],
+            r#", "laps": 2, "grace_ticks": 600, "board": "board/race",
+               "racers": ["actor/racer"], "passed": "Checkpoint""#
+        ),
+        racer(""),
+        r#""boards": [ { "id": "board/race", "title": "The Race" } ]"#
+    );
+    let out = course_build("course-finish", course_bay(more), START_RACE)
+        .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let finish = function(&out, "race_pig_race_finish");
+    for line in [
+        "execute if entity @s[type=minecraft:player] run function hello-world:board_place_race",
+        "execute if entity @s[tag=dw_actor_racer,type=!minecraft:interaction] run function \
+         hello-world:board_row_race_racer",
+        "execute unless score #r1st_pig_race dw.sys matches 1 run schedule function \
+         hello-world:race_pig_race_end 600t replace",
+        "execute unless entity @a[tag=dw_rcg_pig_race] unless entity \
+         @e[tag=dw_actor_racer,type=!minecraft:interaction,tag=dw_rcg_pig_race] run function \
+         hello-world:race_pig_race_end",
+    ] {
+        assert!(
+            finish.contains(line),
+            "`{line}` is not in the finish: {finish}"
+        );
+    }
+    assert!(function(&out, "tick").contains(
+        "execute if score #ron_pig_race dw.sys matches 1 as \
+             @e[tag=dw_actor_racer,type=!minecraft:interaction] run function \
+             hello-world:race_pig_race_body"
+    ));
+    let pass = function(&out, "race_pig_race_pass");
+    assert!(pass.contains("\"text\":\"/4\""), "two laps of two: {pass}");
+    assert!(
+        function(&out, "race_pig_race_start")
+            .contains("schedule clear hello-world:race_pig_race_end")
+    );
+    // Two laps: the ride passes the bridge, the east, and the bridge again.
+    let r = rides(&out);
+    let medium = r[0]["medium"].as_array().unwrap();
+    let first = passes(medium, 9, 7).unwrap();
+    let east = first + passes(&medium[first..], 14, 7).unwrap();
+    assert!(
+        passes(&medium[east..], 9, 7).is_some(),
+        "the second lap comes back to the bridge: {medium:?}"
+    );
+    for t in ["race_pig_race_in_order", "race_pig_race_skip"] {
+        let t = text(
+            &out,
+            &format!("packtest-datapack/data/hello-world/test/{t}.mcfunction"),
+        );
+        assert!(t.contains("function hello-world:race_pig_race_body"), "{t}");
+    }
+}
+
+/// `DW1119`: a course whose race no line starts before its objective, and
+/// one whose last line before it is an `end-race`.
+#[test]
+fn a_course_its_path_never_starts_is_dw1119() {
+    let bay = || course_bay(race(&["cp-bridge", "cp-east"], ""));
+    let (code, msg) = course_build("course-unstarted", bay(), "").unwrap_err();
+    assert_eq!(code, "DW1119", "{msg}");
+    assert!(
+        msg.contains("no `start-race` of it fires before step"),
+        "{msg}"
+    );
+    let ended = format!(r#"{START_RACE}, {{ "type": "end-race", "race": "race/pig-race" }}"#);
+    let (code, msg) = course_build("course-ended", bay(), &ended).unwrap_err();
+    assert_eq!(code, "DW1119", "{msg}");
+    assert!(msg.contains("an `end-race` fires at step"), "{msg}");
+}
+
+/// `DW1118`: a checkpoint whose box holds no cell a body stands in, and two
+/// checkpoints that follow one another and share a cell.
+#[test]
+fn a_checkpoint_nobody_can_be_in_and_two_that_overlap_are_dw1118() {
+    let (code, msg) = course_build(
+        "course-high",
+        course_bay(race(&["cp-bridge", "cp-high"], "")),
+        START_RACE,
+    )
+    .unwrap_err();
+    assert_eq!(code, "DW1118", "{msg}");
+    assert!(
+        msg.contains("checkpoint 2") && msg.contains("holds no cell"),
+        "{msg}"
+    );
+    let (code, msg) = course_build(
+        "course-overlap",
+        course_bay(race(&["cp-bridge", "cp-bridge"], "")),
+        START_RACE,
+    )
+    .unwrap_err();
+    assert_eq!(code, "DW1118", "{msg}");
+    assert!(msg.contains("share a cell"), "{msg}");
+}
+
+/// A course the vehicle's medium does not reach is the leg's `DW0311`,
+/// naming the course: with no bridge, a pig crosses no pool.
+#[test]
+fn a_course_the_ride_cannot_reach_is_dw0311() {
+    let bay = Bay {
+        bridge: false,
+        ..course_bay(race(&["cp-east"], ""))
+    };
+    let (code, msg) = course_build("course-unreached", bay, START_RACE).unwrap_err();
+    assert_eq!(code, "DW0311", "{msg}");
+    assert!(msg.contains("the leg runs a race's course"), "{msg}");
+}
+
+/// spec-0139 criterion 6: a `move-actor` `along` a race walks through a cell
+/// of each checkpoint before it goes to its mark. Without `along` the same
+/// walk goes straight there and passes neither.
+#[test]
+fn a_walk_along_a_race_passes_every_checkpoint() {
+    let walk = |along: &str| {
+        format!(
+            r#"{START_RACE},
+               {{ "type": "spawn-actor", "actor": "actor/racer",
+                  "happening": {{ "subject": "actor/racer", "verb": "arrives", "text": "Ulla lines up." }} }},
+               {{ "type": "move-actor", "actor": "actor/racer", "to": {{ "anchor": "anchor/floor", "offset": [1, 0, 0] }}{along},
+                  "happening": {{ "subject": "actor/racer", "verb": "departs", "text": "Ulla runs." }} }}"#
+        )
+    };
+    let more = || {
+        format!(
+            "{}, {}",
+            race(&["cp-bridge", "cp-east"], r#", "racers": ["actor/racer"]"#),
+            racer("")
+        )
+    };
+    let routed = |tag: &str, along: &str| -> String {
+        let out = course_build(tag, course_bay(more()), &walk(along))
+            .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+        out.iter()
+            .filter(|(k, _)| k.contains("/function/ma_"))
+            .map(|(_, v)| String::from_utf8(v.clone()).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    // The waypoints the driver teleports the body through, as `(x, z)`.
+    let waypoints = |driver: &str| -> Vec<(f64, f64)> {
+        driver
+            .lines()
+            .filter_map(|l| {
+                let t: Vec<&str> = l.split_whitespace().collect();
+                let at = t.iter().position(|w| *w == "tp")?;
+                Some((t.get(at + 2)?.parse().ok()?, t.get(at + 4)?.parse().ok()?))
+            })
+            .collect()
+    };
+    // In the column of cells `[x, 7]`: the checkpoint's one-column box.
+    let within = |w: &[(f64, f64)], x: f64| {
+        w.iter()
+            .position(|(wx, wz)| (x..x + 1.0).contains(wx) && (7.0..8.0).contains(wz))
+    };
+    let along = waypoints(&routed("walk-along", r#", "along": "race/pig-race""#));
+    let (a, b) = (within(&along, 9.0), within(&along, 14.0));
+    assert!(
+        a.is_some() && b.is_some() && a < b,
+        "the walk passes through the bridge checkpoint's column and then the east one's: \
+         {along:?}"
+    );
+    let straight = waypoints(&routed("walk-straight", ""));
+    assert!(
+        !straight.is_empty() && straight.iter().all(|(x, _)| *x < 6.0),
+        "a walk that follows no course goes one block east and no further: {straight:?}"
     );
 }

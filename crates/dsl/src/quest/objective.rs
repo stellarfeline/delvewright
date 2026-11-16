@@ -160,6 +160,14 @@ pub enum Objective {
         /// a vehicle nobody declared is `DW0112`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ride: Option<VehicleId>,
+        /// **The leg to this objective runs a race's course** (spec-0139 §4):
+        /// the party passes every checkpoint of the named race in order on
+        /// the way, and the objective completes only once that race is
+        /// over. Needs `ride` — the course is proven ridden —
+        /// and a `start-race` the path fires before it (`DW1117`, `DW1119`);
+        /// a race nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        course: Option<crate::RaceId>,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -239,6 +247,14 @@ pub enum Objective {
         /// a vehicle nobody declared is `DW0112`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ride: Option<VehicleId>,
+        /// **The leg to this objective runs a race's course** (spec-0139 §4):
+        /// the party passes every checkpoint of the named race in order on
+        /// the way, and the objective completes only once that race is
+        /// over. Needs `ride` — the course is proven ridden —
+        /// and a `start-race` the path fires before it (`DW1117`, `DW1119`);
+        /// a race nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        course: Option<crate::RaceId>,
     },
     /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
@@ -319,6 +335,14 @@ pub enum Objective {
         /// a vehicle nobody declared is `DW0112`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ride: Option<VehicleId>,
+        /// **The leg to this objective runs a race's course** (spec-0139 §4):
+        /// the party passes every checkpoint of the named race in order on
+        /// the way, and the objective completes only once that race is
+        /// over. Needs `ride` — the course is proven ridden —
+        /// and a `start-race` the path fires before it (`DW1117`, `DW1119`);
+        /// a race nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        course: Option<crate::RaceId>,
     },
     /// Completed when `count` of `item` have been collected (v0.3).
     ///
@@ -494,6 +518,14 @@ pub enum Objective {
         /// a vehicle nobody declared is `DW0112`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ride: Option<VehicleId>,
+        /// **The leg to this objective runs a race's course** (spec-0139 §4):
+        /// the party passes every checkpoint of the named race in order on
+        /// the way, and the objective completes only once that race is
+        /// over. Needs `ride` — the course is proven ridden —
+        /// and a `start-race` the path fires before it (`DW1117`, `DW1119`);
+        /// a race nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        course: Option<crate::RaceId>,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
     /// set, the item must be **held in the main hand** (v0.3; held semantics since
@@ -620,6 +652,14 @@ pub enum Objective {
         /// a vehicle nobody declared is `DW0112`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ride: Option<VehicleId>,
+        /// **The leg to this objective runs a race's course** (spec-0139 §4):
+        /// the party passes every checkpoint of the named race in order on
+        /// the way, and the objective completes only once that race is
+        /// over. Needs `ride` — the course is proven ridden —
+        /// and a `start-race` the path fires before it (`DW1117`, `DW1119`);
+        /// a race nobody declared is `DW0112`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        course: Option<crate::RaceId>,
     },
 }
 
@@ -1109,6 +1149,18 @@ impl Objective {
             | Objective::Kill { ride, .. }
             | Objective::Collect { ride, .. }
             | Objective::Interact { ride, .. } => ride.as_ref(),
+        }
+    }
+
+    /// The race whose course the leg to this objective runs (spec-0139 §4),
+    /// when it declares one.
+    pub fn course(&self) -> Option<&crate::RaceId> {
+        match self {
+            Objective::TalkTo { course, .. }
+            | Objective::ReachAnchor { course, .. }
+            | Objective::Kill { course, .. }
+            | Objective::Collect { course, .. }
+            | Objective::Interact { course, .. } => course.as_ref(),
         }
     }
 

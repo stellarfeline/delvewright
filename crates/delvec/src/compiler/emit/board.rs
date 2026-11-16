@@ -19,7 +19,7 @@ pub(crate) fn board_objective(id: &str) -> String {
 }
 
 /// The `dw.sys` holder that counts the places board `id` has given.
-pub(super) fn board_counter(id: &str) -> String {
+pub(crate) fn board_counter(id: &str) -> String {
     format!("#bp_{}", plan::safe_local(id))
 }
 
@@ -103,6 +103,17 @@ pub(super) fn placed_bodies(c: &delvewright_dsl::Campaign, id: &str) -> Vec<Body
             }
         }
     }
+    // spec-0139: every actor of a race that places its finishers here.
+    for r in &c.quests.content.races {
+        if r.board.as_ref().is_some_and(|b| b.as_str() == id) {
+            for a in &r.racers {
+                let k = BodyKey::actor(a.clone());
+                if !out.contains(&k) {
+                    out.push(k);
+                }
+            }
+        }
+    }
     out
 }
 
@@ -112,6 +123,12 @@ pub(super) fn places_players(c: &delvewright_dsl::Campaign, id: &str) -> bool {
         matches!(&e.verb, Verb::PlaceOnBoard { board } if board.as_str() == id)
             && delvewright_dsl::place_rows(e) == PlaceRows::Players
     })
+        // spec-0139: a race's finish places every player who finishes.
+        || c.quests
+            .content
+            .races
+            .iter()
+            .any(|r| r.board.as_ref().is_some_and(|b| b.as_str() == id))
 }
 
 /// The name a placed body's row shows: the NPC's or the actor's own.

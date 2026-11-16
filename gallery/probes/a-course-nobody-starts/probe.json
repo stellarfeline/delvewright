@@ -1,0 +1,12 @@
+{
+  "code": "DW1119",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/3/on_objective_complete/obj~1reach-the-hall-end/2"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the `start-race` of the lane's race taken out of the beat before the hen is caught. The objective that runs its course is reached with the race not running: the party would ride the lane credited nothing and the hen's task would never complete. Refused at the plan, naming the objective and the race. It declares no unit."
+}

@@ -283,11 +283,18 @@ pub(super) fn told_guard(plan: &Plan, o: &Objective, quest_active: &str) -> Stri
     if is_served(plan, o) {
         serving_guard(plan.campaign, o, quest_active)
     } else {
-        pending_guard(plan, o, quest_active)
+        window_guard(plan, o, quest_active, false)
     }
 }
 
 pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
+    window_guard(plan, o, quest_active, true)
+}
+
+/// [`pending_guard`], with (`completes`) or without the term a declared
+/// `course` adds: the window an objective completes in, or the wider one the
+/// party is told of it in.
+fn window_guard(plan: &Plan, o: &Objective, quest_active: &str, completes: bool) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
     g.push_str(&super::quorum::after_cond(plan.campaign, o));
@@ -297,6 +304,12 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
     // which is exactly how the numeric axis would have been missed. Empty terms
     // contribute nothing, so a pre-0.10 campaign's guard is byte-identical.
     g.push_str(&gate_cond(plan, o.gate()));
+    // spec-0139 §4: an objective that declares a course completes only once
+    // that race is over. Not a term of the window it is told
+    // in ([`told_guard`]): the party is told of the race before it is won.
+    if completes {
+        g.push_str(&super::race::course_term(o));
+    }
     g.push_str(&format!(
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
