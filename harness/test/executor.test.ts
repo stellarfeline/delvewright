@@ -3123,8 +3123,9 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
 });
 
 /**
- * The town's castle yard, death 2, in the logged order: a wave that does not
- * re-seat stands across the death with one body left; the bot walks back and the
+ * The town's castle yard, death 2, in the logged order: a wave of three that does
+ * not re-seat, two of them already fallen, stands across the death with one body
+ * left; the bot walks back and the
  * re-engage probe starts settling; that body comes to the bot and lands a hit the
  * server names; the hold misses it (the census places it where the client does
  * not), so the harness stages it away; the server completes the `kill` objective
@@ -3132,7 +3133,7 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
  */
 function castleYardBot(completes: boolean): CombatFakeBot {
   const bot = new CombatFakeBot();
-  bot.seat(1);
+  bot.seat(3, { worldKills: 2 }); // one of three left standing
   bot.reSeat = undefined; // `respawns_on_rest: false`
   bot.keepWaveOnRespawn = true; // its bodies persist across both lives
   bot.censusDrift = 10; // beyond CENSUS_MATCH_RADIUS: the position match misses
@@ -3141,13 +3142,15 @@ function castleYardBot(completes: boolean): CombatFakeBot {
   return bot;
 }
 
+const CASTLE_YARD: KillStep = { ...KILL_STEP, count: 3 };
+
 test("a stranded verdict reads the objective the server settled after the harness's own removal", async () => {
   const bot = castleYardBot(true);
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(1, false), true);
+  executor.useCombatPlan(combatPlan(3, false), true);
 
-  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+  await within("executor.kill(CASTLE_YARD)", executor.kill(CASTLE_YARD));
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 2);
@@ -3167,9 +3170,9 @@ test("the same order with an objective the server never completes is still stran
   const bot = castleYardBot(false);
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(1, false), true);
+  executor.useCombatPlan(combatPlan(3, false), true);
 
-  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+  await within("executor.kill(CASTLE_YARD)", executor.kill(CASTLE_YARD));
 
   const trials = executor.deathTrials();
   assert.equal(bot.stagedBlows.length, 1);
