@@ -810,8 +810,8 @@ impl Walk<'_, '_> {
     /// [`Self::armed_objectives`] with a term on a datum the walk cannot date
     /// read as OPEN: every objective that may be armed now, its flags,
     /// `after` and quest decided and its numeric terms not shown shut. Read by
-    /// `DW0863`, which withholds a line's credit only where the replay shows
-    /// the objective is not yet armed.
+    /// `DW0863`, which credits a `hint` clue only where the replay shows its
+    /// objective started.
     pub fn armed_objectives_unless_shut(&self) -> Vec<String> {
         self.armed_where(true)
     }
@@ -3526,7 +3526,7 @@ fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
 /// `on_objective_complete`, and every list nested inside them) carries a
 /// `campaign-complete`. Syntactic: a gated ending still counts, which only
 /// moves a quest later in a branch walk.
-fn quest_can_end_the_delve(q: &delvewright_dsl::Quest) -> bool {
+pub(crate) fn quest_can_end_the_delve(q: &delvewright_dsl::Quest) -> bool {
     fn ends(effs: &[QuestEffect]) -> bool {
         effs.iter().any(|e| {
             matches!(e.verb, Verb::CampaignComplete { .. })

@@ -73,6 +73,13 @@ pub struct EnvTrigger {
     /// `strike-assembly` have nothing to light (`DW1016`). Absent = none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<crate::Highlight>,
+    /// **The clues this press's answer rests on** (spec-0143): what tells the
+    /// player the answer — a journal text or a thing seen. Where the main
+    /// line performs this trigger, each is presented before the party reaches
+    /// it (`DW0863`); a trigger the main line never performs is owed nothing.
+    /// Absent = no clue is stated, and nothing is judged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clues: Vec<crate::Clue>,
     /// The event that fires it.
     pub on: TriggerOn,
     /// Flags that must be set before the trigger can fire (DSL v0.4).

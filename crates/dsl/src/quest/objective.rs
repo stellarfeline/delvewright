@@ -97,6 +97,13 @@ pub enum Objective {
         /// finished page whether or not it was announced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<String>,
+        /// **The clues this step's answer rests on** (spec-0143): what tells
+        /// the player the answer — a journal text or a thing seen. On the main
+        /// line each is presented before the party reaches this step
+        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
+        /// stated, and nothing is judged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -187,6 +194,13 @@ pub enum Objective {
         /// finished page whether or not it was announced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<String>,
+        /// **The clues this step's answer rests on** (spec-0143): what tells
+        /// the player the answer — a journal text or a thing seen. On the main
+        /// line each is presented before the party reaches this step
+        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
+        /// stated, and nothing is judged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -274,6 +288,13 @@ pub enum Objective {
         /// finished page whether or not it was announced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<String>,
+        /// **The clues this step's answer rests on** (spec-0143): what tells
+        /// the player the answer — a journal text or a thing seen. On the main
+        /// line each is presented before the party reaches this step
+        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
+        /// stated, and nothing is judged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -371,6 +392,13 @@ pub enum Objective {
         /// finished page whether or not it was announced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<String>,
+        /// **The clues this step's answer rests on** (spec-0143): what tells
+        /// the player the answer — a journal text or a thing seen. On the main
+        /// line each is presented before the party reaches this step
+        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
+        /// stated, and nothing is judged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -564,6 +592,13 @@ pub enum Objective {
         /// finished page whether or not it was announced.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<String>,
+        /// **The clues this step's answer rests on** (spec-0143): what tells
+        /// the player the answer — a journal text or a thing seen. On the main
+        /// line each is presented before the party reaches this step
+        /// (`DW0863`); an optional step is owed nothing. Absent = no clue is
+        /// stated, and nothing is judged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        clues: Vec<crate::Clue>,
         /// Whether this objective is **announced** — the `New objective` line, the
         /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
         /// Absent = the campaign's [`Guidance::announcements`]. An objective with
@@ -1001,6 +1036,18 @@ impl Objective {
             | Objective::Kill { record, .. }
             | Objective::Collect { record, .. }
             | Objective::Interact { record, .. } => record.as_deref(),
+        }
+    }
+
+    /// The clues this step's answer rests on (spec-0143); empty when none is
+    /// stated.
+    pub fn clues(&self) -> &[crate::Clue] {
+        match self {
+            Objective::TalkTo { clues, .. }
+            | Objective::ReachAnchor { clues, .. }
+            | Objective::Kill { clues, .. }
+            | Objective::Collect { clues, .. }
+            | Objective::Interact { clues, .. } => clues,
         }
     }
 

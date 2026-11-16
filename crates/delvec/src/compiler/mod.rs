@@ -8,6 +8,7 @@
 //! (`tests/it/module_list.rs`) is what keeps it whole.
 //!
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
+//! - [`clue`]: a step's stated clue is presented before the step on the main line (`DW0863`, `DW1136`; spec-0143).
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
@@ -94,7 +95,7 @@
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
 //! - [`presence`]: one named character is one body in every story state (`DW1026`).
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
-//! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
+//! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0862`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
 //! - [`rail`]: rails as a medium — the rail cells of the assembled world joined by their shapes, and the run a pushed minecart takes (spec-0135).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
@@ -161,6 +162,7 @@ pub mod cast;
 pub mod cellset;
 pub mod chain;
 pub mod claims;
+pub mod clue;
 pub mod clearance;
 pub mod clickbox;
 pub mod clock;
