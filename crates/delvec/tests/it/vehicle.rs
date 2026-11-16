@@ -2204,7 +2204,7 @@ fn the_reseat_template_moves_a_body_nobody_rides() {
 fn race(checkpoints: &[&str], more: &str) -> String {
     let cps: Vec<String> = checkpoints
         .iter()
-        .map(|a| format!(r#"{{ "anchor": "anchor/{a}", "extent": [0, 1, 0] }}"#))
+        .map(|a| format!(r#"{{ "at": {{ "anchor": "anchor/{a}" }}, "extent": [0, 1, 0] }}"#))
         .collect();
     format!(
         r#""races": [ {{ "id": "race/pig-race", "checkpoints": [ {} ],

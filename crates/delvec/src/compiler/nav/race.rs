@@ -84,15 +84,31 @@ impl World {
     }
 }
 
-/// A race's checkpoints as resolved boxes, once per lap, in the order a
-/// racer passes them. A checkpoint whose anchor does not resolve is skipped;
-/// validation names it (`DW0142`).
-pub fn course_boxes(plan: &Plan, r: &delvewright_dsl::Race) -> Vec<CellBox> {
-    let lap: Vec<CellBox> = r
-        .checkpoints
+/// **A checkpoint's box**: its mark's cell, give or take its extent. `None`
+/// when no placed piece provides the mark's anchor; validation names that
+/// (`DW0142`). The one resolution every reader of a checkpoint takes — the
+/// emitted selector, both routes and the proof.
+pub fn checkpoint_box(plan: &Plan, cp: &delvewright_dsl::Checkpoint) -> Option<CellBox> {
+    let c = cp.at.cell(plan.point_any(cp.at.anchor.as_str())?);
+    let e = cp.extent.map(|v| v as i32);
+    Some((
+        [c[0] - e[0], c[1] - e[1], c[2] - e[2]],
+        [c[0] + e[0], c[1] + e[1], c[2] + e[2]],
+    ))
+}
+
+/// A race's checkpoints as boxes, once round the course.
+pub fn lap_boxes(plan: &Plan, r: &delvewright_dsl::Race) -> Vec<CellBox> {
+    r.checkpoints
         .iter()
-        .filter_map(|cp| plan.zone_box(cp))
-        .collect();
+        .filter_map(|cp| checkpoint_box(plan, cp))
+        .collect()
+}
+
+/// A race's checkpoints as boxes, once per lap, in the order a racer passes
+/// them.
+pub fn course_boxes(plan: &Plan, r: &delvewright_dsl::Race) -> Vec<CellBox> {
+    let lap = lap_boxes(plan, r);
     (0..r.laps).flat_map(|_| lap.iter().copied()).collect()
 }
 
@@ -154,11 +170,10 @@ pub fn check(plan: &Plan, world: &World) -> (RaceGate, Vec<Failure>) {
     let body = Footprint::player();
     for r in &q.races {
         gate.racers += r.racers.len();
-        let boxes: Vec<CellBox> = r
-            .checkpoints
-            .iter()
-            .filter_map(|cp| plan.zone_box(cp))
-            .collect();
+        let boxes = lap_boxes(plan, r);
+        if boxes.len() != r.checkpoints.len() {
+            continue;
+        }
         for (k, b) in boxes.iter().enumerate() {
             gate.checkpoints += 1;
             if world.course_cell(b, &body).is_none() {
@@ -166,14 +181,14 @@ pub fn check(plan: &Plan, world: &World) -> (RaceGate, Vec<Failure>) {
                 findings.push(Failure {
                     code: DW_CHECKPOINT_UNPASSABLE,
                     message: format!(
-                        "race `{}`: checkpoint {} (anchor `{}`, the box {:?}–{:?}) holds no cell \
+                        "race `{}`: checkpoint {} (at `{}`, the box {:?}–{:?}) holds no cell \
                          a body stands in over the assembled world — it is inside a wall, over \
                          a drop or above the ground a racer runs on, and nobody could be \
                          credited it. Centre it on the course's floor, or raise its `extent` \
                          until it reaches the ground.",
                         r.id,
                         k + 1,
-                        r.checkpoints[k].anchor,
+                        r.checkpoints[k].at.display(),
                         b.0,
                         b.1
                     ),

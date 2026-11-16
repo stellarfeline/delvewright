@@ -4,7 +4,22 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ActorId, BoardId, RaceId, StealthZone};
+use crate::{ActorId, BoardId, Mark, RaceId};
+
+/// **A checkpoint** (spec-0139 §2): the box `at ± extent`, a mark at its
+/// centre. A racer is inside when its hitbox meets the box. A mark and not a
+/// bare anchor, because a course runs where the story's places do not stand —
+/// through a wood, round a corner — and its centre is said from the nearest
+/// anchor. It places no body, so its offset may leave the anchor's piece.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Checkpoint {
+    /// The centre of the box.
+    pub at: Mark,
+    /// Half-extents `[x, y, z]` in blocks from the centre: the box is
+    /// `at ± extent`.
+    pub extent: [u32; 3],
+}
 
 /// **A race** (spec-0139): a course of checkpoints, each an anchor-centred
 /// box, that a racer passes in the order written; the last is the finish
@@ -28,10 +43,9 @@ pub struct Race {
     /// Unique race id (`race/<kebab>`).
     pub id: RaceId,
     /// The checkpoints, in the order a racer passes them; the last is the
-    /// finish line. Each is the box `anchor ± extent`; a racer is inside
-    /// when its hitbox meets the box. At least one (`DW1117`); two that
-    /// follow one another share no cell (`DW1118`).
-    pub checkpoints: Vec<StealthZone>,
+    /// finish line. At least one (`DW1117`); two that follow one another
+    /// share no cell (`DW1118`).
+    pub checkpoints: Vec<Checkpoint>,
     /// How many times the course is run before the finish. Absent = once.
     /// More than one lap follows the last checkpoint with the first, so it
     /// needs two checkpoints or more (`DW1117`).
@@ -189,8 +203,8 @@ pub(crate) fn race_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
             );
         }
         for (k, cp) in r.checkpoints.iter().enumerate() {
-            let anchor = cp.anchor.as_str();
-            let path = at(&format!("/checkpoints/{k}/anchor"));
+            let anchor = cp.at.anchor.as_str();
+            let path = at(&format!("/checkpoints/{k}/at/anchor"));
             if let Some(f) = station_kind_diag(
                 &providers,
                 anchor,

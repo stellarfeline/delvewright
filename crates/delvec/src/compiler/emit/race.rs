@@ -81,14 +81,10 @@ pub(crate) fn racer_terms(actor: &str) -> String {
     )
 }
 
-/// A race's checkpoints as resolved boxes, in course order. A checkpoint
-/// whose anchor no placed piece provides is skipped; validation names it
-/// (`DW0142`).
+/// A race's checkpoints as resolved boxes, once round the course
+/// ([`crate::compiler::nav::race::lap_boxes`]).
 pub(crate) fn race_boxes(plan: &Plan, r: &Race) -> Vec<([i32; 3], [i32; 3])> {
-    r.checkpoints
-        .iter()
-        .filter_map(|cp| plan.zone_box(cp))
-        .collect()
+    crate::compiler::nav::race::lap_boxes(plan, r)
 }
 
 /// `setup` lines: each race's two objectives and its two latches, at rest.

@@ -44,7 +44,7 @@ fn codes_at(c: &delvewright_dsl::Campaign, code: &str) -> Vec<String> {
 }
 
 fn cp() -> Value {
-    json!({"anchor": "anchor/keeper-stand", "extent": [1, 1, 1]})
+    json!({"at": {"anchor": "anchor/keeper-stand"}, "extent": [1, 1, 1]})
 }
 
 fn race() -> Value {
