@@ -409,9 +409,20 @@ pub fn writes_every_present_player(line: &str) -> bool {
         // A box or a distance is the bodies standing in a place on that tick:
         // a fact about the place, owed to nobody who was not in it.
         Some(('a', args)) => !limited(&args) && !positional(&args),
+        // `@s` is every present player when the line's own `execute` runs it
+        // `as @a` — read by the same two exclusions as a direct `@a`.
         Some(('s', _)) => {
             let head = &line.trim()[..line.trim().len() - cmd.len()];
-            head.contains(" as @a ") || head.contains(" as @a[")
+            let mut every = false;
+            let mut rest = head;
+            while let Some(i) = rest.find(" as @") {
+                let sel = &rest[i + 4..];
+                if let Some((kind, args)) = selectors(sel).into_iter().next() {
+                    every = kind == 'a' && !limited(&args) && !positional(&args);
+                }
+                rest = &rest[i + 5..];
+            }
+            every
         }
         _ => false,
     }
@@ -629,6 +640,14 @@ mod tests {
         ));
         assert!(writes_every_present_player(
             "execute as @a at @s run tag @s add dw_x"
+        ));
+        // The players in a box, each as `@s`, are the bodies in a place.
+        assert!(!writes_every_present_player(
+            "execute as @a[x=1,dx=2,tag=!dw_cutscene] run damage @s 4 minecraft:generic"
+        ));
+        // The last `as` is who `@s` is.
+        assert!(!writes_every_present_player(
+            "execute as @a at @s as @e[tag=dw_x,distance=..4] run tag @s add dw_y"
         ));
         // A box is the bodies in a place, owed to nobody else.
         assert!(!writes_every_present_player(
