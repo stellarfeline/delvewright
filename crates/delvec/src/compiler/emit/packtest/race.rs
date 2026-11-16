@@ -16,9 +16,16 @@ use super::*;
 /// finish included: its count stays where it was and nobody has finished. It
 /// then stands it in its next and asserts the credit. A checkpoint credited
 /// out of turn reds it.
+///
+/// `race_<r>_bystander` spawns a second player beside the dummy, stood above
+/// every checkpoint, and asks the body function as both — the bystander
+/// first — on every step the dummy runs the course: when the dummy finishes, the race is over and the
+/// bystander was never on the course. A race that waits on a present player
+/// who never started reds it.
 pub(super) fn emit_race_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
+    let mut races_seen = 0usize;
     for r in &plan.campaign.quests.content.races {
         let id = r.id.as_str();
         let safe = plan::safe_local(id);
@@ -132,6 +139,65 @@ pub(super) fn emit_race_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.extend(tidy(&me, &tag));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/race_{safe}_in_order.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+
+        // A second member who never starts: the race ends when the one who
+        // started finishes.
+        let tag = format!("dw_pt_rb_{safe}");
+        let (pin, me) = pin_dummy(&tag);
+        let idle = format!("dwrcb{races_seen}");
+        races_seen += 1;
+        let them = format!("@a[name={idle},limit=1]");
+        // The bystander is asked first on every step, so it has been asked
+        // before the dummy's finish even on a course of one checkpoint.
+        let both = [&them, &me].map(|sel| {
+            format!(
+                "execute as {sel} run function {ns}:{}",
+                super::super::race_body_fn(id)
+            )
+        });
+        let above = boxes.iter().map(|(_, hi)| hi[1]).max().unwrap_or(0) + 4;
+        let (lo0, hi0) = boxes[0];
+        let mut t = packtest_header(&format!(
+            "{title}: race `{id}` is over when the member who started it finishes, though \
+             another present member never started (spec-0139)"
+        ));
+        t.push(pin);
+        t.push(format!("dummy {idle} spawn"));
+        t.push(format!(
+            "tp {them} {} {above} {}",
+            (lo0[0] + hi0[0]) / 2,
+            (lo0[2] + hi0[2]) / 2
+        ));
+        if let Some(b) = &r.board {
+            t.push(format!(
+                "scoreboard players reset {} dw.sys",
+                super::super::board_counter(b.as_str())
+            ));
+            t.push(format!(
+                "scoreboard players reset {me} {}",
+                super::super::board_objective(b.as_str())
+            ));
+        }
+        t.push(start.clone());
+        for k in 0..total {
+            t.push(into(&me, k));
+            t.extend(both.iter().cloned());
+        }
+        t.push(format!("assert score {me} {p} matches {total}"));
+        t.push(format!("assert score {them} {p} matches 0"));
+        t.push(format!("assert score {on} dw.sys matches 0"));
+        t.push(format!("assert score {over} dw.sys matches 1"));
+        t.extend(tidy(&me, &tag));
+        t.push(format!("scoreboard players reset {them} {p}"));
+        t.push(format!(
+            "scoreboard players reset {them} {}",
+            super::super::race_next(id)
+        ));
+        t.push(format!("dummy {idle} leave"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/race_{safe}_bystander.mcfunction"),
             lines(&t).into_bytes(),
         );
 

@@ -289,6 +289,41 @@ impl PressPlan {
         }
     }
 
+    /// Whether this press's click box stands in every state it can be in: a
+    /// `strike`, and a block the game reports no press of. Such a box is
+    /// summoned once and never moved by any event of its owner.
+    pub fn boxed_always(&self) -> bool {
+        self.click_box.is_some()
+            && [State::Shut, State::Open, State::Settled]
+                .into_iter()
+                .all(|s| self.boxed_in(s))
+    }
+
+    /// Whether this press is a left-click (`strike`, read off the box's
+    /// `attack` record) rather than a right-click (read off `interaction`).
+    pub fn is_left_click(&self) -> bool {
+        self.form == Form::Struck
+    }
+
+    /// **Whether `self` and `other` are pressed through one click box**: a
+    /// left-click and a right-click of one placed block on one cell, each boxed
+    /// in every state. The box is one `minecraft:interaction`, which keeps a
+    /// left-click (`attack`) and a right-click (`interaction`) in two records
+    /// of its own (`docs/reference/click-attribution.md`), so each press reads
+    /// its own click off the one box and neither takes the other's. Two presses
+    /// on one button would both hear one click, and a box that comes and goes
+    /// with its owner's state would move for the other owner too: neither is
+    /// shared.
+    pub fn shares_box_with(&self, other: &PressPlan) -> bool {
+        self.cell == other.cell
+            && self.block == other.block
+            && self.is_left_click() != other.is_left_click()
+            && self.places_block
+            && other.places_block
+            && self.boxed_always()
+            && other.boxed_always()
+    }
+
     /// Whether the press in `state` is detected by the block's own report
     /// (`default_block_use` at the cell) rather than by the box.
     pub fn block_detects(&self, state: State) -> bool {
@@ -856,6 +891,7 @@ impl AnswerPlan {
             release: false,
             serves: None,
             highlight: None,
+            clues: Vec::new(),
             on: self.on.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
@@ -959,9 +995,40 @@ pub fn answer_of<'p>(plan: &'p Plan, trigger_id: &str) -> Option<&'p AnswerPlan>
     plan.answers().iter().find(|a| a.id() == trigger_id)
 }
 
+/// Whether `p`'s box is summoned by an earlier press it shares one box with
+/// ([`PressPlan::shares_box_with`]): the first press of a shared box in
+/// [`Plan::presses`] order summons it carrying every rider's tag, and the rest
+/// summon nothing.
+pub fn box_summoned_by_another(plan: &Plan, p: &PressPlan) -> bool {
+    plan.presses()
+        .iter()
+        .take_while(|q| !std::ptr::eq(*q, p))
+        .any(|q| q.shares_box_with(p))
+}
+
+/// **Every click box two or more presses share**, as the presses that ride
+/// it, in [`Plan::presses`] order, each group led by the press that summons
+/// it. What the shared-box PackTest drives and the press ledger counts.
+pub fn shared_boxes<'p>(plan: &'p Plan<'_>) -> Vec<Vec<&'p PressPlan>> {
+    let mut out: Vec<Vec<&PressPlan>> = Vec::new();
+    for p in plan.presses() {
+        if let Some(g) = out.iter_mut().find(|g| g[0].shares_box_with(p)) {
+            g.push(p);
+        } else if plan
+            .presses()
+            .iter()
+            .any(|q| !std::ptr::eq(q, p) && q.shares_box_with(p))
+        {
+            out.push(vec![p]);
+        }
+    }
+    out
+}
+
 /// The tags a press's box carries: its own first, then every trigger that
 /// reads the box — the authored trigger it is, every answer that rides it, and,
-/// on a shortcut's door, the shortcut's far-side line.
+/// on a shortcut's door, the shortcut's far-side line, and every press it
+/// shares the box with.
 pub fn box_tags(plan: &Plan, p: &PressPlan) -> Vec<String> {
     let mut tags = vec![p.tag.clone()];
     let mut add = |t: String| {
@@ -973,21 +1040,22 @@ pub fn box_tags(plan: &Plan, p: &PressPlan) -> Vec<String> {
         add(format!("dw_trig_{}", safe_local(id)));
     }
     // Every other gate answer at the same cell shares the one box (one cell,
-    // one box: `DW0422`).
+    // one box: `DW0422`), and so does every press of the same block boxed in
+    // every state ([`PressPlan::shares_box_with`]): its owner's tag and its
+    // trigger's ride the one box.
+    let one_box = |q: &PressPlan| (q.tag == p.tag && q.cell == p.cell) || p.shares_box_with(q);
     for q in plan.presses() {
-        if q.tag == p.tag
-            && q.cell == p.cell
-            && let Owner::Trigger { id } | Owner::GateAnswer { id, .. } = &q.owner
-        {
+        if !one_box(q) {
+            continue;
+        }
+        add(q.tag.clone());
+        if let Owner::Trigger { id } | Owner::GateAnswer { id, .. } = &q.owner {
             add(format!("dw_trig_{}", safe_local(id)));
         }
     }
     for a in plan.answers() {
         let rides = match (&a.press, &a.far_side_of) {
-            (Some(i), _) => plan
-                .presses()
-                .get(*i)
-                .is_some_and(|q| q.tag == p.tag && q.cell == p.cell),
+            (Some(i), _) => plan.presses().get(*i).is_some_and(one_box),
             (None, Some(sc)) => shortcut_door(plan, sc).is_some_and(|q| q.tag == p.tag),
             _ => false,
         };
@@ -1268,6 +1336,11 @@ pub struct PressProof {
     /// Reconciliation pairs the tick carries (a boxed trigger's box made its
     /// state).
     pub reconciled: usize,
+    /// Click boxes two or more presses share ([`shared_boxes`]), and the
+    /// presses that ride them.
+    pub shared_boxes: usize,
+    /// The presses riding a shared box.
+    pub sharing_presses: usize,
 }
 
 impl PressProof {
@@ -1278,7 +1351,8 @@ impl PressProof {
             "press proof (DW0429/DW1059/DW1052/DW0896): {} pressable(s) placed — {} pressed on \
              their own, {} boxed acting on their own, {} boxed unobservable, {} boxed struck; {} \
              sealed gate(s) answered ({} by their own block, {} by a knocker); {} answer \
-             trigger(s) synthesized; {} reconciliation pair(s) in tick",
+             trigger(s) synthesized; {} reconciliation pair(s) in tick; {} click box(es) shared \
+             by {} press(es)",
             self.forms.values().sum::<usize>(),
             n(Form::Own),
             n(Form::ActsOnOwn),
@@ -1288,7 +1362,9 @@ impl PressProof {
             self.own_answers,
             self.knockers,
             self.answers,
-            self.reconciled
+            self.reconciled,
+            self.shared_boxes,
+            self.sharing_presses
         )
     }
 
@@ -1302,6 +1378,8 @@ impl PressProof {
             "knockers": self.knockers,
             "answers": self.answers,
             "reconciled": self.reconciled,
+            "shared_boxes": self.shared_boxes,
+            "sharing_presses": self.sharing_presses,
         })
     }
 }
@@ -1328,6 +1406,8 @@ pub fn check(
         forms: form_counts(plan),
         answers: plan.answers().len(),
         reconciled: plan.presses().iter().filter(|p| p.reconciled()).count(),
+        shared_boxes: shared_boxes(plan).len(),
+        sharing_presses: shared_boxes(plan).iter().map(Vec::len).sum(),
         ..PressProof::default()
     };
     let fail = |code, message: String| Err(Failure::new(code, message));
@@ -1555,7 +1635,8 @@ pub fn check(
                 if matches!(
                     (&q.owner, &p.owner),
                     (Owner::GateAnswer { .. }, Owner::GateAnswer { .. })
-                ) {
+                ) || q.shares_box_with(p)
+                {
                     continue;
                 }
                 if q.block != p.block || (q.form != Form::Own && p.form != Form::Own) {
@@ -1567,8 +1648,11 @@ pub fn check(
                                 "{} and {} both stand at {cell:?}{}. One cell holds one block, \
                                  and a boxed block one click box: two boxes over it are an exact \
                                  ray-pick tie. Prescription: move one of them to a cell of its \
-                                 own, or make both the same block pressed on its own (a bell, a \
-                                 button)",
+                                 own; or make both the same block pressed on its own (a bell, a \
+                                 button); or, for a left-click and a right-click, make both the \
+                                 same block the game reports no press of (stone, a carved \
+                                 pumpkin), whose one box carries both, each click reaching its \
+                                 own press",
                                 q.owner.word(),
                                 p.owner.word(),
                                 if q.block != p.block {

@@ -2411,13 +2411,72 @@ fn a_finish_places_its_racer_and_starts_the_grace() {
         passes(&medium[east..], 9, 7).is_some(),
         "the second lap comes back to the bridge: {medium:?}"
     );
-    for t in ["race_pig_race_in_order", "race_pig_race_skip"] {
+    for t in [
+        "race_pig_race_in_order",
+        "race_pig_race_skip",
+        "race_pig_race_bystander",
+    ] {
         let t = text(
             &out,
             &format!("packtest-datapack/data/hello-world/test/{t}.mcfunction"),
         );
         assert!(t.contains("function hello-world:race_pig_race_body"), "{t}");
     }
+}
+
+/// spec-0139 §3: a racer is a body that has started — been credited its first
+/// checkpoint. The body function tags nobody; the credit puts the tag on, so
+/// a present player who never starts is never waited on, and the race with no
+/// `grace_ticks` ends when the one who started finishes. The PackTest
+/// `race_<r>_bystander` asks the body as a second member who never starts
+/// on every step the dummy runs, and asserts the race over at the finish.
+#[test]
+fn a_member_who_never_starts_is_not_waited_on() {
+    let out = course_build(
+        "course-bystander",
+        course_bay(race(&["cp-bridge", "cp-east"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let body = function(&out, "race_pig_race_body");
+    assert!(
+        !body.contains("dw_rcg_pig_race"),
+        "being asked puts nobody on the course: {body}"
+    );
+    let pass = function(&out, "race_pig_race_pass");
+    assert_eq!(
+        pass.lines().next(),
+        Some("tag @s add dw_rcg_pig_race"),
+        "a credit puts its racer on the course before anything else: {pass}"
+    );
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/race_pig_race_bystander.mcfunction",
+    );
+    let at = |l: &str| {
+        t.lines()
+            .position(|x| x == l)
+            .unwrap_or_else(|| panic!("no line `{l}` in the template: {t}"))
+    };
+    let idle = "@a[name=dwrcb0,limit=1]";
+    let spawn = at("dummy dwrcb0 spawn");
+    let started = at("function hello-world:race_pig_race_start");
+    let asked = format!("execute as {idle} run function hello-world:race_pig_race_body");
+    assert_eq!(
+        t.lines().filter(|l| *l == asked).count(),
+        2,
+        "the bystander is asked on each of the two steps: {t}"
+    );
+    // Asked before the dummy on every step, so it has been asked before the
+    // dummy's finish whatever the course's length.
+    let me = "execute as @a[tag=dw_pt_rb_pig_race,limit=1] run function \
+              hello-world:race_pig_race_body";
+    let order: Vec<&str> = t.lines().filter(|l| *l == asked || *l == me).collect();
+    assert_eq!(order, [asked.as_str(), me, asked.as_str(), me], "{t}");
+    let over = at("assert score #rfin_pig_race dw.sys matches 1");
+    assert!(spawn < started && started < over, "{t}");
+    assert!(t.contains(&format!("assert score {idle} dw.rc.pig_race matches 0")));
+    assert!(at("dummy dwrcb0 leave") > over, "{t}");
 }
 
 /// `DW1119`: a course whose race no line starts before its objective, and

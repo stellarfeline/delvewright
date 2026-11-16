@@ -491,3 +491,66 @@ fn the_binding_counts_what_the_build_read() {
             .starts_with("mode binding (DW1122–DW1124): 1 mode(s), 1 entered")
     );
 }
+
+/// The journal ledger hands the bot, per quest, the `#party dw.mode` ranges
+/// under which it is held — the same runs its guards read — and the score
+/// they are read on, so a held quest's pages are owed when the mode is left
+/// and not at its start. A quest no mode holds carries none, and a campaign
+/// with no mode names no score.
+#[test]
+fn the_journal_ledger_names_the_modes_that_hold_each_quest() {
+    let ledger = |out: &BuildOutput| -> Value {
+        serde_json::from_slice(
+            out.get("validation/journal-starts.json")
+                .expect("a campaign with a journal writes the ledger"),
+        )
+        .unwrap()
+    };
+    let held = |l: &Value, quest: &str| -> Vec<String> {
+        let q = l["quests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|q| q["quest"] == quest)
+            .unwrap_or_else(|| panic!("no `{quest}` in the ledger: {l}"));
+        q["held"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_string())
+            .collect()
+    };
+    let out = build(&fixture("ledger", |q| {
+        audience(q);
+        q["modes"] = json!([
+            {"id": "mode/audience", "keeps": ["quest/greet-keeper"]},
+            {"id": "mode/shrine", "keeps": ["quest/reach-shrine"]},
+            {"id": "mode/second-audience", "keeps": ["quest/greet-keeper"]},
+        ]);
+    }));
+    let l = ledger(&out);
+    assert_eq!(l["mode"], "dw.mode", "{l}");
+    assert_eq!(held(&l, "quest/reach-shrine"), ["1", "3"]);
+    assert_eq!(held(&l, "quest/greet-keeper"), ["2"]);
+    // The ledger's ranges are the guard's: each is one `unless` term.
+    let tick = func(&out, "tick");
+    let guard = dispatching(&tick, "complete_o_arrive")[0];
+    for r in held(&l, "quest/reach-shrine") {
+        assert!(
+            guard.contains(&format!(" unless score #party dw.mode matches {r}")),
+            "{guard}"
+        );
+    }
+
+    let none = build(&fixture("ledger-none", |q| {
+        audience(q);
+        q.as_object_mut().unwrap().remove("modes");
+        q["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+    }));
+    let l = ledger(&none);
+    assert!(l["mode"].is_null(), "{l}");
+    assert!(held(&l, "quest/reach-shrine").is_empty(), "{l}");
+}

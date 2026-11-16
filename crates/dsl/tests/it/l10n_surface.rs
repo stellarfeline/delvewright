@@ -59,6 +59,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("<root>", "dsl_version", Machine),
     ("Actor", "entity", Reference),
     ("CensusOf", "kind", Reference),
+    ("Clue", "by", Machine),
     ("Actor", "name", Inventoried),
     ("Area", "name", Inventoried),
     (

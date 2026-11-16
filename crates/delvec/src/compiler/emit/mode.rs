@@ -84,10 +84,18 @@ fn runs(numbers: &[usize]) -> Vec<String> {
 /// no mode and for a quest every mode keeps, so such a guard is
 /// byte-identical.
 pub(crate) fn held_term(c: &delvewright_dsl::Campaign, quest: &str) -> String {
-    runs(&c.quests.content.modes_holding(quest))
+    held_ranges(c, quest)
         .iter()
         .map(|r| format!(" unless score {} {MODE_SCORE} matches {r}", plan::PARTY))
         .collect()
+}
+
+/// **The `#party dw.mode` values under which `quest` is held**, as
+/// `matches` ranges: one per maximal run of the numbers of the modes that do
+/// not keep it. Empty for a quest no mode holds. [`held_term`] reads them, and
+/// the journal ledger hands them to the bot.
+pub(crate) fn held_ranges(c: &delvewright_dsl::Campaign, quest: &str) -> Vec<String> {
+    runs(&c.quests.content.modes_holding(quest))
 }
 
 /// [`held_term`] for the quest that holds objective `oid`.

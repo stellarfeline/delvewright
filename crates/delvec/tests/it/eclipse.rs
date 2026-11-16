@@ -750,3 +750,163 @@ fn an_after_that_does_not_reach_the_first_box_is_still_a_contest() {
         "the message is unchanged in substance: {message}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// One box, two clicks: a `use` and a `strike` on one block
+// ---------------------------------------------------------------------------
+//
+// A left-click and a right-click on one block are two presses of one thing.
+// Where the block's click box stands in every state, the compiler summons ONE
+// `minecraft:interaction` wearing both riders' tags; the entity keeps the
+// left-click in `attack` and the right-click in `interaction`
+// (`docs/reference/click-attribution.md`), so each trigger reads its own.
+
+/// The fixture's quests document with a `use` and a `strike` trigger at
+/// `anchor/keeper-stand`, on `use_block` and `strike_block`.
+fn quests_with_two_clicks(use_block: &str, strike_block: &str) -> String {
+    let doc = quests_doc("anchor/exit");
+    let triggers = format!(
+        r#"    "triggers": [
+      {{ "id": "trigger/ask-the-head", "at": "anchor/keeper-stand",
+         "on": {{ "on": "use" }}, "once": false,
+         "prop": {{ "block": "{use_block}" }},
+         "effects": [ {{ "type": "narrate", "style": "chat",
+                        "text": "The head says: look under the porch." }} ] }},
+      {{ "id": "trigger/knock-the-head", "at": "anchor/keeper-stand",
+         "on": {{ "on": "strike" }}, "once": false,
+         "prop": {{ "block": "{strike_block}" }},
+         "effects": [ {{ "type": "narrate", "style": "chat",
+                        "text": "The head rocks and says: look under the porch." }} ] }}
+    ],
+    "quests": ["#
+    );
+    let patched = doc.replace("    \"quests\": [", &triggers);
+    assert_ne!(patched, doc, "the trigger patch must apply");
+    patched
+}
+
+const PUMPKIN: &str = "minecraft:carved_pumpkin[facing=north]";
+
+/// The emitted function `name`, as text.
+fn function(out: &emit::BuildOutput, name: &str) -> String {
+    let key = out
+        .keys()
+        .find(|k| k.ends_with(&format!("/function/{name}.mcfunction")))
+        .unwrap_or_else(|| panic!("no function `{name}`"));
+    String::from_utf8(out[key].clone()).unwrap()
+}
+
+/// **Green.** A `use` and a `strike` on one carved pumpkin build, and ship as
+/// ONE interaction box carrying both triggers' tags, read by two polls that
+/// each read their own record off it.
+#[test]
+fn a_use_and_a_strike_on_one_block_ride_one_box() {
+    let (out, warnings) = build_quests_out(
+        "minecraft:villager",
+        "spawn",
+        &quests_with_two_clicks(PUMPKIN, PUMPKIN),
+    )
+    .expect("a left-click and a right-click on one block must build");
+    assert!(
+        !warnings.iter().any(|d| d.code == "DW0878"),
+        "{warnings:#?}"
+    );
+    let setup = function(&out, "setup_finish");
+    let summons: Vec<&str> = setup
+        .lines()
+        .filter(|l| {
+            l.contains("summon minecraft:interaction") && l.contains("dw_trig_ask_the_head")
+        })
+        .collect();
+    assert_eq!(summons.len(), 1, "one box for the pumpkin: {setup}");
+    assert!(
+        summons[0].contains("\"dw_trig_knock_the_head\""),
+        "the one box wears the strike's tag too: {}",
+        summons[0]
+    );
+    assert!(
+        !setup
+            .lines()
+            .any(|l| l.contains("summon minecraft:interaction")
+                && l.contains("dw_trig_knock_the_head")
+                && !l.contains("dw_trig_ask_the_head")),
+        "the strike summons no box of its own: {setup}"
+    );
+    let tick = function(&out, "tick");
+    assert!(
+        tick.contains("if entity @e[tag=dw_trig_ask_the_head,nbt={interaction:{}}]"),
+        "the use reads the right-click record: {tick}"
+    );
+    assert!(
+        tick.contains("if entity @e[tag=dw_trig_knock_the_head,nbt={attack:{}}]"),
+        "the strike reads the left-click record: {tick}"
+    );
+}
+
+/// **Red, kept.** A bell is pressed on its own, so the strike's box stands
+/// over a block the right-click must reach bare: two bodies, still `DW0878`.
+#[test]
+fn a_strike_box_over_a_bell_pressed_on_its_own_is_still_a_contest() {
+    let bell = "minecraft:bell[attachment=floor,facing=north]";
+    let err = build_quests(
+        "minecraft:villager",
+        "spawn",
+        &quests_with_two_clicks(bell, bell),
+    )
+    .expect_err("a box over a block pressed on its own must fail the build");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
+    assert!(
+        message.contains("trigger/ask-the-head") && message.contains("trigger/knock-the-head"),
+        "{message}"
+    );
+}
+
+/// **Red, kept.** A door's box comes and goes with its window; the strike's
+/// stands always. Two boxes, still `DW0878`.
+#[test]
+fn a_strike_box_over_a_door_whose_box_comes_and_goes_is_still_a_contest() {
+    let door = "minecraft:oak_door[facing=north,half=lower,hinge=left,open=false]";
+    let err = build_quests(
+        "minecraft:villager",
+        "spawn",
+        &quests_with_two_clicks(door, door),
+    )
+    .expect_err("a box with a window beside an always box must fail the build");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
+}
+
+/// **Red, kept.** Two blocks on one cell are two bodies whatever the clicks.
+#[test]
+fn a_use_and_a_strike_on_two_blocks_on_one_cell_are_refused() {
+    let err = build_quests(
+        "minecraft:villager",
+        "spawn",
+        &quests_with_two_clicks(PUMPKIN, "minecraft:stone"),
+    )
+    .expect_err("two blocks on one cell must fail the build");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
+}
+
+/// **Red, kept.** Two right-clicks on one pumpkin would both hear one click:
+/// two presses of one button are not shared, and stay `DW0878`.
+#[test]
+fn two_uses_on_one_block_are_still_a_contest() {
+    let doc = quests_with_two_clicks(PUMPKIN, PUMPKIN);
+    let two_uses = doc.replace(r#"{ "on": "strike" }"#, r#"{ "on": "use" }"#);
+    assert_ne!(two_uses, doc, "the click patch must apply");
+    let err = build_quests("minecraft:villager", "spawn", &two_uses)
+        .expect_err("two right-clicks on one box must fail the build");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
+}

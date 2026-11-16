@@ -3,6 +3,9 @@
 import {
   JOURNAL_POLL_MS,
   JOURNAL_SETTLE_MS,
+  heldCommands,
+  isHeld,
+  journalStartDue,
   judgeRecordRow,
   pagesShow,
   readJournalPages,
@@ -23,18 +26,29 @@ export const methods = {
   },
 
   /**
-   * At the boundary after step `index`: every quest not yet seen started is
-   * asked whether it is active; each that is has its owed pages read off the
-   * journal, re-read until all are shown or {@link JOURNAL_SETTLE_MS} passes.
-   * A read that is not answered is a missing page, never a pass.
+   * At the boundary after step `index`: every quest not yet judged is asked
+   * whether it is active and, if a mode can hold it, whether the map is in
+   * such a mode; a held quest is asked again at the next boundary, since its
+   * pages are owed when the mode is left (spec-0140). Each that is due has
+   * its owed pages read off the journal, re-read until all are shown or
+   * {@link JOURNAL_SETTLE_MS} passes. A read that is not answered is a
+   * missing page, never a pass.
    */
   async judgeJournalStarts(this: MineflayerExecutor, index: number): Promise<void> {
     const ledger = this.journalLedger;
     if (ledger === undefined) return;
     for (const q of ledger.quests) {
       if (this.journalStarted.has(q.quest)) continue;
-      const reply = await this.bracketed([scoreIsOneCommand(ledger.party, q.active)]);
-      if (!scoreIsOne(reply.lines, q.active)) continue;
+      const asked = heldCommands(ledger, q);
+      const replies = await this.bracketedReplies([scoreIsOneCommand(ledger.party, q.active), ...asked]);
+      const active = scoreIsOne(replies[0]!.lines, q.active);
+      const held = isHeld(ledger, q, replies.slice(1).map((r) => r.lines));
+      const due = journalStartDue(active, held);
+      if (due === "not-started") continue;
+      if (due === "held") {
+        if (!this.journalHeld.has(q.quest)) this.journalHeld.set(q.quest, index);
+        continue;
+      }
       this.journalStarted.add(q.quest);
       if (q.told.length === 0) continue;
       const deadline = Date.now() + JOURNAL_SETTLE_MS;
@@ -58,6 +72,8 @@ export const methods = {
         if (Date.now() >= deadline) break;
         await delay(JOURNAL_POLL_MS);
       }
+      const heldSince = this.journalHeld.get(q.quest);
+      const when = heldSince === undefined ? "" : `held by a mode from step ${heldSince}, left by step ${index}; `;
       for (const t of q.told) {
         const outcome = t.hintKey === null
           ? "baked"
@@ -73,8 +89,8 @@ export const methods = {
           outcome,
           detail:
             outcome === "missing"
-              ? `owed the hint ${t.hintKey}; the journal read ${pages.length === 0 ? "nothing" : `"${pages.join(" ").slice(0, 600)}"`}`
-              : (t.hintKey ?? "no key: a --lang bake"),
+              ? `${when}owed the hint ${t.hintKey}; the journal read ${pages.length === 0 ? "nothing" : `"${pages.join(" ").slice(0, 600)}"`}`
+              : `${when}${t.hintKey ?? "no key: a --lang bake"}`,
         });
       }
     }

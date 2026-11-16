@@ -27,15 +27,26 @@ Measured, seven acts, two runs, zero disagreements, bot in adventure mode, stand
 - **Measured.** A left-click on a `minecraft:interaction` entity fires `minecraft:player_hurt_entity` with the interaction as `this`, granted to the attacking player, whether or not the entity is `Invulnerable`; the reward function runs as that player. The entity's `attack` record names the same player by UUID.
 - **Measured.** A left-click on an `Invulnerable` living body fires no criterion and leaves no record. A right-click on a living body whose kind has no use interaction (a zombie) fires no criterion.
 - **Measured.** A right-click on a `minecraft:interaction` fires `minecraft:player_interacted_with_entity` as the clicking player — the dispatch every NPC dialogue, `interact` objective and press answer already runs on (`docs/reference/compiler.md`, the press-answer section).
-- **Not read.** The jar's bytecode was not read for this page; the finding rests on the measurement alone. The sites a reader of the jar would look at are the interaction entity's attack handling and the player's attack path, and reading them is the second method a pin bump owes if the measurement is ever in doubt.
+- **Read.** The interaction entity's two record fields are read off the jar in §4; the player's attack path was not read, and is the second method a pin bump owes for the criteria if the measurement is ever in doubt.
 
-## 4. What the engine does with it
+## 4. One box, two records
+
+Whether a left-click and a right-click on ONE interaction entity are two separate facts, so two presses can share one box and each read its own.
+
+- **The reading.** `javap -p -c` (JDK 21.0.13) over `net.minecraft.world.entity.Interaction` in the server jar whose sha256 is the `versions.toml` `[minecraft]` pin (`META-INF/versions/1.21.11/server-1.21.11.jar` inside it; the class is `che` by the 1.21.11 `server_mappings` piston-meta publishes, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`).
+- **Read.** The entity holds two fields of type `Interaction$PlayerAction` (a player UUID and a game time): `attack` and `interaction`. `skipAttackInteraction(Entity)` — the left-click — writes `attack` from the attacking player and nothing else of the two. `interact(Player, InteractionHand)` — the right-click — returns early on the client and on the server writes `interaction` from the clicking player and nothing else of the two. These are the only writes of either field outside the load path; `tick()` is empty, so neither record expires.
+- **Read.** `addAdditionalSaveData` writes them under two keys, `attack` and `interaction`, and `readAdditionalSaveData` reads each from its own key; a `data` command that reads or removes one leaves the other as it was.
+- **Measured.** The §3 instrument reads the `attack` record after a left-click and the `interaction` record after a right-click on one entity, each naming the bot.
+- **Authored.** A left-click and a right-click of one block are one click box: the compiler summons one `minecraft:interaction` wearing both presses' tags where each press's box stands in every state (`compiler::pressable::PressPlan::shares_box_with`), a polled `strike` reads `attack` and a polled `use` reads `interaction` off it, and each `presser`'s criterion is keyed on its own tag (`DW0878`'s row, [eclipse](delvec/compiler/eclipse.md)). The generated `shared_box_<cell>` PackTest writes each record on the one box and reads which press fired.
+
+## 5. What the engine does with it
 
 - **A blow is dispatched as the striker.** `audience: presser` on a `strike`, `strike-npc` or `strike-assembly` trigger is dispatched by an advancement on `minecraft:player_hurt_entity` keyed on the trigger's carrier (`emit/trigger.rs`: `press_criterion`, `trigger_carrier_tag`), its reward run as `@s` — the shape every press answer has, with the left-click criterion in place of `minecraft:player_interacted_with_entity`. `EnvTrigger::attributes_its_actor` states the same table on the DSL side, and an agreement test holds the two equal over every `TriggerOn` variant. `DW0427` refuses `audience: presser` on `approach` alone, the one act with no carrier entity.
 - **A harmless body answers through a box that encloses it.** The living body names nobody: a blow on an `Invulnerable` puppet is silent to every criterion, so a body's `answers` (spec-0119) ride an interaction entity the compiler stands for it — an NPC's dialogue hitbox, or an actor's answer box — sized to enclose the body that ships so the pick meets the box first (`compiler::bodies::answer_box_dims`). Which bodies owe a line is `DW1055`'s rule, read where the body is declared.
 - **The record stays the second reading.** The `attack` record's UUID is not the dispatch; it remains what `STRIKER_STORAGE` captures for a polled, party-addressed trigger's `unleash-actor` aggro lock.
 
-## 5. Sources
+## 6. Sources
 
 - `tools/maintenance/probe-click-attribution.py`, `tools/maintenance/probe-click-attribution.mjs` (this repository), run against the server jar whose sha256 is the `versions.toml` `[minecraft]` pin, with mineflayer at the version `harness/package.json` pins.
+- `javap -p -c` over `net.minecraft.world.entity.Interaction` in the pinned server jar, named by the published 1.21.11 server mappings (§4).
 - `crates/dsl/src/trigger.rs` (`TriggerAudience`, `DW0427`); `crates/delvec/src/compiler/emit/npc.rs` (the hitbox summon); `crates/delvec/src/compiler/emit/trigger.rs` (`trigger_carrier_tag`, `trigger_record`); `docs/reference/compiler.md`, the press-answer section.
