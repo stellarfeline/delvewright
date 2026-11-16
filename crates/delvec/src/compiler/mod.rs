@@ -8,7 +8,7 @@
 //! (`tests/it/module_list.rs`) is what keeps it whole.
 //!
 //! - [`absent`]: the party is every member, present or not — the census of lasting writes onto the present and of picks of one player (`DW1126`/`DW1127`).
-//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
+//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by [`clue`].
 //! - [`clue`]: a step's stated clue is presented before the step on the main line (`DW0863`, `DW1136`; spec-0143).
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
