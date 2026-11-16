@@ -87,6 +87,7 @@ fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor 
         entity: entity.to_string(),
         name: Some("Boss".to_string()),
         skin: None,
+        variant: None,
         anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
         offset: [0, 0, 0],
         facing: Some(delvewright_dsl::Facing::West),
@@ -272,6 +273,60 @@ fn twin_summon_has_ai_and_no_puppet_marker() {
     assert!(!s.contains("NoAI"), "the twin has real AI");
     assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
     assert!(s.contains("PersistenceRequired:1b"));
+}
+
+/// DSL v0.83: the actor's variant is written into the puppet AND the twin, so
+/// the body that stands up is the body the party saw; absent, both summons are
+/// unchanged.
+#[test]
+fn an_actors_variant_rides_on_the_puppet_and_the_twin() {
+    let mut a = mk_actor("actor/tom", "minecraft:cat", false);
+    let plain_puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    let plain_twin = actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives);
+    assert!(!plain_puppet.contains("variant") && !plain_twin.contains("CollarColor"));
+    a.variant = Some(delvewright_dsl::BodyVariant(
+        [
+            ("variant".to_string(), "minecraft:calico".to_string()),
+            ("collar".to_string(), "lime".to_string()),
+        ]
+        .into(),
+    ));
+    let fragment = ",CollarColor:5b,variant:\"minecraft:calico\"";
+    let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    let twin = actor_twin_summon("dw", &a, "~ ~ ~", TwinArrival::Arrives);
+    assert!(puppet.contains(fragment), "{puppet}");
+    assert!(twin.contains(fragment), "{twin}");
+    assert_eq!(puppet.replace(fragment, ""), plain_puppet);
+    assert_eq!(twin.replace(fragment, ""), plain_twin);
+}
+
+/// DSL v0.83: an NPC villager's declared type and profession take the places
+/// of the engine's plains / none in the one `VillagerData` it always writes;
+/// absent, the compound is byte-identical; a cat's coat is written after.
+#[test]
+fn an_npcs_variant_fills_the_villager_data_it_always_carries() {
+    use super::npc::npc_variant_nbt;
+    let base = ",VillagerData:{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}";
+    assert_eq!(npc_variant_nbt("minecraft:villager", None), base);
+    assert_eq!(npc_variant_nbt("minecraft:husk", None), "");
+    let v = delvewright_dsl::BodyVariant(
+        [("profession".to_string(), "minecraft:librarian".to_string())].into(),
+    );
+    assert_eq!(
+        npc_variant_nbt("minecraft:zombie_villager", Some(&v)),
+        ",VillagerData:{profession:\"minecraft:librarian\",type:\"minecraft:plains\",level:1}"
+    );
+    let cat = delvewright_dsl::BodyVariant(
+        [
+            ("variant".to_string(), "minecraft:tabby".to_string()),
+            ("collar".to_string(), "blue".to_string()),
+        ]
+        .into(),
+    );
+    assert_eq!(
+        npc_variant_nbt("minecraft:cat", Some(&cat)),
+        ",CollarColor:11b,variant:\"minecraft:tabby\""
+    );
 }
 
 /// v0.9: a `despawn-actor` on a drop-declaring actor strips the

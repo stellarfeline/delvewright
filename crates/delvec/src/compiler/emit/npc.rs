@@ -52,19 +52,36 @@ pub(super) fn npc_summon_commands(
 /// holds none; a villager's holds it.]
 pub const VILLAGER_DATA_KINDS: [&str; 2] = ["minecraft:villager", "minecraft:zombie_villager"];
 
-/// The `,VillagerData:{…}` an NPC summon of `base` carries: a profession-less
-/// plains villager for a kind in [`VILLAGER_DATA_KINDS`], nothing otherwise.
-pub fn villager_data_nbt(base: &str) -> &'static str {
-    let kind = if base.contains(':') {
-        base.to_string()
-    } else {
-        format!("minecraft:{base}")
-    };
+/// The `,VillagerData:{…}` and variant fields an NPC summon of `base` carries:
+/// for a kind in [`VILLAGER_DATA_KINDS`], `VillagerData` always — a
+/// profession-less plains villager unless the NPC's `variant` names its type
+/// or profession (a zombie villager's profession is otherwise drawn at random
+/// when the body is made, so the engine always states one); then every other
+/// field of the variant ([`delvewright_dsl::variant_fields`], the one emission
+/// rule). Empty for a kind with neither.
+pub fn npc_variant_nbt(base: &str, variant: Option<&delvewright_dsl::BodyVariant>) -> String {
+    let kind = delvewright_dsl::namespaced_entity(base);
+    let mut fields = variant
+        .map(|v| delvewright_dsl::variant_fields(&kind, v))
+        .unwrap_or_default();
+    let mut out = String::new();
     if VILLAGER_DATA_KINDS.contains(&kind.as_str()) {
-        ",VillagerData:{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}"
-    } else {
-        ""
+        let profession = fields
+            .remove("VillagerData.profession")
+            .unwrap_or_else(|| "\"minecraft:none\"".to_string());
+        let kind_of = fields
+            .remove("VillagerData.type")
+            .unwrap_or_else(|| "\"minecraft:plains\"".to_string());
+        out.push_str(&format!(
+            ",VillagerData:{{profession:{profession},type:{kind_of},level:1}}"
+        ));
     }
+    let rest = delvewright_dsl::render_fields(&fields);
+    if !rest.is_empty() {
+        out.push(',');
+        out.push_str(&rest);
+    }
+    out
 }
 
 /// The ledger rows of [`npc_summon_commands`]: the body and its hitbox
@@ -130,7 +147,8 @@ pub(super) fn npc_summon_rows(
         let pose = mannequin_pose_nbt(base);
         out.push(format!(
             "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"{watch_tag}],CustomName:{},CustomNameVisible:1b{}}}",
-            p[0], p[1], p[2], npc.tag, cname_field, villager_data_nbt(base)
+            p[0], p[1], p[2], npc.tag, cname_field,
+            npc_variant_nbt(base, dsl_npc.and_then(|n| n.variant.as_ref()))
         ));
     }
     // The interaction hitbox also carries the tag of every left-click trigger

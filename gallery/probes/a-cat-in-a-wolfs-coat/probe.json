@@ -1,0 +1,13 @@
+{
+  "code": "DW1132",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/5/variant/variant",
+      "value": "minecraft:ashen"
+    }
+  ],
+  "units": [],
+  "why": "The groom, a cat, is given `minecraft:ashen` for its coat: a wolf's coat, which the cat variant registry does not hold. A cat summoned with it keeps the default black, so the coat the story names would not be the coat the party sees. It declares no unit: `variant` is bound in the primary, and what the engine refuses is a value the property does not take."
+}

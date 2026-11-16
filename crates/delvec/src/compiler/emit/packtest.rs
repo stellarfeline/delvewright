@@ -49,6 +49,7 @@ mod teleport;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod variant;
 mod vehicle;
 mod watching;
 mod wave;
@@ -280,6 +281,12 @@ pub(super) fn emit_packtest(
     // spec-0111 §5.3: every filled holder entity's own body, driven.
     holders::emit_holder_packtests(plan, out, holders);
     actor::emit_actor_equipment_packtest(plan, out);
+    // DSL v0.83: a body's declared variant reads back as declared. Emits
+    // nothing for a campaign that declares none; the binding is printed either way.
+    {
+        let b = variant::emit_variant_packtests(plan, out);
+        crate::note!("{}", b.line());
+    }
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits

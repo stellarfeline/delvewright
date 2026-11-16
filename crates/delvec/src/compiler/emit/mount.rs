@@ -50,6 +50,10 @@ fn mount_compound(m: &Mount, tags: &[String], extra: &[String]) -> String {
     if let Some(a) = attrs.strip_prefix(',') {
         parts.push(a.to_string());
     }
+    // DSL v0.83: the mount's variant, by the one emission rule.
+    if let Some(v) = delvewright_dsl::variant_nbt(&m.entity, m.variant.as_ref()).strip_prefix(',') {
+        parts.push(v.to_string());
+    }
     parts.join(",")
 }
 
@@ -127,6 +131,7 @@ mod tests {
     fn horse() -> Mount {
         Mount {
             entity: "minecraft:zombie_horse".to_string(),
+            variant: None,
             equipment: None,
             attributes: None,
         }
@@ -141,6 +146,17 @@ mod tests {
              Passengers:[{id:\"minecraft:zombie\",Tags:[\"dw_wave_x\"],PersistenceRequired:1b}]}"
         );
         assert_eq!(ride_on(s, None, &[], &[]), s);
+        // DSL v0.83: the mount's variant rides in its own compound, never the rider's.
+        let mut pig = horse();
+        pig.entity = "minecraft:pig".to_string();
+        pig.variant = Some(delvewright_dsl::BodyVariant(
+            [("variant".to_string(), "minecraft:warm".to_string())].into(),
+        ));
+        assert_eq!(
+            ride_on(s, Some(&pig), &[], &[]),
+            "summon minecraft:pig 1.5 64 2.5 {Tags:[\"dw_mount\"],variant:\"minecraft:warm\",\
+             Passengers:[{id:\"minecraft:zombie\",Tags:[\"dw_wave_x\"],PersistenceRequired:1b}]}"
+        );
         assert_eq!(
             ride_on("summon minecraft:pig ~ ~ ~", Some(&horse()), &[], &[]),
             "summon minecraft:zombie_horse ~ ~ ~ {Tags:[\"dw_mount\"],Passengers:[{id:\"minecraft:pig\"}]}"
