@@ -29,6 +29,12 @@
 //! holds the moment each final scene begins to fire decides which target it
 //! realizes. A datum is computed by the replay, never by an abstract sum, so a
 //! `set-state` among the writers is judged as the datapack runs it.
+//!
+//! Then, per declared branch no world kept so far realizes, the **branch
+//! search** runs every participation of the elective acts its flags turn on
+//! ([`Flow::acts_turning`]) over the all and the none world, unbounded, its
+//! cost recorded in [`BranchSearch`]: each expiry and failure witness carries
+//! one, and a branch is often several at once.
 
 use super::*;
 

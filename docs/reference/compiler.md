@@ -3859,7 +3859,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   has no bundle function to mock it by, or changes nothing the replay can name,
   and a world whose run is incoherent or fires no ending, carries `path: null` and
   its `path_reason`; a
-  declared branch no world realizes is named in `branches_unrealized`.
+  declared branch no world realizes is named in `branches_unrealized` — after the
+  branch search has run every participation of the acts its flags turn on, its
+  cost stated on every validate as the `branch search binding: …` line
+  ([`delvec/compiler/flow.md`](delvec/compiler/flow.md)).
   **Validation metadata, not shipped gameplay**, excluded from the delve image
   like `critical-path-waypoints.json`, and emitted **only** for a campaign that
   declares `branch_points` or whose story worlds outnumber its dialogue
