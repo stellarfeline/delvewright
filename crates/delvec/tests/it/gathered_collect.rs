@@ -5,8 +5,9 @@
 //! was refused on every path (`DW0204`), and the only collect that supplied it
 //! put a chest of cod at the anchor. Pinned here, on hello-world:
 //!
-//! * the red: the interact presenting cod with nothing in front of it is
-//!   `DW0204`;
+//! * the red: the interact presenting cod with nothing supplying it is
+//!   refused (`DW0849` at validation; `DW0204` on the path once a source
+//!   exists off it);
 //! * the green: a gathered collect of 5 cod in front of it is a supply, and
 //!   the build is clean;
 //! * what it emits: no chest and no fill at activation, the possession
@@ -110,10 +111,9 @@ fn emitted(out: &Path, suffix: &str) -> Vec<(String, String)> {
 }
 
 fn fish_step(out: &Path) -> Value {
-    let path: Value = serde_json::from_str(
-        &std::fs::read_to_string(out.join("validation/critical-path.json")).unwrap(),
-    )
-    .unwrap();
+    let path: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("critical-path.json")).unwrap())
+            .unwrap();
     path["steps"]
         .as_array()
         .unwrap()
@@ -123,13 +123,17 @@ fn fish_step(out: &Path) -> Value {
         .expect("the critical path collects the fish")
 }
 
+/// The red: nothing in the campaign hands the party a cod, so the interact
+/// presenting one is refused — at validation by `DW0849` (no source of the
+/// item anywhere), the refusal a fished cod met before `gathered`.
 #[test]
-fn a_presented_cod_nothing_hands_over_is_dw0204() {
+fn a_presented_cod_nothing_hands_over_is_refused() {
     let (code, log, _) = build(&fixture("red", vec![]));
     assert_ne!(code, 0, "{log}");
     assert!(
-        log.lines().any(|l| l.starts_with("DW0204 [error]")
-            && l.contains("presents `minecraft:cod` (its `requires_item`)")),
+        log.lines().any(|l| l.starts_with("DW0849 [error]")
+            && l.contains("`obj/feed`")
+            && l.contains("`minecraft:cod`")),
         "{log}"
     );
 }
@@ -138,7 +142,7 @@ fn a_presented_cod_nothing_hands_over_is_dw0204() {
 fn a_gathered_collect_supplies_the_presented_cod_and_places_nothing() {
     let (code, log, out) = build(&fixture("green", vec![fish(true)]));
     assert_eq!(code, 0, "{log}");
-    assert!(!log.contains("DW0204"), "{log}");
+    assert!(!log.contains("DW0204") && !log.contains("DW0849"), "{log}");
 
     // Nothing placed: no activation function, and no chest or fill anywhere.
     assert!(
