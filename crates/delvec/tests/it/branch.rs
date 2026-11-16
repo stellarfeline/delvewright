@@ -613,8 +613,9 @@ fn a_branch_one_elective_takes_and_another_leaves_has_a_witness() {
 /// Two independent failure forks on the Keeper's door (the town's goats and
 /// raid): a bell and a lamp the party is asked to mind, each lost by an
 /// elective act that fails its task, each act reachable only once a rope
-/// (an elective the forks do not turn on) is climbed. With `exclusive`, each
-/// loss forbids the other's flag, so a night that loses both cannot be played.
+/// (an elective the forks do not turn on) is climbed. With `exclusive`, the
+/// lamp can be lost only once the bell is minded, so a night that loses both
+/// cannot be played.
 fn two_failure_forks(exclusive: bool) -> Campaign {
     campaign_with(|plan, quests, _| {
         let decide = quest(quests, "quest/decide");
@@ -638,8 +639,9 @@ fn two_failure_forks(exclusive: bool) -> Campaign {
                     { "type": "fail-objective", "objective": format!("obj/{thing}") }
                 ]
             });
-            if exclusive {
-                t["forbids_flags"] = serde_json::json!([format!("flag/{other}-lost")]);
+            if exclusive && thing == "lamp" {
+                t["requires_flags"] =
+                    serde_json::json!(["flag/rope", format!("flag/{other}-kept")]);
             }
             t
         };
@@ -720,8 +722,8 @@ fn two_losses_on_one_night_are_a_world() {
     assert!(line.contains("2 realized, 0 realized by none"), "{line}");
 }
 
-/// The same forks with each loss forbidding the other: a night that loses
-/// both cannot be played in any order, so those two branches still refuse,
+/// The same forks with the lamp lost only once the bell is minded: a night
+/// that loses both cannot be played, so those two branches still refuse,
 /// each naming what the search ran, and every other branch is realized.
 #[test]
 fn two_losses_each_forbidding_the_other_still_refuse() {
