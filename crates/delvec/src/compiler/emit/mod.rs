@@ -695,6 +695,7 @@ fn emit_all(
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
     crate::note!("{}", relight.binding.line());
+    crate::note!("{}", relight.binding.cost.line());
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,

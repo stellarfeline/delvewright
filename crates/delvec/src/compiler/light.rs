@@ -92,6 +92,48 @@ pub struct DarkBinding {
     pub excluded: usize,
     /// The stand-ins: places the plan masses, with no detail row.
     pub standins: usize,
+    /// The surveys taken, one per area with a start, and what their reach
+    /// graphs cost: the work charged and the ceilings it is held under
+    /// ([`crate::compiler::nav::Ceiling`]), summed.
+    pub cost: SurveyCost,
+}
+
+/// **What the darkness survey's reach graphs cost** (`DW1042`): the work each
+/// area's closure was charged, and the ceiling its own world gives it,
+/// summed over the surveys.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SurveyCost {
+    /// Surveys taken.
+    pub surveys: usize,
+    /// Launch states simulated plus template arcs credited, less what the
+    /// world a batch was written over paid for.
+    pub charged: u64,
+    /// The ceilings, summed.
+    pub ceiling: u64,
+    /// The rest cells the ceilings count, summed.
+    pub rest_cells: u64,
+    /// The most one node is charged.
+    pub per_node: u64,
+}
+
+impl SurveyCost {
+    fn add(&mut self, reach: &crate::compiler::nav::Reach) {
+        self.surveys += 1;
+        self.charged += reach.charged();
+        self.ceiling += reach.ceiling.work();
+        self.rest_cells += reach.ceiling.rest_cells;
+        self.per_node = self.per_node.max(reach.ceiling.per_node);
+    }
+
+    /// `DW0210 reach cost: S survey(s) charged W (…) of ceiling C (R rest
+    /// cell(s) × at most P per node)`.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0210 reach cost: {} survey(s) charged {} (launch states simulated and template \
+             arcs credited) of ceiling {} ({} rest cell(s) × at most {} per node)",
+            self.surveys, self.charged, self.ceiling, self.rest_cells, self.per_node
+        )
+    }
 }
 
 impl DarkBinding {
@@ -1617,7 +1659,13 @@ pub(crate) fn surveyed_region(
     starts: &[[i32; 3]],
     budget: Option<u64>,
     since: Option<&World>,
-) -> Result<BTreeSet<[i32; 3]>, Failure> {
+) -> Result<
+    (
+        BTreeSet<[i32; 3]>,
+        std::sync::Arc<crate::compiler::nav::Reach>,
+    ),
+    Failure,
+> {
     let over = |reach: &crate::compiler::nav::Reach, budget: u64, which: &str| Failure {
         code: crate::compiler::nav::DW_REACH_BUDGET,
         message: format!(
@@ -1651,7 +1699,7 @@ pub(crate) fn surveyed_region(
     if let Some(budget) = reach.over_budget {
         return Err(over(&reach, budget, ""));
     }
-    Ok(reach.standing())
+    Ok((reach.standing(), reach))
 }
 
 /// **The cells a relight fixture may neither stand in nor hang from** — the
@@ -1764,10 +1812,12 @@ pub fn relight_with(
         // survey at all (`DW1042`).
         let reachable: BTreeSet<[i32; 3]> =
             match surveyed_region(nav, &area.area_id, &starts, None, since) {
-                Ok(r) => r
-                    .into_iter()
-                    .filter(|cell| in_bounds(*cell, amin, amax))
-                    .collect(),
+                Ok((r, reach)) => {
+                    out.binding.cost.add(&reach);
+                    r.into_iter()
+                        .filter(|cell| in_bounds(*cell, amin, amax))
+                        .collect()
+                }
                 Err(f) => {
                     out.diagnostics.push(f);
                     continue;
@@ -2770,8 +2820,19 @@ mod tests {
         let map = room(7, 4, 7, true);
         let nav = nav_of(&map);
         let start = [[3, 1, 3]];
-        let whole = surveyed_region(&nav, "area/room", &start, None, None)
+        let (whole, reach) = surveyed_region(&nav, "area/room", &start, None, None)
             .expect("the room's graph is under its own ceiling");
+        assert!(reach.charged() > 0 && reach.charged() <= reach.ceiling.work());
+        // The survey's cost is stated with the ceiling the world gives it.
+        let mut cost = SurveyCost::default();
+        cost.add(&reach);
+        assert_eq!(cost.surveys, 1);
+        let line = cost.line();
+        assert!(
+            line.contains(&format!("charged {} ", reach.charged()))
+                && line.contains(&format!("of ceiling {} ", reach.ceiling.work())),
+            "{line}"
+        );
         assert_eq!(whole, nav.body_region(&start));
         assert!(whole.len() >= 25, "{}", whole.len());
         let partial = surveyed_region(&nav, "area/room", &start, Some(1), None);
