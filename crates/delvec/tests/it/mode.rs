@@ -381,7 +381,29 @@ fn the_packtest_owes_a_mode_its_templates() {
     let clock = template(&out, "mode_audience_clock");
     assert!(clock.contains(&format!("# @environment {NS}:solo/mode_audience_clock")));
     assert!(clock.contains("await delay 1225t"), "{clock}");
-    assert!(clock.contains("await delay 1205t"), "{clock}");
+    // …the expiry never fired while it was held…
+    assert!(
+        clock
+            .lines()
+            .any(|l| l == "assert score #lx_reach dw.sys matches 0")
+    );
+    // …then one second on, one second down and nothing expired…
+    assert!(clock.contains("await delay 25t"), "{clock}");
+    assert!(
+        clock
+            .lines()
+            .any(|l| l == "assert score #lt_reach dw.sys matches 59")
+    );
+    assert_eq!(
+        clock
+            .lines()
+            .filter(|l| *l == "assert score #pt_mc dw.sys matches 0")
+            .count(),
+        2,
+        "{clock}"
+    );
+    // …and the rest of the window.
+    assert!(clock.contains("await delay 1180t"), "{clock}");
     assert_eq!(
         clock
             .lines()

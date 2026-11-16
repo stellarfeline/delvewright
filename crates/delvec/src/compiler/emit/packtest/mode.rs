@@ -18,8 +18,10 @@ use super::*;
 /// `mode_<m>_clock`, for the held limited objective of the shortest window,
 /// runs alone and on the server's own clock, from the same ledger. It starts the objective's
 /// clock, enters the mode, waits longer than the whole window and asserts
-/// the objective not expired and its seconds where they stood; it leaves
-/// the mode, waits the seconds left and asserts the objective expired.
+/// the objective not expired, its seconds where they stood and its expiry
+/// never fired; it leaves
+/// the mode and, a second on, asserts the seconds one down and the objective
+/// still not expired; it waits the seconds left and asserts it expired.
 pub(super) fn emit_mode_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -199,9 +201,29 @@ pub(super) fn emit_mode_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute store success score #pt_mc dw.sys if score {p} {expired} matches 1"
         ));
         b.push("assert score #pt_mc dw.sys matches 0".to_string());
+        // Its expiry did not fire and find it held: a clock that ran out
+        // while it was held is marked run out, and the objective is born
+        // expired the tick the mode is left.
+        b.push(format!(
+            "assert score {} dw.sys matches 0",
+            ran_out_latch(oid)
+        ));
         b.push(leave.clone());
         b.push(format!("assert score {p} {score} matches 0"));
         b.push(format!("assert score {held} dw.sys matches 0"));
+        // A second on, the clock has gone on from where it stood: one second
+        // down, and not run out — a clock that ran while it was held would
+        // be expired here.
+        let mut rest = rest;
+        if secs >= 2 {
+            b.push("await delay 25t".to_string());
+            b.push(format!("assert score {holder} dw.sys matches {}", secs - 1));
+            b.push(format!(
+                "execute store success score #pt_mc dw.sys if score {p} {expired} matches 1"
+            ));
+            b.push("assert score #pt_mc dw.sys matches 0".to_string());
+            rest -= 25;
+        }
         b.push(format!("await delay {rest}t"));
         b.push(format!("assert score {p} {expired} matches 1"));
         b.extend(close.iter().cloned());
