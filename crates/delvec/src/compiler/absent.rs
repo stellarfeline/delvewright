@@ -176,12 +176,15 @@ pub const SERVED: &[Site] = &[
     },
     Site {
         site: "limit countdown",
-        rule: "KNOWN GAP (spec-0141 §6): a limited objective's countdown bar is shown to the \
-               players present when its clock starts; a member who joins the delve later does \
-               not see it. The clock, its expiry and its telling are the party's",
-        matches: |_, line| {
+        rule: "a limited objective's countdown bar is given its players on every redraw \
+               (`limit_show_<obj>`, once a second while the clock runs): a member who joins \
+               the delve after the clock started is shown it within a second. The clock, its \
+               expiry and its telling are the party's",
+        matches: |name, line| {
             let c = command(line);
-            c.starts_with("bossbar set ") && c.ends_with(" players @a")
+            name.starts_with("limit_show_")
+                && c.starts_with("bossbar set ")
+                && c.ends_with(" players @a")
         },
     },
 ];

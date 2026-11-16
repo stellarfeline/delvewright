@@ -376,8 +376,8 @@
     },
     "Limit": {
       "class": "party",
-      "evidence": "`emit::limit`; census site `limit countdown` in `absent::SERVED`.",
-      "semantics": "One clock for the party: it starts, counts and expires once, and its expiry is told to every player present. Its countdown bar is shown to the players present when it starts (open gap: a member who joins later does not see the bar)."
+      "evidence": "`emit::limit`: `limit_show_<obj>` restates `bossbar set … players @a`; census site `limit countdown` in `absent::SERVED`; PackTest `party_limit_bar_<obj>`.",
+      "semantics": "One clock for the party: it starts, counts and expires once, and its expiry is told to every player present. Its countdown bar is restated to the players present on every once-a-second redraw, so a member who joins later is shown it within a second."
     },
     "LimitFrom": {
       "class": "parameter",
