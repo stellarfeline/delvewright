@@ -261,7 +261,7 @@ function fmtSpawn(d: number | null): string {
 
 /** Where the server held the bot, when that is not where the packet found it. */
 function heldNote(at: Vec3 | null, bot: Vec3 | null): string {
-  if (!at || !bot || at === bot) return "";
+  if (!at || !bot || distance(at, bot) < 1 / 16) return "";
   return (
     ` on arrival, held by the server at ${JSON.stringify(round8(at))} when it played it ` +
     `(${distance(at, bot).toFixed(1)} blocks back along the bot's path)`

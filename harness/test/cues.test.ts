@@ -35,7 +35,7 @@ const sound = (
   pos: [number, number, number],
   bot = far,
   volume = 1,
-): CueEvent => ({ kind: "sound", name, pos, volume, pitch: 1, bot, held: [bot] });
+): CueEvent => ({ kind: "sound", name, pos, volume, pitch: 1, bot, held: [[...bot]] });
 
 test("cues at the bot pass, and count as judged beyond the range", () => {
   const j = judgeCues(ledger, [
@@ -46,6 +46,7 @@ test("cues at the bot pass, and count as judged beyond the range", () => {
     marker("campaign"),
   ]);
   assert.deepEqual(j.failures, []);
+  assert.doesNotMatch(j.owed[0]!.detail, /held by the server/, "no note when held where the packet found it");
   const b = cueBinding(ledger, j);
   assert.equal(b.owed, 2);
   assert.equal(b.arrived, 2);
