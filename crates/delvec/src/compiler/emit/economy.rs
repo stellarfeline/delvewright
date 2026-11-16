@@ -16,6 +16,23 @@ pub(super) fn shops<'a>(plan: &'a Plan) -> Vec<(usize, &'a delvewright_dsl::Shop
         .collect()
 }
 
+/// The offers of `sh` whose display is gated, in declared order — the bit order of
+/// the shop's availability mask (`dw.dmask`). Empty for a shop whose every offer
+/// is open, which then draws one dialog and needs no chooser.
+pub(super) fn gated_offers(sh: &delvewright_dsl::Shop) -> Vec<&delvewright_dsl::ShopOffer> {
+    sh.offers
+        .iter()
+        .filter(|off| !off.gate().is_empty())
+        .collect()
+}
+
+/// Whether any shop draws a gated offer, and so reads `dw.dmask`.
+pub(super) fn has_gated_offer(plan: &Plan) -> bool {
+    shops(plan)
+        .iter()
+        .any(|(_, sh, _)| !gated_offers(sh).is_empty())
+}
+
 /// `setup` lines declaring the economy's scoreboard objectives and constants.
 ///
 /// Empty for a campaign that declares neither a shop nor a stake — the byte-identity
@@ -132,6 +149,26 @@ pub(super) fn emit_shop_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
     for (i, sh, _) in shops(plan) {
+        // An offer whose gate is closed is not drawn: a shop with a gated offer
+        // opens through the availability chooser, which shows the variant whose
+        // buttons are exactly the offers open to this player now.
+        let gated = gated_offers(sh);
+        let show = if gated.is_empty() {
+            format!("dialog show @s {ns}:shop_{i}")
+        } else {
+            let conds: Vec<String> = gated
+                .iter()
+                .map(|off| gate_cond(plan, off.gate()))
+                .collect();
+            fns.extend(mask_chooser(
+                ns,
+                &format!("shop_mask_{i}"),
+                &format!("shop_show_{i}"),
+                &format!("shop_{i}"),
+                &conds,
+            ));
+            format!("function {ns}:shop_show_{i}")
+        };
         fns.push((
             format!("shop_open_{i}"),
             lines(&[
@@ -139,7 +176,7 @@ pub(super) fn emit_shop_functions(plan: &Plan) -> Vec<(String, String)> {
                 format!("scoreboard players set @s dw.shop_at {i}"),
                 "scoreboard players reset @s dw.shop".to_string(),
                 "scoreboard players enable @s dw.shop".to_string(),
-                format!("dialog show @s {ns}:shop_{i}"),
+                show,
             ]),
         ));
         for (j, off) in sh.offers.iter().enumerate() {

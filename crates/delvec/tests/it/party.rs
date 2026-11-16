@@ -253,9 +253,16 @@ fn give_item_carrier_selects_party_or_completing_player() {
         &out,
         "datapack/data/and-join/function/complete_o_talk.mcfunction",
     );
+    // spec-0141 §3.2: the default give-item arms the whole party as a grant,
+    // whose function gives every present player and counts the issue.
     assert!(
-        talk.contains("give @a minecraft:torch"),
-        "the default give-item arms the whole party: {talk}"
+        talk.lines().any(|l| l == "function and-join:grant_0"),
+        "the default give-item is issued as a grant: {talk}"
+    );
+    let grant = text(&out, "datapack/data/and-join/function/grant_0.mcfunction");
+    assert!(
+        grant.starts_with("give @a minecraft:torch"),
+        "the grant arms the whole party: {grant}"
     );
     // The class kit's `carrier: "one"` item enters the party exactly once.
     let kit = text(

@@ -343,12 +343,21 @@ fn arrive_bundle_splits_party_fact_and_player_facing_effects() {
         "a scheduled `set-flag` writes the party holder, bare:\n{arrive}"
     );
     // Player-facing: addressed to the party, once.
-    for needle in ["tellraw @a ", "give @a minecraft:torch 1"] {
-        assert!(
-            lines.iter().any(|l| l.starts_with(needle)),
-            "player-facing effect must address the party (`{needle}`):\n{arrive}"
-        );
-    }
+    assert!(
+        lines.iter().any(|l| l.starts_with("tellraw @a ")),
+        "player-facing effect must address the party (`tellraw @a `):\n{arrive}"
+    );
+    // A stack for the party is a grant (spec-0141 §3.2): the bundle calls the
+    // function that gives `@a` and counts the issue, with no executor.
+    assert!(
+        lines.contains(&"function hello-world:grant_0"),
+        "a scheduled give is issued as a grant:\n{arrive}"
+    );
+    let grant = file(&out, &format!("{FN_DIR}/grant_0.mcfunction"));
+    assert!(
+        grant.starts_with("give @a minecraft:torch 1\n"),
+        "the grant addresses the party:\n{grant}"
+    );
     // A player-facing effect's flag gate is a party read placed OUTSIDE the
     // audience — one question, asked once, for the whole party.
     assert!(
