@@ -165,7 +165,7 @@ impl VehiclePlan {
     pub fn rider_eye(&self, world: &World, m: [i32; 3]) -> Option<[f64; 3]> {
         let rest = match self.kind {
             // The record §5: where a boat rests over its water cell's floor.
-            VehicleKind::Boat => f64::from(m[1]) + BOAT_AFLOAT,
+            VehicleKind::Boat => boat_rest_y(m[1]),
             VehicleKind::Mount if self.entity == "minecraft:pig" => world.feet_y(m),
             VehicleKind::Mount | VehicleKind::Minecart => return None,
         };
@@ -188,12 +188,30 @@ impl VehiclePlan {
     }
 }
 
-/// **Where a boat on a source water cell comes to rest**, over the cell's
-/// floor: the pinned server's save of a boat summoned over its water
+/// A source water cell's fluid height, as the game holds it: a `float`, 8/9.
+const SOURCE_WATER_HEIGHT: f32 = 8.0 / 9.0;
+
+/// How far under its water cell's level a boat comes to rest: fit to the
+/// pinned server's save of a boat at rest over a floor at y = 62 (the record
+/// §5, `Pos` y 62.52326431274413) by [`boat_rest_y`]'s level.
+const BOAT_UNDER_WATER_LEVEL: f64 = 0.365_625;
+
+/// **Where a boat on a source water cell whose floor is at `floor` comes to
+/// rest**: the pinned server's save of a boat summoned over its water
 /// (`docs/reference/vehicles-animals-and-targets.md` §5), its `Motion` at
-/// rest. A boat summoned there stays there, so the body the summon places is
-/// the body the save holds (`DW1040`); a rider's eye stands on it (§15).
-pub const BOAT_AFLOAT: f64 = 0.523_264_312_744_13;
+/// rest. The rest is a fixed depth under the cell's water level, and the
+/// level is the floor plus a source's height summed in `float`, so the rest
+/// over the floor moves with the float's precision at that height: 0.52326431274413
+/// over a floor at y = 62 and 0.52326049804829 at y = 65, the two saves the
+/// record holds, both reproduced to 1e-11 (the fit's residual). A boat
+/// summoned there stays there, so the body the summon places is the body the
+/// save holds (`DW1040`); a rider's eye stands on it (§15).
+pub fn boat_rest_y(floor: i32) -> f64 {
+    // `floor` is a block height, exact in a float.
+    #[allow(clippy::cast_precision_loss)]
+    let level = floor as f32 + SOURCE_WATER_HEIGHT;
+    f64::from(level) - BOAT_UNDER_WATER_LEVEL
+}
 
 /// A boat's passenger attachment over its feet, as a share of its height:
 /// `Boat.getPassengerAttachmentPoint`, `dimensions.height() / 3.0F` (the
@@ -1090,6 +1108,20 @@ pub fn boardable_seats(
 
 #[cfg(test)]
 mod tests {
+    /// The rest [`boat_rest_y`] gives is the rest each save the record holds
+    /// measured: y = 62 (the record §5) and y = 65 (the gallery's skiff, the
+    /// pinned server's save written by `validation/world-save.sh`).
+    #[test]
+    fn a_boat_rests_where_each_measured_save_holds_it() {
+        for (floor, saved) in [(62, 62.523_264_312_744_13), (65, 65.523_260_498_048_29)] {
+            let y = super::boat_rest_y(floor);
+            assert!(
+                (y - saved).abs() < 1e-9,
+                "floor {floor}: {y} against {saved}"
+            );
+        }
+    }
+
     use super::*;
 
     fn pond(width: i32) -> World {
