@@ -91,9 +91,10 @@ export const methods = {
     //   * the wave the die-retry stage is proving. See `dieRetryHolds`. Whether
     //     the body is of it is asked of the server BY UUID: does it wear the
     //     step's tag. A census position within a few blocks of where the client
-    //     sees the body is a candidate, not a match — on the town's castle yard it
-    //     found no body of the protected wave three times in three runs, and the
-    //     body the stage was proving was removed.
+    //     sees the body is a candidate, not a match: the client's copy of a
+    //     body's position can stand still at the cell it was seated on while the
+    //     server's body has walked 8–13 blocks away (measured on the town's
+    //     castle yard), and the body the stage was proving was removed.
     if (body?.position) {
       const here: Vec3Tuple = [body.position.x, body.position.y, body.position.z];
       this.stagingInFlight.add(id);
