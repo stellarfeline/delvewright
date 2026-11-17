@@ -5410,8 +5410,10 @@ fn dw1030_loosening_the_interval_lets_a_world_reach_the_ending() {
         v["content"]["quests"][2]["on_complete"][2]["when"] = gate(1);
     });
     let (code, after) = analyze(&camp, &dir);
+    // A refusal is read in its diagnostic form: the census beside it names the
+    // codes its binding lines count, `DW0482` among them, on every run.
     assert!(
-        !after.contains("DW1030") && !after.contains("DW0482"),
+        !after.contains("DW1030 [") && !after.contains("DW0482 ["),
         "{after}"
     );
     assert_eq!(code, 0, "the loosened interval is reached:\n{after}");
