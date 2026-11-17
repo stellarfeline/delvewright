@@ -233,7 +233,8 @@ echo "==> images: built once for $n_selected world(s)"
 sample_host() {
   local wp="$1" out="$2" owner="$3" cid
   while kill -0 "$owner" 2>/dev/null; do
-    cid="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate ps -q server 2>/dev/null | head -n 1)"
+    cid="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate ps -q server 2>/dev/null || true)"
+    cid="${cid%%$'\n'*}"
     [ -z "$cid" ] || dw_host_memory_sample "$cid" >>"$out" || true
     sleep 5
   done

@@ -116,8 +116,12 @@ dw_host_memory_sample() {
 # one phrase, or nothing (exit 1) when it did not: the vanilla watchdog halted
 # it, or the bot heard no keepalive for minecraft-protocol's 30 s.
 dw_world_stall() {
+  local line
   if dw_server_log_shows_watchdog "$1"; then
-    echo "the vanilla watchdog halted it ($(printf '%s\n' "$1" | grep -o "$DW_SERVER_WATCHDOG_MARKER [0-9.]* seconds" | head -n 1))"
+    line="${1#*"$DW_SERVER_WATCHDOG_MARKER"}"
+    line="${line%%$'\n'*}"
+    line="${line%% (*}"
+    echo "the vanilla watchdog halted it ($DW_SERVER_WATCHDOG_MARKER$line)"
     return 0
   fi
   if grep -qF "connection ended: keepAliveError" "$2" 2>/dev/null; then
