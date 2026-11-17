@@ -422,7 +422,7 @@ const thinFloor = (b: SwimCell): boolean =>
   b.physical &&
   b.shapes !== undefined &&
   b.shapes.length > 0 &&
-  b.shapes.every((s) => s[4] <= SWIM_CLIMB_OUT_THIN_TOP + 1e-9);
+  b.shapes.every((s) => (s[4] ?? Number.POSITIVE_INFINITY) <= SWIM_CLIMB_OUT_THIN_TOP + 1e-9);
 
 const { Move } = { Move: requireCjs("mineflayer-pathfinder/lib/move") } as {
   Move: new (x: number, y: number, z: number, remainingBlocks: number, cost: number) => SwimNode;

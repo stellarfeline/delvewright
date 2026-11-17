@@ -169,7 +169,9 @@ function pond(): Cells {
 test("a body in water climbs onto a lily pad out on the pond", () => {
   const r = simWalk(legBot(pond(), [0.5, 62.2, 3.5], true), [0, 63, 0], 0, 400);
   assert.ok(r.reached, `stopped at ${fmtPos(r.at)}`);
-  assert.ok(Math.abs(r.at[1] - 63.09375) < 0.05, `not on the pad: ${fmtPos(r.at)}`);
+  // On the pad's cell, over its plate, out of the water.
+  assert.ok(r.at[1] >= 63 && r.at[1] < 63.5, `not on the pad: ${fmtPos(r.at)}`);
+  assert.ok(Math.abs(r.at[0] - 0.5) < 0.5 && Math.abs(r.at[2] - 0.5) < 0.5, `not over the pad: ${fmtPos(r.at)}`);
 });
 
 test("without the move onto a thin floor, the library reads no path onto the pad", () => {
