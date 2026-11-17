@@ -798,8 +798,10 @@ test("the hold never takes a body already without its AI, and the release wakes 
 });
 
 test("the held count is read off the server's own reply, and an unread reply is not a zero", () => {
-  assert.equal(retryHeldCount(["Test passed, count: 5"]), 5);
-  assert.equal(retryHeldCount(["Test failed"]), 0);
+  // A delve seals command feedback off: the count is stored and told back.
+  assert.equal(retryHeldCount(["[dw:retry-held 5]"]), 5);
+  assert.equal(retryHeldCount(["[dw:retry-held 0]"]), 0);
+  assert.equal(retryHeldCount(["Test passed, count: 5"]), undefined, "feedback is not the reply");
   assert.equal(retryHeldCount([]), undefined);
 });
 

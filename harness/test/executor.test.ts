@@ -4111,8 +4111,9 @@ function holdingBot(held: number): CombatFakeBot {
   const chat = bot.chat.bind(bot);
   bot.chat = (message: string): void => {
     chat(message);
-    if (message === "/execute if entity @e[tag=dw_retry_held]") {
-      bot.emit("messagestr", held > 0 ? `Test passed, count: ${held}` : "Test failed");
+    // The fake server speaks the stored count back, as `tellraw` would.
+    if (message.startsWith('/tellraw @s ["[dw:retry-held ",')) {
+      bot.emit("messagestr", `[dw:retry-held ${held}]`);
     }
   };
   return bot;

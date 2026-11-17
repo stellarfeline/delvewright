@@ -1373,16 +1373,27 @@ export function retryHoldCommands(selects: readonly string[]): string[] {
   ];
 }
 
-/** How many bodies the hold stands on, asked of the server. */
-export const RETRY_HELD_COUNT_COMMAND = `/execute if entity @e[tag=${RETRY_HELD_TAG}]`;
+/** The marker the held count is spoken under. */
+const RETRY_HELD_MARKER = "[dw:retry-held ";
 
-/** The held count in a reply to {@link RETRY_HELD_COUNT_COMMAND}: `Test passed,
- * count: N` is N, `Test failed` is 0, anything else is unread. */
+/**
+ * How many bodies the hold stands on, asked of the server and spoken as
+ * `[dw:retry-held <n>]`: a delve seals `send_command_feedback` off, so the
+ * count is stored and told back, never read off command feedback.
+ */
+export const RETRY_HELD_COUNT_COMMANDS: readonly string[] = [
+  `/execute store result storage dw_harness:retry n int 1 if entity @e[tag=${RETRY_HELD_TAG}]`,
+  `/tellraw @s ${JSON.stringify([RETRY_HELD_MARKER, { storage: "dw_harness:retry", nbt: "n" }, "]"])}`,
+];
+
+/** The held count in a reply to {@link RETRY_HELD_COUNT_COMMANDS}, or
+ * `undefined` when the reply does not carry it. */
 export function retryHeldCount(lines: readonly string[]): number | undefined {
   for (const line of lines) {
-    const m = /^Test passed, count: (\d+)$/.exec(line.trim());
+    const at = line.indexOf(RETRY_HELD_MARKER);
+    if (at < 0) continue;
+    const m = /^(\d+)\]/.exec(line.slice(at + RETRY_HELD_MARKER.length));
     if (m) return Number(m[1]);
-    if (line.trim() === "Test failed") return 0;
   }
   return undefined;
 }

@@ -10,7 +10,7 @@ import {
   retryHoldCommands,
   retryHeldCount,
   retryReleaseCommands,
-  RETRY_HELD_COUNT_COMMAND,
+  RETRY_HELD_COUNT_COMMANDS,
   observationOf,
   openTrial,
   describeStanding,
@@ -663,7 +663,7 @@ export const methods = {
     selects: readonly string[],
   ): Promise<RetryHolding> {
     const commands = retryHoldCommands(selects);
-    const first = await this.bracketed([...commands, RETRY_HELD_COUNT_COMMAND]);
+    const first = await this.bracketed([...commands, ...RETRY_HELD_COUNT_COMMANDS]);
     const refused = first.answered ? first.lines.find((l) => isRejection(l)) : "the closing marker never arrived";
     const held = retryHeldCount(first.lines);
     const row = { wave, triggers, held: held ?? 0 };
@@ -705,7 +705,7 @@ export const methods = {
   async endRetryHold(this: MineflayerExecutor, wave: string, holding: RetryHolding): Promise<void> {
     holding.stop = true;
     await holding.loop;
-    const count = retryHeldCount((await this.bracketed([RETRY_HELD_COUNT_COMMAND])).lines);
+    const count = retryHeldCount((await this.bracketed(RETRY_HELD_COUNT_COMMANDS)).lines);
     const reply = await this.bracketed(retryReleaseCommands());
     const refused = reply.answered ? reply.lines.find((l) => isRejection(l)) : "the closing marker never arrived";
     const row = this.retryHolds.findLast((h) => h.wave === wave);
