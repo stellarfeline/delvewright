@@ -1277,7 +1277,7 @@ fn census_landing_fixture(landing: &[&str], lines: &[&str], of: Value) -> Campai
             }));
         q["waves"] = serde_json::json!([{
             "id": "wave/landing", "anchor": "anchor/exit",
-            "mobs": [{ "entity": "minecraft:pillager", "count": { "base": 2 } }]
+            "mobs": [{ "entity": "minecraft:pillager", "count": 2 }]
         }]);
         let lose = &mut q["triggers"][0];
         lose.as_object_mut().unwrap().remove("at");
