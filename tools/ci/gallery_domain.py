@@ -440,6 +440,93 @@ def _lay_generated_inputs(dest: Path) -> None:
         shutil.copytree(gen["terrain"], dest / "terrain")
 
 
+def _lay(point: Path, dest: Path) -> None:
+    """Lay one point's files over the primary already in `dest`.
+
+    A file replaces the primary's of the same name, except an overlay's
+    translation sidecars when its manifest says `"l10n": "delta"`: those are
+    laid by `_inherit_l10n`, so the overlay states only what it changes.
+    """
+    delta = _l10n_mode(point) == "delta"
+    for f in sorted(point.iterdir()):
+        if f.name in POINT_MANIFESTS:
+            continue
+        if delta and f.name == "l10n":
+            _inherit_l10n(f, dest / "l10n")
+        elif f.is_dir():
+            shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
+        else:
+            shutil.copy2(f, dest / f.name)
+    if delta and not (point / "l10n").is_dir():
+        raise PatchError(
+            "declares `\"l10n\": \"delta\"` and ships no `l10n/` directory: a declaration "
+            "that inherits nothing is bound to nothing"
+        )
+
+
+def _l10n_mode(point: Path) -> str | None:
+    """An overlay manifest's `l10n` key: `delta`, or `None` when absent.
+
+    Absent means the overlay's sidecars are whole statements that replace the
+    primary's, as an overlay that is a different campaign (its own cast and
+    quest layer) needs. Any other value is a refusal, not a second mode.
+    """
+    manifest = Path(point) / "overlay.json"
+    if not manifest.is_file():
+        return None
+    mode = json.loads(manifest.read_text()).get("l10n")
+    if mode not in (None, "delta"):
+        raise PatchError(f"declares `\"l10n\": {mode!r}`; the one value is `\"delta\"`")
+    return mode
+
+
+def _inherit_l10n(delta_dir: Path, dest_dir: Path) -> None:
+    """Lay an overlay's sidecars as deltas over the primary's, one rule.
+
+    The effective sidecar of a language is the primary's with the overlay's
+    entries over it, per key inside each of the sidecar's tables (`content`,
+    `source`) and per top-level scalar. So a key the primary gains later
+    reaches the overlay with no edit here, and the file the overlay keeps
+    holds exactly what differs. Refused: a delta for a language the primary
+    has no sidecar for (nothing to inherit: state it whole), and an entry equal
+    to the primary's (it states what it does not change, and is a copy that can
+    drift).
+    """
+    for f in sorted(delta_dir.iterdir()):
+        base_file = GALLERY / "l10n" / f.name
+        if f.suffix != ".json" or not base_file.is_file():
+            raise PatchError(
+                f"`l10n/{f.name}` is a delta and the primary has no sidecar `l10n/{f.name}` "
+                "to inherit from: drop `\"l10n\": \"delta\"` and state it whole"
+            )
+        base = json.loads(base_file.read_text())
+        delta = json.loads(f.read_text())
+        merged = dict(base)
+        same: list[str] = []
+        for key, value in delta.items():
+            if isinstance(value, dict) and isinstance(base.get(key), dict):
+                table = dict(base[key])
+                for k, v in value.items():
+                    if table.get(k) == v:
+                        same.append(f"{key}.{k}")
+                    table[k] = v
+                merged[key] = table
+            else:
+                if base.get(key) == value:
+                    same.append(key)
+                merged[key] = value
+        if same:
+            raise PatchError(
+                f"`l10n/{f.name}` states {len(same)} entr{'y' if len(same) == 1 else 'ies'} equal "
+                f"to the primary's ({', '.join(same[:3])}{', ...' if len(same) > 3 else ''}): a "
+                "delta holds only what it changes"
+            )
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / f.name).write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+        )
+
+
 def materialise(dest: Path, point: Path | None = None) -> int:
     """Write the campaign for one build point to `dest`; return the file count.
 
@@ -467,13 +554,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
     if point is not None:
         base = base_overlay(point)
         if base is not None:
-            for f in sorted(base.iterdir()):
-                if f.name in POINT_MANIFESTS:
-                    continue
-                if f.is_dir():
-                    shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(f, dest / f.name)
+            _lay(base, dest)
         shadowed = shadowed_documents(point)
         if shadowed:
             raise PatchError(
@@ -481,13 +562,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 "the primary plus a declared edit: name the edit in `probe.json`'s "
                 "`patch`, so nothing can drift from a copy nobody compares"
             )
-        for f in sorted(Path(point).iterdir()):
-            if f.name in POINT_MANIFESTS:
-                continue
-            if f.is_dir():
-                shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
-            else:
-                shutil.copy2(f, dest / f.name)
+        _lay(Path(point), dest)
         by_doc: dict[str, list[dict]] = {}
         for op in patch_ops(point):
             by_doc.setdefault(op.get("doc") or "", []).append(op)
