@@ -70,6 +70,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+pub mod arrow;
 pub mod body;
 
 /// **A declared jump's facing window** (spec-0113 §4.4, `authored`): every

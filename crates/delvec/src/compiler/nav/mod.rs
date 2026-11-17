@@ -380,9 +380,9 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW1091` (spec-0134 §2): a `shot` trigger whose target no standable
-    /// cell of the walk region sees between 4 and 40 blocks, through air, from
-    /// a player's eye.
+    /// `DW1091` (spec-0134 §2): a `shot` trigger whose target no full-drawn
+    /// arrow's arc reaches, through air, from the eye of a standable cell of
+    /// the walk region between 4 and 40 blocks off.
     pub const DW_SHOT_UNSEEN: DwCode = DwCode::new("DW1091", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {

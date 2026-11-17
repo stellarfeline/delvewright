@@ -6882,3 +6882,36 @@ test("a shot with no stance fails by name before any walk", async () => {
   );
   assert.deepEqual(bot.goals, []);
 });
+
+// --- spec-0134 §2: a shot's draw is counted in the server's ticks -------------------
+
+import { SHOT_DRAW_TICKS } from "../src/shot.ts";
+
+test("a shot holds the bow for a full draw counted in the server's game ticks, however slow the server runs", async () => {
+  const bot = new FakeBot();
+  const server = serve(bot);
+  const draws: { drawn: number; loosed?: number }[] = [];
+  let executor: MineflayerExecutor;
+  Object.assign(bot, {
+    inventory: { items: () => [{ name: "bow" }] },
+    equip: async () => {},
+    lookAt: async () => {},
+    activateItem: () => draws.push({ drawn: server.tick }),
+    deactivateItem: () => {
+      draws[draws.length - 1]!.loosed = server.tick;
+      // The arrow lands: the trigger's fired marker arrives.
+      executor.markerArrivals.set("trigger/t", 1);
+    },
+  });
+  (bot.entity as unknown as { height: number }).height = 1.8;
+  executor = attach(bot);
+  const step = { kind: "trigger", trigger: "trigger/t", on: "shot", pos: [20, 70, 0] } as unknown as TriggerStep;
+  // The fake server's clock moves one tick per reading and never by the wall
+  // clock: a draw held by wall time alone looses at the tick it was drawn in.
+  server.perReading = 1;
+  await within("loose", executor.loose(step, "trigger trigger/t (shot)", 0), 60_000);
+  assert.equal(draws.length, 1);
+  const [d] = draws;
+  assert.ok(d!.loosed !== undefined && d!.loosed - d!.drawn >= SHOT_DRAW_TICKS, `drawn at ${d!.drawn}, loosed at ${d!.loosed}`);
+  assert.deepEqual(executor.shotsLoosed, [{ trigger: "trigger/t", arrows: 1 }]);
+});
