@@ -157,27 +157,33 @@ pub(super) fn emit_seat_once_packtests(
         enveloped: seats.iter().filter(|(_, _, bare)| !bare).count(),
         ..SeatOnceBinding::default()
     };
-    let mut done: BTreeSet<&str> = BTreeSet::new();
+    // Per objective (content order), each wave its bare seats name, with how
+    // many times the bundle seats it.
+    let mut by_obj: Vec<(&str, BTreeMap<&str, u32>)> = Vec::new();
     for (oid, wid, bare) in seats {
-        let Some(w) = c.quests.content.waves.iter().find(|w| w.id.as_str() == wid) else {
-            continue;
-        };
-        if !bare || !wave_placements.contains_key(wid) || !done.insert(oid) {
+        if !bare || !wave_placements.contains_key(wid) {
             continue;
         }
+        if by_obj.last().is_none_or(|(o, _)| *o != oid) {
+            by_obj.push((oid, BTreeMap::new()));
+        }
+        if let Some((_, waves)) = by_obj.last_mut() {
+            *waves.entry(wid).or_insert(0) += 1;
+        }
+    }
+    for (oid, waves) in by_obj {
         let osafe = plan::safe_local(oid);
         let name = format!("party_seat_once_{osafe}");
-        let tag = plan::wave_tag(wid);
         let before = format!("dw_t_pso_{osafe}");
-        let want: u32 = w.mobs.iter().map(|m| m.count.at(SEAT_ONCE_PARTY)).sum();
-        let held = format!("#pso_{osafe}");
         let members: Vec<String> = (1..SEAT_ONCE_PARTY)
             .map(|k| format!("dwso{k}{osafe}"))
             .collect();
+        let named: Vec<String> = waves.keys().map(|w| format!("`{w}`")).collect();
         let mut t = packtest_header(&format!(
-            "{}: completing `{oid}` with {SEAT_ONCE_PARTY} players present seats `{wid}` once, \
-             at the count it declares for {SEAT_ONCE_PARTY} players",
-            artifact_title(c)
+            "{}: completing `{oid}` with {SEAT_ONCE_PARTY} players present seats {} once, \
+             at the count declared for {SEAT_ONCE_PARTY} players",
+            artifact_title(c),
+            named.join(", ")
         ));
         t.insert(1, super::limit::alone(ns, &name, out));
         t.push(format!("function {ns}:setup"));
@@ -185,20 +191,44 @@ pub(super) fn emit_seat_once_packtests(
             t.push(format!("dummy {m} spawn"));
         }
         // The bodies already standing are not this drive's.
-        t.push(format!("tag @e[tag={tag}] add {before}"));
+        for wid in waves.keys() {
+            t.push(format!("tag @e[tag={}] add {before}", plan::wave_tag(wid)));
+        }
         t.push(super::super::quest::complete_latch_open(oid));
         // The dispatch's own shape: one fork over every player present.
         t.push(format!(
             "execute as @a run function {ns}:complete_{}",
             safe_obj_fn(oid)
         ));
-        t.push(format!(
-            "execute store result score {held} dw.sys if entity @e[tag={tag},tag=!{before}]"
-        ));
-        t.push(format!("assert score {held} dw.sys matches {want}"));
-        // No residue: the wave leaves as the engine removes it, the tag goes,
-        // the members leave.
-        t.extend(super::super::wave::wave_removal_lines(ns, w));
+        for (k, (wid, seated)) in waves.iter().enumerate() {
+            let Some(w) = c
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|w| w.id.as_str() == *wid)
+            else {
+                continue;
+            };
+            let tag = plan::wave_tag(wid);
+            let want: u32 = seated
+                * w.mobs
+                    .iter()
+                    .map(|m| m.count.at(SEAT_ONCE_PARTY))
+                    .sum::<u32>();
+            let held = format!("#pso_{osafe}_{k}");
+            t.push(format!(
+                "execute store result score {held} dw.sys if entity @e[tag={tag},tag=!{before}]"
+            ));
+            t.push(format!("assert score {held} dw.sys matches {want}"));
+        }
+        // No residue: this drive's bodies go, the tag goes, the members leave.
+        for wid in waves.keys() {
+            t.push(format!(
+                "kill @e[tag={},tag=!{before}]",
+                plan::wave_tag(wid)
+            ));
+        }
         t.push(format!("tag @e[tag={before}] remove {before}"));
         for m in &members {
             t.push(format!("dummy {m} leave"));

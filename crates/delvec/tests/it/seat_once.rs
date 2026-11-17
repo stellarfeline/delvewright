@@ -116,13 +116,13 @@ fn a_completion_that_seats_a_wave_is_driven_under_a_three_player_fork() {
     assert!(open < drive, "{t}");
     // Two zombies, whatever the party: one seating.
     assert!(
-        lines.contains(&"assert score #pso_talk dw.sys matches 2"),
+        lines.contains(&"assert score #pso_talk_0 dw.sys matches 2"),
         "{t}"
     );
     // `obj/door` seats `wave/ambush` (two sheep) with no envelope too.
     let door = template(&out, "door").expect("obj/door seats wave/ambush");
     assert!(
-        door.contains("assert score #pso_door dw.sys matches 2"),
+        door.contains("assert score #pso_door_0 dw.sys matches 2"),
         "{door}"
     );
 }
@@ -136,7 +136,10 @@ fn a_scaled_wave_is_counted_at_the_three_players_present() {
         });
     });
     let t = template(&out, "talk").unwrap();
-    assert!(t.contains("assert score #pso_talk dw.sys matches 4"), "{t}");
+    assert!(
+        t.contains("assert score #pso_talk_0 dw.sys matches 4"),
+        "{t}"
+    );
 }
 
 #[test]
