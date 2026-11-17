@@ -748,6 +748,10 @@ pub fn check_branches_within(
         bind.steps += walked.steps;
         bind.quiet += walked.quiet;
         bind.states += walked.states;
+        bind.stubborn += walked.stubborn;
+        if r.world.is_some() {
+            bind.per_branch.push((r.branch.id.clone(), walked));
+        }
         bind.refused += walked.refused;
         bind.unproven += usize::from(walked.unproven);
     }
@@ -771,12 +775,16 @@ pub struct ContradictionBinding {
     pub quiet: usize,
     /// Distinct play states the every-order search walked, summed.
     pub states: usize,
+    /// Of those, the states where the stubborn set left a legal step out.
+    pub stubborn: usize,
     /// Clashes those orders show that the exported orders do not.
     pub refused: usize,
     /// Branches whose search reached the bound — refused as unproven.
     pub unproven: usize,
     /// The bound, in distinct play states per branch.
     pub bound: usize,
+    /// What the every-order search examined, per realized branch, by id.
+    pub per_branch: Vec<(String, OrderWalk)>,
     /// What the branch search ran ([`crate::compiler::flow::BranchSearch`]).
     pub search: crate::compiler::flow::BranchSearch,
 }
@@ -787,13 +795,14 @@ impl ContradictionBinding {
         format!(
             "contradiction binding: {b} branch(es) read in their exported order over {l} dated \
              line(s); every legal order searched over {st} step(s) ({q} quiet), {s} distinct \
-             play state(s) walked; {r} refused beyond the exported order (DW0485); {u} \
+             play state(s) walked (a stubborn set left a legal step out at {k}); {r} refused beyond the exported order (DW0485); {u} \
              branch(es) unproven at the bound of {n} state(s) per branch (DW0927)",
             b = self.branches,
             l = self.lines,
             st = self.steps,
             q = self.quiet,
             s = self.states,
+            k = self.stubborn,
             r = self.refused,
             u = self.unproven,
             n = self.bound,
@@ -1555,7 +1564,7 @@ pub const MAX_ORDER_STATES: usize = 50_000;
 /// `forbids_flags` or effect gates is assumed: each order reads every gate where
 /// it stands.
 ///
-/// **One reduction, and why it loses nothing.** A step is *quiet*
+/// **Two reductions, and why they lose nothing.** A step is *quiet*
 /// ([`quiet_steps`]) when it fires the same effects whenever it is taken (no
 /// gated effect in its bundle or its quest's `on_complete`), sets no flag any
 /// `forbids_flags` or effect gate reads and writes no datum any effect gate
@@ -1570,6 +1579,18 @@ pub const MAX_ORDER_STATES: usize = 50_000;
 /// completion lines, which may now play at a different step — act on no subject
 /// a rule tracks. So any clash `O` shows, that order shows too. Whether other
 /// steps can shut the quiet step does not matter: it is taken while it is open.
+///
+/// Elsewhere the search walks the legal steps of a **stubborn set**
+/// ([`Footprints::stubborn`]; `docs/reference/order-reduction.md`). Take any
+/// legal order `O` from the state. If `O` takes a step of the set, the first
+/// one it takes was legal here (no step before it is in the set, so none is in
+/// its necessary enabling set) and conflicts with none before it, so it can be
+/// taken first with the rest in their order: the same state, the same lines,
+/// the same verdicts. If `O` takes none, a legal step of the set conflicts
+/// with every step of `O` not at all, and taking it first keeps `O` legal and
+/// its verdicts the same. Either way an order that starts with a walked step
+/// shows every clash `O` shows, and the argument repeats from the next state;
+/// the states are acyclic, since every step settles an objective.
 ///
 /// **Cost.** Every visited state checks every step's legality once:
 /// `O(states × steps)` legality tests, plus one chronicle clone per edge.
@@ -1599,6 +1620,80 @@ fn check_every_order(
     stats
 }
 
+/// What the every-order search reads off one story world, once: its path's
+/// steps, the beats each can write, the subjects the rules track, the quiet
+/// steps, the data a gate compares and the steps' footprints.
+struct OrderModel {
+    pt: crate::compiler::flow::Playthrough,
+    steps: Vec<PathStep>,
+    carried: BTreeSet<String>,
+    quiet: Vec<bool>,
+    read: BTreeSet<String>,
+    fp: Footprints,
+}
+
+impl OrderModel {
+    fn new(c: &Campaign, flow: &Flow<'_>, w: usize) -> Self {
+        let pt = flow.story_playthrough(w);
+        let steps = pt.steps.clone();
+        // The entry deeds and choices due in front of each step: they travel with
+        // it in every order (`Walk::take`), so their lines are its lines.
+        let due: Vec<Vec<&[QuestEffect]>> = steps
+            .iter()
+            .map(|s| {
+                pt.story
+                    .as_ref()
+                    .map(|ctx| {
+                        ctx.deeds_before(&s.objective)
+                            .map(|a| flow.act_effects(a))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+        let beats: Vec<Vec<(HappeningVerb, String)>> = steps
+            .iter()
+            .zip(&due)
+            .map(|(s, d)| possible_beats(c, s, d, true))
+            .collect();
+        // A subject a clash can involve: some step can leave it in a carried
+        // state, and acting lines about it stand at two steps or more — a subject
+        // only one step acts on has no later line to clash with in any order but
+        // the ones that step's own lines already fix.
+        let mut acted_at: BTreeMap<&str, usize> = BTreeMap::new();
+        for b in &beats {
+            let at: BTreeSet<&str> = b
+                .iter()
+                .filter(|(v, _)| acts(*v))
+                .map(|(_, s)| s.as_str())
+                .collect();
+            for s in at {
+                *acted_at.entry(s).or_default() += 1;
+            }
+        }
+        let carried: BTreeSet<String> = beats
+            .iter()
+            .flatten()
+            .filter(|(v, s)| carries(*v) && acted_at.get(s.as_str()).is_some_and(|n| *n > 1))
+            .map(|(_, s)| s.clone())
+            .collect();
+        let quiet = quiet_steps(c, flow, &steps, &beats, &carried, pt.story.as_deref());
+        let mut read = data_gates_read(c);
+        for (_, a) in pt.story.iter().flat_map(|ctx| &ctx.deeds) {
+            read.extend(flow.act_gate_reads(a).1);
+        }
+        let fp = Footprints::new(c, flow, &steps, &carried, &read, pt.story.as_deref());
+        OrderModel {
+            pt,
+            steps,
+            carried,
+            quiet,
+            read,
+            fp,
+        }
+    }
+}
+
 /// The search [`check_every_order`] runs: every clash a legal order shows that
 /// the exported order does not, each with the first order found showing it.
 fn search_orders(
@@ -1611,59 +1706,14 @@ fn search_orders(
     let Some(w) = r.world else {
         return (Vec::new(), stats);
     };
-    let pt = flow.story_playthrough(w);
-    let steps = pt.steps.clone();
-    // The entry deeds and choices due in front of each step: they travel with
-    // it in every order (`Walk::take`), so their lines are its lines.
-    let due: Vec<Vec<&[QuestEffect]>> = steps
-        .iter()
-        .map(|s| {
-            pt.story
-                .as_ref()
-                .map(|ctx| {
-                    ctx.deeds_before(&s.objective)
-                        .map(|a| flow.act_effects(a))
-                        .collect()
-                })
-                .unwrap_or_default()
-        })
-        .collect();
-    let beats: Vec<Vec<(HappeningVerb, String)>> = steps
-        .iter()
-        .zip(&due)
-        .map(|(s, d)| possible_beats(c, s, d))
-        .collect();
-    // A subject a clash can involve: some step can leave it in a carried
-    // state, and acting lines about it stand at two steps or more — a subject
-    // only one step acts on has no later line to clash with in any order but
-    // the ones that step's own lines already fix.
-    let mut acted_at: BTreeMap<&str, usize> = BTreeMap::new();
-    for b in &beats {
-        let at: BTreeSet<&str> = b
-            .iter()
-            .filter(|(v, _)| acts(*v))
-            .map(|(_, s)| s.as_str())
-            .collect();
-        for s in at {
-            *acted_at.entry(s).or_default() += 1;
-        }
-    }
-    let carried: BTreeSet<String> = beats
-        .iter()
-        .flatten()
-        .filter(|(v, s)| carries(*v) && acted_at.get(s.as_str()).is_some_and(|n| *n > 1))
-        .map(|(_, s)| s.clone())
-        .collect();
-    let quiet = quiet_steps(c, flow, &steps, &beats, &carried, pt.story.as_deref());
-    let mut read = data_gates_read(c);
-    for (_, a) in pt.story.iter().flat_map(|ctx| &ctx.deeds) {
-        read.extend(flow.act_gate_reads(a).1);
-    }
+    let m = OrderModel::new(c, flow, w);
     let mut search = OrderSearch {
-        steps: &steps,
-        quiet: &quiet,
-        carried: &carried,
-        read: &read,
+        steps: &m.steps,
+        quiet: &m.quiet,
+        fp: &m.fp,
+        stubborn: 0,
+        carried: &m.carried,
+        read: &m.read,
         bound,
         visited: BTreeSet::new(),
         flag_ids: BTreeMap::new(),
@@ -1676,14 +1726,15 @@ fn search_orders(
         hit: false,
     };
     search.explore(&OrderNode {
-        walk: flow.walk_for(&pt),
+        walk: flow.walk_for(&m.pt),
         ch: Chronicler::new(c),
         tracker: ClashTracker::default(),
         order: Vec::new(),
     });
     stats.states = search.visited.len();
-    stats.quiet = quiet.iter().filter(|q| **q).count();
-    stats.steps = steps.len();
+    stats.quiet = m.quiet.iter().filter(|q| **q).count();
+    stats.steps = m.steps.len();
+    stats.stubborn = search.stubborn;
     stats.refused = search.found.len();
     stats.unproven = search.hit;
     (search.found, stats)
@@ -1765,6 +1816,145 @@ pub fn clashes_by_search_and_by_enumeration(c: &Campaign) -> (BTreeSet<String>, 
     (searched, enumerated)
 }
 
+/// **The footprints against the replay, for tests.** Per realized branch,
+/// every play state some legal order reaches (walked with no reduction), and
+/// at each: every pair of legal steps the footprints call free of conflict is
+/// taken in both orders — each must stay legal after the other, the two
+/// orders must reach one play state, and each step must write the same lines
+/// either way; and every step that is not legal must stay not legal after
+/// every legal step outside its necessary enabling set. Returns the pairs and
+/// the enabling sets checked, and every disagreement. Exponential in the
+/// steps: a fixture's handful only.
+#[doc(hidden)]
+pub fn footprints_against_the_replay(c: &Campaign) -> (usize, usize, Vec<String>) {
+    type Lines = Vec<(&'static str, String, HappeningVerb, Option<String>)>;
+    fn lines_of(l: &[ChronicleLine]) -> Lines {
+        l.iter()
+            .map(|l| (l.kind, l.node.clone(), l.verb, l.subject.clone()))
+            .collect()
+    }
+    fn take<'f, 'a, 'c>(
+        n: &OrderNode<'f, 'a, 'c>,
+        step: &PathStep,
+    ) -> (OrderNode<'f, 'a, 'c>, Lines) {
+        let mut walk = n.walk.clone();
+        let j = walk.take(step);
+        let mut ch = n.ch.clone();
+        ch.push_step(&j);
+        let mut tracker = n.tracker.clone();
+        let l = ch.take_lines();
+        for x in &l {
+            let _ = tracker.read(x);
+        }
+        (
+            OrderNode {
+                walk,
+                ch,
+                tracker,
+                order: Vec::new(),
+            },
+            lines_of(&l),
+        )
+    }
+    let flow = Flow::new(c);
+    let (mut pairs, mut sets, mut bad) = (0usize, 0usize, Vec::new());
+    for b in enumerate(c) {
+        let r = realize_one(c, &flow, b);
+        let Some(w) = r.world else { continue };
+        let m = OrderModel::new(c, &flow, w);
+        let mut search = OrderSearch {
+            steps: &m.steps,
+            quiet: &m.quiet,
+            fp: &m.fp,
+            stubborn: 0,
+            carried: &m.carried,
+            read: &m.read,
+            bound: usize::MAX,
+            visited: BTreeSet::new(),
+            flag_ids: BTreeMap::new(),
+            line_ids: BTreeMap::new(),
+            seen: BTreeSet::new(),
+            found: Vec::new(),
+            hit: false,
+        };
+        let mut stack = vec![OrderNode {
+            walk: flow.walk_for(&m.pt),
+            ch: Chronicler::new(c),
+            tracker: ClashTracker::default(),
+            order: Vec::new(),
+        }];
+        let id = &r.branch.id;
+        while let Some(n) = stack.pop() {
+            let key = search.state(&n);
+            if !search.visited.insert(key) || n.walk.ended() {
+                continue;
+            }
+            let legal: Vec<usize> = (0..m.steps.len())
+                .filter(|&i| n.walk.legal(&m.steps[i]))
+                .collect();
+            for (x, &a) in legal.iter().enumerate() {
+                for &b in &legal[x + 1..] {
+                    if bit(&m.fp.conflict[a], b) || bit(&m.fp.conflict[b], a) {
+                        continue;
+                    }
+                    pairs += 1;
+                    let (sa, la) = take(&n, &m.steps[a]);
+                    let (sb, lb) = take(&n, &m.steps[b]);
+                    let (oa, ob) = (&m.steps[a].objective, &m.steps[b].objective);
+                    if !sa.walk.legal(&m.steps[b]) || !sb.walk.legal(&m.steps[a]) {
+                        bad.push(format!(
+                            "{id}: `{oa}` and `{ob}` free, but one shuts the other"
+                        ));
+                        continue;
+                    }
+                    let (sab, lab) = take(&sa, &m.steps[b]);
+                    let (sba, lba) = take(&sb, &m.steps[a]);
+                    if search.state(&sab) != search.state(&sba) {
+                        bad.push(format!(
+                            "{id}: `{oa}` and `{ob}` free, but their orders part"
+                        ));
+                    }
+                    if la != lba || lb != lab {
+                        bad.push(format!("{id}: `{oa}` and `{ob}` free, but a line moves"));
+                    }
+                }
+            }
+            for (t, step) in m.steps.iter().enumerate() {
+                if n.walk.done(&step.objective) || legal.contains(&t) {
+                    continue;
+                }
+                let mut nes = vec![0u64; m.steps.len().div_ceil(64).max(1)];
+                for &v in &m.fp.legal[t] {
+                    if !m.fp.settled(v, &n.walk) {
+                        for (a, w) in nes.iter_mut().zip(&m.fp.writers[v]) {
+                            *a |= w;
+                        }
+                    }
+                }
+                for &a in &legal {
+                    if bit(&nes, a) {
+                        continue;
+                    }
+                    sets += 1;
+                    let (sa, _) = take(&n, &m.steps[a]);
+                    if sa.walk.legal(step) {
+                        bad.push(format!(
+                            "{id}: `{}` opens `{}` from outside its enabling set",
+                            m.steps[a].objective, step.objective
+                        ));
+                    }
+                }
+            }
+            for &a in &legal {
+                stack.push(take(&n, &m.steps[a]).0);
+            }
+        }
+    }
+    bad.sort();
+    bad.dedup();
+    (pairs, sets, bad)
+}
+
 /// `DW0927`: the branch is refused as unproven — the search reached its bound.
 fn unproven_diagnostic(r: &RealizedBranch, bound: usize, steps: usize, quiet: usize) -> Diagnostic {
     Diagnostic::error(
@@ -1788,7 +1978,7 @@ fn unproven_diagnostic(r: &RealizedBranch, bound: usize, steps: usize, quiet: us
 }
 
 /// What [`check_every_order`] examined on one branch.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OrderWalk {
     /// Steps on the branch's path.
     pub steps: usize,
@@ -1796,6 +1986,8 @@ pub struct OrderWalk {
     pub quiet: usize,
     /// Distinct play states the search walked.
     pub states: usize,
+    /// Of those, the states where the stubborn set left a legal step out.
+    pub stubborn: usize,
     /// Clashes found in other legal orders that the exported order does not show.
     pub refused: usize,
     /// The search reached its bound.
@@ -1820,6 +2012,9 @@ type PlayState = (Vec<u64>, Vec<usize>, Vec<Option<i64>>, Vec<(usize, usize)>);
 struct OrderSearch<'s> {
     steps: &'s [PathStep],
     quiet: &'s [bool],
+    fp: &'s Footprints,
+    /// States where the stubborn set left out a legal step.
+    stubborn: usize,
     carried: &'s BTreeSet<String>,
     read: &'s BTreeSet<String>,
     bound: usize,
@@ -1917,10 +2112,12 @@ impl OrderSearch<'_> {
             self.explore(&next);
             return;
         }
-        for i in 0..self.steps.len() {
-            if !n.walk.legal(&self.steps[i]) {
-                continue;
-            }
+        let legal: Vec<usize> = (0..self.steps.len())
+            .filter(|&i| n.walk.legal(&self.steps[i]))
+            .collect();
+        let walk = self.fp.stubborn(&n.walk, self.steps, &legal);
+        self.stubborn += usize::from(walk.len() < legal.len());
+        for i in walk {
             let next = self.child(n, i);
             if next.walk.ended() {
                 continue;
@@ -2088,15 +2285,619 @@ fn quiet_steps(
         .collect()
 }
 
+/// One part of the play state a step can read or write: what the stubborn-set
+/// reduction ([`Footprints`]) compares two steps by.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Var {
+    /// A quest's progress: which step completes it, and so where its
+    /// completion bundle fires and its own line plays.
+    Quest(String),
+    /// Whether a quest is running.
+    Active(String),
+    /// Whether an objective is done, failed or lapsed.
+    Obj(String),
+    /// Whether a flag is held.
+    Flag(String),
+    /// The value of a datum some gate compares.
+    Data(String),
+}
+
+/// A set of step indices.
+type Bits = Vec<u64>;
+
+fn bit(b: &Bits, i: usize) -> bool {
+    b[i / 64] & (1 << (i % 64)) != 0
+}
+
+fn set_bit(b: &mut Bits, i: usize) {
+    b[i / 64] |= 1 << (i % 64);
+}
+
+/// **What each step of one branch's path touches** — the static half of the
+/// stubborn-set reduction [`check_every_order`] runs (Valmari's stubborn sets;
+/// Godefroid's persistent sets, "conflicting transitions" construction).
+///
+/// Two steps **conflict** when one can write what the other reads where a
+/// write can change what it does or shut it (an effect gate, a `forbids` gate,
+/// a compared datum, its own status), when both write one quest's progress or
+/// one compared datum, when both have an acting line about one subject the
+/// rules track, or when either can end the delve. A step's **legality inputs**
+/// are everything [`Flow::step_legality_reads`] names. A write a step can make is every
+/// flag, datum, objective status, quest progress and quest activity its own
+/// option, the choices and deeds due in front of it, its objective's bundle or
+/// expiry, and the completion bundles of the quests it can complete reach —
+/// gated or not — closed over every ambient producer those flags (or a deed
+/// it performs) can start. Flags are only ever set, quests only ever start
+/// and objectives only ever settle, so a requirement already held cannot be
+/// moved again, and a `requires` gate never shuts a step that is legal.
+#[derive(Default)]
+struct Footprints {
+    vars: Vec<Var>,
+    /// Each variable's index in `vars`.
+    index: BTreeMap<Var, usize>,
+    /// Per step, whether a choice or a deed is due in front of it.
+    fronts: Vec<bool>,
+    /// Per step, what the gates and the lines of the deeds due in front of it
+    /// read: what can move what they do before the step is judged.
+    deed_reads: Vec<Vec<usize>>,
+    /// Per step, the objectives of the quest whose completion starts its own.
+    opened_by: Vec<Vec<String>>,
+    /// Per step, whether it can end the delve.
+    ends: Vec<bool>,
+    /// Per step, its plain `after` prerequisites.
+    after: Vec<Vec<String>>,
+    /// Per step, whether a deed due in front of it can fail it.
+    fails_itself: Vec<bool>,
+    /// Per step, the variables its legality reads.
+    legal: Vec<Vec<usize>>,
+    /// Per variable, the steps that can write it.
+    writers: Vec<Bits>,
+    /// Per step, the steps it conflicts with.
+    conflict: Vec<Bits>,
+}
+
+impl Footprints {
+    #[allow(clippy::too_many_lines)]
+    fn new(
+        c: &Campaign,
+        flow: &Flow<'_>,
+        steps: &[PathStep],
+        carried: &BTreeSet<String>,
+        read: &BTreeSet<String>,
+        story: Option<&crate::compiler::flow::StoryCtx>,
+    ) -> Self {
+        let quests = &c.quests.content.quests;
+        let quorum_members: BTreeSet<String> = crate::compiler::flow::quorums(c)
+            .into_iter()
+            .flat_map(|(_, q)| q.any.iter().map(|m| m.as_str().to_string()))
+            .collect();
+        let mut failable: BTreeSet<&str> = BTreeSet::new();
+        for_each_campaign_effect(c, &mut |_, _, e| {
+            if let Verb::FailObjective { objective } = &e.verb {
+                failable.insert(objective.as_str());
+            }
+        });
+        let words = steps.len().div_ceil(64).max(1);
+        let mut ids: BTreeMap<Var, usize> = BTreeMap::new();
+        let mut fp = Footprints::default();
+        let mut id = |fp: &mut Footprints, v: Var| -> usize {
+            *ids.entry(v.clone()).or_insert_with(|| {
+                fp.vars.push(v);
+                fp.writers.push(vec![0; words]);
+                fp.vars.len() - 1
+            })
+        };
+        let mut writes: Vec<BTreeSet<Var>> = Vec::new();
+        let mut reads: Vec<BTreeSet<Var>> = Vec::new();
+        let mut subjects: Vec<BTreeSet<String>> = Vec::new();
+        let mut sets: Vec<BTreeSet<String>> = Vec::new();
+        let mut ends: Vec<bool> = Vec::new();
+        for step in steps {
+            let (mut w, mut r) = (BTreeSet::new(), BTreeSet::new());
+            // The compared data it writes other than by adding to them: two
+            // additions to one datum land on one value in either order.
+            let mut set: BTreeSet<String> = BTreeSet::new();
+            let mut end = false;
+            let due: Vec<&str> = story
+                .map(|ctx| ctx.deeds_before(&step.objective).collect())
+                .unwrap_or_default();
+            // Whether this step can be the one that completes its quest: not
+            // while an objective of the quest that settles only by its own
+            // act waits on it, however far down its `after` chain.
+            let own = quests.iter().find(|q| q.id.as_str() == step.quest);
+            let last = own.is_none_or(|q| {
+                let waits = |y: &delvewright_dsl::Objective| {
+                    let mut stack: Vec<String> = y
+                        .after_edges()
+                        .into_iter()
+                        .map(|a| a.as_str().to_string())
+                        .collect();
+                    let mut seen = BTreeSet::new();
+                    while let Some(x) = stack.pop() {
+                        if x == step.objective {
+                            return true;
+                        }
+                        if seen.insert(x.clone())
+                            && let Some(o) = q.objectives.iter().find(|o| o.id().as_str() == x)
+                        {
+                            stack.extend(
+                                o.after_edges().into_iter().map(|a| a.as_str().to_string()),
+                            );
+                        }
+                    }
+                    false
+                };
+                !q.objectives.iter().any(|y| {
+                    let id = y.id().as_str();
+                    id != step.objective
+                        && !failable.contains(id)
+                        && !quorum_members.contains(id)
+                        && waits(y)
+                })
+            });
+            let due_effects: Vec<&[QuestEffect]> =
+                due.iter().map(|a| flow.act_effects(a)).collect();
+            let mut subj: BTreeSet<String> = possible_beats(c, step, &due_effects, last)
+                .into_iter()
+                .filter(|(v, s)| acts(*v) && carried.contains(s))
+                .map(|(_, s)| s)
+                .collect();
+            // The quests this step can complete: its own, when it can be its
+            // last, and any its completion starts whose every objective can
+            // settle before it starts (a failed objective's step is legal
+            // anywhere). Every step of a quest writes its progress: the
+            // quest's own line plays at its first.
+            w.insert(Var::Quest(step.quest.clone()));
+            let mut completes: Vec<&str> = if last {
+                vec![step.quest.as_str()]
+            } else {
+                Vec::new()
+            };
+            let mut k = 0;
+            while k < completes.len() {
+                let p = completes[k];
+                k += 1;
+                for o in quests {
+                    if let delvewright_dsl::Trigger::QuestComplete { quest } = &o.trigger
+                        && quest.as_str() == p
+                    {
+                        w.insert(Var::Active(o.id.as_str().to_string()));
+                        if !completes.contains(&o.id.as_str())
+                            && o.objectives
+                                .iter()
+                                .all(|x| failable.contains(x.id().as_str()))
+                        {
+                            completes.push(o.id.as_str());
+                        }
+                    }
+                }
+            }
+            let mut effs: Vec<&[QuestEffect]> = Vec::new();
+            for qid in &completes {
+                w.insert(Var::Quest((*qid).to_string()));
+                if let Some(q) = quests.iter().find(|q| q.id.as_str() == *qid) {
+                    effs.push(&q.on_complete);
+                    if *qid != step.quest {
+                        let mut more = Vec::new();
+                        fn lines(effs: &[QuestEffect], out: &mut Vec<(HappeningVerb, String)>) {
+                            for e in effs {
+                                if let Some(h) = &e.happening
+                                    && let Some(s) = e.happening_subject()
+                                {
+                                    out.push((h.verb, s.id.to_string()));
+                                }
+                                for list in e.nested_effect_lists() {
+                                    lines(list, out);
+                                }
+                            }
+                        }
+                        lines(&q.on_complete, &mut more);
+                        subj.extend(
+                            more.into_iter()
+                                .filter(|(v, s)| acts(*v) && carried.contains(s))
+                                .map(|(_, s)| s),
+                        );
+                    }
+                }
+            }
+            if let Some(q) = quests.iter().find(|q| q.id.as_str() == step.quest) {
+                if let Some(e) = q
+                    .on_objective_complete
+                    .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
+                {
+                    effs.push(e);
+                }
+                if let Some(o) = q
+                    .objectives
+                    .iter()
+                    .find(|o| o.id().as_str() == step.objective)
+                    && let Some(l) = o.limit()
+                {
+                    effs.push(l.on_expire());
+                }
+            }
+            w.insert(Var::Obj(step.objective.clone()));
+            r.insert(Var::Obj(step.objective.clone()));
+            // A quorum that holds lapses its members (one quest's).
+            for (_, qu) in crate::compiler::flow::quorums(c) {
+                if qu.any.iter().any(|m| m.as_str() == step.objective) {
+                    w.extend(qu.any.iter().map(|m| Var::Obj(m.as_str().to_string())));
+                }
+            }
+            if let Some(n) = step.talk_option
+                && let Some(npc) = talk_to_npc(c, &step.objective)
+                && let Some((_, opt)) = option_at(c, npc, n)
+            {
+                for e in &opt.effects {
+                    if let delvewright_dsl::DialogueEffect::SetFlag { flag } = e {
+                        w.insert(Var::Flag(flag.as_str().to_string()));
+                    }
+                }
+            }
+            for ch in story
+                .into_iter()
+                .flat_map(|ctx| ctx.choices_before(&step.objective))
+            {
+                w.extend(ch.sets.iter().map(|f| Var::Flag(f.clone())));
+            }
+            for a in &due {
+                if let Some(f) = flow.act_gate_reads(a).2 {
+                    w.insert(Var::Flag(f));
+                }
+                effs.push(flow.act_effects(a));
+            }
+            for list in effs {
+                each_effect(list, &mut |e| {
+                    r.extend(
+                        e.requires_flags()
+                            .iter()
+                            .map(|f| Var::Flag(f.as_str().to_string())),
+                    );
+                    r.extend(
+                        e.forbids_flags()
+                            .iter()
+                            .map(|f| Var::Flag(f.as_str().to_string())),
+                    );
+                    r.extend(
+                        e.requires_state()
+                            .iter()
+                            .map(|cmp| Var::Data(cmp.state.as_str().to_string())),
+                    );
+                    match &e.verb {
+                        Verb::SetFlag { flag, .. } => {
+                            w.insert(Var::Flag(flag.as_str().to_string()));
+                        }
+                        Verb::FailObjective { objective } => {
+                            w.insert(Var::Obj(objective.as_str().to_string()));
+                            r.insert(Var::Obj(objective.as_str().to_string()));
+                        }
+                        Verb::CampaignComplete { .. } => end = true,
+                        _ => {}
+                    }
+                    if let Some((d, how)) = e.writes_state()
+                        && read.contains(d.as_str())
+                    {
+                        w.insert(Var::Data(d.as_str().to_string()));
+                        if !matches!(how, delvewright_dsl::StateWrite::Add(_)) {
+                            set.insert(d.as_str().to_string());
+                        }
+                    }
+                });
+            }
+            // What its legality reads that a write can shut: a flag it
+            // forbids, a datum a gate compares.
+            let sr = flow.step_legality_reads(step, story);
+            r.extend(sr.forbids.iter().map(|f| Var::Flag(f.clone())));
+            r.extend(sr.data.iter().map(|d| Var::Data(d.clone())));
+            // Every ambient producer a flag it sets, or a deed it performs,
+            // can start.
+            loop {
+                let mut changed = false;
+                for (flag, requires, act) in flow.ambient_chains() {
+                    let starts = requires.iter().any(|f| w.contains(&Var::Flag(f.clone())))
+                        || act.is_some_and(|a| due.contains(&a));
+                    if starts {
+                        changed |= w.insert(Var::Flag(flag.to_string()));
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+            let mut legal: Vec<usize> = Vec::new();
+            legal.extend(
+                sr.quests
+                    .iter()
+                    .map(|q| id(&mut fp, Var::Active(q.clone()))),
+            );
+            legal.extend(
+                sr.objectives
+                    .iter()
+                    .map(|o| id(&mut fp, Var::Obj(o.clone()))),
+            );
+            legal.extend(
+                sr.requires
+                    .iter()
+                    .chain(&sr.forbids)
+                    .map(|f| id(&mut fp, Var::Flag(f.clone()))),
+            );
+            legal.extend(sr.data.iter().map(|d| id(&mut fp, Var::Data(d.clone()))));
+            legal.sort_unstable();
+            legal.dedup();
+            fp.legal.push(legal);
+            let fronts = story.is_some_and(|ctx| ctx.fronts(&step.objective));
+            fp.fronts.push(fronts);
+            // A deed fires before its step is judged, and a gate on one of its
+            // lines can make it set a flag the step forbids: where a deed is
+            // due, every flag its legality reads can shut it.
+            if fronts {
+                r.extend(sr.requires.iter().map(|f| Var::Flag(f.clone())));
+            }
+            let mut dr: Vec<usize> = Vec::new();
+            for a in &due {
+                let (requires, forbids, data) = flow.act_gate(a);
+                for f in requires.into_iter().chain(forbids) {
+                    dr.push(id(&mut fp, Var::Flag(f)));
+                }
+                for d in data {
+                    dr.push(id(&mut fp, Var::Data(d)));
+                }
+                each_effect(flow.act_effects(a), &mut |e| {
+                    for f in e.requires_flags().iter().chain(e.forbids_flags()) {
+                        dr.push(id(&mut fp, Var::Flag(f.as_str().to_string())));
+                    }
+                    for cmp in e.requires_state() {
+                        dr.push(id(&mut fp, Var::Data(cmp.state.as_str().to_string())));
+                    }
+                });
+            }
+            dr.sort_unstable();
+            dr.dedup();
+            fp.deed_reads.push(dr);
+            let mut fails_itself = false;
+            for a in &due {
+                each_effect(flow.act_effects(a), &mut |e| {
+                    if let Verb::FailObjective { objective } = &e.verb {
+                        fails_itself |= objective.as_str() == step.objective;
+                    }
+                });
+            }
+            fp.fails_itself.push(fails_itself);
+            fp.after.push(
+                quests
+                    .iter()
+                    .flat_map(|q| &q.objectives)
+                    .find(|o| o.id().as_str() == step.objective)
+                    .map(|o| {
+                        o.after_required()
+                            .into_iter()
+                            .map(|a| a.as_str().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+            fp.opened_by.push(
+                quests
+                    .iter()
+                    .find(|q| q.id.as_str() == step.quest)
+                    .and_then(|q| match &q.trigger {
+                        delvewright_dsl::Trigger::QuestComplete { quest } => {
+                            quests.iter().find(|p| p.id == *quest)
+                        }
+                        _ => None,
+                    })
+                    .map(|p| {
+                        p.objectives
+                            .iter()
+                            .map(|o| o.id().as_str().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            );
+            writes.push(w);
+            reads.push(r);
+            sets.push(set);
+            subjects.push(subj);
+            ends.push(end);
+        }
+        for (i, w) in writes.iter().enumerate() {
+            for v in w {
+                let k = id(&mut fp, v.clone());
+                set_bit(&mut fp.writers[k], i);
+            }
+        }
+        fp.index = ids;
+        fp.conflict = vec![vec![0; words]; steps.len()];
+        for a in 0..steps.len() {
+            for b in (a + 1)..steps.len() {
+                let ww = writes[a].iter().any(|v| match v {
+                    Var::Quest(_) => writes[b].contains(v),
+                    Var::Data(d) => {
+                        writes[b].contains(v) && (sets[a].contains(d) || sets[b].contains(d))
+                    }
+                    _ => false,
+                });
+                let hit = ww
+                    || !subjects[a].is_disjoint(&subjects[b])
+                    || !writes[a].is_disjoint(&reads[b])
+                    || !writes[b].is_disjoint(&reads[a]);
+                if hit {
+                    set_bit(&mut fp.conflict[a], b);
+                    set_bit(&mut fp.conflict[b], a);
+                }
+            }
+        }
+        // A step that can end the delve shuts every other: nothing is walked
+        // after it. A step it ends before does not threaten the step that
+        // ends — an order with a step after the end is no order.
+        for (a, end) in ends.iter().enumerate() {
+            if *end {
+                for b in 0..steps.len() {
+                    if b != a {
+                        set_bit(&mut fp.conflict[a], b);
+                    }
+                }
+            }
+        }
+        fp.ends = ends;
+        fp
+    }
+
+    /// Whether variable `v` can no longer change on `walk`: a quest already
+    /// running, an objective already done, a flag already held.
+    fn settled(&self, v: usize, walk: &crate::compiler::flow::Walk<'_, '_>) -> bool {
+        match &self.vars[v] {
+            Var::Active(q) => walk.active_quests().contains(q),
+            Var::Obj(o) => walk.done(o),
+            Var::Flag(f) => walk.flags().contains(f),
+            Var::Quest(_) | Var::Data(_) => false,
+        }
+    }
+
+    /// **A necessary enabling set** of step `t`, not legal at `walk`: steps one
+    /// of which every order that makes `t` legal takes first. From the first
+    /// conjunct of the replay's test that fails ([`Walk::blocked`]): a quest
+    /// not running starts only once every objective of the quest that starts
+    /// it is settled, so the writers of one of those not yet done; a missing
+    /// prerequisite or flag, its writers; a quorum, the writers of its
+    /// members; a flag it forbids is never cleared, so nothing; the reach of a
+    /// dialogue option, the writers of every input of its legality not
+    /// settled. Where a choice or deed is due in front of `t`, the writers of
+    /// what those deeds read as well, since they fire before `t` is judged.
+    /// Always the writers of `t`'s own status: a failed objective's step is
+    /// legal anywhere.
+    fn enablers(
+        &self,
+        t: usize,
+        walk: &crate::compiler::flow::Walk<'_, '_>,
+        step: &PathStep,
+    ) -> Bits {
+        use crate::compiler::flow::Blocked;
+        let mut out = vec![0u64; self.conflict.len().div_ceil(64).max(1)];
+        let mut or = |v: &Var| {
+            if let Some(&k) = self.index.get(v) {
+                for (a, w) in out.iter_mut().zip(&self.writers[k]) {
+                    *a |= w;
+                }
+            }
+        };
+        or(&Var::Obj(step.objective.clone()));
+        // A deed or a choice never starts a quest or settles an objective, so
+        // unless a deed due in front of `t` can fail it, its quest not running
+        // or a prerequisite not settled is a conjunct no deed can move.
+        if !walk.failed(&step.objective) && !self.fails_itself[t] {
+            if !walk.active_quests().contains(&step.quest) {
+                if let Some(x) = self.opened_by[t].iter().find(|x| !walk.done(x)) {
+                    or(&Var::Obj(x.clone()));
+                }
+                return out;
+            }
+            if let Some(a) = self.after[t].iter().find(|a| !walk.done(a)) {
+                or(&Var::Obj(a.clone()));
+                return out;
+            }
+        }
+        let open = |vs: &[usize], or: &mut dyn FnMut(&Var)| {
+            for &v in vs {
+                if !self.settled(v, walk) {
+                    or(&self.vars[v]);
+                }
+            }
+        };
+        if self.fronts[t] {
+            open(&self.deed_reads[t], &mut or);
+        }
+        match walk.blocked(step) {
+            None
+            | Some(
+                Blocked::NoQuest
+                | Blocked::NoObjective
+                | Blocked::NoOption(_)
+                | Blocked::Forbids(_)
+                | Blocked::Deed(_),
+            ) => {}
+            Some(Blocked::Inactive) => {
+                if let Some(x) = self.opened_by[t].iter().find(|x| !walk.done(x)) {
+                    or(&Var::Obj(x.clone()));
+                }
+            }
+            Some(Blocked::After(a)) => or(&Var::Obj(a)),
+            Some(Blocked::Quorum(ms)) => {
+                for m in ms {
+                    or(&Var::Obj(m));
+                }
+            }
+            Some(Blocked::Requires(f)) => or(&Var::Flag(f)),
+            Some(Blocked::Option(_)) => open(&self.legal[t], &mut or),
+        }
+        out
+    }
+
+    /// **A stubborn set at `walk`**, as the legal steps to walk: the smallest,
+    /// over every legal seed, of the closure that adds, for a legal step, every
+    /// step it conflicts with, and for a step that is not legal, every step
+    /// that can write one of its legality inputs not yet settled (a necessary
+    /// enabling set). Only steps not yet done are added. Every step outside
+    /// the closure conflicts with no legal step inside it and cannot make a
+    /// step inside it legal, so any order from here can take its first step of
+    /// the closure first and keep the rest in their order — with the same
+    /// state, the same lines and the same verdicts — and a first step of the
+    /// closure is one of these.
+    fn stubborn(
+        &self,
+        walk: &crate::compiler::flow::Walk<'_, '_>,
+        steps: &[PathStep],
+        legal: &[usize],
+    ) -> Vec<usize> {
+        let words = steps.len().div_ceil(64).max(1);
+        let mut is_legal = vec![0u64; words];
+        for &i in legal {
+            set_bit(&mut is_legal, i);
+        }
+        let mut best: Option<Vec<usize>> = None;
+        for &seed in legal {
+            let mut in_t = vec![0u64; words];
+            set_bit(&mut in_t, seed);
+            let mut stack = vec![seed];
+            while let Some(u) = stack.pop() {
+                let mut add = vec![0u64; words];
+                if bit(&is_legal, u) {
+                    add.clone_from(&self.conflict[u]);
+                } else {
+                    add = self.enablers(u, walk, &steps[u]);
+                }
+                for (j, step) in steps.iter().enumerate() {
+                    if bit(&add, j) && !bit(&in_t, j) && !walk.done(&step.objective) {
+                        set_bit(&mut in_t, j);
+                        stack.push(j);
+                    }
+                }
+            }
+            let p: Vec<usize> = legal.iter().copied().filter(|&i| bit(&in_t, i)).collect();
+            if best.as_ref().is_none_or(|b| p.len() < b.len()) {
+                let one = p.len() == 1;
+                best = Some(p);
+                if one {
+                    break;
+                }
+            }
+        }
+        best.unwrap_or_default()
+    }
+}
+
 /// Every `(verb, subject)` a step can put in the dated chronicle, whatever the
 /// order: its quest's own line, its objective's, the option it takes, and every
 /// effect its objective bundle, its quest's `on_complete` or the bundle of an
-/// entry deed due in front of it (`deeds`) declares, gated or not. A superset: it decides which subjects the rules track and which steps
-/// are quiet ([`quiet_steps`]), and a superset can only make fewer steps quiet.
+/// entry deed due in front of it (`deeds`) declares, gated or not — its
+/// quest's `on_complete` only where `completes`. A superset: it decides which
+/// subjects the rules track and which steps are quiet ([`quiet_steps`]), and
+/// a superset can only make fewer steps quiet.
 fn possible_beats(
     c: &Campaign,
     step: &PathStep,
     deeds: &[&[QuestEffect]],
+    completes: bool,
 ) -> Vec<(HappeningVerb, String)> {
     let mut out = Vec::new();
     let Some(q) = c
@@ -2147,7 +2948,9 @@ fn possible_beats(
     {
         effects(effs, &mut out);
     }
-    effects(&q.on_complete, &mut out);
+    if completes {
+        effects(&q.on_complete, &mut out);
+    }
     for d in deeds {
         effects(d, &mut out);
     }
