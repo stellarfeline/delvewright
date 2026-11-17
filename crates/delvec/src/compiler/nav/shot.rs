@@ -1,22 +1,30 @@
 //! **Where a target block is shot from** (spec-0134 §2).
 //!
 //! A `shot` trigger fires when a projectile the player launched lands on the
-//! `minecraft:target` its prop places. The static proof is ruled: a reachable
-//! standing cell with a **clear line of sight** to the target — no arc, no
-//! piercing. The compiler finds, among the cells a body stands in, one between
-//! [`SHOT_REACH_MIN`] and [`SHOT_REACH_MAX`] blocks of the target whose eye
-//! (`metrics::PLAYER_EYE_HEIGHT` over its feet) sees the block's centre
-//! through air, nearest the target first; none is `DW1091`. The cell is
-//! exported on the trigger's step as `stand`, where the bot draws, and it is
-//! where the route proof's leg to the step ends ([`fix_stances`]): the cells
-//! it is chosen among are the walk region from where the party begins
-//! ([`World::walk_region`]), every one of which a leg's walk reaches, never a
-//! ledge only a jump of the launch set lands on.
+//! `minecraft:target` its prop places. The static proof follows the arrow: a
+//! reachable standing cell from whose eye (`metrics::PLAYER_EYE_HEIGHT` over
+//! its feet) a full-drawn arrow's **flight** — the low arc through the
+//! block's centre, tick by tick, as the pinned jar flies it
+//! ([`delvewright_dsl::metrics::arrow::flight`], the solver the bot aims by)
+//! — meets nothing before the target. The compiler finds, among the cells a
+//! body stands in, one between [`SHOT_REACH_MIN`] and [`SHOT_REACH_MAX`]
+//! blocks of the target with a [`clear_arc`], nearest the target first; none
+//! is `DW1091`. The cell is exported on the trigger's step as `stand`, where
+//! the bot draws, and it is where the route proof's leg to the step ends
+//! ([`fix_stances`]): the cells it is chosen among are the walk region from
+//! where the party begins ([`World::walk_region`]), every one of which a
+//! leg's walk reaches, never a ledge only a jump of the launch set lands on.
 //!
-//! "Through air" is stricter than the sight rule a reader's eye takes
+//! A straight line is not the flight: an arrow rises over its chord and
+//! falls onto it, so a lintel on the line can sit under the arc and a ceiling
+//! over the line can sit across it. The arc is the one an unscattered arrow
+//! flies; the server's spread is the bot's to loose again for.
+//!
+//! "Meets nothing" is stricter than the sight rule a reader's eye takes
 //! (`sight-through-blocks.md`): an arrow is stopped by anything a body is
 //! stopped by, glass and bars included, and slowed by water, so every
-//! occupied cell strictly before the target blocks the line.
+//! occupied cell the flight's segments pass strictly before the target
+//! blocks it.
 
 use std::collections::BTreeSet;
 
@@ -53,21 +61,32 @@ pub fn eye_of(cell: [i32; 3]) -> [f64; 3] {
     ]
 }
 
-/// Whether an arrow loosed from `eye` meets nothing before `target`'s cell:
-/// every cell of the segment from the eye to the target's centre, strictly
-/// before the target, is one a body is not stopped by.
-pub fn clear_shot(world: &World, eye: [f64; 3], target: [i32; 3]) -> bool {
+/// Whether a full-drawn arrow loosed from `eye` on the low arc through
+/// `target`'s centre meets nothing before `target`'s cell: every cell each
+/// tick's segment of its [`flight`](delvewright_dsl::metrics::arrow::flight)
+/// passes, up to the target, is one a body is not stopped by. No arc reaching
+/// the centre is no clear arc.
+pub fn clear_arc(world: &World, eye: [f64; 3], target: [i32; 3]) -> bool {
     let centre = [
         f64::from(target[0]) + 0.5,
         f64::from(target[1]) + 0.5,
         f64::from(target[2]) + 0.5,
     ];
-    super::walk_cells(eye, centre, |c| c != target && world.is_occupied(c)).is_none()
+    let Some(path) = delvewright_dsl::metrics::arrow::flight(eye, centre) else {
+        return false;
+    };
+    for seg in path.windows(2) {
+        match super::walk_cells(seg[0], seg[1], |c| c == target || world.is_occupied(c)) {
+            Some(c) => return c == target,
+            None => continue,
+        }
+    }
+    false
 }
 
 /// **The stance**: among `walk` (the cells a body stands in on the way), the
 /// cell between [`SHOT_REACH_MIN`] and [`SHOT_REACH_MAX`] blocks of `target`
-/// whose eye has a [`clear_shot`] to it, nearest first, ties by cell order
+/// whose eye has a [`clear_arc`] to it, nearest first, ties by cell order
 /// (ADR-0006). `None` is `DW1091`'s.
 pub fn shot_stance(
     world: &World,
@@ -95,7 +114,7 @@ pub fn shot_stance(
         if best.is_some_and(|(k, c, _)| (k, c) <= (key, cell)) {
             continue;
         }
-        if clear_shot(world, eye, target) {
+        if clear_arc(world, eye, target) {
             best = Some((key, cell, d));
         }
     }
@@ -112,10 +131,11 @@ pub fn stance_or_unseen(
     shot_stance(world, walk, cell).ok_or_else(|| Failure {
         code: DW_SHOT_UNSEEN,
         message: format!(
-            "`shot` trigger `{id}`'s target at {cell:?} is seen through air from no cell a body \
-             stands in between {SHOT_REACH_MIN} and {SHOT_REACH_MAX} blocks of it ({} walk \
-             cell(s) examined) — an arrow cannot reach it. Open a line to it from the walk, or \
-             move the target into one",
+            "`shot` trigger `{id}`'s target at {cell:?} is reached by no full-drawn arrow's \
+             arc from a cell a body stands in between {SHOT_REACH_MIN} and {SHOT_REACH_MAX} \
+             blocks of it ({} walk cell(s) examined): every flight through its centre meets a \
+             block first. Clear the arc from the walk — an arrow rises over the straight line \
+             and falls onto it — or move the target where one reaches it",
             walk.len()
         ),
     })
@@ -271,7 +291,7 @@ mod tests {
         let (w, walk) = hall(&[[49, 65, 1], [49, 66, 1]]);
         let s = shot_stance(&w, &walk, [49, 66, 1]).expect("a clear hall has a stance");
         assert!(s.distance >= f64::from(SHOT_REACH_MIN));
-        assert!(clear_shot(&w, eye_of(s.cell), [49, 66, 1]));
+        assert!(clear_arc(&w, eye_of(s.cell), [49, 66, 1]));
         // Nearest: the cell one closer stands under the minimum.
         assert!(s.distance < f64::from(SHOT_REACH_MIN) + 1.0, "{s:?}");
     }
@@ -284,6 +304,66 @@ mod tests {
         assert!(shot_stance(&w, &walk, [49, 66, 1]).is_none());
         let f = stance_or_unseen(&w, &walk, "trigger/t", [49, 66, 1]).unwrap_err();
         assert_eq!(f.code, "DW1091");
+    }
+
+    /// An open field 46 long on x, floored at `y` 64, a target block at
+    /// `[40, 66, 1]`, and `extra` solid; the walk is the cells 32 to 40
+    /// blocks off, whose arcs climb over a block above the straight line.
+    fn field(extra: &[[i32; 3]]) -> (World, BTreeSet<[i32; 3]>) {
+        let mut solid: BTreeSet<[i32; 3]> = (0..46)
+            .flat_map(|x| (0..3).map(move |z| [x, 64, z]))
+            .collect();
+        solid.insert([40, 66, 1]);
+        solid.extend(extra.iter().copied());
+        let w = World::from_solid_cells(solid);
+        let walk = (0..=8).map(|x| [x, 65, 1]).collect();
+        (w, walk)
+    }
+
+    #[test]
+    fn a_ceiling_over_the_line_that_the_arc_meets_has_no_stance() {
+        // A roof one block over the head of every body, from x 18 to 24: the
+        // straight line from each eye to the centre passes under it; every arc
+        // rises into it.
+        let roof: Vec<[i32; 3]> = (18..=24)
+            .flat_map(|x| (0..3).map(move |z| [x, 67, z]))
+            .collect();
+        let (w, walk) = field(&roof);
+        let target = [40, 66, 1];
+        for c in &walk {
+            let eye = eye_of(*c);
+            let centre = [40.5, 66.5, 1.5];
+            let line =
+                crate::compiler::nav::walk_cells(eye, centre, |q| q != target && w.is_occupied(q));
+            assert_eq!(line, None, "{c:?}: the straight line is clear");
+        }
+        assert!(shot_stance(&w, &walk, target).is_none());
+        assert_eq!(
+            stance_or_unseen(&w, &walk, "trigger/t", target)
+                .unwrap_err()
+                .code,
+            "DW1091"
+        );
+    }
+
+    #[test]
+    fn a_block_on_the_line_under_the_arc_leaves_a_stance() {
+        // One block on the straight line at x 20, which every arc from the
+        // walk passes over.
+        let (w, walk) = field(&[[20, 66, 1]]);
+        let target = [40, 66, 1];
+        for c in &walk {
+            let line = crate::compiler::nav::walk_cells(eye_of(*c), [40.5, 66.5, 1.5], |q| {
+                q != target && w.is_occupied(q)
+            });
+            assert_eq!(
+                line,
+                Some([20, 66, 1]),
+                "{c:?}: the straight line is blocked"
+            );
+        }
+        let s = shot_stance(&w, &walk, target).expect("the arc clears the block");
+        assert_eq!(s.cell, [8, 65, 1], "nearest first");
     }
 
     #[test]

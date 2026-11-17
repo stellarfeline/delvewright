@@ -12,8 +12,8 @@ export const ARROW_LAUNCH_SPEED = 3.0;
 export const ARROW_DRAG = 0.99;
 /** Blocks a tick taken from the vertical velocity after the drag. */
 export const ARROW_GRAVITY = 0.05;
-/** The arrow spawns this far under the shooter's eye. */
-export const ARROW_LAUNCH_DROP = 0.1;
+/** The arrow spawns this far under the shooter's eye (`0.1F`, widened). */
+export const ARROW_LAUNCH_DROP = 0.10000000149011612;
 /** The ticks a flight is followed before it is given up as out of reach. */
 const FLIGHT_TICKS = 200;
 
@@ -94,6 +94,42 @@ export function shotPitch(distance: number, rise: number): number | undefined {
     else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+/**
+ * The flight of a full-drawn arrow loosed from `eye` on the low arc through
+ * `point`, with no spread: its position at launch and after each tick, up to
+ * the first tick at or past `point`'s column. `undefined` when no arc reaches
+ * `point`, or it stands straight over or under the eye. The compiler's shot
+ * proof follows the same flight (`delvewright_dsl::metrics::arrow::flight`),
+ * held to this one by the case file `test/shot.test.ts` writes.
+ */
+export function arrowFlight(
+  eye: readonly [number, number, number],
+  point: readonly [number, number, number],
+): [number, number, number][] | undefined {
+  const launch: [number, number, number] = [eye[0], eye[1] - ARROW_LAUNCH_DROP, eye[2]];
+  const dx = point[0] - launch[0];
+  const dz = point[2] - launch[2];
+  const d = Math.hypot(dx, dz);
+  if (d === 0) return undefined;
+  const pitch = shotPitch(d, point[1] - launch[1]);
+  if (pitch === undefined) return undefined;
+  const [ux, uz] = [dx / d, dz / d];
+  let vh = ARROW_LAUNCH_SPEED * Math.cos(pitch);
+  let vy = ARROW_LAUNCH_SPEED * Math.sin(pitch);
+  let p = launch;
+  const out: [number, number, number][] = [p];
+  let run = 0;
+  for (let n = 0; n < FLIGHT_TICKS; n++) {
+    p = [p[0] + vh * ux, p[1] + vy, p[2] + vh * uz];
+    run += vh;
+    out.push(p);
+    if (run >= d) return out;
+    vh *= ARROW_DRAG;
+    vy = vy * ARROW_DRAG - ARROW_GRAVITY;
+  }
+  return undefined;
 }
 
 /**

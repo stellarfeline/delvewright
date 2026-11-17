@@ -1,11 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   ARROW_DRAG,
   ARROW_GRAVITY,
   ARROW_LAUNCH_DROP,
   ARROW_LAUNCH_SPEED,
+  arrowFlight,
   arrowHeightAt,
   shotAim,
   shotOutOfReach,
@@ -122,4 +125,62 @@ test("a point no full draw reaches has no aim, and the failures name the step", 
   assert.equal(shotAim([0.5, 65.62, 0.5], [40, 300, 0]), undefined);
   assert.match(shotOutOfReach("trigger t (shot)"), /^trigger t \(shot\): no full-drawn arrow's arc reaches/);
   assert.match(shotSpent("trigger t (shot)", 8), /no arrow of 8 landed on the target/);
+});
+
+/**
+ * The case file the compiler's solver replays
+ * (`delvewright_dsl::metrics::arrow`, `the_solver_matches_the_bots_aim`):
+ * this aim's low-arc pitch over a grid of distances and rises, the unreached
+ * among them, and the flight tick by tick over a grid of rises and falls.
+ * Refused when the committed file is not what this writes; rewrite it with
+ * `DELVEWRIGHT_WRITE_ARROW_ARCS=1 npm test -- test/shot.test.ts`.
+ */
+const ARC_FILE = fileURLToPath(
+  new URL("../../crates/dsl/tests/fixtures/movement/arrow-arcs-1.21.11.json", import.meta.url),
+);
+
+function arcCases(): unknown {
+  const pitches: { distance: number; rise: number; pitch: number | null }[] = [];
+  for (const distance of [0.5, 4, 10, 17, 22.7, 27, 33, 40, 60, 90]) {
+    for (const rise of [-40, -17, -5, 0, 1.5, 5, 17, 30, 40, 80]) {
+      pitches.push({ distance, rise, pitch: shotPitch(distance, rise) ?? null });
+    }
+  }
+  const flights: { eye: number[]; point: number[]; positions: number[][] | null }[] = [];
+  const eye: [number, number, number] = [132.5, 91 + EYE_HEIGHT, 223.5];
+  for (const [dx, dz] of [[4, 0], [17, 15], [27, 0], [0, 30], [28, 28], [0, 0]] as const) {
+    for (const rise of [-30, -5, 0, 17, 25, 300]) {
+      const point: [number, number, number] = [eye[0] + dx + 0.25, eye[1] + rise, eye[2] + dz - 0.25];
+      if (dx === 0 && dz === 0) point[0] = eye[0];
+      if (dx === 0 && dz === 0) point[2] = eye[2];
+      flights.push({ eye: [...eye], point, positions: arrowFlight(eye, point) ?? null });
+    }
+  }
+  return {
+    note: "written by harness/test/shot.test.ts; replayed by crates/dsl/src/metrics/arrow/tests.rs",
+    launch_speed: ARROW_LAUNCH_SPEED,
+    drag: ARROW_DRAG,
+    gravity: ARROW_GRAVITY,
+    launch_drop: ARROW_LAUNCH_DROP,
+    pitches,
+    flights,
+  };
+}
+
+test("the committed arc cases are what this aim writes", () => {
+  const text = `${JSON.stringify(arcCases(), null, 1)}\n`;
+  if (process.env.DELVEWRIGHT_WRITE_ARROW_ARCS === "1") writeFileSync(ARC_FILE, text);
+  assert.equal(readFileSync(ARC_FILE, "utf8"), text, "rewrite with DELVEWRIGHT_WRITE_ARROW_ARCS=1");
+});
+
+test("the flight crosses the point it is aimed through", () => {
+  const eye: [number, number, number] = [132.5, 91 + EYE_HEIGHT, 223.5];
+  const point: [number, number, number] = [149.5, 108.5, 238.5];
+  const f = arrowFlight(eye, point)!;
+  const run = (p: readonly number[]) => Math.hypot(p[0]! - eye[0], p[2]! - eye[2]);
+  const [a, b] = [f[f.length - 2]!, f[f.length - 1]!];
+  const d = run(point);
+  assert.ok(run(a) < d && run(b) >= d);
+  const y = a[1] + ((d - run(a)) / (run(b) - run(a))) * (b[1] - a[1]);
+  assert.ok(Math.abs(y - point[1]) < 1e-6, `crosses at ${y}`);
 });
