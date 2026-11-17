@@ -1348,12 +1348,12 @@ mod tests {
 
     /// **A second statement replaces the first** (ADR-0040, *not
     /// separated*). The delve's tick is past the default, so the statement
-    /// over the player tree declares it; a PackTest template then calls the
+    /// over the player tree declares it; a function of the PackTest pack then calls the
     /// tick and runs lines of its own, so the statement over both trees
     /// declares more — in the same first line, with one `gamerule` line in the
-    /// function and the rest of it as written — and the check holds the
-    /// template to it. Stating again over the same tree changes no byte.
-    /// Without the second statement the template is over the limit the first
+    /// function and the rest of it as written — and the check holds that
+    /// function to it. Stating again over the same tree changes no byte.
+    /// Without the second statement it is over the limit the first
     /// declared, which is what the check then refuses.
     #[test]
     fn a_second_statement_over_the_packtest_pack_replaces_the_first() {
@@ -1361,15 +1361,15 @@ mod tests {
         let mut out = delve(over, "function dw:setup");
         let first = declare(&mut out).expect("the player tree declares its tick");
         out.insert(
-            "packtest-datapack/data/dw/test/drives.mcfunction".to_string(),
+            "packtest-datapack/data/dw/function/drives.mcfunction".to_string(),
             b"function dw:tick\nsay one\nsay two\n".to_vec(),
         );
         assert_eq!(
             check(&out).unwrap_err().code.id(),
             "DW0984",
-            "the template is over what the player tree declared"
+            "the pack's function is over what the player tree declared"
         );
-        let second = declare(&mut out).expect("the template needs more");
+        let second = declare(&mut out).expect("the pack's function needs more");
         assert!(second > first, "{second} against {first}");
         let load =
             String::from_utf8(out["datapack/data/dw/function/load.mcfunction"].clone()).unwrap();
