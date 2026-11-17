@@ -120,8 +120,8 @@ def test_a_watchdog_halt_on_a_swapping_host_is_the_hosts_verdict_not_the_paths(t
     assert "the vanilla watchdog halted it (A single server tick took 60.00 seconds)" in row["reason"], row
     assert "while the host held 8406 MiB of swap" in row["reason"], row
     # The ladder's own share is stated, so the reader sees who held the rest:
-    # two worlds of 7G plus 1024 MiB under a 31232 MiB daemon.
-    assert "this ladder's 2 world(s) hold at most 16384 MiB of the host's 31232 MiB" in row["reason"], row
+    # one world (the plan's only one) of 7G plus 1024 MiB under a 31232 MiB daemon.
+    assert "this ladder's 1 world(s) hold at most 8192 MiB of the host's 31232 MiB" in row["reason"], row
     assert "world/30: HOST-OVERLOADED" in out, out
     assert "branch world/30 UNPROVEN (exit 1)" in out, out
     assert "branch world/30 FAILED" not in out, out
