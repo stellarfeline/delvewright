@@ -1194,3 +1194,40 @@ impl Plan<'_> {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A shut trapdoor bar stops a body.** The pinned jar's collision box of
+    /// a closed trapdoor is its plate across the whole cell, 0..3/16 at the
+    /// bottom half and 13..16/16 at the top, whatever its facing
+    /// (`collision-tops-1.21.11.tsv`; facing only places an open panel). A body
+    /// passes through neither plate, so a region write laying one, or the
+    /// world's own bar of one, walls its cell: an iron trapdoor (a hand does
+    /// not open it) is a [`RegionWrite::Fill`] in every closed state, never a
+    /// pass, and a body cannot drop through it into the cell below. A wooden
+    /// trapdoor is a door a hand opens: the static model passes a body through
+    /// its cell in either state.
+    #[test]
+    fn a_shut_trapdoor_bar_is_a_fill_in_every_closed_state() {
+        use delvewright_dsl::blockshape::passes_body;
+        let mut judged = 0usize;
+        for half in ["bottom", "top"] {
+            for facing in ["north", "south", "east", "west"] {
+                let iron = format!(
+                    "minecraft:iron_trapdoor[facing={facing},half={half},open=false,\
+                     powered=false,waterlogged=false]"
+                );
+                assert_eq!(RegionWrite::of_block(&iron), RegionWrite::Fill, "{iron}");
+                assert!(RegionWrite::of_block(&iron).closes(), "{iron}");
+                assert!(!passes_body(&iron), "{iron}");
+                let oak = iron.replace("iron_trapdoor", "oak_trapdoor");
+                assert_eq!(RegionWrite::of_block(&oak), RegionWrite::Fill, "{oak}");
+                assert!(passes_body(&oak), "a hand opens {oak}");
+                judged += 1;
+            }
+        }
+        assert_eq!(judged, 8, "two halves, four facings");
+    }
+}
