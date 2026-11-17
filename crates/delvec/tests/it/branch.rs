@@ -1396,15 +1396,10 @@ fn a_deed_in_its_place_still_shows_a_true_clash() {
 }
 
 /// The campaign [`a_deed_that_forbids_its_own_flag_is_performed_where_it_stands`]
-/// judges: [`a_deed_in_front_of_its_own_step_campaign`], the loss forbidding the
-/// flag it sets.
+/// judges: the landing with no line that arrives, the loss ungated but for
+/// forbidding the flag it sets — so nothing but the deed's own flag can shut it.
 fn a_deed_that_forbids_its_own_flag_campaign() -> Campaign {
-    landing_fixture_with(
-        &["obj/muster", "obj/stand"],
-        Some("flag/mustered"),
-        &["obj/muster"],
-        true,
-    )
+    landing_fixture_with(&["obj/muster", "obj/stand"], None, &[], true)
 }
 
 /// **A deed writes nothing before it is performed, from the world's first
