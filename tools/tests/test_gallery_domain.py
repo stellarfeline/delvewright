@@ -448,6 +448,80 @@ def test_a_probe_of_an_overlay_point_is_that_point_plus_its_edit(tmp_path):
         gallery_domain.materialise(dest, p)
 
 
+def _delta_point(tmp_path, monkeypatch, *, primary, delta, declared=True):
+    """A gallery of one sidecar and an overlay stating `delta` over it."""
+    g = tmp_path / "g"
+    (g / "l10n").mkdir(parents=True, exist_ok=True)
+    (g / "l10n" / "zh-cn.json").write_text(json.dumps(primary))
+    monkeypatch.setattr(gallery_domain, "GALLERY", g)
+    o = tmp_path / "ov"
+    (o / "l10n").mkdir(parents=True, exist_ok=True)
+    (o / "l10n" / "zh-cn.json").write_text(json.dumps(delta))
+    (o / "overlay.json").write_text(json.dumps({"binds": [], **({"l10n": "delta"} if declared else {})}))
+    return o
+
+
+def test_an_overlay_sidecar_delta_inherits_what_the_primary_gains(tmp_path, monkeypatch):
+    """A key added to the primary alone reaches the overlay, which states only what it changes."""
+    primary = {"lang": "zh-cn", "content": {"a": "1", "b": "2"}, "source": {"a": "A", "b": "B"}}
+    o = _delta_point(tmp_path, monkeypatch, primary=primary, delta={"content": {"b": "two"}})
+    dest = tmp_path / "camp"
+    dest.mkdir()
+    gallery_domain._lay(o, dest)
+    assert json.loads((dest / "l10n" / "zh-cn.json").read_text()) == {
+        "lang": "zh-cn", "content": {"a": "1", "b": "two"}, "source": {"a": "A", "b": "B"},
+    }
+    # The primary gains a key; the overlay's file is untouched and the point has it.
+    primary["content"]["c"] = "3"
+    (tmp_path / "g" / "l10n" / "zh-cn.json").write_text(json.dumps(primary))
+    gallery_domain._lay(o, dest)
+    assert json.loads((dest / "l10n" / "zh-cn.json").read_text())["content"] == {
+        "a": "1", "b": "two", "c": "3",
+    }
+
+
+def test_an_overlay_sidecar_delta_refuses_a_copy_and_a_hatch_bound_to_nothing(tmp_path, monkeypatch):
+    primary = {"lang": "zh-cn", "content": {"a": "1"}}
+    o = _delta_point(tmp_path, monkeypatch, primary=primary, delta={"content": {"a": "1"}})
+    with pytest.raises(gallery_domain.PatchError, match="holds only what it changes"):
+        gallery_domain._lay(o, tmp_path)
+    # A delta for a language the primary lacks has nothing to inherit.
+    (o / "l10n" / "zh-cn.json").rename(o / "l10n" / "fr.json")
+    with pytest.raises(gallery_domain.PatchError, match="no sidecar"):
+        gallery_domain._lay(o, tmp_path)
+    # Declared, and shipping no sidecar: bound to nothing.
+    shutil.rmtree(o / "l10n")
+    with pytest.raises(gallery_domain.PatchError, match="bound to nothing"):
+        gallery_domain._lay(o, tmp_path)
+    # Undeclared: the sidecar replaces the primary's whole, as before.
+    o2 = _delta_point(tmp_path, monkeypatch, primary=primary, delta={"content": {"a": "1"}}, declared=False)
+    dest = tmp_path / "camp2"
+    dest.mkdir()
+    gallery_domain._lay(o2, dest)
+    assert json.loads((dest / "l10n" / "zh-cn.json").read_text()) == {"content": {"a": "1"}}
+
+
+def test_the_committed_delta_overlays_state_only_what_differs(tmp_path):
+    """Every overlay that declares `l10n: delta` materialises to the primary's sidecar plus its delta."""
+    seen = 0
+    for name in gallery_domain.overlays():
+        o = gallery_domain.GALLERY / "overlays" / name
+        if gallery_domain._l10n_mode(o) != "delta":
+            continue
+        seen += 1
+        dest = tmp_path / name
+        gallery_domain.materialise(dest, o)
+        for f in (o / "l10n").glob("*.json"):
+            base = json.loads((gallery_domain.GALLERY / "l10n" / f.name).read_text())
+            got = json.loads((dest / "l10n" / f.name).read_text())
+            delta = json.loads(f.read_text())
+            for table, entries in delta.items():
+                for k, v in entries.items():
+                    assert got[table][k] == v
+            assert set(base["content"]) <= set(got["content"]), "a primary key did not reach the overlay"
+    assert seen > 0, "no overlay declares `l10n: delta`: the case binds nothing"
+
+
 def test_a_clean_checkout_materialises_with_every_generated_input(tmp_path, monkeypatch):
     """The gallery's skins, textures, design pictures and heightmap are generated
     and gitignored, so a clean checkout holds none of them. A point materialised

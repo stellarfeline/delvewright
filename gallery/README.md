@@ -420,6 +420,8 @@ two authorities on one question, and is refused in review. A setting that cannot
 coexist with the primary becomes an overlay under `overlays/`, declaring exactly
 what it reaches.
 
+An overlay that is the primary with a setting changed states only what it changes: its `overlay.json` says `"l10n": "delta"`, and each sidecar under its `l10n/` holds just the entries it changes over the primary's (`tools/ci/gallery_domain.py` lays it over the primary's, key by key, so a key the primary gains reaches the overlay with no edit; an entry equal to the primary's is refused). An overlay that is a different campaign, with its own cast and quest layer, states its sidecars whole.
+
 ## The annex, and what a socket is worth looking at
 
 `area/annex` is a three-tile chain assembled from `pool/gallery-annex`. It is
