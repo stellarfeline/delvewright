@@ -1712,7 +1712,226 @@ fn contradiction_fixtures() -> Vec<(&'static str, Campaign)> {
         ("a_deed_in_front_of_its_own_step", a_deed_in_front_of_its_own_step_campaign()),
         ("a_deed_whose_gate_is_shut", a_deed_whose_gate_is_shut_campaign()),
         ("a_deed_in_its_place_with_a_true_clash", a_deed_in_its_place_with_a_true_clash_campaign()),
+        ("a_purse_two_tallies_fill", a_purse_two_tallies_fill_campaign()),
+        ("a_bar_a_strand_must_be_primed_for", a_bar_a_strand_must_be_primed_for_campaign()),
     ]
+}
+
+// --- the stubborn set -------------------------------------------------------
+
+/// A quest of one objective after the fork, with `bundle` as its completion.
+fn after_the_fork(id: &str, obj: &str, requires: Value, bundle: Value) -> Value {
+    serde_json::json!({
+        "id": id,
+        "trigger": {"type": "quest-complete", "quest": "quest/decide"},
+        "happening": {"verb": "learns", "text": "A beat of the night."},
+        "objectives": [{
+            "id": obj,
+            "type": "reach-anchor",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "requires_flags": requires,
+            "happening": {"verb": "learns", "text": "The party crosses the yard."}
+        }],
+        "on_objective_complete": {obj: bundle},
+        "on_complete": []
+    })
+}
+
+/// **Two strands that fill one purse, and a gate the purse pays.** On the hold
+/// branch the watch seals the gate. `quest/tally-a` and `quest/tally-b` each
+/// count, then pay a coin into `state/coins` behind a gate on their own count:
+/// neither strand is quiet, and neither reads anything the other writes, since
+/// two additions to one datum land on one value in either order.
+/// `quest/pay-the-gate` walks back in through the gate once two coins are
+/// paid, which after the seal is a clash. The stubborn set walks one tally at
+/// a time and still reaches every value of the purse at the gate.
+fn a_purse_two_tallies_fill_campaign() -> Campaign {
+    campaign_with(|plan, quests, _| {
+        quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
+            "type": "close-gate",
+            "anchor": "anchor/door",
+            "happening": {
+                "verb": "seals",
+                "text": "The Keeper drops the bar across the gate.",
+                "subject": "anchor/door"
+            }
+        });
+        quests["content"]["state"] = serde_json::json!([{
+            "id": "state/coins",
+            "initial": 0,
+            "note": "The coins the party has paid into the purse.",
+            "scope": "party"
+        }]);
+        for t in ["a", "b"] {
+            let id = format!("quest/tally-{t}");
+            plan_quest(plan, &id, &["quest/decide"]);
+            let (count, pay) = (format!("obj/{t}-count"), format!("obj/{t}-pay"));
+            let counted = format!("flag/{t}-counted");
+            let mut q = after_the_fork(
+                &id,
+                &count,
+                serde_json::json!([]),
+                serde_json::json!([{"type": "set-flag", "flag": counted}]),
+            );
+            q["objectives"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": pay,
+                    "type": "reach-anchor",
+                    "anchor": "anchor/exit",
+                    "radius": 2,
+                    "after": [count],
+                    "happening": {"verb": "learns", "text": "A coin goes in the purse."}
+                }));
+            q["on_objective_complete"][pay.as_str()] = serde_json::json!([
+                {
+                    "type": "narrate",
+                    "text": "The coin clinks.",
+                    "when": {"requires_flags": [counted]}
+                },
+                {"type": "add-state", "state": "state/coins", "amount": 1}
+            ]);
+            quests["content"]["quests"].as_array_mut().unwrap().push(q);
+        }
+        plan_quest(plan, "quest/pay-the-gate", &["quest/decide"]);
+        quests["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .push(after_the_fork(
+                "quest/pay-the-gate",
+                "obj/pay-the-gate",
+                serde_json::json!([]),
+                serde_json::json!([{
+                    "type": "narrate",
+                    "text": "You pay your way in.",
+                    "when": {"requires_state": [
+                        {"op": "at-least", "state": "state/coins", "value": 2}
+                    ]},
+                    "happening": {
+                        "verb": "arrives",
+                        "text": "The party pays its way back in through the gate.",
+                        "subject": "anchor/door"
+                    }
+                }]),
+            ));
+    })
+}
+
+/// **A clash that needs a step the stubborn set must add for a step it cannot
+/// take yet.** `quest/a-step-out` walks out by the postern; `quest/bar-the-exit`
+/// bars the postern, and is legal only once `quest/prime` has set
+/// `flag/primed`; `quest/prime` is not quiet (one of its lines is gated). Priming,
+/// barring, then stepping out uses the postern after it is barred. Stepping
+/// out conflicts with barring, which is not legal at the start, so a stubborn
+/// set that starts from stepping out must add what can make barring legal —
+/// priming — or it walks stepping out first and never sees the clash.
+fn a_bar_a_strand_must_be_primed_for_campaign() -> Campaign {
+    campaign_with(|plan, quests, _| {
+        for id in ["quest/a-step-out", "quest/prime", "quest/bar-the-exit"] {
+            plan_quest(plan, id, &["quest/decide"]);
+        }
+        let qs = quests["content"]["quests"].as_array_mut().unwrap();
+        qs.push(after_the_fork(
+            "quest/a-step-out",
+            "obj/step-out",
+            serde_json::json!([]),
+            serde_json::json!([{
+                "type": "narrate",
+                "text": "The moor is quiet.",
+                "happening": {
+                    "verb": "arrives",
+                    "text": "The party steps out by the postern and back.",
+                    "subject": "anchor/exit"
+                }
+            }]),
+        ));
+        qs.push(after_the_fork(
+            "quest/prime",
+            "obj/prime",
+            serde_json::json!([]),
+            serde_json::json!([
+                {"type": "set-flag", "flag": "flag/primed"},
+                {
+                    "type": "narrate",
+                    "text": "Somebody laughs on the wall.",
+                    "when": {"requires_flags": ["flag/lingered"]}
+                }
+            ]),
+        ));
+        qs.push(after_the_fork(
+            "quest/bar-the-exit",
+            "obj/bar-the-exit",
+            serde_json::json!(["flag/primed"]),
+            serde_json::json!([{
+                "type": "narrate",
+                "text": "The bolt goes home.",
+                "happening": {
+                    "verb": "seals",
+                    "text": "The party bars the postern behind it.",
+                    "subject": "anchor/exit"
+                }
+            }]),
+        ));
+    })
+}
+
+#[test]
+fn a_stubborn_set_walks_one_strand_at_a_time_and_keeps_the_clash() {
+    let c = a_purse_two_tallies_fill_campaign();
+    assert_exported_orders_clean(&c);
+    let (diags, bind) = branch::check_branches_bound(&c);
+    let d = find(diags, "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    let order = printed_order(&d.message);
+    let at = |o: &str| order.iter().position(|x| x == o);
+    assert!(
+        at("obj/a-pay") < at("obj/pay-the-gate") && at("obj/b-pay") < at("obj/pay-the-gate"),
+        "both coins are paid before the gate: {order:?}"
+    );
+    assert!(
+        bind.stubborn > 0,
+        "the stubborn set left a step out: {bind:?}"
+    );
+}
+
+#[test]
+fn a_stubborn_set_adds_what_can_open_a_step_it_conflicts_with() {
+    let c = a_bar_a_strand_must_be_primed_for_campaign();
+    assert_exported_orders_clean(&c);
+    let (diags, bind) = branch::check_branches_bound(&c);
+    let d = find(diags, "DW0485");
+    assert!(d.message.contains("after it is sealed"), "{}", d.message);
+    let order = printed_order(&d.message);
+    let at = |o: &str| order.iter().position(|x| x == o);
+    assert!(
+        at("obj/prime") < at("obj/bar-the-exit") && at("obj/bar-the-exit") < at("obj/step-out"),
+        "the order primes, bars, then steps out: {order:?}"
+    );
+    assert!(
+        bind.stubborn > 0,
+        "the stubborn set left a step out: {bind:?}"
+    );
+}
+
+/// **The footprints against the replay.** Over every `DW0485` fixture, at
+/// every play state some legal order reaches: two legal steps the footprints
+/// call free of conflict commute — each stays legal after the other, both
+/// orders reach one play state, each writes the same lines — and a step that is
+/// not legal stays not legal after any legal step outside its necessary
+/// enabling set. Bound: both kinds of check run, many times over.
+#[test]
+fn the_footprints_agree_with_the_replay() {
+    let (mut pairs, mut sets) = (0usize, 0usize);
+    for (name, c) in &contradiction_fixtures() {
+        let (p, s, bad) = branch::footprints_against_the_replay(c);
+        assert!(bad.is_empty(), "{name}: {bad:#?}");
+        pairs += p;
+        sets += s;
+    }
+    assert!(pairs > 100, "pairs of free steps checked: {pairs}");
+    assert!(sets > 100, "steps outside an enabling set checked: {sets}");
 }
 
 /// **Two orders that do the same steps can hold different flags.**
@@ -2180,9 +2399,9 @@ fn the_search_finds_what_walking_every_order_finds() {
         );
         with_clash += usize::from(!enumerated.is_empty());
     }
-    assert_eq!(fixtures.len(), 26, "every DW0485 fixture is compared");
+    assert_eq!(fixtures.len(), 28, "every DW0485 fixture is compared");
     assert_eq!(
-        with_clash, 20,
+        with_clash, 22,
         "the comparison binds: the fixtures that carry a clash carry one in both"
     );
 }

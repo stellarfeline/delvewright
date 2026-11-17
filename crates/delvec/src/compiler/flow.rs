@@ -243,6 +243,86 @@ struct Solution {
     lapsed: BTreeSet<String>,
 }
 
+/// **Why a step cannot be completed now**: the first conjunct of the
+/// replay's per-step test ([`Walk::blocked`]) that fails.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Blocked {
+    /// Its quest does not exist.
+    NoQuest,
+    /// It is not an objective of its quest.
+    NoObjective,
+    /// Its quest is not running.
+    Inactive,
+    /// This plain `after` prerequisite is not settled.
+    After(String),
+    /// A quorum of its `after` does not hold; the members of its quorums.
+    Quorum(Vec<String>),
+    /// This flag of its gate is not held.
+    Requires(String),
+    /// This flag its gate forbids is held.
+    Forbids(String),
+    /// No option of this NPC completes it in the world.
+    NoOption(String),
+    /// The completing option of this NPC is not reachable.
+    Option(String),
+    /// This entry deed due in front of it cannot be performed.
+    Deed(String),
+}
+
+impl Blocked {
+    /// The words the replay's refusal says this in.
+    fn why(&self, st: &PathStep) -> String {
+        match self {
+            Blocked::NoQuest => format!("its quest `{}` does not exist", st.quest),
+            Blocked::NoObjective => "it is not an objective of its quest".to_string(),
+            Blocked::Inactive => format!(
+                "its quest `{}` is not active yet — nothing earlier on the path completes the \
+                 quest its trigger names",
+                st.quest
+            ),
+            Blocked::After(a) => {
+                format!("its `after` prerequisite `{a}` has not been completed at this point")
+            }
+            Blocked::Quorum(_) => "its `after` quorum does not hold at this point — too few of \
+                                   its members are done"
+                .to_string(),
+            Blocked::Requires(f) => format!(
+                "it requires `{f}`, which nothing earlier on the path sets (a mutually exclusive \
+                 branch produces it)"
+            ),
+            Blocked::Forbids(f) => {
+                format!("it forbids `{f}`, which an earlier step on the path has already set")
+            }
+            Blocked::NoOption(npc) => {
+                format!("no dialogue option of `{npc}` completes it in the chosen branch")
+            }
+            Blocked::Option(npc) => format!(
+                "the completing dialogue option of `{npc}` is not reachable at this point — a \
+                 node or option on the way to it is still flag-gated"
+            ),
+            Blocked::Deed(act) => format!(
+                "the entry deed `{act}` its world performs in front of it cannot be performed \
+                 here: the act's own gate is shut"
+            ),
+        }
+    }
+}
+
+/// What [`Flow::step_legality_reads`] answers: every input a step's legality reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StepReads {
+    /// Quests whose activity it reads.
+    pub quests: BTreeSet<String>,
+    /// Objectives whose status it reads (its own among them).
+    pub objectives: BTreeSet<String>,
+    /// Flags that must be held.
+    pub requires: BTreeSet<String>,
+    /// Flags that must not be held.
+    pub forbids: BTreeSet<String>,
+    /// Data a gate compares.
+    pub data: BTreeSet<String>,
+}
+
 /// One objective on the exported critical path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathStep {
@@ -723,18 +803,23 @@ impl Walk<'_, '_> {
     /// world performs that deed there, so an order that reaches the step with
     /// the deed unperformable is not an order this world plays.
     fn blocked_after_deeds(&self, step: &PathStep) -> Option<String> {
+        self.blocked(step).map(|b| b.why(step))
+    }
+
+    /// [`Self::legal`]'s test for a step not yet done, answered as the first
+    /// conjunct that fails: the choices and entry deeds due in front of it
+    /// performed first (on a clone), a deed whose own gate is shut, then the
+    /// replay's per-step test.
+    pub fn blocked(&self, step: &PathStep) -> Option<Blocked> {
         match &self.story {
             Some(ctx) if ctx.fronts(&step.objective) => {
                 let mut ahead = self.clone();
                 if let (_, Some(act)) = ahead.perform_due(step) {
-                    return Some(format!(
-                        "the entry deed `{act}` its world performs in front of it cannot be \
-                         performed here: the act's own gate is shut"
-                    ));
+                    return Some(Blocked::Deed(act));
                 }
-                self.flow.step_blocked(&ahead.st, step)
+                self.flow.step_block(&ahead.st, step)
             }
-            _ => self.flow.step_blocked(&self.st, step),
+            _ => self.flow.step_block(&self.st, step),
         }
     }
 
@@ -1712,17 +1797,23 @@ impl<'a> Flow<'a> {
     /// its `requires_flags` held and its `forbids_flags` clear, and for a
     /// `talk-to` the completing option this world takes reachable now. The one
     /// definition of "legal at this position", read by [`Self::replay`] and by
-    /// every [`Walk`].
+    /// every [`Walk`]; [`Self::step_block`] is the same test, answered as the
+    /// first conjunct that fails.
     fn step_blocked(&self, st8: &ReplayState, st: &PathStep) -> Option<String> {
+        self.step_block(st8, st).map(|b| b.why(st))
+    }
+
+    /// [`Self::step_blocked`], as the first conjunct that fails.
+    fn step_block(&self, st8: &ReplayState, st: &PathStep) -> Option<Blocked> {
         let Some(quest) = self.quest(&st.quest) else {
-            return Some(format!("its quest `{}` does not exist", st.quest));
+            return Some(Blocked::NoQuest);
         };
         let Some(obj) = quest
             .objectives
             .iter()
             .find(|o| o.id().as_str() == st.objective)
         else {
-            return Some("it is not an objective of its quest".to_string());
+            return Some(Blocked::NoObjective);
         };
         // A failed objective's step is no act of the party's: the story has
         // already settled it, so nothing about the step can be blocked.
@@ -1730,59 +1821,121 @@ impl<'a> Flow<'a> {
             return None;
         }
         if !st8.active.contains(&st.quest) {
-            return Some(format!(
-                "its quest `{}` is not active yet — nothing earlier on the path completes the \
-                 quest its trigger names",
-                st.quest
-            ));
+            return Some(Blocked::Inactive);
         }
         if !self.after_open(obj, st8) {
-            let missing = obj
-                .after_required()
-                .into_iter()
-                .find(|a| !st8.done_obj.contains(a.as_str()))
-                .map(|a| format!("its `after` prerequisite `{}` has not been completed at this point", a.as_str()))
-                .unwrap_or_else(|| "its `after` quorum does not hold at this point — too few of its members are done".to_string());
-            return Some(missing);
+            return Some(
+                match obj
+                    .after_required()
+                    .into_iter()
+                    .find(|a| !st8.done_obj.contains(a.as_str()))
+                {
+                    Some(a) => Blocked::After(a.as_str().to_string()),
+                    None => Blocked::Quorum(
+                        obj.after_quorums()
+                            .into_iter()
+                            .flat_map(|q| q.any.iter().map(|m| m.as_str().to_string()))
+                            .collect(),
+                    ),
+                },
+            );
         }
         // spec-0133 §3 as amended: a clock settles its objective whatever the
         // objective's gate says, so an expiry is never held by the gate.
         let gated = !st8.expired.contains(&st.objective);
         for f in obj.requires_flags().iter().filter(|_| gated) {
             if !st8.flags.contains(f.as_str()) {
-                return Some(format!(
-                    "it requires `{}`, which nothing earlier on the path sets (a mutually \
-                     exclusive branch produces it)",
-                    f.as_str()
-                ));
+                return Some(Blocked::Requires(f.as_str().to_string()));
             }
         }
         for f in obj.forbids_flags().iter().filter(|_| gated) {
             if st8.flags.contains(f.as_str()) {
-                return Some(format!(
-                    "it forbids `{}`, which an earlier step on the path has already set",
-                    f.as_str()
-                ));
+                return Some(Blocked::Forbids(f.as_str().to_string()));
             }
         }
         if let Objective::TalkTo { npc, .. } = obj
             && !st8.expired.contains(&st.objective)
         {
             let Some(n) = st.talk_option else {
-                return Some(format!(
-                    "no dialogue option of `{}` completes it in the chosen branch",
-                    npc.as_str()
-                ));
+                return Some(Blocked::NoOption(npc.as_str().to_string()));
             };
             if !self.option_takeable_now(npc.as_str(), n, st8) {
-                return Some(format!(
-                    "the completing dialogue option of `{}` is not reachable at this point — \
-                     a node or option on the way to it is still flag-gated",
-                    npc.as_str()
-                ));
+                return Some(Blocked::Option(npc.as_str().to_string()));
             }
         }
         None
+    }
+
+    /// **Every input [`Self::step_blocked`] and [`Walk::legal`] read for
+    /// `step`**, whatever the state: its quest's activity, every objective its
+    /// `after` names, its own status (a failed objective's step is legal
+    /// anywhere), its flag gate, for a `talk-to` every flag gate of its NPC's
+    /// tree and of the ledger roots that open it and the activity of the quests
+    /// those ledgers belong to, and for a story world the gate of every entry
+    /// deed due in front of it. A superset: a reader asks only "can a change
+    /// elsewhere move this step's legality", and naming more can only answer
+    /// yes more often.
+    pub fn step_legality_reads(&self, step: &PathStep, story: Option<&StoryCtx>) -> StepReads {
+        let mut r = StepReads::default();
+        r.quests.insert(step.quest.clone());
+        r.objectives.insert(step.objective.clone());
+        if let Some(o) = self.objective(&step.objective) {
+            r.objectives
+                .extend(o.after_edges().into_iter().map(|a| a.as_str().to_string()));
+            r.requires
+                .extend(o.requires_flags().iter().map(|f| f.as_str().to_string()));
+            r.forbids
+                .extend(o.forbids_flags().iter().map(|f| f.as_str().to_string()));
+            if let Objective::TalkTo { npc, .. } = o {
+                if let Some(t) = self.trees.iter().find(|t| t.npc == npc.as_str()) {
+                    for opt in &t.options {
+                        r.requires.extend(opt.requires.iter().cloned());
+                        r.forbids.extend(opt.forbids.iter().cloned());
+                    }
+                }
+                for cr in self.cast_roots.get(npc.as_str()).into_iter().flatten() {
+                    r.quests.insert(cr.quest.clone());
+                    r.requires.extend(cr.requires.iter().cloned());
+                }
+            }
+        }
+        for act in story
+            .into_iter()
+            .flat_map(|ctx| ctx.deeds_before(&step.objective))
+        {
+            let (requires, forbids, data) = self.act_gate(act);
+            r.requires.extend(requires);
+            r.forbids.extend(forbids);
+            r.data.extend(data);
+            // The deed fires before the step is judged, so what its own lines'
+            // gates read can move what the step finds.
+            fn gates(effs: &[QuestEffect], r: &mut StepReads) {
+                for e in effs {
+                    r.requires
+                        .extend(e.requires_flags().iter().map(|f| f.as_str().to_string()));
+                    r.forbids
+                        .extend(e.forbids_flags().iter().map(|f| f.as_str().to_string()));
+                    r.data.extend(
+                        e.requires_state()
+                            .iter()
+                            .map(|c| c.state.as_str().to_string()),
+                    );
+                    for list in e.nested_effect_lists() {
+                        gates(list, r);
+                    }
+                }
+            }
+            gates(self.act_effects(act), &mut r);
+        }
+        r
+    }
+
+    /// Every ambient producer, credited or not: the flag it sets, the flags
+    /// the chain that sets it requires, and the act that fires it.
+    pub fn ambient_chains(&self) -> impl Iterator<Item = (&str, &[String], Option<&str>)> {
+        self.ambient
+            .iter()
+            .map(|g| (g.flag.as_str(), g.requires.as_slice(), g.act.as_deref()))
     }
 
     /// Every ambient producer (environment trigger, trap payload, trap disarm):

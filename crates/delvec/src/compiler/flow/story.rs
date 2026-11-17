@@ -511,6 +511,24 @@ impl<'a> Flow<'a> {
             })
     }
 
+    /// Ambient act `id`'s whole gate, as [`Self::act_enabled`] reads it: the
+    /// flags it requires, the flags it forbids and the data it compares.
+    pub fn act_gate(&self, id: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+        self.acts()
+            .bundles
+            .get(id)
+            .map_or_else(Default::default, |b| {
+                (
+                    b.requires.clone(),
+                    b.forbids.clone(),
+                    b.state
+                        .iter()
+                        .map(|t| t.state.as_str().to_string())
+                        .collect(),
+                )
+            })
+    }
+
     /// **Whether a story world performs entry deed `act` at `st`** (spec-0108
     /// §4.1): its own gate holds there, or a debt of the path performs it
     /// (`owed`), which the debt walk proved performable there — the story
