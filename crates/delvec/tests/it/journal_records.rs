@@ -707,7 +707,7 @@ fn a_task_lost_before_it_is_taken_settles_failed() {
     for r in &rows {
         assert_eq!(r["settles"], "failed", "{ledger}");
     }
-    let path = text(&out, "validation/critical-path.json");
+    let path = text(&out, "critical-path.json");
     assert!(
         !path.contains("obj/dare"),
         "the walk steps the dare: {path}"
