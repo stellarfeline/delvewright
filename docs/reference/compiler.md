@@ -4867,7 +4867,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`plan::collect_clock_events`), with `set_by` naming the step that set it
   (`null` at the world's own clock). A frame of a leg after a cut to dusk is a
   frame at dusk. A `set-time` or `set-weather` in a dialogue option, a trigger no
-  step is, or an optional quest is unforced and moves no shot's sky. The
+  step is, or an optional quest the critical path does not play is unforced
+  and moves no shot's sky. The
   renderer derives the sun from the **ticks** and never from the keyword, so a
   state vanilla does not name is worth as much as one it does. `level.dat`'s
   `DayTime` in each written world is the configuration's clock.

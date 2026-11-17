@@ -367,14 +367,13 @@ pub struct ClockEvent {
 /// ([`for_each_gate_effect`]). A dialogue's `set-time` is no effect root of the
 /// quest graph and is not dated here: no configuration lays it.
 pub(crate) fn collect_clock_events(campaign: &Campaign, path: &PathFiring) -> Vec<ClockEvent> {
-    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let (time, weather) = (e.set_time(), e.set_weather());
         if time.is_none() && weather.is_none() {
             return;
         }
-        let (fire_step, forced) = firing_of(site, path, &optional);
+        let (fire_step, forced) = firing_of(site, path);
         out.push(ClockEvent {
             fire_step,
             forced,
@@ -644,16 +643,12 @@ pub(in crate::compiler::plan) fn collect_region_events(
     ways: &crate::compiler::ways::WayStaging,
     edit_firings: &mut Vec<EditFiring>,
 ) -> Vec<RegionEvent> {
-    // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
-    // OPTIONAL quest is one the party may never fire, so it seals like a trap
-    // payload and lays no footing the forced path may stand on — the same rule
-    // with a wider denominator, read off the ONE authority
-    // (`QuestPlanContent::optional`) rather than a private `!q.mandatory`.
-    //
-    // This is the direction that ships if it is wrong: crediting an optional
-    // quest's `clear-region` as forced proves a leg walkable across a hole the
-    // party only opens by playing content nobody makes them play.
-    let optional = campaign.quest_plan.content.optional();
+    // spec-0051 §8.6: a bundle rooted in an OPTIONAL quest is one the party
+    // may never fire. The exported path plays the finale's closure alone, so
+    // there it is unforced and lays no footing; a story world that performs
+    // the quest has its steps on its own path, and there it fires
+    // ([`firing_of`]). Crediting it on a path that does not play it is the
+    // direction that ships if it is wrong.
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         // How a firing is BLAMED when it turns out to be unforced. Worded off the
@@ -698,25 +693,19 @@ pub(in crate::compiler::plan) fn collect_region_events(
                 "the `on_expire` bundle of `{objective}` in quest `{quest}`, which fires only in \
                  a world where its clock runs out first"
             ),
-            // The two DAG roots reach this arm when their owning quest is
-            // OPTIONAL (spec-0051 §8.6), or when this path never plays the beat
-            // at all (a branch the path does not take) — on a path that plays a
-            // mandatory beat it is forced and a forced event carries no blame.
-            // Naming the quest is the whole value: "a beat nobody has to play" is
-            // unactionable, and "the completion of optional quest `quest/crypt`"
-            // sends the author to the strand that laid the footing.
+            // The two DAG roots reach this arm when this path never plays the
+            // beat at all — an optional quest (spec-0051 §8.6) the exported path
+            // or a skipping world leaves out, or a branch the path does not take;
+            // on a path that plays the beat it is forced and a forced event
+            // carries no blame. Naming the quest is the whole value: "a beat
+            // nobody has to play" is unactionable, and "the completion of quest
+            // `quest/crypt`" sends the author to the strand that laid the footing.
             EffectRoot::ObjectiveComplete { quest, objective }
                 if !path.obj_step.contains_key(objective) =>
             {
                 format!("the `{objective}` bundle of quest `{quest}`, which this path never plays")
             }
-            EffectRoot::ObjectiveComplete { quest, objective } if optional.contains(quest) => {
-                format!(
-                    "the `{objective}` bundle of optional quest `{quest}`, which the party may \
-                     never play"
-                )
-            }
-            // On the path, mandatory, and still unforced: the line's own gate,
+            // On the path and still unforced: the line's own gate,
             // or one enclosing it, does not hold where the path reaches it (or
             // holds only on a value no ordered walk can date).
             EffectRoot::ObjectiveComplete { objective, .. } => format!(
@@ -726,10 +715,6 @@ pub(in crate::compiler::plan) fn collect_region_events(
             ),
             EffectRoot::QuestComplete(q) if !path.quests.contains(q.id.as_str()) => format!(
                 "the completion of quest `{}`, which this path never plays",
-                q.id
-            ),
-            EffectRoot::QuestComplete(q) if optional.contains(q.id.as_str()) => format!(
-                "the completion of optional quest `{}`, which the party may never play",
                 q.id
             ),
             EffectRoot::QuestComplete(q) => format!(
@@ -750,7 +735,7 @@ pub(in crate::compiler::plan) fn collect_region_events(
                 m.id, site.path
             ),
         };
-        let (fire_step, forced) = firing_of(site, path, &optional);
+        let (fire_step, forced) = firing_of(site, path);
         let by_trigger = matches!(site.root, EffectRoot::Trigger(_));
         // spec-0134 §6: a world-edits batch that waits for its beat is resolved
         // against the assembled world, which the plan does not hold; its firing
@@ -891,7 +876,6 @@ pub(crate) fn region_events_of(
     path: &PathFiring,
     npcs: &[NpcPlan],
 ) -> RegionEvents {
-    let optional = campaign.quest_plan.content.optional();
     let mut flags: Vec<FlagEvent> = Vec::new();
     let mut unforced_writers: BTreeSet<String> = BTreeSet::new();
     for_each_gate_effect(campaign, &mut |site, e| {
@@ -914,7 +898,7 @@ pub(crate) fn region_events_of(
         if quest.is_some_and(|q| !path.quests.contains(q)) {
             return;
         }
-        let (fire_step, forced) = firing_of(site, path, &optional);
+        let (fire_step, forced) = firing_of(site, path);
         if let Some(flag) = set {
             flags.push(FlagEvent {
                 flag: flag.to_string(),
@@ -1043,10 +1027,12 @@ pub(in crate::compiler::plan) fn with_loop_exercises(
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced*
-///   through both on a path that plays them; a path that never performs the
-///   objective, or never completes the quest (a branch it does not take), is
-///   unforced at step 0, whatever the quest's optionality says about the paths
-///   that do;
+///   through both on a path that plays them, an optional quest's included (a
+///   story world that performs it plays its steps, and every later leg of that
+///   path finds what they opened); a path that never performs the objective,
+///   or never completes the quest (an optional quest the exported path or a
+///   skipping world leaves out, a branch it does not take), is unforced at
+///   step 0;
 /// - an environment trigger fires at the `trigger` step the path performs it in,
 ///   forced; one the path never performs is unforced at step 0;
 /// - a trap payload and a dialogue-hosted `on_respawn` bundle have no step of
@@ -1058,37 +1044,35 @@ pub(in crate::compiler::plan) fn with_loop_exercises(
 /// far side — are unforced: every shortcut gate is registered sealed at step 0 so
 /// the delve is proven completable with no shortcut ever taken, which is exactly
 /// "the party may never fire this bundle".
-pub(crate) fn firing_of(
-    site: &GateSite<'_>,
-    path: &PathFiring,
-    optional: &BTreeSet<&str>,
-) -> (usize, bool) {
+pub(crate) fn firing_of(site: &GateSite<'_>, path: &PathFiring) -> (usize, bool) {
     let fires = path.fires(&site.path);
     match &site.root {
         // Fired at the objective's own step on a path that performs it, and
         // forced there only for a line the path's replay fires with its whole
         // gate decided open. A path that never performs the objective never
         // fires its bundle, so it is unforced there — exactly a trigger the
-        // path never performs — whatever the quest's optionality says about the
-        // paths that do.
-        EffectRoot::ObjectiveComplete { quest, objective } => match path.obj_step.get(*objective) {
-            Some(&s) => (s, fires && !optional.contains(*quest)),
+        // path never performs. The quest's optionality is not read: a path
+        // that plays an optional quest's objective is a world whose party
+        // played it, and every later leg of that path finds what it opened;
+        // a world that skips the quest has no step for it, and the exported
+        // path plays the finale's closure alone.
+        EffectRoot::ObjectiveComplete { objective, .. } => match path.obj_step.get(*objective) {
+            Some(&s) => (s, fires),
             None => (0, false),
         },
         // The same rule over the quest: its completion fires on a path that
         // completes it, and on no other.
-        EffectRoot::QuestComplete(q) if path.quests.contains(q.id.as_str()) => (
-            quest_complete_step(q, &path.obj_step),
-            fires && !optional.contains(q.id.as_str()),
-        ),
+        EffectRoot::QuestComplete(q) if path.quests.contains(q.id.as_str()) => {
+            (quest_complete_step(q, &path.obj_step), fires)
+        }
         EffectRoot::QuestComplete(_) => (0, false),
         // spec-0133 §6: an expiry is dated at its objective's own step, and
         // fires only on a path whose replay expires the objective there — a
         // story world's expiry witness. On every other path the replay never
         // fires it, so it is unforced, exactly as a completion bundle is on a
         // path that expires the objective instead.
-        EffectRoot::ObjectiveExpire { quest, objective } => match path.obj_step.get(*objective) {
-            Some(&s) => (s, fires && !optional.contains(*quest)),
+        EffectRoot::ObjectiveExpire { objective, .. } => match path.obj_step.get(*objective) {
+            Some(&s) => (s, fires),
             None => (0, false),
         },
         // Performed by the path at its own `trigger` step, or not at all: a
@@ -1134,15 +1118,12 @@ pub(crate) fn collect_way_openings(
     campaign: &Campaign,
     path: &PathFiring,
 ) -> Vec<crate::compiler::ways::WayOpening> {
-    // The same widening as `collect_region_events`, for the same reason: an
-    // `open-way` fired from an optional quest is a way the party may never open.
-    let optional = campaign.quest_plan.content.optional();
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(site, path, &optional);
+        let (fire_step, forced) = firing_of(site, path);
         out.push(crate::compiler::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),

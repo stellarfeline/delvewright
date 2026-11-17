@@ -185,6 +185,7 @@ mod one_place_site;
 mod open_way;
 mod option_width;
 mod optional_footing;
+mod optional_opening;
 mod packtest_batch;
 mod packtest_campaign;
 mod packtest_own_gates;

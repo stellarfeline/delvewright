@@ -144,7 +144,11 @@ that objective, a line of a quest `on_complete` on a path that completes that
 quest, a line of an environment trigger on a path that performs it, and the
 world's own load-time seals always; a bundle whose objective or quest is absent
 from the path (a branch the path does not take, a quest outside its closure) is
-unforced on that path whatever the quest's `mandatory` says. **A line is forced
+unforced on that path whatever the quest's `mandatory` says, and one whose
+objective or quest is on the path is forced there whatever it says: an optional
+quest (spec-0051) is on a story world's path exactly when that world performs it
+(spec-0108), and every later leg of that path finds what its bundles opened; the
+exported path plays the finale's closure alone. **A line is forced
 only where the path's replay fires it**: `PathFiring::fired` is every line one
 walk of the replay fires over the path (the replay's own gate test — flags, and
 numeric terms against the value the walk holds there), plus every line of every
