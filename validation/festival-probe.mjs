@@ -47,14 +47,13 @@
 //       armour piece worn down, read every 2 s for 60 s.
 //   T18 the belfry's shot, rebuilt on the pad: a target block 17 up, 17 east and
 //       15 south of the bot's feet over a top slab, loosed at as the harness
-//       looses (`harness/src/shot.ts`: the low arc through the centre, drawn for
-//       `SHOT_DRAW_MS`); for every arrow, on its first tick (a tick function),
+//       aims (`harness/src/shot.ts`: the low arc through the centre); for every arrow, on its first tick (a tick function),
 //       the shooter's position and rotation and the arrow's position and
 //       motion, then where it lies and whether the target was hit.
 //       `T18_TICK_RATE=<n>` runs the server at n ticks a second (`tick rate`),
 //       the way a server that falls behind runs; `T18_DRAW=ticks` holds the
-//       bow until the game time (read over rcon) has advanced a full draw and
-//       one tick, instead of the wall-clock `SHOT_DRAW_MS`.
+//       bow until the game time (read over rcon) has advanced the harness's
+//       `SHOT_DRAW_TICKS`, instead of 1.2 s of wall time.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1256,6 +1255,8 @@ async function t16(bot) {
 
 // ---- T18: the belfry's shot -------------------------------------------------------
 const T18_ARROWS = Number(process.env.T18_ARROWS ?? 100)
+// The wall-clock draw the harness held before it counted the draw in game ticks.
+const T18_WALL_DRAW_MS = 1200
 function t18Numbers(s) {
   return (s ?? '').match(/-?\d+(?:\.\d+)?(?:E-?\d+)?/gi)?.map(Number) ?? []
 }
@@ -1292,7 +1293,7 @@ async function t18(bot) {
   const drawByTicks = process.env.T18_DRAW === 'ticks'
   await rcon.run(`tick rate ${rate}`)
   const gameTime = async () => Number((await rcon.run('time query gametime')).match(/(\d+)/)?.[1])
-  begin('T18-belfry-shot', `tick rate ${rate}; the bow held ${drawByTicks ? 'for 21 game ticks by the game time' : `${shot.SHOT_DRAW_MS} ms of wall time`}; a target ${T.x - H.x} east, ${T.y - H.y} up, ${T.z - H.z} south of the bot's feet at ${feet.x} ${feet.y} ${feet.z}, over a top slab; ${T18_ARROWS} arrows on the harness's arc through the centre, drawn ${shot.SHOT_DRAW_MS} ms`)
+  begin('T18-belfry-shot', `tick rate ${rate}; the bow held ${drawByTicks ? `for ${shot.SHOT_DRAW_TICKS} game ticks by the game time` : `${T18_WALL_DRAW_MS} ms of wall time`}; a target ${T.x - H.x} east, ${T.y - H.y} up, ${T.z - H.z} south of the bot's feet at ${feet.x} ${feet.y} ${feet.z}, over a top slab; ${T18_ARROWS} arrows on the harness's arc through the centre`)
   await resetScore('#target_any')
   let hits = 0
   for (let k = 0; k < T18_ARROWS; k++) {
@@ -1311,13 +1312,13 @@ async function t18(bot) {
       await sleep(150)
       const t0 = await gameTime()
       let t = t0
-      while (t < t0 + 21) {
+      while (t < t0 + shot.SHOT_DRAW_TICKS) {
         await sleep(50)
         t = await gameTime()
       }
       drawTicks = `>=${t - t0}`
     } else {
-      await sleep(shot.SHOT_DRAW_MS)
+      await sleep(T18_WALL_DRAW_MS)
     }
     bot.deactivateItem()
     const drawMs = Date.now() - drawStart

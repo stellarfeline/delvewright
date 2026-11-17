@@ -21,15 +21,28 @@ const FLIGHT_TICKS = 200;
  * How many arrows the bot looses for one hit before the step fails. The
  * server scatters every arrow (each component of its unit direction moved by
  * a triangular draw of half-width 0.0172275, the record §14), so an arc
- * through the centre is a chance per arrow, not a certainty: on the town's
- * belfry, a target over a slab a stray arrow strikes first, 3 arrows of 12
- * hit (the model alone says about half), and at a quarter thirty-two leave
- * about one hit in ten thousand unmade.
+ * through the centre is a chance per arrow, not a certainty. On the town's
+ * belfry — a target in a wall, a top slab under it and a stone column beside
+ * it — the model gives 44 to 47 % per arrow from anywhere within 0.3 of the
+ * stance's centre (the record §14); twenty leave at most one hit in a
+ * hundred thousand unmade (0.56^20).
  */
-export const SHOT_TRIES = 32;
+export const SHOT_TRIES = 20;
 
-/** How long the bot holds the bow drawn: past a full charge (20 ticks). */
-export const SHOT_DRAW_MS = 1200;
+/**
+ * The game ticks a bow is drawn for a full charge (`BowItem.getPowerForTime`:
+ * power `(f² + 2f) / 3` of `f = ticks / 20`, capped at 1).
+ */
+export const BOW_FULL_DRAW_TICKS = 20;
+
+/**
+ * The game ticks the bot holds the bow drawn, read from the server's game time
+ * between the draw and the release: one past a full charge. A draw timed by the
+ * wall clock is short whenever the server falls behind — on a server running
+ * fifteen ticks a second a 1.2 s draw is 18 ticks, power 0.87, an arrow at 2.6
+ * blocks a tick that falls short of the arc it was aimed on.
+ */
+export const SHOT_DRAW_TICKS = BOW_FULL_DRAW_TICKS + 1;
 
 /** How long the bot holds a raised item in use (spec-0134 §3). */
 export const USE_ITEM_HOLD_MS = 1000;
