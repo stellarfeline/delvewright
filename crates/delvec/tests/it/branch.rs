@@ -2624,9 +2624,9 @@ fn the_search_finds_what_walking_every_order_finds() {
         );
         with_clash += usize::from(!enumerated.is_empty());
     }
-    assert_eq!(fixtures.len(), 29, "every DW0485 fixture is compared");
+    assert_eq!(fixtures.len(), 31, "every DW0485 fixture is compared");
     assert_eq!(
-        with_clash, 23,
+        with_clash, 24,
         "the comparison binds: the fixtures that carry a clash carry one in both"
     );
 }
