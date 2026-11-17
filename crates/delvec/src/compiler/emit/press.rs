@@ -282,13 +282,20 @@ pub(super) fn box_kill(p: &PressPlan) -> String {
     format!("kill @e[tag={}]", p.tag)
 }
 
-/// **`setup_finish`**: every pressable's block (a door's two halves), then
+/// **`setup_finish`**: every pressable's block (a door's two halves), once per
+/// shared box, then
 /// every click box that stands in its pressable's first state. A gate's own
 /// answer places no block — the gate's is there — and its box goes up with the
 /// seal ([`gate_arm_fns`]).
 pub(super) fn press_setup(plan: &Plan) -> Vec<String> {
     let mut out = Vec::new();
     for p in plan.presses() {
+        // Presses that share one box stand on one block of one cell
+        // (`PressPlan::shares_box_with`): the press that summons the box
+        // places it, and the rest place nothing.
+        if crate::compiler::pressable::box_summoned_by_another(plan, p) {
+            continue;
+        }
         out.extend(p.setblocks());
     }
     for p in plan.presses() {
