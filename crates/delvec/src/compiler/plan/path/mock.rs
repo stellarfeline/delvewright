@@ -171,6 +171,8 @@ pub(super) fn mocks_before(
                 .collect(),
             choices: ctx.choices.clone(),
             triggers: ctx.triggers.clone(),
+            slots: ctx.slots.clone(),
+            owed: ctx.owed.clone(),
         }));
         let mut walk = flow.walk_for(&without);
         for st in &path.steps[..si] {

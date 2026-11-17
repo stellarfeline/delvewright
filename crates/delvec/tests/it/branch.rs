@@ -1127,6 +1127,259 @@ fn a_clash_that_needs_every_step_between_its_beats_is_dw0485() {
     );
 }
 
+// --- DW0485 where a story world performs a deed in front of a step ----------
+
+/// The keep with a landing to hold and a story world that loses it (the
+/// town's raid, reduced), on the hold branch. Two strands open once the party
+/// has decided: `quest/landing` declares the objectives `landing` in that
+/// order, and `quest/strolls` the rest of `obj/stroll-1`, `obj/stroll-2`.
+/// `obj/muster` musters the party at the quay; `obj/stand` holds the landing
+/// (`dies`, about `anchor/exit`) and is legal only once the party has
+/// mustered, and `obj/muster` sets `flag/mustered`; a stroll is a beat a
+/// player may walk at any point after the decision, and `obj/stroll-1` sets
+/// `flag/strolled`. `trigger/lose` is the elective loss: it fails `obj/stand`,
+/// so the world that performs it does so in front of `obj/stand`'s step (its
+/// entry deed), gated on `gate` when one is named. `lines` names each objective whose own line `arrives` about
+/// `anchor/exit` — the landing coming ashore.
+fn landing_fixture(landing: &[&str], gate: Option<&str>, lines: &[&str]) -> Campaign {
+    campaign_with(|plan, quests, _| {
+        let objective = |id: &str| {
+            let mut o = serde_json::json!({
+                "id": id, "type": "reach-anchor", "anchor": "anchor/exit", "radius": 2,
+                "requires_flags": ["flag/wait"],
+                "happening": { "verb": "learns", "text": "The party walks the wall." }
+            });
+            if id == "obj/stand" {
+                o["after"] = serde_json::json!(["obj/muster"]);
+                o["happening"] = serde_json::json!({
+                    "verb": "dies", "subject": "anchor/exit",
+                    "text": "The landing is driven back to its boats."
+                });
+            }
+            if lines.contains(&id) {
+                o["happening"] = serde_json::json!({
+                    "verb": "arrives", "subject": "anchor/exit",
+                    "text": "The raiders come ashore at the quay."
+                });
+            }
+            o
+        };
+        let strolls: Vec<&str> = ["obj/stroll-1", "obj/stroll-2"]
+            .into_iter()
+            .filter(|o| !landing.contains(o))
+            .collect();
+        for (id, objectives) in [("quest/landing", landing), ("quest/strolls", &strolls[..])] {
+            plan_quest(plan, id, &["quest/decide"]);
+            let mut done = serde_json::Map::new();
+            if objectives.contains(&"obj/stand") {
+                done.insert(
+                    "obj/stand".into(),
+                    serde_json::json!([{ "type": "set-flag", "flag": "flag/kept" }]),
+                );
+            }
+            if objectives.contains(&"obj/muster") {
+                done.insert(
+                    "obj/muster".into(),
+                    serde_json::json!([{ "type": "set-flag", "flag": "flag/mustered" }]),
+                );
+            }
+            if objectives.contains(&"obj/stroll-1") {
+                done.insert(
+                    "obj/stroll-1".into(),
+                    serde_json::json!([{ "type": "set-flag", "flag": "flag/strolled" }]),
+                );
+            }
+            quests["content"]["quests"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": id,
+                    "trigger": { "type": "quest-complete", "quest": "quest/decide" },
+                    "happening": { "verb": "learns", "text": "The night goes on." },
+                    "objectives": objectives.iter().map(|o| objective(o)).collect::<Vec<_>>(),
+                    "on_objective_complete": done,
+                    "on_complete": []
+                }));
+        }
+        let mut lose = serde_json::json!({
+            "id": "trigger/lose", "at": "anchor/door", "on": { "on": "use" },
+            "effects": [
+                { "type": "set-flag", "flag": "flag/lost" },
+                { "type": "fail-objective", "objective": "obj/stand" }
+            ]
+        });
+        if let Some(gate) = gate {
+            lose["requires_flags"] = serde_json::json!([gate]);
+        }
+        quests["content"]["triggers"] = serde_json::json!([lose]);
+        plan["content"]["branch_points"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "branch-point/landing", "opens_at": "quest/decide",
+                "forks_on": ["flag/kept", "flag/lost"],
+                "branches": [
+                    { "id": "branch/kept", "flags": ["flag/kept"], "leads_to": "quest/decide" },
+                    { "id": "branch/lost", "flags": ["flag/lost"], "leads_to": "quest/decide" }
+                ]
+            }));
+    })
+}
+
+/// The branch of [`landing_fixture`] that holds the gate and loses the
+/// landing, realized: its exported path and the steps its world performs a
+/// deed in front of, by objective.
+fn lost_landing(c: &Campaign) -> (Vec<String>, Vec<(String, String)>) {
+    let flow = delvec::compiler::flow::Flow::new(c);
+    let r = branch::realize(c)
+        .into_iter()
+        .find(|r| r.branch.id == "branch/hold+branch/lost")
+        .expect("the hold+lost branch is enumerated");
+    let w = r
+        .world
+        .expect("a story world realizes the hold+lost branch");
+    let pt = flow.story_playthrough(w);
+    let ctx = pt.story.clone().expect("a story world's playthrough");
+    let path: Vec<String> = pt.steps.iter().map(|s| s.objective.clone()).collect();
+    let deeds = ctx
+        .deeds
+        .iter()
+        .map(|(i, a)| (path[*i].clone(), a.clone()))
+        .collect();
+    (path, deeds)
+}
+
+/// Where `o` stands on `path`.
+fn at(path: &[String], o: &str) -> usize {
+    path.iter()
+        .position(|x| x == o)
+        .unwrap_or_else(|| panic!("{o} on {path:?}"))
+}
+
+/// The `DW0485` refusals of the hold+lost branch.
+fn lost_landing_refusals(c: &Campaign) -> Vec<String> {
+    branch::check_branches(c)
+        .into_iter()
+        .filter(|d| d.code == "DW0485" && d.message.contains("branch/hold+branch/lost"))
+        .map(|d| d.message)
+        .collect()
+}
+
+/// The campaign [`a_deed_is_performed_in_front_of_its_own_step_in_every_order`]
+/// judges: the landing comes ashore at the muster, the loss can be performed
+/// only once the party has mustered and is performed in front of `obj/stand`,
+/// and the strolls are a strand of their own.
+fn a_deed_in_front_of_its_own_step_campaign() -> Campaign {
+    landing_fixture(
+        &["obj/muster", "obj/stand"],
+        Some("flag/mustered"),
+        &["obj/muster"],
+    )
+}
+
+/// **The town's raid, reduced.** The world that loses the landing performs the
+/// loss in front of `obj/stand`, and the exported path walks the strolls
+/// after it. A player may walk the strolls first; an order that does reaches
+/// the stand's place in the count before the party has mustered. The deed
+/// belongs to `obj/stand`'s step, not to whatever step comes at that count,
+/// and it can be performed only once the party has mustered: performed at the
+/// count it would fail the landing before it has come ashore, open `obj/stand`
+/// early (a failed objective's step is no act of the party's), and print its
+/// `dies` before the muster's `arrives`. Every order performs it in front of
+/// `obj/stand`, after the muster, so no order shows a clash.
+#[test]
+fn a_deed_is_performed_in_front_of_its_own_step_in_every_order() {
+    let c = a_deed_in_front_of_its_own_step_campaign();
+    let (path, deeds) = lost_landing(&c);
+    assert!(
+        at(&path, "obj/stand") < at(&path, "obj/stroll-1")
+            && at(&path, "obj/stand") < at(&path, "obj/stroll-2"),
+        "the premise: the strolls come after the stand on the exported path: {path:?}"
+    );
+    assert_eq!(
+        deeds,
+        [("obj/stand".to_string(), "trigger/lose".to_string())],
+        "the premise: the loss is performed in front of the stand"
+    );
+    let refused = lost_landing_refusals(&c);
+    assert!(refused.is_empty(), "{refused:#?}");
+    // Not vacuous: the search walked the branches to the end.
+    let (_, bind) = branch::check_branches_bound(&c);
+    assert!(bind.states > 0 && bind.unproven == 0, "{bind:?}");
+}
+
+/// The campaign [`a_deed_whose_gate_is_shut_where_its_step_stands_is_not_performed`]
+/// judges: the loss needs the first stroll walked, and that stroll brings the
+/// landing ashore.
+fn a_deed_whose_gate_is_shut_campaign() -> Campaign {
+    landing_fixture(
+        &["obj/muster", "obj/stroll-1", "obj/stand"],
+        Some("flag/strolled"),
+        &["obj/stroll-1"],
+    )
+}
+
+/// **A deed honours its own gate.** The loss is performed in front of
+/// `obj/stand` once `obj/stroll-1` has set `flag/strolled`, and that stroll
+/// brings the landing ashore. An order that musters and goes straight to the
+/// stand reaches it with the loss's gate shut: this world cannot perform the
+/// loss there, so that order is not one this world plays, and performing the
+/// loss anyway would print the landing's `dies` before its `arrives`. Every
+/// order this world plays walks the first stroll before the stand.
+#[test]
+fn a_deed_whose_gate_is_shut_where_its_step_stands_is_not_performed() {
+    let c = a_deed_whose_gate_is_shut_campaign();
+    let (path, deeds) = lost_landing(&c);
+    assert!(
+        at(&path, "obj/stroll-1") < at(&path, "obj/stand"),
+        "the premise: the exported path strolls before the stand: {path:?}"
+    );
+    assert_eq!(
+        deeds,
+        [("obj/stand".to_string(), "trigger/lose".to_string())]
+    );
+    let refused = lost_landing_refusals(&c);
+    assert!(refused.is_empty(), "{refused:#?}");
+}
+
+/// The campaign [`a_deed_in_its_place_still_shows_a_true_clash`] judges.
+fn a_deed_in_its_place_with_a_true_clash_campaign() -> Campaign {
+    landing_fixture(
+        &["obj/muster", "obj/stroll-1", "obj/stand"],
+        None,
+        &["obj/stroll-1"],
+    )
+}
+
+/// **A true clash still refuses.** The same documents with the loss ungated:
+/// a player may muster, lose the landing in front of `obj/stand` and only then
+/// walk the stroll that brings it ashore. That order is one this world plays,
+/// the deed in its own place, and it shows the clash; the exported order does
+/// not.
+#[test]
+fn a_deed_in_its_place_still_shows_a_true_clash() {
+    let c = a_deed_in_its_place_with_a_true_clash_campaign();
+    let (_, deeds) = lost_landing(&c);
+    assert_eq!(
+        deeds,
+        [("obj/stand".to_string(), "trigger/lose".to_string())]
+    );
+    let refused = lost_landing_refusals(&c);
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    let m = &refused[0];
+    assert!(m.contains("`anchor/exit` acts after it dies"), "{m}");
+    assert!(
+        m.contains("[dies] obj/stand") && m.contains("[arrives] obj/stroll-1"),
+        "{m}"
+    );
+    let order = printed_order(m);
+    assert!(
+        at(&order, "obj/muster") < at(&order, "obj/stand")
+            && at(&order, "obj/stand") < at(&order, "obj/stroll-1"),
+        "the order performs the deed in its place, the stroll after it: {order:?}"
+    );
+}
+
 // --- the DW0485 fixtures, by name ----------------------------------------
 
 /// The campaign [`dies_then_acts_on_one_branch_is_dw0485`] judges.
@@ -1456,6 +1709,9 @@ fn contradiction_fixtures() -> Vec<(&'static str, Campaign)> {
         ("spooked_by_a_trigger", spooked_by_a_trigger_campaign()),
         ("knock_count", knock_count_campaign()),
         ("lift_gated_on_a_later_sibling", lift_gated_on_a_later_sibling_campaign()),
+        ("a_deed_in_front_of_its_own_step", a_deed_in_front_of_its_own_step_campaign()),
+        ("a_deed_whose_gate_is_shut", a_deed_whose_gate_is_shut_campaign()),
+        ("a_deed_in_its_place_with_a_true_clash", a_deed_in_its_place_with_a_true_clash_campaign()),
     ]
 }
 
@@ -1924,9 +2180,9 @@ fn the_search_finds_what_walking_every_order_finds() {
         );
         with_clash += usize::from(!enumerated.is_empty());
     }
-    assert_eq!(fixtures.len(), 23, "every DW0485 fixture is compared");
+    assert_eq!(fixtures.len(), 26, "every DW0485 fixture is compared");
     assert_eq!(
-        with_clash, 18,
+        with_clash, 20,
         "the comparison binds: the fixtures that carry a clash carry one in both"
     );
 }
