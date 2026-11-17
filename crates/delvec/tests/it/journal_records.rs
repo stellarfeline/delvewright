@@ -669,6 +669,12 @@ fn a_task_lost_before_it_is_taken_settles_failed() {
                 "on_complete": []}));
             common::objective_effects(q, 0, "obj/talk")
                 .push(json!({"type": "fail-objective", "objective": "obj/dare"}));
+            // The dare opens only once the delve is over: no walk takes it.
+            q["content"]["quests"][0]["on_complete"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"type": "set-flag", "flag": "flag/dared",
+                    "happening": happening("the keeper names his dare")}));
         },
         |_| {},
     );
@@ -681,8 +687,10 @@ fn a_task_lost_before_it_is_taken_settles_failed() {
     // The book: the dare's finished page, under its settled score.
     let write = func(&out, "journal_write");
     assert!(
-        write.lines().any(|l| l.contains("if score #party dw.os_dare matches 1")
-            && l.ends_with(&format!("{NS}:journal_done_dare"))),
+        write
+            .lines()
+            .any(|l| l.contains("if score #party dw.os_dare matches 1")
+                && l.ends_with(&format!("{NS}:journal_done_dare"))),
         "{write}"
     );
     // The ledger: no walk steps the dare, and every world settles it failed.
@@ -700,7 +708,10 @@ fn a_task_lost_before_it_is_taken_settles_failed() {
         assert_eq!(r["settles"], "failed", "{ledger}");
     }
     let path = text(&out, "validation/critical-path.json");
-    assert!(!path.contains("obj/dare"), "the walk steps the dare: {path}");
+    assert!(
+        !path.contains("obj/dare"),
+        "the walk steps the dare: {path}"
+    );
 }
 
 /// The one numbering's keys are the inventory's keys.
