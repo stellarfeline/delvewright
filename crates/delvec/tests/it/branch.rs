@@ -1636,7 +1636,7 @@ fn a_true_clash_behind_a_deed_that_forbids_its_own_flag_still_refuses() {
 fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
     use delvec::compiler::flow::Flow;
     let (mut worlds, mut deeds, mut bad) = (0usize, 0usize, Vec::new());
-    let mut looked = 0usize;
+    let (mut looked, mut shut) = (0usize, 0usize);
     for (name, c) in &contradiction_fixtures() {
         let flow = Flow::new(c);
         for (k, run) in flow.story().runs.iter().enumerate() {
@@ -1652,48 +1652,58 @@ fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
                 if !w.legal(step) {
                     first_illegal.get_or_insert(i + 1);
                 }
-                let due: Vec<&str> = ctx.deeds_before(&step.objective).collect();
-                let no_choice = !ctx.choices.iter().any(|(j, _)| *j == i);
-                let mut looks: Vec<(&str, std::collections::BTreeSet<String>)> = Vec::new();
-                for (stance, walk) in [("replay", &w), ("guaranteed", &g)] {
-                    let ahead = walk.with_due_deeds(step);
-                    looks.push((
-                        stance,
-                        due.iter()
-                            .filter(|a| ahead.performed_deed(a))
-                            .map(|a| a.to_string())
-                            .collect(),
-                    ));
-                    if no_choice {
-                        let mut alone = walk.clone();
-                        for a in &due {
-                            alone = alone.performing(a);
-                        }
-                        looks.push((
-                            stance,
+                // At this state, every step still ahead that has deeds due in
+                // front of it is asked of each consumer, as an order that took
+                // it next would: what `Walk::take` performs there, what the
+                // look-ahead performs, and what the acts performed alone do.
+                for (later, s2) in pt.steps.iter().enumerate().skip(i) {
+                    let due: Vec<&str> = ctx.deeds_before(&s2.objective).collect();
+                    if due.is_empty() {
+                        continue;
+                    }
+                    let no_choice = !ctx.choices.iter().any(|(j, _)| *j == later);
+                    for (stance, walk) in [("replay", &w), ("guaranteed", &g)] {
+                        let took: std::collections::BTreeSet<String> = walk
+                            .clone()
+                            .take(s2)
+                            .deeds
+                            .into_iter()
+                            .map(|(a, _)| a)
+                            .collect();
+                        let ahead = walk.with_due_deeds(s2);
+                        let mut looks: Vec<std::collections::BTreeSet<String>> = vec![
                             due.iter()
-                                .filter(|a| alone.performed_deed(a))
+                                .filter(|a| ahead.performed_deed(a))
                                 .map(|a| a.to_string())
                                 .collect(),
-                        ));
+                        ];
+                        if no_choice {
+                            let mut alone = walk.clone();
+                            for a in &due {
+                                alone = alone.performing(a);
+                            }
+                            looks.push(
+                                due.iter()
+                                    .filter(|a| alone.performed_deed(a))
+                                    .map(|a| a.to_string())
+                                    .collect(),
+                            );
+                        }
+                        for set in looks {
+                            looked += 1;
+                            shut += due.len() - set.len();
+                            if set != took {
+                                bad.push(format!(
+                                    "{name} world/{k} at step {} asking step {}: under the {stance} stance a look-ahead performs {set:?}, the walk {took:?}",
+                                    i + 1,
+                                    later + 1
+                                ));
+                            }
+                        }
                     }
                 }
-                let gj = g.take(step);
+                let _ = g.take(step);
                 let j = w.take(step);
-                let taken: std::collections::BTreeSet<String> =
-                    j.deeds.iter().map(|(a, _)| a.clone()).collect();
-                let taken_g: std::collections::BTreeSet<String> =
-                    gj.deeds.iter().map(|(a, _)| a.clone()).collect();
-                for (stance, set) in looks {
-                    looked += usize::from(!due.is_empty());
-                    let want = if stance == "replay" { &taken } else { &taken_g };
-                    if &set != want {
-                        bad.push(format!(
-                            "{name} world/{k} step {}: under the {stance} stance a look-ahead performs {set:?}, the walk {want:?}",
-                            i + 1
-                        ));
-                    }
-                }
                 for (a, f) in &j.deeds {
                     walked.push((i, a.clone()));
                     fired.extend(f.iter().cloned());
@@ -1740,8 +1750,8 @@ fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
     }
     assert!(bad.is_empty(), "{bad:#?}");
     assert!(
-        worlds > 50 && deeds > 5 && looked > 0,
-        "worlds {worlds}, deeds {deeds}, looks {looked}"
+        worlds > 50 && deeds > 5 && looked > 0 && shut > 0,
+        "worlds {worlds}, deeds {deeds}, looks {looked}, shut {shut}"
     );
 }
 
