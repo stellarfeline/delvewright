@@ -143,8 +143,10 @@ export interface CensusRow {
   readonly riders?: string;
   readonly region: readonly [Vec3Tuple, Vec3Tuple];
   readonly count: number;
-  /** Format 12: with `select`, one standable cell of the box per body placed,
-   * no cell shared with another row of the step. */
+  /** Format 12: with `select`, the cells of the box a body is placed on, in
+   * order: for a declared set, one per body placed, no cell one another row
+   * of the step or a body moved earlier on the path holds; for a census of a
+   * kind, every cell those leave, which its stand-ins are summoned into. */
   readonly cells?: readonly Vec3Tuple[];
   /** Format 12: a census of a kind — the entity the harness summons for the
    * act and removes after, never a body some other object owns. */

@@ -3,7 +3,7 @@
 
 import type { CensusRow, Step } from "../critical-path.ts";
 import { censusOf } from "../critical-path.ts";
-import { censusCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../census.ts";
+import { censusCommands, censusHoldCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../census.ts";
 import { isRejection } from "../rejection.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -80,12 +80,25 @@ export const methods = {
 
   /**
    * Put every row's bodies in its box and hold them there, in one bracketed
-   * turn; wait one census period, once; read every row's count back. The first
+   * turn (after a turn that holds what a census of a kind finds already in its
+   * box, and one census period); wait one census period, once; read every
+   * row's count back. The first
    * row the game does not count as placed fails the step by name.
    */
   async placeCensus(this: MineflayerExecutor, rows: readonly CensusRow[]): Promise<void> {
     for (const row of rows) {
       process.stderr.write(`[census] ${row.state}: putting ${row.count} body(ies) of ${row.select} in the box\n`);
+    }
+    // A census of a kind first holds the bodies of the kind already in its
+    // box, and lets the game count them for one period, so the shortfall it
+    // summons is read off the count the step will read.
+    const holds = rows.flatMap((row) => censusHoldCommands(row));
+    if (holds.length > 0) {
+      const refused = refusalIn(await this.bracketed(holds));
+      if (refused !== undefined) {
+        throw new Error(`census ${rows.map((r) => r.state).join(", ")}: holding the bodies already in the box was refused — ${refused}`);
+      }
+      await delay(CENSUS_SETTLE_MS);
     }
     const commands = rows.flatMap((row) => censusCommands(row));
     if (commands.length > 0) {
