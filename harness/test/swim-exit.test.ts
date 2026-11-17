@@ -143,3 +143,36 @@ test("installed swim moves join the library's own only while liquid is admitted"
   m.liquidCost = Number.POSITIVE_INFINITY;
   assert.equal(m.getNeighbors(node).length, 0);
 });
+
+// --- onto a lily pad --------------------------------------------------------
+
+/**
+ * A pond in miniature with one lily pad out on the water: a stone bed at y 57,
+ * water from y 58 to y 62 over x, z in -6..6, a stone bank round it, and the
+ * pad at [0, 63, 0] — six cells from every bank. The route proof's flown
+ * climb out lands a body on a pad (`World::flown_climb_outs`); the walk must
+ * make the same move with the client's own physics.
+ */
+function pond(): Cells {
+  const c: Cells = new Map();
+  for (let x = -9; x <= 9; x++) {
+    for (let z = -9; z <= 9; z++) {
+      const wet = Math.abs(x) <= 6 && Math.abs(z) <= 6;
+      c.set(cellKey(x, 57, z), "minecraft:stone");
+      for (let y = 58; y <= 62; y++) c.set(cellKey(x, y, z), wet ? WATER : "minecraft:stone");
+    }
+  }
+  c.set(cellKey(0, 63, 0), "minecraft:lily_pad");
+  return c;
+}
+
+test("a body in water climbs onto a lily pad out on the pond", () => {
+  const r = simWalk(legBot(pond(), [0.5, 62.2, 3.5], true), [0, 63, 0], 0, 400);
+  assert.ok(r.reached, `stopped at ${fmtPos(r.at)}`);
+  assert.ok(Math.abs(r.at[1] - 63.09375) < 0.05, `not on the pad: ${fmtPos(r.at)}`);
+});
+
+test("without the move onto a thin floor, the library reads no path onto the pad", () => {
+  const r = simWalk(legBot(pond(), [0.5, 62.2, 3.5], true, false), [0, 63, 0], 0, 300);
+  assert.equal(r.reached, false, `the library alone climbed onto the pad at ${fmtPos(r.at)}`);
+});
