@@ -1714,7 +1714,68 @@ fn contradiction_fixtures() -> Vec<(&'static str, Campaign)> {
         ("a_deed_in_its_place_with_a_true_clash", a_deed_in_its_place_with_a_true_clash_campaign()),
         ("a_purse_two_tallies_fill", a_purse_two_tallies_fill_campaign()),
         ("a_bar_a_strand_must_be_primed_for", a_bar_a_strand_must_be_primed_for_campaign()),
+        ("a_count_two_strands_write", a_count_two_strands_write_campaign()),
     ]
+}
+
+/// **Two strands that write one count, one by setting it.** On the hold
+/// branch the watch seals the gate. `quest/count-set` sets `state/knocks` to
+/// five and `quest/count-add` adds one, each in its own quest, and neither
+/// reads the count; `quest/look-in` walks back in through the gate while the
+/// count is at most five. Adding then setting leaves five, setting then adding
+/// six: the two writes do not commute, so the two strands conflict although
+/// neither reads what the other writes.
+fn a_count_two_strands_write_campaign() -> Campaign {
+    campaign_with(|plan, quests, _| {
+        quest(quests, "quest/hold")["on_objective_complete"]["obj/watch"][0] = serde_json::json!({
+            "type": "close-gate",
+            "anchor": "anchor/door",
+            "happening": {
+                "verb": "seals",
+                "text": "The Keeper drops the bar across the gate.",
+                "subject": "anchor/door"
+            }
+        });
+        quests["content"]["state"] = serde_json::json!([{
+            "id": "state/knocks",
+            "initial": 0,
+            "note": "How many knocks the party has answered.",
+            "scope": "party"
+        }]);
+        for id in ["quest/count-set", "quest/count-add", "quest/look-in"] {
+            plan_quest(plan, id, &["quest/decide"]);
+        }
+        let qs = quests["content"]["quests"].as_array_mut().unwrap();
+        qs.push(after_the_fork(
+            "quest/count-set",
+            "obj/count-set",
+            serde_json::json!([]),
+            serde_json::json!([{"type": "set-state", "state": "state/knocks", "value": 5}]),
+        ));
+        qs.push(after_the_fork(
+            "quest/count-add",
+            "obj/count-add",
+            serde_json::json!([]),
+            serde_json::json!([{"type": "add-state", "state": "state/knocks", "amount": 1}]),
+        ));
+        qs.push(after_the_fork(
+            "quest/look-in",
+            "obj/look-in",
+            serde_json::json!([]),
+            serde_json::json!([{
+                "type": "narrate",
+                "text": "You slip back in.",
+                "when": {"requires_state": [
+                    {"op": "at-most", "state": "state/knocks", "value": 5}
+                ]},
+                "happening": {
+                    "verb": "arrives",
+                    "text": "The party slips back in through the gate.",
+                    "subject": "anchor/door"
+                }
+            }]),
+        ));
+    })
 }
 
 // --- the stubborn set -------------------------------------------------------
@@ -2399,9 +2460,9 @@ fn the_search_finds_what_walking_every_order_finds() {
         );
         with_clash += usize::from(!enumerated.is_empty());
     }
-    assert_eq!(fixtures.len(), 28, "every DW0485 fixture is compared");
+    assert_eq!(fixtures.len(), 29, "every DW0485 fixture is compared");
     assert_eq!(
-        with_clash, 22,
+        with_clash, 23,
         "the comparison binds: the fixtures that carry a clash carry one in both"
     );
 }
