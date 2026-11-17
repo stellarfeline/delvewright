@@ -2083,6 +2083,11 @@ mod tests {
             collision_top_16("minecraft:iron_chain[axis=x]"),
             FULL_HEIGHT_16
         );
+        // A block that hurts stays a wall to a walk, not a step through fire.
+        assert_eq!(
+            collision_top_16("minecraft:campfire[lit=true]"),
+            FULL_HEIGHT_16
+        );
     }
 
     /// The table in the module header, asserted row by row. Every other test here
