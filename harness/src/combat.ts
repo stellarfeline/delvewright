@@ -1419,6 +1419,37 @@ export function dieRetryCoverageFailures(
   return out;
 }
 
+/**
+ * **The encounters this world fields**: the plan's entries whose `kill` step —
+ * the same objective on the same wave — the walked path carries, in plan order,
+ * and the rest beside them.
+ *
+ * There is one `combat-plan.json`, over the main path, and every story world's
+ * path reads it (spec-0108). A world whose story takes a fight off its path —
+ * the raid lost, its waves despawned and their objectives failed — puts that
+ * fight in front of no player, and its path carries no `kill` step for it. The
+ * die-retry stage owes its trials for what the world fields, read off the
+ * compiler's own path; a wave the path does field is owed in full.
+ */
+export function fieldedEncounters(
+  plan: readonly Encounter[],
+  steps: readonly { readonly action: string; readonly objective?: string; readonly wave?: string }[],
+): { readonly fielded: Encounter[]; readonly unfielded: Encounter[] } {
+  const kills = new Set(
+    steps.flatMap((s) =>
+      s.action === "kill" && s.objective !== undefined && s.wave !== undefined
+        ? [`${s.objective}\u0000${s.wave}`]
+        : [],
+    ),
+  );
+  const fielded: Encounter[] = [];
+  const unfielded: Encounter[] = [];
+  for (const e of plan) {
+    (kills.has(`${e.objective}\u0000${e.wave}`) ? fielded : unfielded).push(e);
+  }
+  return { fielded, unfielded };
+}
+
 // ---------------------------------------------------------------------------
 // The die-retry stage's own binding count (playtest-methodology.md rule 1)
 // ---------------------------------------------------------------------------
