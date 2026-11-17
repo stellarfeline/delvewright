@@ -51,6 +51,10 @@
 //       `SHOT_DRAW_MS`); for every arrow, on its first tick (a tick function),
 //       the shooter's position and rotation and the arrow's position and
 //       motion, then where it lies and whether the target was hit.
+//       `T18_TICK_RATE=<n>` runs the server at n ticks a second (`tick rate`),
+//       the way a server that falls behind runs; `T18_DRAW=ticks` holds the
+//       bow until the game time (read over rcon) has advanced a full draw and
+//       one tick, instead of the wall-clock `SHOT_DRAW_MS`.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1284,7 +1288,11 @@ async function t18(bot) {
   await rcon.run(`give ${BOT} minecraft:arrow 64`)
   await rcon.run(`give ${BOT} minecraft:arrow 64`)
   await sleep(1500)
-  begin('T18-belfry-shot', `a target ${T.x - H.x} east, ${T.y - H.y} up, ${T.z - H.z} south of the bot's feet at ${feet.x} ${feet.y} ${feet.z}, over a top slab; ${T18_ARROWS} arrows on the harness's arc through the centre, drawn ${shot.SHOT_DRAW_MS} ms`)
+  const rate = Number(process.env.T18_TICK_RATE ?? 20)
+  const drawByTicks = process.env.T18_DRAW === 'ticks'
+  await rcon.run(`tick rate ${rate}`)
+  const gameTime = async () => Number((await rcon.run('time query gametime')).match(/(\d+)/)?.[1])
+  begin('T18-belfry-shot', `tick rate ${rate}; the bow held ${drawByTicks ? 'for 21 game ticks by the game time' : `${shot.SHOT_DRAW_MS} ms of wall time`}; a target ${T.x - H.x} east, ${T.y - H.y} up, ${T.z - H.z} south of the bot's feet at ${feet.x} ${feet.y} ${feet.z}, over a top slab; ${T18_ARROWS} arrows on the harness's arc through the centre, drawn ${shot.SHOT_DRAW_MS} ms`)
   await resetScore('#target_any')
   let hits = 0
   for (let k = 0; k < T18_ARROWS; k++) {
@@ -1297,8 +1305,22 @@ async function t18(bot) {
     if (!aim) throw new Error('no arc')
     await bot.lookAt(p.offset(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z), true)
     bot.activateItem()
-    await sleep(shot.SHOT_DRAW_MS)
+    const drawStart = Date.now()
+    let drawTicks = '-'
+    if (drawByTicks) {
+      await sleep(150)
+      const t0 = await gameTime()
+      let t = t0
+      while (t < t0 + 21) {
+        await sleep(50)
+        t = await gameTime()
+      }
+      drawTicks = `>=${t - t0}`
+    } else {
+      await sleep(shot.SHOT_DRAW_MS)
+    }
     bot.deactivateItem()
+    const drawMs = Date.now() - drawStart
     await sleep(2500)
     const first = valueOf((await rcon.probe('data get storage dw_probe:t18 first')).replace(/^.*has the following contents: /s, 'entity data: '))
     const lay = await entityGet('@e[type=minecraft:arrow,tag=dw_seen,limit=1]', 'Pos')
@@ -1309,6 +1331,8 @@ async function t18(bot) {
     row(
       `arrow=${k + 1}`,
       `hit=${hit}`,
+      `drawMs=${drawMs}`,
+      `drawTicks=${drawTicks}`,
       `botPos=${[p.x, p.y, p.z].join(',')}`,
       `botLook=${bot.entity.yaw},${bot.entity.pitch}`,
       `aim=${aim.join(',')}`,
@@ -1323,6 +1347,7 @@ async function t18(bot) {
     await rcon.probe('kill @e[type=minecraft:arrow]')
   }
   row(`hits=${hits}`, `arrows=${T18_ARROWS}`)
+  await rcon.run('tick rate 20')
   await execFileP('docker', ['exec', container, 'rm', '-f', `${PACK}/data/minecraft/tags/function/tick.json`])
   await rcon.probe('reload')
   await rcon.probe(`setblock ${T.x} ${T.y} ${T.z} minecraft:air`)
