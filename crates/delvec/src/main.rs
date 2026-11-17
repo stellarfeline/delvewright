@@ -107,6 +107,14 @@ enum Command {
         /// the flag would have decided.
         #[arg(long, value_name = "PLACE")]
         perturb_place: Option<String>,
+        /// Build to look at, not to ship: parse, derive and write the player
+        /// tree, and run no check — no validation, no analysis, no proof over
+        /// the world, no validation file. The tree's `manifest.json` carries
+        /// `look_only: true`, and the staging gate and the delve image refuse
+        /// it. A document `delvec validate` would refuse may stop a look build
+        /// part-way; `delvec build` is what says why.
+        #[arg(long, conflicts_with = "perturb")]
+        look: bool,
     },
     /// Emit the l10n key inventory (key → canonical English) as JSON, each row
     /// with its kind of text, speaker, situation and the existing `--lang`
@@ -351,11 +359,13 @@ fn main() -> ExitCode {
             out,
             perturb,
             perturb_place,
+            look,
         } => run_build(
             campaign_dir,
             out.as_deref(),
             perturb,
             perturb_place.as_deref(),
+            *look,
             &cli.prefabs,
             &cli.lang,
             cli.json,

@@ -761,6 +761,7 @@ pub(super) fn emit_manifest(
     out: &BuildOutput,
     language: Option<&str>,
     resource_pack: Option<&(String, bool)>,
+    build: crate::compiler::check::Build,
 ) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
         .iter()
@@ -807,6 +808,16 @@ pub(super) fn emit_manifest(
             .as_object_mut()
             .expect("manifest is a JSON object")
             .insert("test_level".to_string(), Value::Bool(true));
+    }
+    // A look build (ADR-0040 §3): no check ran and no validation file was
+    // written, so every reader that admits a build by its manifest refuses
+    // this one. Absent for a proven build, which keeps its manifest
+    // byte-identical.
+    if !build.checks() {
+        manifest
+            .as_object_mut()
+            .expect("manifest is a JSON object")
+            .insert("look_only".to_string(), Value::Bool(true));
     }
     if let Some((sha1, overrides)) = resource_pack {
         let m = manifest.as_object_mut().expect("manifest is a JSON object");

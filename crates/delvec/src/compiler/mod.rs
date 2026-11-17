@@ -32,6 +32,7 @@
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
 //! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
 //! - [`chain`]: a tick's command chain stays under the game's limit, and one-shot work is split across ticks (`DW0984`).
+//! - [`check`]: a check only reads — the bench a build's checks run on, the sink they write to, what one check keeps for another and what a derivation could not derive, each closed to emission (ADR-0040).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`clickbox`]: the one rule every compiler-placed click box is built by — each face near the block grid pushed one margin past it — and its proof over the shipped bytes that a box is strictly nearer than any block it stands in (`DW1013`).
@@ -163,6 +164,7 @@ pub mod camera;
 pub mod cast;
 pub mod cellset;
 pub mod chain;
+pub mod check;
 pub mod claims;
 pub mod clearance;
 pub mod clickbox;

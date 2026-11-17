@@ -772,6 +772,31 @@ fn validate_loaded_with(
     }
 }
 
+/// What a look build takes of a campaign directory (ADR-0040 §3): the
+/// documents read and parsed, the library loaded, the sidecars parsed — and
+/// nothing judged. A document that does not parse is refused, because there
+/// is nothing to derive from; every other finding is `delvec validate`'s.
+fn look_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
+    let loaded = load_or_refuse(campaign_dir, json)?;
+    let prefabs = load_library(prefabs_dir, json)?;
+    match delvec::compiler::load::parse_loaded(&loaded) {
+        Ok(campaign) => {
+            let sidecars = parse_sidecars(&loaded.l10n, &mut Vec::new());
+            Ok(Validated {
+                campaign,
+                prefabs,
+                loaded,
+                sidecars,
+                diags: Vec::new(),
+            })
+        }
+        Err(diags) => {
+            print_diags(&diags, json);
+            Err(1)
+        }
+    }
+}
+
 /// Whether any diagnostic is a hard rejection. Warnings (`Severity::Warning`) are
 /// printed like errors but never fail a run: they flag things the compiler cannot
 /// decide with certainty (e.g. `DW0330`, where the true limit depends on the
@@ -835,6 +860,34 @@ pub(crate) fn read_structures_over(
     overlay: &BTreeMap<String, Vec<u8>>,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
+    let structures = read_structure_bytes(plan, prefabs, prefabs_dir, overlay, json)?;
+    // The templates are the size their metadata says they are (`DW0803`).
+    //
+    // Bound here as well as inside `emit::build_with_warnings`, and the second
+    // binding is the point: this function is the ONE place every CLI consumer
+    // of prefab bytes passes through — `build`, `frames --campaign`, `viewer` and
+    // `blocking-chart` — and a review artifact drawn from a stale tile is a
+    // picture that lies, which is worse than a datapack that does not build.
+    // The check is pure, so running it twice on the build path costs a walk and
+    // reports the same verdict.
+    if let Err(delvec::compiler::emit::BuildFailure::Diagnostic { code, message }) =
+        delvec::compiler::emit::check_template_extents(plan, &structures)
+    {
+        print_build_error(code, &message, json);
+        return Err(3);
+    }
+    Ok(structures)
+}
+
+/// The bytes [`read_structures_over`] reads, with no judgement of them: what a
+/// look build takes (ADR-0040 §3).
+fn read_structure_bytes(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    prefabs_dir: &Path,
+    overlay: &BTreeMap<String, Vec<u8>>,
+    json: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = overlay.clone();
     // The horizon surround's tiles first: the compiler GENERATED those bytes, so
     // their `structure_file` keys name nothing on disk and the loop below would
@@ -886,21 +939,6 @@ pub(crate) fn read_structures_over(
             }
         }
     }
-    // The templates are the size their metadata says they are (`DW0803`).
-    //
-    // Bound here as well as inside `emit::build_with_warnings`, and the second
-    // binding is the point: this function is the ONE place every CLI consumer
-    // of prefab bytes passes through — `build`, `frames --campaign`, `viewer` and
-    // `blocking-chart` — and a review artifact drawn from a stale tile is a
-    // picture that lies, which is worse than a datapack that does not build.
-    // The check is pure, so running it twice on the build path costs a walk and
-    // reports the same verdict.
-    if let Err(delvec::compiler::emit::BuildFailure::Diagnostic { code, message }) =
-        delvec::compiler::emit::check_template_extents(plan, &structures)
-    {
-        print_build_error(code, &message, json);
-        return Err(3);
-    }
     Ok(structures)
 }
 
@@ -919,6 +957,9 @@ pub(crate) fn read_structures_over(
 enum BuildKind<'a> {
     /// The build as it ships.
     Ship(&'a Path),
+    /// The build to look at (ADR-0040 §3): parsing, the derivations and
+    /// emission, and no check; the tree is marked `look_only`.
+    Look(&'a Path),
     /// The derivation asked for a named defect, so its observer can be watched.
     Demonstrate(Knob, Perturb),
     /// The build, of which only the load world (`validation/worlds/at-load`)
@@ -931,11 +972,13 @@ pub(crate) fn run_build(
     out: Option<&Path>,
     perturb: &[Knob],
     perturb_place: Option<&str>,
+    look: bool,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> ExitCode {
     let kind = match resolve_build_kind(out, perturb, perturb_place) {
+        Ok(BuildKind::Ship(out)) if look => BuildKind::Look(out),
         Ok(k) => k,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -970,7 +1013,20 @@ fn build_as(
     lang: &str,
     json: bool,
 ) -> ExitCode {
-    let v = match validate_stage(campaign_dir, prefabs_dir, json) {
+    let look = matches!(kind, BuildKind::Look(_));
+    if look {
+        eprintln!(
+            "look build: parsing, the derivations and emission; no validation, no analysis and \
+             no check runs, and no validation file is written. The tree is unproven and its \
+             manifest says so (`look_only: true`). A document `delvec validate` would refuse may \
+             stop this build part-way; `delvec build` without `--look` says why."
+        );
+    }
+    let v = match if look {
+        look_stage(campaign_dir, prefabs_dir, json)
+    } else {
+        validate_stage(campaign_dir, prefabs_dir, json)
+    } {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
@@ -984,10 +1040,12 @@ fn build_as(
         sidecars,
         ..
     } = v;
-    let adiags = analyze_campaign(&campaign, &prefabs);
-    if !adiags.is_empty() {
-        print_diags(&adiags, json);
-        return ExitCode::from(2);
+    if !look {
+        let adiags = analyze_campaign(&campaign, &prefabs);
+        if !adiags.is_empty() {
+            print_diags(&adiags, json);
+            return ExitCode::from(2);
+        }
     }
 
     // **Every approved picture is answered** (`DW0900`, spec-0070), and the
@@ -998,7 +1056,7 @@ fn build_as(
     // on disk, which is what `delvec cameras`' quick frames need to place the
     // camera the refusal asks for. Not at validation: every view command
     // validates first, so a validation-tier refusal would refuse the instrument.
-    {
+    if !look {
         let answered = delvec::compiler::design::answered(&campaign, &loaded.design_files);
         if !answered.is_empty() {
             print_diags(&answered, json);
@@ -1042,7 +1100,7 @@ fn build_as(
     // the requested build (exit 1, spec-0002).
     let is_english = lang == delvewright_dsl::CANONICAL_LANG;
     // The act check reads the English, which the localisation below replaces.
-    let act_binding = delvec::compiler::telling::check_acts(&campaign).1;
+    let act_binding = (!look).then(|| delvec::compiler::telling::check_acts(&campaign).1);
     let mut campaign = campaign;
     if !is_english {
         if !campaign.world.content.languages.iter().any(|l| l == lang) {
@@ -1082,7 +1140,9 @@ fn build_as(
     // a literal — so a build with no `--perturb` reaches the derivation through
     // exactly the code path it always did.
     let built = match &kind {
-        BuildKind::Ship(_) | BuildKind::LoadWorld(_) => Plan::build(&campaign, &prefabs),
+        BuildKind::Ship(_) | BuildKind::Look(_) | BuildKind::LoadWorld(_) => {
+            Plan::build(&campaign, &prefabs)
+        }
         BuildKind::Demonstrate(knob, p) => {
             eprintln!(
                 "perturbed build: the derivation is asked for `{}` ({}{}); the observer this \
@@ -1096,8 +1156,11 @@ fn build_as(
         }
     };
     let plan = match built.map(|p| {
-        p.with_design_files(loaded.design_files.clone())
-            .with_act_binding(act_binding)
+        let p = p.with_design_files(loaded.design_files.clone());
+        match act_binding {
+            Some(b) => p.with_act_binding(b),
+            None => p,
+        }
     }) {
         Ok(p) => p,
         Err(e) => {
@@ -1111,7 +1174,11 @@ fn build_as(
     };
 
     // read the structure .nbt bytes referenced by placements
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match if look {
+        read_structure_bytes(&plan, &prefabs, prefabs_dir, &BTreeMap::new(), json)
+    } else {
+        read_structures(&plan, &prefabs, prefabs_dir, json)
+    } {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -1123,15 +1190,29 @@ fn build_as(
 
     let tree = CommandTree::v1_21_11();
     delvec::compiler::notes::mark("validated, analysed, planned: emit starts");
-    let output = match emit::build_with_warnings(
-        &plan,
-        &loaded.inputs,
-        &structures,
-        &tree,
-        &prefabs,
-        build_lang,
-        &skins,
-    ) {
+    let emitted = if look {
+        emit::build_look(
+            &plan,
+            &loaded.inputs,
+            &structures,
+            &tree,
+            &prefabs,
+            build_lang,
+            &skins,
+        )
+        .map(|o| (o, Vec::new()))
+    } else {
+        emit::build_with_warnings(
+            &plan,
+            &loaded.inputs,
+            &structures,
+            &tree,
+            &prefabs,
+            build_lang,
+            &skins,
+        )
+    };
+    let output = match emitted {
         Ok((o, warnings)) => {
             delvec::compiler::notes::mark("emit returned");
             // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
@@ -1187,7 +1268,7 @@ fn build_as(
     // carries no path, so this is a statement about what did not happen rather
     // than a decision not to do it.
     let out = match kind {
-        BuildKind::Ship(out) => out,
+        BuildKind::Ship(out) | BuildKind::Look(out) => out,
         BuildKind::LoadWorld(dir) => return write_load_world(&output, dir, json),
         BuildKind::Demonstrate(knob, p) => {
             eprintln!(

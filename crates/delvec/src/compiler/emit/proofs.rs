@@ -12,11 +12,14 @@ use super::*;
 /// a hitbox, its reach and where a blow lands are facts about cells, and
 /// nothing below changes them. The binding and the cost the host meets are
 /// printed on every build, zeroes included, before the verdict is taken.
-pub(super) fn prove_assemblies(
+pub(super) fn derive_assemblies(
     plan: &Plan,
     world: &crate::compiler::nav::World,
     population: &std::collections::BTreeSet<[i32; 3]>,
-) -> Result<crate::compiler::assembly::AssemblyBinding, BuildFailure> {
+) -> (
+    crate::compiler::assembly::AssemblyBinding,
+    Vec<crate::compiler::failure::Failure>,
+) {
     let entry = campaign_spawn(plan);
     let roots = crate::compiler::lethal::stands_at_roots(plan, world, entry);
     let returned = playable_region(plan).map(|r| (r.min, r.max));
@@ -52,7 +55,16 @@ pub(super) fn prove_assemblies(
     // never a place only a leap reaches.
     let open = world.without_exclusions();
     let walk = open.walk_region(&crate::compiler::lethal::put_at_roots(plan, &open, entry));
-    let (binding, findings) = crate::compiler::assembly::check(plan, population, &walk, &reaches);
+    crate::compiler::assembly::check(plan, population, &walk, &reaches)
+}
+
+/// The assemblies' verdict (`DW0936`–`DW0938`): the binding and the cost the
+/// host meets, printed on every build before the verdict is taken, and the
+/// first finding refused with the rest printed beside it.
+pub(super) fn refuse_assemblies(
+    binding: &crate::compiler::assembly::AssemblyBinding,
+    findings: &[crate::compiler::failure::Failure],
+) -> Result<(), BuildFailure> {
     crate::note!("{}", binding.line());
     crate::note!("{}", binding.cost_line());
     if let Some((first, rest)) = findings.split_first() {
@@ -64,7 +76,7 @@ pub(super) fn prove_assemblies(
             message: first.message.clone(),
         });
     }
-    Ok(binding)
+    Ok(())
 }
 
 /// The walked population `P` (spec-0062 §2) over the lethality-free world —

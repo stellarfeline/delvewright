@@ -12,6 +12,7 @@
 //! documents, prefabs and flags it was handed, never of where it was launched
 //! from or what happens to sit above that directory.
 
+use crate::compiler::check::{Build, Checks, Held};
 use crate::compiler::failure::Failure;
 
 use delvewright_dsl::Verb;
@@ -330,7 +331,35 @@ pub fn build_with_warnings(
         language,
         skins,
         Review::Written,
+        Build::Proven,
     )
+}
+
+/// **A look build** (ADR-0040 §3): parsing, the derivations and emission, and
+/// no check. The tree is the player tree and a `manifest.json` that carries
+/// `look_only: true`; no validation file is written, and nothing that admits a
+/// build by its manifest admits this one.
+pub fn build_look(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    structures: &BTreeMap<String, Vec<u8>>,
+    tree: &CommandTree,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    language: Option<&str>,
+    skins: &BTreeMap<String, Vec<u8>>,
+) -> Result<BuildOutput, BuildFailure> {
+    emit_all(
+        plan,
+        input_bytes,
+        structures,
+        tree,
+        prefabs,
+        language,
+        skins,
+        Review::Skipped,
+        Build::Look,
+    )
+    .map(|(out, _)| out)
 }
 
 /// **The verdict [`build_with_warnings`] gives, for a caller that discards the
@@ -358,6 +387,7 @@ pub fn verdict_with_warnings(
         language,
         skins,
         Review::Skipped,
+        Build::Proven,
     )
     .map(|(_, warnings)| warnings)
 }
@@ -379,9 +409,10 @@ fn emit_all(
     language: Option<&str>,
     skins: &BTreeMap<String, Vec<u8>>,
     review: Review,
+    build: Build,
 ) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
     let ns = &plan.namespace;
-    let mut out: BuildOutput = BTreeMap::new();
+    let mut checks = Checks::new(build);
 
     // Every campaign must resolve an ENTRY POINT (DW0345). Without one the world
     // gets no `setworldspawn`, a class-picking player is never teleported, and a
@@ -399,11 +430,12 @@ fn emit_all(
     // the symptom reported as the fault, and it sent a reader to look for a
     // wedged doorway in a world whose real defect was that nothing said where the
     // party arrives.
-    if campaign_spawn(plan).is_none() {
-        return Err(BuildFailure::Diagnostic {
-            code: plan::DW_NO_ENTRY_ANCHOR,
-            message: format!(
-                "the assembled world resolves no entry anchor — no area places a \
+    checks.run(|_| {
+        if campaign_spawn(plan).is_none() {
+            return Err(BuildFailure::Diagnostic {
+                code: plan::DW_NO_ENTRY_ANCHOR,
+                message: format!(
+                    "the assembled world resolves no entry anchor — no area places a \
                  piece whose prefab metadata declares an anchor with \
                  `\"role\": \"{role}\"`. The compiler then has no cell to call the \
                  campaign's start: no `setworldspawn`, no class-apply teleport, no \
@@ -416,10 +448,12 @@ fn emit_all(
                  --name <anchor> --pos <x,y,z> --role {role}` for a hand-built or \
                  ingested piece, `\"role\": \"{role}\"` on the `mark` for a grammar \
                  program.",
-                role = plan::AnchorRole::Entry,
-            ),
-        });
-    }
+                    role = plan::AnchorRole::Entry,
+                ),
+            });
+        }
+        Ok(())
+    })?;
 
     // **Which biome stands where** (spec-0080 §4): the map every reader asks,
     // its build-tier refusals (`DW0929`: two carried places whose 4-cells meet
@@ -427,26 +461,21 @@ fn emit_all(
     // binding line — printed on every build, a campaign with no atmosphere
     // included, because a zero is a measurement.
     crate::compiler::notes::mark("emit: start (biome map)");
-    let biome_map = {
-        let map = crate::compiler::horizon::biome_map(plan);
-        crate::compiler::horizon::check_paints(plan, &map).map_err(|e| {
-            BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            }
-        })?;
-        crate::note!("{}", atmosphere_binding(plan, &map).line());
-        map
-    };
+    let biome_map = crate::compiler::horizon::biome_map(plan);
+    checks.run(|_| {
+        crate::compiler::horizon::check_paints(plan, &biome_map)?;
+        crate::note!("{}", atmosphere_binding(plan, &biome_map).line());
+        Ok(())
+    })?;
 
     // The templates are the size their metadata says they are (DW0803). Bound
     // here, before any model is built out of them, because every later pass —
     // the forceload span, the mating check, massing, the whole assembled world
     // — is computed from the metadata's `size` while the blocks come from the
     // bytes, and nothing else compares the two.
-    let template_binding = check_template_extents(plan, structures)?;
     // Stated with the verdict: a check that examined nothing is not a pass.
-    let mut extent_findings = template_binding.finding().into_iter().collect::<Vec<_>>();
+    let extent_findings =
+        checks.hold(|_| Ok(check_template_extents(plan, structures)?.finding()))?;
 
     // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
@@ -462,15 +491,18 @@ fn emit_all(
     crate::compiler::notes::mark("assemble: start");
     let mut pristine = Some(crate::compiler::assembled::assemble(plan, structures));
     crate::compiler::notes::mark("assemble: done");
-    if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
-        plan,
-        pristine.as_ref().expect("assembled above"),
-    ) {
-        return Err(BuildFailure::Diagnostic {
-            code: crate::compiler::assembled::DW_GRAVITY_DESPAWN,
-            message,
-        });
-    }
+    checks.run(|_| {
+        if let Some(message) = crate::compiler::assembled::gravity_despawn_error_of(
+            plan,
+            pristine.as_ref().expect("assembled above"),
+        ) {
+            return Err(BuildFailure::Diagnostic {
+                code: crate::compiler::assembled::DW_GRAVITY_DESPAWN,
+                message,
+            });
+        }
+        Ok(())
+    })?;
 
     // Stage-7 edit-script replay (spec-0017): apply the campaign's world edits
     // over the assembled model, re-proving the invariants after every batch
@@ -522,7 +554,10 @@ fn emit_all(
     // written as a ledger that holds nothing measured (ADR-0037 §3).
     let cost = crate::compiler::cost::ResourceCost::of(plan, whole, judged.as_ref());
     crate::note!("{}", cost.line());
-    put_json(&mut out, "validation/resource-cost.json", &cost.to_json());
+    checks.run(|sink| {
+        sink.put_json("validation/resource-cost.json", &cost.to_json());
+        Ok(())
+    })?;
     // The banks keep no more than the cost states (ADR-0037 §3).
     crate::compiler::nav::set_bank_cap(cost.bank_cap());
     let assembled: &crate::compiler::assembled::Assembled =
@@ -532,15 +567,17 @@ fn emit_all(
     // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
     // seats the same anchor-bearing prefab twice) lead, since they describe the
     // world every later pass reasons over, then the replay's own.
-    let mut warnings: Vec<delvewright_dsl::Diagnostic> = plan.warnings.clone();
-    warnings.append(&mut extent_findings);
-    warnings.extend(
-        edit_replay
-            .as_ref()
-            .map_or_else(Vec::new, |er| er.warnings.clone()),
-    );
-    // spec-0016 §7 pacing lints, filled in by the nav stage below.
-    let mut pacing: Vec<delvewright_dsl::Diagnostic> = Vec::new();
+    checks.run(|sink| {
+        let extents = sink.open(&extent_findings).clone();
+        sink.warn_all(plan.warnings.clone());
+        sink.warn_all(extents);
+        sink.warn_all(
+            edit_replay
+                .as_ref()
+                .map_or_else(Vec::new, |er| er.warnings.clone()),
+        );
+        Ok(())
+    })?;
 
     // spec-0021 container proof (DW0431). Runs off the assembled world — over
     // the EDITED model when an edit script exists, since a stage-7 batch can
@@ -551,126 +588,133 @@ fn emit_all(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    let has_steps = plan
-        .campaign
-        .quests
-        .content
-        .triggers
-        .iter()
-        .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
-    // A fill whose cell lies in a place still standing in its stand-in is owed by
-    // that place's detail: judged by the build that details it, counted here.
     // spec-0111 §3.1: the holder entities the placed pieces carry, in world
     // space — read once off the template bytes and handed to every reader.
     let entity_holders = crate::compiler::holders::placed_holders(plan, structures);
-    let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
-        &assembled.blocks,
-        &entity_holders,
-        plan.blockout.as_ref(),
-        &plan.loot,
-        &plan.collect_fills,
-    );
-    crate::note!("{}", containers.line());
-    if !plan.loot.is_empty()
-        || !plan.collect_fills.is_empty()
-        || !plan.traps.is_empty()
-        || has_steps
-    {
-        let blocks = &assembled.blocks;
-        // What the world actually HAS, computed once and handed to both proofs.
-        // A refusal that tells an author to point at "an anchor whose cell
-        // already has one" owes the list, and it is the same list for both:
-        // `DW0431` and `DW0438` ask one question about one object class through
-        // two doors, so a second derivation here would be a second answer able
-        // to disagree with the first.
-        let available = crate::compiler::loot::container_anchors(
-            blocks,
-            &entity_holders,
-            &plan.anchors,
-            &plan.loot,
-            &plan.collect_fills,
-        );
-        crate::compiler::loot::check_loot_containers(
-            blocks,
-            &entity_holders,
-            &judged_loot,
-            &available,
-        )
-        .map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
-        crate::compiler::loot::check_collect_containers(
-            blocks,
-            &entity_holders,
-            &judged_fills,
-            &available,
-        )
-        .map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
-        // DW0917: a trap's trigger is prefab hardware on the same terms as a
-        // container, so it is proven off the same block map.
-        crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
-        // DW0917's `step` half: a step trigger's plate is the same hardware.
-        let steps: Vec<crate::compiler::trap_trigger::StepCell<'_>> = plan
+    checks.run(|_| {
+        let has_steps = plan
             .campaign
             .quests
             .content
             .triggers
             .iter()
-            .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
-            .filter_map(|t| {
-                let anchor = t.at_anchor()?;
-                Some(crate::compiler::trap_trigger::StepCell {
-                    id: t.id.as_str(),
-                    anchor,
-                    cell: plan.point_any(anchor)?,
-                })
-            })
-            .collect();
-        crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors).map_err(
-            |e| BuildFailure::Diagnostic {
+            .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
+        // A fill whose cell lies in a place still standing in its stand-in is owed by
+        // that place's detail: judged by the build that details it, counted here.
+        // spec-0111 §3.1: the holder entities the placed pieces carry, in world
+        // space — read once off the template bytes and handed to every reader.
+        let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
+            &assembled.blocks,
+            &entity_holders,
+            plan.blockout.as_ref(),
+            &plan.loot,
+            &plan.collect_fills,
+        );
+        crate::note!("{}", containers.line());
+        if !plan.loot.is_empty()
+            || !plan.collect_fills.is_empty()
+            || !plan.traps.is_empty()
+            || has_steps
+        {
+            let blocks = &assembled.blocks;
+            // What the world actually HAS, computed once and handed to both proofs.
+            // A refusal that tells an author to point at "an anchor whose cell
+            // already has one" owes the list, and it is the same list for both:
+            // `DW0431` and `DW0438` ask one question about one object class through
+            // two doors, so a second derivation here would be a second answer able
+            // to disagree with the first.
+            let available = crate::compiler::loot::container_anchors(
+                blocks,
+                &entity_holders,
+                &plan.anchors,
+                &plan.loot,
+                &plan.collect_fills,
+            );
+            crate::compiler::loot::check_loot_containers(
+                blocks,
+                &entity_holders,
+                &judged_loot,
+                &available,
+            )
+            .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
-            },
-        )?;
-    }
+            })?;
+            crate::compiler::loot::check_collect_containers(
+                blocks,
+                &entity_holders,
+                &judged_fills,
+                &available,
+            )
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+            // DW0917: a trap's trigger is prefab hardware on the same terms as a
+            // container, so it is proven off the same block map.
+            crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
+                .map_err(|e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                })?;
+            // DW0917's `step` half: a step trigger's plate is the same hardware.
+            let steps: Vec<crate::compiler::trap_trigger::StepCell<'_>> = plan
+                .campaign
+                .quests
+                .content
+                .triggers
+                .iter()
+                .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
+                .filter_map(|t| {
+                    let anchor = t.at_anchor()?;
+                    Some(crate::compiler::trap_trigger::StepCell {
+                        id: t.id.as_str(),
+                        anchor,
+                        cell: plan.point_any(anchor)?,
+                    })
+                })
+                .collect();
+            crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors)
+                .map_err(|e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                })?;
+        }
+        Ok(())
+    })?;
 
     // spec-0128 §8 (DW1075): every sign text names a sign the assembled world
     // really has, and every line fits that sign's board in the English and
     // every declared translation. Off the same block map as the container
     // proofs, with the same deferral for a place still standing in its
     // stand-in; the binding line is printed for every campaign.
-    {
-        let sidecars: BTreeMap<String, delvewright_dsl::L10nDoc> = plan
-            .campaign
-            .world
-            .content
-            .languages
-            .iter()
-            .filter_map(|lang| {
-                let raw = input_bytes.get(&format!("l10n/{lang}.json"))?;
-                Some((lang.clone(), serde_json::from_slice(raw).ok()?))
-            })
-            .collect();
-        let (binding, proof) = crate::compiler::sign::check_signs(
-            &assembled.blocks,
-            plan.blockout.as_ref(),
-            &plan.signs,
-            &sidecars,
-        );
-        crate::note!("{}", binding.line());
-        proof.map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
-    }
+    checks.run(|_| {
+        {
+            let sidecars: BTreeMap<String, delvewright_dsl::L10nDoc> = plan
+                .campaign
+                .world
+                .content
+                .languages
+                .iter()
+                .filter_map(|lang| {
+                    let raw = input_bytes.get(&format!("l10n/{lang}.json"))?;
+                    Some((lang.clone(), serde_json::from_slice(raw).ok()?))
+                })
+                .collect();
+            let (binding, proof) = crate::compiler::sign::check_signs(
+                &assembled.blocks,
+                plan.blockout.as_ref(),
+                &plan.signs,
+                &sidecars,
+            );
+            crate::note!("{}", binding.line());
+            proof.map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+        }
+        Ok(())
+    })?;
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
@@ -694,14 +738,33 @@ fn emit_all(
     crate::compiler::notes::mark("holders: start");
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
-    crate::note!("{}", relight.binding.line());
-    crate::note!("{}", relight.binding.cost.line());
-    if let Some(diag) = relight.diagnostics.first() {
-        return Err(BuildFailure::Diagnostic {
-            code: diag.code,
-            message: diag.message.clone(),
-        });
-    }
+    // The derived halves — the world and the fixtures — go on to emission; the
+    // judged halves are sealed for the checks (ADR-0040 §2).
+    let crate::compiler::holders::Walked {
+        world,
+        stances,
+        counts,
+        verdict,
+    } = walked;
+    let crate::compiler::light::Relight {
+        placements: relight_placements,
+        diagnostics,
+        binding,
+    } = relight;
+    let relight_judged = Held::sealed((diagnostics, binding));
+    let stance_judged = Held::sealed((stances, counts, verdict));
+    checks.run(|sink| {
+        let (diagnostics, binding) = sink.open(&relight_judged);
+        crate::note!("{}", binding.line());
+        crate::note!("{}", binding.cost.line());
+        if let Some(diag) = diagnostics.first() {
+            return Err(BuildFailure::Diagnostic {
+                code: diag.code,
+                message: diag.message.clone(),
+            });
+        }
+        Ok(())
+    })?;
 
     // The voxel occupancy model backs both nav verification (move-npc / cutscene /
     // critical path) and spawn-wave mob placement, so build it once when
@@ -733,60 +796,40 @@ fn emit_all(
     // printed before any verdict: `DW1018` (built vs declared), `DW1024`
     // (arrangement), `DW1037` (a holder the party cannot take from), `DW1038`
     // (a runtime edit reaches a holder).
-    let (container_census, holder_stances, world) =
-        {
-            let blocks = &assembled.blocks;
-            let claims = crate::compiler::holders::claims_of(plan, blocks, &entity_holders);
-            let place = |cell: [i32; 3]| crate::compiler::holders::place_of(plan, cell);
-            let census = crate::compiler::holders::census(
-                blocks,
-                &entity_holders,
-                &claims,
-                &place,
-                plan.campaign
-                    .quests
-                    .content
-                    .containers
-                    .as_ref()
-                    .and_then(|k| k.decoration_notice.as_ref()),
-            )
-            // The census judges what this build can see, as the fills do: a
-            // place still standing in its stand-in owes its containers to its
-            // detail, so a notice over no scenery is judged there.
-            .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
-            let (unsupported, unreachable) = walked.counts;
-            let stances = walked.stances;
-            let stance_verdict = walked.verdict;
-            let census = census.with_stance(unsupported, unreachable);
-            crate::note!("{}", census.line());
-            census
-                .check_declared(&crate::compiler::holders::anchors_by_cell(&plan.anchors))
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
-            census
-                .check_arrangement()
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
-            stance_verdict.map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
-            let edits = crate::compiler::holders::check_runtime_edits(plan, &owned_holders)
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                })?;
-            crate::note!(
-                "holder edits: {edits} runtime edit(s) examined against {} holder entit(y/ies), 0 \
+    let container_census = checks.hold(|sink| {
+        let (_, (unsupported, unreachable), stance_verdict) = sink.open(&stance_judged);
+        let blocks = &assembled.blocks;
+        let claims = crate::compiler::holders::claims_of(plan, blocks, &entity_holders);
+        let place = |cell: [i32; 3]| crate::compiler::holders::place_of(plan, cell);
+        let census = crate::compiler::holders::census(
+            blocks,
+            &entity_holders,
+            &claims,
+            &place,
+            plan.campaign
+                .quests
+                .content
+                .containers
+                .as_ref()
+                .and_then(|k| k.decoration_notice.as_ref()),
+        )
+        // The census judges what this build can see, as the fills do: a
+        // place still standing in its stand-in owes its containers to its
+        // detail, so a notice over no scenery is judged there.
+        .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
+        let census = census.with_stance(*unsupported, *unreachable);
+        crate::note!("{}", census.line());
+        census.check_declared(&crate::compiler::holders::anchors_by_cell(&plan.anchors))?;
+        census.check_arrangement()?;
+        stance_verdict.clone()?;
+        let edits = crate::compiler::holders::check_runtime_edits(plan, &owned_holders)?;
+        crate::note!(
+            "holder edits: {edits} runtime edit(s) examined against {} holder entit(y/ies), 0 \
              reaching a holder (DW1038).",
-                owned_holders.len()
-            );
-            (census, stances, walked.world)
-        };
+            owned_holders.len()
+        );
+        Ok(census)
+    })?;
     // From here `world` is `holders::final_walk`'s: a leg that ends at a
     // holder `collect` ends at the stance the pass chose (spec-0111 §5.2),
     // never inside the holder the block model reads as air — every route
@@ -798,40 +841,40 @@ fn emit_all(
     // its stance pass reads, asked through the one stance entry point
     // (`nav::interaction_stances`). The binding line is printed before the
     // verdict, zeroes included.
-    let body_answers = {
+    let body_answers = checks.hold(|_| {
         let (binding, verdict) = crate::compiler::bodies::check(plan, &world);
         crate::note!("{}", binding.line());
-        verdict.map_err(|e| BuildFailure::Diagnostic {
-            code: e.code,
-            message: e.message,
-        })?;
-        binding
-    };
+        verdict?;
+        Ok(binding)
+    })?;
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
     // a place too small for its paint shows a sky mixed with the one outside
     // it. A box's eyes stand over its floor; an area's are the party's walk
     // inside its bounds, read off this world.
-    if biome_map.places().next().is_some() {
-        let walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
-        for p in biome_map.places() {
-            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
-                continue;
-            };
-            if let Some((whole, eyes, best, worst)) =
-                crate::compiler::horizon::standing_reach(plan, &biome_map, place, &p.biome, &walk)
-            {
-                crate::note!(
-                    "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
+    checks.run(|_| {
+        if biome_map.places().next().is_some() {
+            let walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
+            for p in biome_map.places() {
+                let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
+                    continue;
+                };
+                if let Some((whole, eyes, best, worst)) = crate::compiler::horizon::standing_reach(
+                    plan, &biome_map, place, &p.biome, &walk,
+                ) {
+                    crate::note!(
+                        "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
                      whole; the best reads {:.1}% of it, the worst {:.1}%",
-                    p.biome,
-                    best * 100.0,
-                    worst * 100.0
-                );
+                        p.biome,
+                        best * 100.0,
+                        worst * 100.0
+                    );
+                }
             }
         }
-    }
+        Ok(())
+    })?;
 
     // ---- the links the route proof takes (spec-0083 §3.4) ----
     //
@@ -886,162 +929,166 @@ fn emit_all(
     // in the place it stands in — the floor its `view_range` is derived to.
     let assembly_place_reach = crate::compiler::framing::place_reach(plan, &population);
     crate::compiler::notes::mark("assemblies: start");
-    let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
-        Some(prove_assemblies(plan, &world, &population)?);
+    // spec-0094: the strike plans are derived with the judgement; the plans go
+    // on to the emitter and the judgement is sealed for the check.
+    let (assembly_binding, assembly_findings) = derive_assemblies(plan, &world, &population);
+    let asm_locks = assembly_binding.plans.clone();
+    let assembly_judged = Held::sealed((assembly_binding, assembly_findings));
+    checks.run(|sink| {
+        let (binding, findings) = sink.open(&assembly_judged);
+        refuse_assemblies(binding, findings)
+    })?;
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     crate::compiler::notes::mark("blockout battery: start");
-    prove_blockout(plan, assembled, &mut warnings)?;
+    checks.run(|sink| {
+        let mut advisories = Vec::new();
+        prove_blockout(plan, assembled, &mut advisories)?;
+        sink.warn_all(advisories);
+        Ok(())
+    })?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----
     crate::compiler::notes::mark("declaration proofs: start");
-    let teleport_gate = prove_declarations(plan, &mut warnings)?;
+    let teleport_gate = checks.hold(|sink| {
+        let mut advisories = Vec::new();
+        let gate = prove_declarations(plan, &mut advisories)?;
+        sink.warn_all(advisories);
+        Ok(gate)
+    })?;
 
     // ---- spec-0101: the watchers (`DW0997`), over the assemblies' population ----
     //
     // After the declaration proofs, so a body whose mark leaves its piece
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     crate::compiler::notes::mark("watchers: start");
-    let mut watch_binding = prove_watchers(plan, &population)?;
+    let watch_binding = checks.hold(|_| prove_watchers(plan, &population))?;
 
     // The configurations the critical path arrives under (spec-0112 §3): the
     // worlds the review frames stand in, and the worlds a cutscene a critical
     // step fires is flown through (`DW0308`).
     crate::compiler::notes::mark("frame worlds: start");
-    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
+    let frame_worlds =
+        checks.hold(|_| Ok(crate::compiler::view::review::frame_worlds(plan, &world)))?;
 
     // The exported path's layout (`Plan::exported_layout`): the one answer to
     // which index each step, rest and witness carries in `critical-path.json`,
     // read by the emitter that writes the path and by every harness document
     // that names one of its steps (the death plan, the combat plan).
-    let witnesses = assembly_binding
-        .as_ref()
-        .map(crate::compiler::assembly::witness_steps)
-        .unwrap_or_default();
-    let witness_counts: Vec<(String, usize)> = witnesses
-        .iter()
-        .map(|(id, ws)| (id.clone(), ws.len()))
-        .collect();
-    let layout = plan.exported_layout(&plan.critical_path, &witness_counts);
+    let exported = checks.hold(|sink| {
+        let (binding, _) = sink.open(&assembly_judged);
+        let witnesses = crate::compiler::assembly::witness_steps(binding);
+        let witness_counts: Vec<(String, usize)> = witnesses
+            .iter()
+            .map(|(id, ws)| (id.clone(), ws.len()))
+            .collect();
+        let layout = plan.exported_layout(&plan.critical_path, &witness_counts);
+        Ok((witnesses, layout))
+    })?;
 
     // ---- the world block: every proof over the assembled world ----
     crate::compiler::notes::mark("world proofs: start");
-    let WorldProofs {
+    let (facts, proofs) = prove_world(
+        &mut checks,
+        plan,
+        &world,
+        assembled,
+        prefabs,
+        structures,
+        &relight_placements,
+        &frame_worlds,
+        &exported,
+    )?;
+    let WorldFacts {
         moves,
         actor_moves,
         wave_placements,
         wave_rings,
         lane_routes,
         payload_plans,
-        pov_shots,
-        branch_waypoints,
-        branch_takes,
-        legs_carried,
-        path_legs,
-        traversal_gate,
-        gate_seal_ledger,
-        fluid_escape_ledger,
-        sea_seepage_ledger,
-        piece_exposure_ledger,
-        lethal_gate,
-        loop_gate,
-        firework_gate,
-        shot_ledger,
-        cutscene_proof,
-        lightning_gate,
         stake_table,
-        death_plan,
-        pulse_gate,
-        census_cells,
-    } = prove_world(
-        plan,
-        &world,
-        assembled,
-        prefabs,
-        structures,
-        &relight,
-        &mut out,
-        &mut warnings,
-        &mut pacing,
-        &frame_worlds,
-        &layout,
-    )?;
+        pulse_rows,
+        assembly_reach,
+    } = facts;
 
     // ---- `DW1025`: a body that holds its facing faces every approach ----
     //
     // After the world block, because it reads the walks that leave a body
     // where it stands (`moves`), over the watchers' population. The line prints
     // before the verdict.
-    {
-        crate::compiler::notes::mark("world proofs: done; held facing: start");
-        let (binding, findings) = crate::compiler::approach::check_held(plan, &population, &moves);
-        crate::note!("{}", binding.line());
-        if let Some((first, rest)) = findings.split_first() {
-            for extra in rest {
-                eprintln!("{} [error] build: {}", extra.code, extra.message);
+    checks.run(|_| {
+        {
+            crate::compiler::notes::mark("world proofs: done; held facing: start");
+            let (binding, findings) =
+                crate::compiler::approach::check_held(plan, &population, &moves);
+            crate::note!("{}", binding.line());
+            if let Some((first, rest)) = findings.split_first() {
+                for extra in rest {
+                    eprintln!("{} [error] build: {}", extra.code, extra.message);
+                }
+                return Err(BuildFailure::Diagnostic {
+                    code: first.code,
+                    message: first.message.clone(),
+                });
             }
-            return Err(BuildFailure::Diagnostic {
-                code: first.code,
-                message: first.message.clone(),
-            });
         }
-    }
+        Ok(())
+    })?;
     drop(population);
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
-    check_wave_spawns(plan)?;
+    checks.run(|_| check_wave_spawns(plan))?;
     // spec-0110 §5.8: every assembly's `view_range`, derived from the shots
     // that frame it and the place it stands in, raised by its `seen_from`.
-    let assembly_ranges = crate::compiler::framing::view_ranges(
-        plan,
-        &shot_ledger
-            .as_ref()
-            .map(|l| l.assembly_reach.clone())
-            .unwrap_or_default(),
-        &assembly_place_reach,
-    );
-    if let Some(ledger) = &shot_ledger {
-        put_json(
-            &mut out,
-            "validation/shot-subjects.json",
-            &ledger.to_json(&assembly_ranges),
-        );
-    }
+    let assembly_ranges =
+        crate::compiler::framing::view_ranges(plan, &assembly_reach, &assembly_place_reach);
+    checks.run(|sink| {
+        if let Some(ledger) = sink.open(&proofs.framing) {
+            sink.put_json(
+                "validation/shot-subjects.json",
+                &ledger.to_json(&assembly_ranges),
+            );
+        }
+        Ok(())
+    })?;
     // DW0863 (spec-0104 §4): every act on a walked path is announced with a
     // hint, or in sight from where the party stands (and a kill's wave within
     // reach) — but an act that states its clue, which DW1137 (spec-0143)
     // judges instead: each clue a main-line act states is presented before
     // the act. Judged here, where the acts have places and the world has
     // blocks; both bindings are printed whichever way they go.
-    {
-        crate::compiler::acts::fix_walks(plan, &branch_takes);
+    checks.run(|sink| {
+        crate::compiler::acts::fix_walks(plan, &sink.open(&proofs.walks).branch_takes);
         let (acts, mut refusals) = crate::compiler::promise::check_acts_found(plan, &world);
         crate::note!("{}", acts.line());
         let (clues, clue_refusals) = crate::compiler::clue::check_presented(plan, &world);
         crate::note!("{}", clues.line());
-        put_json(&mut out, "validation/clues.json", &clues.to_json());
+        sink.put_json("validation/clues.json", &clues.to_json());
         refusals.extend(clue_refusals);
-        refuse_first(refusals)?;
-    }
+        refuse_first(refusals)
+    })?;
     // spec-0117 §6: the press proof the placed world decides — a trigger at a
     // gate region (DW1059), a knocker with no block, a prop on a gate's own
     // answer (DW1052), every sealed gate answered (DW0429), one cell one block
     // (DW0896). The binding is printed whichever way it goes.
-    {
-        let (proof, verdict) =
-            crate::compiler::pressable::check(plan, &assembled.blocks, &assembled.gate_seals);
-        crate::note!("{}", proof.line());
-        put_json(&mut out, "validation/press-proof.json", &proof.to_json());
-        if let Err(f) = verdict {
-            return Err(BuildFailure::Diagnostic {
-                code: f.code,
-                message: f.message,
-            });
+    checks.run(|sink| {
+        {
+            let (proof, verdict) =
+                crate::compiler::pressable::check(plan, &assembled.blocks, &assembled.gate_seals);
+            crate::note!("{}", proof.line());
+            sink.put_json("validation/press-proof.json", &proof.to_json());
+            if let Err(f) = verdict {
+                return Err(BuildFailure::Diagnostic {
+                    code: f.code,
+                    message: f.message,
+                });
+            }
         }
-    }
+        Ok(())
+    })?;
 
     // DW1002: every block the build writes is one the pinned server keeps —
     // judged over the world `DW0955` compares (the load world, then every
@@ -1051,25 +1098,29 @@ fn emit_all(
     // Its refusal waits for the write-sequence arm below, so one refusal names
     // every block either arm finds.
     crate::compiler::notes::mark("attached/resting over the load: start");
-    let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
-    let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
-    let attached_refusal = {
-        let attached = crate::compiler::attached::judge_over(plan, &load);
-        crate::note!("{}", attached.line());
-        attached.refusal()
-    };
-    // DW1076: every block of the same load world reads as resting on what
-    // holds it — reported, never refused; the binding is printed every build.
-    {
-        let resting = crate::compiler::resting::judge(plan, &load);
-        crate::note!("{}", resting.line());
-        warnings.extend(resting.warnings());
-    }
-    drop(load);
+    let load_judged = checks.hold(|sink| {
+        let picture =
+            crate::compiler::view::beat::picture_base(plan, assembled, &relight_placements);
+        let load = crate::compiler::view::beat::load_blocks(plan, &world, &picture);
+        let attached_refusal = {
+            let attached = crate::compiler::attached::judge_over(plan, &load);
+            crate::note!("{}", attached.line());
+            attached.refusal()
+        };
+        // DW1076: every block of the same load world reads as resting on what
+        // holds it — reported, never refused; the binding is printed every build.
+        {
+            let resting = crate::compiler::resting::judge(plan, &load);
+            crate::note!("{}", resting.line());
+            sink.warn_all(resting.warnings());
+        }
+        drop(load);
+        Ok((picture, attached_refusal))
+    })?;
 
     // ---- datapack ----
     put_json(
-        &mut out,
+        checks.player(),
         "datapack/pack.mcmeta",
         &json!({
             "pack": {
@@ -1080,12 +1131,12 @@ fn emit_all(
         }),
     );
     put_json(
-        &mut out,
+        checks.player(),
         "datapack/data/minecraft/tags/function/load.json",
         &json!({ "values": [format!("{ns}:load")] }),
     );
     put_json(
-        &mut out,
+        checks.player(),
         "datapack/data/minecraft/tags/function/tick.json",
         &json!({ "values": [format!("{ns}:tick")] }),
     );
@@ -1093,7 +1144,7 @@ fn emit_all(
     // only when a frame holder exists.
     if frame_freeze_line(ns, &owned_holders).is_some() {
         put_json(
-            &mut out,
+            checks.player(),
             &format!("datapack/data/{ns}/tags/entity_type/{FRAMES_TAG}.json"),
             &json!({ "values": frames_tag_values() }),
         );
@@ -1139,7 +1190,7 @@ fn emit_all(
     };
     for template in &placed {
         if let Some(bytes) = shipped.get(template.structure_file.as_str()) {
-            out.insert(
+            checks.player().insert(
                 format!("datapack/data/{ns}/structure/{}.nbt", template.structure_id),
                 bytes.clone(),
             );
@@ -1185,16 +1236,11 @@ fn emit_all(
 
     // spec-0094: what the assembly judgement proved about each locked strike
     // is what the emitter writes — the plans travel, they are never re-derived.
-    let asm_locks = assembly_binding
-        .as_ref()
-        .map(|b| b.plans.clone())
-        .unwrap_or_default();
     // spec-0102: a pulse is measured over the assembled world; a campaign that
     // assembles none has no cell to stand in hearing of a beat. The binding
     // line is printed here for it, `0 pulse(s)` included.
-    let pulse_gate = match pulse_gate {
-        Some(g) => g,
-        None => {
+    checks.run(|sink| {
+        if sink.open(&proofs.pulse).is_none() {
             let g = crate::compiler::pulse::PulseGate {
                 declared: plan.campaign.quests.content.pulses.len(),
                 rows: Vec::new(),
@@ -1212,9 +1258,9 @@ fn emit_all(
                     ),
                 });
             }
-            g
         }
-    };
+        Ok(())
+    })?;
     // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
     // over the assembled world every emitter here reads.
     crate::compiler::notes::mark("datapack emission + guidance: start");
@@ -1224,27 +1270,33 @@ fn emit_all(
     // route's legs (none for a campaign that walks no world). The line is
     // printed on every build, zeroes and a refusal included, and the ledger is
     // written on every build: every campaign states the ground's music.
-    {
-        let routes: &[crate::compiler::nav::LegRoute] = path_legs
-            .iter()
-            .find(|(slug, _, _)| slug == "critical-path")
-            .map(|(_, _, r)| r.as_slice())
-            .unwrap_or(&[]);
-        let (music, verdict) = crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
-        crate::note!("{}", music.line());
-        verdict.map_err(|f| BuildFailure::Diagnostic {
-            code: f.code,
-            message: f.message,
-        })?;
-        put_json(&mut out, "validation/music.json", &music.to_json());
-    }
+    checks.run(|sink| {
+        {
+            let routes: &[crate::compiler::nav::LegRoute] = sink
+                .open(&proofs.walks)
+                .path_legs
+                .iter()
+                .find(|(slug, _, _)| slug == "critical-path")
+                .map(|(_, _, r)| r.as_slice())
+                .unwrap_or(&[]);
+            let (music, verdict) =
+                crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
+            crate::note!("{}", music.line());
+            verdict.map_err(|f| BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            })?;
+            sink.put_json("validation/music.json", &music.to_json());
+        }
+        Ok(())
+    })?;
     let mut functions = emit_functions(
         plan,
         &chrome,
         &sentinels,
         &moves,
         &actor_moves,
-        &relight.placements,
+        &relight_placements,
         &wave_placements,
         &lane_routes,
         edit_replay.as_ref().map_or(&[][..], |er| &er.commands),
@@ -1256,7 +1308,7 @@ fn emit_all(
         &branch_transport,
         stake_table.as_ref(),
         &asm_locks,
-        &pulse_gate.rows,
+        &pulse_rows,
         &owned_holders,
         &guide,
         &assembly_ranges,
@@ -1274,6 +1326,7 @@ fn emit_all(
     // its arrival holds.
     let (ledger, placing_lines) =
         crate::compiler::placed::ledger_of_functions(plan, &mut functions);
+    checks.run(|sink| {
     let unplaceable = ledger.unplaceable();
     crate::note!(
         "placements ledger: {} row(s) over {placing_lines} placing line(s) of the functions that \
@@ -1293,7 +1346,9 @@ fn emit_all(
             )
         }
     );
-    put_json(&mut out, "validation/placed.json", &ledger.to_json(plan));
+    sink.put_json("validation/placed.json", &ledger.to_json(plan));
+Ok(())
+})?;
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
     // runs it — `setup`, the ground, the templates, the world build,
@@ -1301,21 +1356,24 @@ fn emit_all(
     // neighbours judged as the write lands; then every write outside the load,
     // at once, over the loaded world. Both bindings are printed whichever way
     // it goes.
-    let mut refusals: Vec<String> = attached_refusal.into_iter().collect();
-    if assembles_world(plan) {
-        let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
-        crate::note!("{}", writes.sequence.line());
-        crate::note!("{}", writes.by_chunk.line());
-        crate::note!("{}", writes.runtime.line());
-        refusals.extend(writes.sequence.refusal());
-        refusals.extend(writes.runtime.refusal());
-    }
-    if !refusals.is_empty() {
-        return Err(BuildFailure::Diagnostic {
-            code: crate::compiler::attached::DW_BLOCK_DROPPED,
-            message: refusals.join("\n"),
-        });
-    }
+    checks.run(|sink| {
+        let mut refusals: Vec<String> = sink.open(&load_judged).1.clone().into_iter().collect();
+        if assembles_world(plan) {
+            let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
+            crate::note!("{}", writes.sequence.line());
+            crate::note!("{}", writes.by_chunk.line());
+            crate::note!("{}", writes.runtime.line());
+            refusals.extend(writes.sequence.refusal());
+            refusals.extend(writes.runtime.refusal());
+        }
+        if !refusals.is_empty() {
+            return Err(BuildFailure::Diagnostic {
+                code: crate::compiler::attached::DW_BLOCK_DROPPED,
+                message: refusals.join("\n"),
+            });
+        }
+        Ok(())
+    })?;
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
     // earlier. The ledger is UNCONDITIONAL, on the `fluid-escape.json` terms and
@@ -1325,14 +1383,17 @@ fn emit_all(
     // stealth beat is "nothing here can carry the defect". Those are different
     // facts and the gate can only tell them apart if the file exists and says
     // zero.
-    let audit = audit_stealth_judges(&functions, plan.stealth_beats.len());
-    if let Some((code, message)) = audit.finding() {
-        return Err(BuildFailure::Diagnostic { code, message });
-    }
-    put_json(&mut out, "validation/stealth-judge.json", &audit.ledger());
+    checks.run(|sink| {
+        let audit = audit_stealth_judges(&functions, plan.stealth_beats.len());
+        if let Some((code, message)) = audit.finding() {
+            return Err(BuildFailure::Diagnostic { code, message });
+        }
+        sink.put_json("validation/stealth-judge.json", &audit.ledger());
+        Ok(())
+    })?;
     for (name, body) in &functions {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
             body.clone().into_bytes(),
             "function",
@@ -1343,7 +1404,7 @@ fn emit_all(
     // dialogs
     for (name, value) in emit_dialogs(plan, &chrome) {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/dialog/{name}.json"),
             json_bytes(&value),
             "dialog",
@@ -1354,7 +1415,7 @@ fn emit_all(
     // advancements
     for (name, value) in emit_advancements(plan, &chrome, &wave_placements) {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/advancement/{name}.json"),
             json_bytes(&value),
             "advancement",
@@ -1366,7 +1427,7 @@ fn emit_all(
     // declares none writes no `loot_table` directory (byte-identity).
     for (name, value) in emit_drop_loot_tables(plan) {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/loot_table/{name}.json"),
             json_bytes(&value),
             "loot table",
@@ -1378,7 +1439,7 @@ fn emit_all(
     // bonfire emits none.
     if plan.bonfires().next().is_some() {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/item_modifier/{BONFIRE_MEND}.json"),
             json_bytes(&bonfire_mend_modifier()),
             "item modifier",
@@ -1392,7 +1453,7 @@ fn emit_all(
         .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
     {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!(
                 "datapack/data/{ns}/loot_table/{}.json",
                 crate::compiler::standin::STANDIN_LOOT
@@ -1406,7 +1467,7 @@ fn emit_all(
     // spec-0104 §8.3: the journal's item modifiers; §6.4: the compass gesture.
     for (name, value) in guidance::item_modifiers(&guide, plan, &chrome) {
         insert_unique(
-            &mut out,
+            checks.player(),
             format!("datapack/data/{ns}/item_modifier/{name}.json"),
             json_bytes(&value),
             "item modifier",
@@ -1415,7 +1476,7 @@ fn emit_all(
     }
     if guide.compass {
         put_json(
-            &mut out,
+            checks.player(),
             &format!(
                 "datapack/data/{ns}/advancement/{}.json",
                 guidance::COMPASS_USE_ADVANCEMENT
@@ -1429,52 +1490,58 @@ fn emit_all(
     // binding read; a campaign with neither emits none.
     if campaign_has_cutscene(plan.campaign) || respawn_wait(plan).is_some() {
         put_json(
-            &mut out,
+            checks.player(),
             &format!("datapack/data/{ns}/predicate/{SNEAK_HELD_PREDICATE}.json"),
             &sneak_held_predicate(),
         );
     }
 
     // ---- packtest datapack ----
-    packtest::emit_packtest(
-        plan,
-        &mut out,
-        &moves,
-        &actor_moves,
-        &WaveGeometry {
-            placements: &wave_placements,
-            lanes: &lane_routes,
-            rings: &wave_rings,
-        },
-        &payload_plans,
-        &packtest::Proved {
-            asm_locks: &asm_locks,
-            watch_binding: &watch_binding,
-            containers: &container_census
-                .rows
-                .iter()
-                .filter(|r| r.is_container())
-                .map(|r| (r.cell, r.block.clone()))
-                .collect(),
-            holders: &owned_holders,
-            guide: &guide,
-            chrome: &chrome,
-        },
-    );
-    // spec-0018 criterion 1: the party-division checks state what they bound,
-    // counted off the suite just emitted.
-    let party = packtest::party_binding(plan, &out);
-    crate::note!("{}", party.line());
-    put_json(&mut out, "validation/party-division.json", &party.to_json());
-    // spec-0141 §5: the absent-member templates state what they bound.
-    crate::note!("{}", packtest::absent_binding(plan, &out).line());
+    checks.run(|sink| {
+        let watch = sink.open(&watch_binding);
+        let census = sink.open(&container_census);
+        let crate::compiler::check::Parts { out, .. } = sink.parts();
+        packtest::emit_packtest(
+            plan,
+            out,
+            &moves,
+            &actor_moves,
+            &WaveGeometry {
+                placements: &wave_placements,
+                lanes: &lane_routes,
+                rings: &wave_rings,
+            },
+            &payload_plans,
+            &packtest::Proved {
+                asm_locks: &asm_locks,
+                watch_binding: watch,
+                containers: &census
+                    .rows
+                    .iter()
+                    .filter(|r| r.is_container())
+                    .map(|r| (r.cell, r.block.clone()))
+                    .collect(),
+                holders: &owned_holders,
+                guide: &guide,
+                chrome: &chrome,
+            },
+        );
+        // spec-0018 criterion 1: the party-division checks state what they bound,
+        // counted off the suite just emitted.
+        let party = packtest::party_binding(plan, out);
+        crate::note!("{}", party.line());
+        put_json(out, "validation/party-division.json", &party.to_json());
+        // spec-0141 §5: the absent-member templates state what they bound.
+        crate::note!("{}", packtest::absent_binding(plan, out).line());
+        Ok(())
+    })?;
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::compiler::creator). Its `.mcfunction`s are plain
     // vanilla, so they flow through the command-tree validator below and the
     // determinism gate like the main datapack; the shipped delve image excludes
     // this directory (CI-checked, same as packtest-datapack/).
-    crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
+    crate::compiler::creator::emit_creator(plan, checks.player(), &moves, &actor_moves);
 
     // ---- server ----
     {
@@ -1483,66 +1550,64 @@ fn emit_all(
         let (scores, _) = crate::compiler::music::scores(plan, &moves, &actor_moves);
         let variants: Vec<crate::compiler::music::Variant> =
             scores.into_iter().flat_map(|s| s.variants).collect();
-        emit_ground_biome(plan, &mut out, &variants);
+        emit_ground_biome(plan, checks.player(), &variants);
     }
-    emit_server(plan, &mut out);
+    emit_server(plan, checks.player());
 
     // ---- critical path ----
-    let exported_routes: &[crate::compiler::nav::LegRoute] = path_legs
-        .iter()
-        .find(|(slug, _, _)| slug == "critical-path")
-        .map(|(_, _, r)| r.as_slice())
-        .unwrap_or(&[]);
-    let mut cp = emit_critical_path(
-        plan,
-        &moves,
-        &actor_moves,
-        exported_routes,
-        &layout,
-        &witnesses,
-    );
-    // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
-    let holder_step_hints = holder_steps(&owned_holders, &holder_stances);
-    annotate_holder_steps(&mut cp, &holder_step_hints);
-    census::annotate_census_cells(&mut cp, &census_cells);
-    if let Some(mut b) = assembly_binding {
-        let laid = layout.witnessed();
-        b.witnessed = witnesses
+    let watch_walked = checks.hold(|sink| {
+        let walks = sink.open(&proofs.walks);
+        let (witnesses, layout) = sink.open(&exported);
+        let exported_routes: &[crate::compiler::nav::LegRoute] = walks
+            .path_legs
             .iter()
-            .map(|(id, _)| id.clone())
-            .filter(|id| laid.contains(id))
-            .collect();
-        if b.declared > 0 {
-            put_json(&mut out, "validation/assembly.json", &b.to_json());
-        }
-    }
-    watch_binding.attach_walks(&moves, &actor_moves);
-    // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
-    // the per-watcher record the PackTests stand on is stated beside it. Both
-    // absent for a campaign that declares no watcher → byte-identical.
-    if watch_binding.watchers() > 0 {
-        if let Some(obj) = cp.as_object_mut() {
-            obj.insert(
-                "watchers".to_string(),
-                Value::Array(watch_binding.watcher_rows()),
-            );
-        }
-        put_json(
-            &mut out,
-            "validation/watchers.json",
-            &watch_binding.to_json(),
+            .find(|(slug, _, _)| slug == "critical-path")
+            .map(|(_, _, r)| r.as_slice())
+            .unwrap_or(&[]);
+        let mut cp = emit_critical_path(
+            plan,
+            &moves,
+            &actor_moves,
+            exported_routes,
+            layout,
+            witnesses,
         );
-    }
-    put_json(&mut out, "critical-path.json", &cp);
-    // spec-0119: the body-answer record, for a campaign that stages a body at
-    // all; absent otherwise → byte-identical.
-    if body_answers.bodies > 0 {
-        put_json(
-            &mut out,
-            "validation/body-answers.json",
-            &body_answers.to_json(),
-        );
-    }
+        // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
+        let holder_step_hints = holder_steps(&owned_holders, &sink.open(&stance_judged).0);
+        annotate_holder_steps(&mut cp, &holder_step_hints);
+        census::annotate_census_cells(&mut cp, &walks.census_cells);
+        {
+            let mut b = sink.open(&assembly_judged).0.clone();
+            let laid = layout.witnessed();
+            b.witnessed = witnesses
+                .iter()
+                .map(|(id, _)| id.clone())
+                .filter(|id| laid.contains(id))
+                .collect();
+            if b.declared > 0 {
+                sink.put_json("validation/assembly.json", &b.to_json());
+            }
+        }
+        let mut watch = sink.open(&watch_binding).clone();
+        watch.attach_walks(&moves, &actor_moves);
+        // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
+        // the per-watcher record the PackTests stand on is stated beside it. Both
+        // absent for a campaign that declares no watcher → byte-identical.
+        if watch.watchers() > 0 {
+            if let Some(obj) = cp.as_object_mut() {
+                obj.insert("watchers".to_string(), Value::Array(watch.watcher_rows()));
+            }
+            sink.put_json("validation/watchers.json", &watch.to_json());
+        }
+        sink.put_json("critical-path.json", &cp);
+        // spec-0119: the body-answer record, for a campaign that stages a body at
+        // all; absent otherwise → byte-identical.
+        let body_answers = sink.open(&body_answers);
+        if body_answers.bodies > 0 {
+            sink.put_json("validation/body-answers.json", &body_answers.to_json());
+        }
+        Ok(watch)
+    })?;
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
@@ -1560,137 +1625,159 @@ fn emit_all(
     // under `validation/worlds/` beside the plan, with the review record.
     // The frame worlds again, now that the ledger exists: a world is its
     // configuration's bytes, the rows its arrival holds, and its clock.
-    let pov_legs: Vec<(usize, usize)> = pov_shots.iter().map(|s| (s.from_step, s.step)).collect();
-    let frame_worlds =
-        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger), &pov_legs);
-    // The worlds a reviewer looks at hold the whole world, the ground past the
-    // judged columns included.
-    let whole_picture = judged
-        .is_some()
-        .then(|| crate::compiler::view::beat::picture_base(plan, whole, &relight.placements));
-    let picture = whole_picture.as_ref().unwrap_or(&picture);
-    crate::compiler::notes::mark("render plan: start");
-    let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
-        plan,
-        prefabs,
-        &pov_shots,
-        &cutscene_proof.frames,
-        &world,
-        &frame_worlds,
-        picture,
-    )?;
-    warnings.extend(camera_warnings);
-    put_json(&mut out, "render-plan.json", &render_plan_doc);
-    crate::compiler::notes::mark("review worlds: start");
-    if review == Review::Written {
-        let maker =
-            crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
-        let review = crate::compiler::view::review::write_review(
+    checks.run(|sink| {
+        let walks = sink.open(&proofs.walks);
+        let cutscene_proof = sink.open(&proofs.cutscenes);
+        let (picture, _) = sink.open(&load_judged);
+        let pov_legs: Vec<(usize, usize)> = walks
+            .pov_shots
+            .iter()
+            .map(|s| (s.from_step, s.step))
+            .collect();
+        let frame_worlds = crate::compiler::view::review::frame_worlds_with(
             plan,
-            picture,
-            &maker,
-            crate::compiler::view::review::ReviewOf {
-                frames: &frame_worlds,
-                ledger: &ledger,
-                cutscenes: &cutscene_proof,
-            },
-            &render_plan_doc,
-            &mut out,
+            &world,
+            Some(&ledger),
+            &pov_legs,
         );
-        for line in &review.lines {
-            crate::note!("{line}");
+        // The worlds a reviewer looks at hold the whole world, the ground past the
+        // judged columns included.
+        let whole_picture = judged
+            .is_some()
+            .then(|| crate::compiler::view::beat::picture_base(plan, whole, &relight_placements));
+        let picture = whole_picture.as_ref().unwrap_or(picture);
+        crate::compiler::notes::mark("render plan: start");
+        let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
+            plan,
+            prefabs,
+            &walks.pov_shots,
+            &cutscene_proof.frames,
+            &world,
+            &frame_worlds,
+            picture,
+        )?;
+        sink.warn_all(camera_warnings);
+        sink.put_json("render-plan.json", &render_plan_doc);
+        crate::compiler::notes::mark("review worlds: start");
+        if review == Review::Written {
+            let maker =
+                crate::compiler::view::review::WorldMaker::new(plan, whole, picture, structures);
+            let review = crate::compiler::view::review::write_review(
+                plan,
+                picture,
+                &maker,
+                crate::compiler::view::review::ReviewOf {
+                    frames: &frame_worlds,
+                    ledger: &ledger,
+                    cutscenes: cutscene_proof,
+                },
+                &render_plan_doc,
+                sink.validation(),
+            );
+            for line in &review.lines {
+                crate::note!("{line}");
+            }
         }
-    }
-    // spec-0091: the served view distance, what the build judged against it
-    // (every cutscene shot — a refusal stopped the build before here; a
-    // showcase camera draws to its own distance and is not judged), and the
-    // cost stated to the host.
-    crate::note!(
-        "{}",
-        crate::compiler::served::Binding {
-            chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
-            declared: plan.campaign.world.content.view_distance.is_some(),
-            cutscene_shots: cutscene_proof.judged,
-        }
-        .line()
-    );
+        // spec-0091: the served view distance, what the build judged against it
+        // (every cutscene shot — a refusal stopped the build before here; a
+        // showcase camera draws to its own distance and is not judged), and the
+        // cost stated to the host.
+        crate::note!(
+            "{}",
+            crate::compiler::served::Binding {
+                chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
+                declared: plan.campaign.world.content.view_distance.is_some(),
+                cutscene_shots: cutscene_proof.judged,
+            }
+            .line()
+        );
+        Ok(())
+    })?;
 
     // ---- a template that takes every body runs alone ----
     // Read off the finished tree, after every emitter, so it reaches templates
     // not yet written (`crate::compiler::solo`).
-    let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
-    crate::note!("{}", solo.line());
-    put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
-    // ---- a template that writes a pressable's cell lays it back ----
-    // The world is shared by every batch; a pressable's block is what
-    // siblings read from load (`crate::compiler::handback`).
-    let handback = crate::compiler::handback::hand_back(
-        &plan.namespace,
-        &crate::compiler::pressable::props(plan)
-            .into_iter()
-            .map(|(_, p)| p)
-            .collect::<Vec<_>>(),
-        &mut out,
-    );
-    crate::note!("{}", handback.line());
-    put_json(
-        &mut out,
-        "validation/packtest-handback.json",
-        &handback.to_json(),
-    );
-
-    // ---- a template lays the world containers it reads ----
-    // The suite runs on PackTest's level, where a prefab's container stands
-    // only once some template has run the placement (`crate::compiler::owncells`).
-    let own_cells =
-        crate::compiler::owncells::lay_containers(&plan.namespace, &assembled.blocks, &mut out);
-    crate::note!("{}", own_cells.line());
-    put_json(
-        &mut out,
-        "validation/packtest-own-cells.json",
-        &own_cells.to_json(),
-    );
-
-    // ---- a template's dummy enters as a new player ----
-    // A score belongs to a name, and PackTest reuses dummy names across a
-    // suite (`crate::compiler::freshbody`).
-    let fresh = crate::compiler::freshbody::fresh_bodies(&plan.namespace, &mut out);
-    crate::note!("{}", fresh.line());
-    put_json(&mut out, "validation/packtest-fresh.json", &fresh.to_json());
-
-    // ---- a template owns every gate it drives through ----
-    // Read off the finished tree, after every emitter and every pass that
-    // writes into a template, so the drive it writes before is the one the
-    // shipped body holds and it reaches templates not yet written
-    // (`crate::compiler::batchstate::own_gates`); `DW0807` judges the result.
-    let own = crate::compiler::batchstate::own_gates(
-        &plan.namespace,
-        &mut out,
-        &packtest::start_ledger(plan),
-    );
-    crate::note!("{}", own.line());
-    put_json(
-        &mut out,
-        "validation/packtest-own-gates.json",
-        &own.to_json(),
-    );
     // ---- the quota the delve's own sources need ----
-    // Last of the writers, over the finished tree: every tick repeats work
-    // that grows with the campaign and cannot move to a later tick, so when a
-    // source outside `load` measures past the game's default quota, the
-    // delve's `load` states the one it needs (`crate::compiler::chain`).
-    // Nothing is written when the default holds.
-    crate::compiler::chain::declare(&mut out);
+    // Last of the writers of the player tree: every tick repeats work that
+    // grows with the campaign and cannot move to a later tick, so when a source
+    // outside `load` measures past the game's default quota, the delve's `load`
+    // states the one it needs (`crate::compiler::chain`). Nothing is written
+    // when the default holds.
+    crate::compiler::chain::declare(checks.player());
 
-    // ---- the checks read off the finished tree ----
-    check_finished_tree(
-        plan,
-        tree,
-        input_bytes,
-        &mut out,
-        &mut warnings,
-        &owned_holders,
-    )?;
+    // ---- the passes over the finished tree ----
+    checks.run(|sink| {
+        let (verdict, advisories) = sink.whole(|out| {
+            // ---- a template that takes every body runs alone ----
+            // Read off the finished tree, after every emitter, so it reaches
+            // templates not yet written (`crate::compiler::solo`).
+            let solo = crate::compiler::solo::isolate(&plan.namespace, out);
+            crate::note!("{}", solo.line());
+            put_json(out, "validation/packtest-solo.json", &solo.to_json());
+            // ---- a template that writes a pressable's cell lays it back ----
+            // The world is shared by every batch; a pressable's block is what
+            // siblings read from load (`crate::compiler::handback`).
+            let handback = crate::compiler::handback::hand_back(
+                &plan.namespace,
+                &crate::compiler::pressable::props(plan)
+                    .into_iter()
+                    .map(|(_, p)| p)
+                    .collect::<Vec<_>>(),
+                out,
+            );
+            crate::note!("{}", handback.line());
+            put_json(
+                out,
+                "validation/packtest-handback.json",
+                &handback.to_json(),
+            );
+            // ---- a template lays the world containers it reads ----
+            // The suite runs on PackTest's level, where a prefab's container
+            // stands only once some template has run the placement
+            // (`crate::compiler::owncells`).
+            let own_cells =
+                crate::compiler::owncells::lay_containers(&plan.namespace, &assembled.blocks, out);
+            crate::note!("{}", own_cells.line());
+            put_json(
+                out,
+                "validation/packtest-own-cells.json",
+                &own_cells.to_json(),
+            );
+            // ---- a template's dummy enters as a new player ----
+            // A score belongs to a name, and PackTest reuses dummy names across
+            // a suite (`crate::compiler::freshbody`).
+            let fresh = crate::compiler::freshbody::fresh_bodies(&plan.namespace, out);
+            crate::note!("{}", fresh.line());
+            put_json(out, "validation/packtest-fresh.json", &fresh.to_json());
+            // ---- a template owns every gate it drives through ----
+            // Read off the finished tree, after every emitter and every pass
+            // that writes into a template, so the drive it writes before is the
+            // one the shipped body holds and it reaches templates not yet
+            // written (`crate::compiler::batchstate::own_gates`); `DW0807`
+            // judges the result.
+            let own = crate::compiler::batchstate::own_gates(
+                &plan.namespace,
+                out,
+                &packtest::start_ledger(plan),
+            );
+            crate::note!("{}", own.line());
+            put_json(out, "validation/packtest-own-gates.json", &own.to_json());
+            // ---- the checks read off the finished tree ----
+            let mut advisories = Vec::new();
+            let verdict = check_finished_tree(
+                plan,
+                tree,
+                input_bytes,
+                out,
+                &mut advisories,
+                &owned_holders,
+            );
+            (verdict, advisories)
+        });
+        verdict?;
+        sink.warn_all(advisories);
+        Ok(())
+    })?;
 
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
@@ -1720,31 +1807,37 @@ fn emit_all(
     let (textures, texture_diags) = crate::compiler::textures::resolve(plan.campaign, |p| {
         input_bytes.get(p).map(Vec::as_slice)
     });
-    if let Some(d) = texture_diags.into_iter().next() {
-        return Err(BuildFailure::Diagnostic {
-            code: d.code,
-            message: format!("world.json {}: {}", d.path, d.message),
-        });
-    }
+    checks.run(|_| {
+        if let Some(d) = texture_diags.first() {
+            return Err(BuildFailure::Diagnostic {
+                code: d.code,
+                message: format!("world.json {}: {}", d.path, d.message),
+            });
+        }
+        Ok(())
+    })?;
     extra_assets.extend(crate::compiler::textures::pack_entries(&textures));
     // spec-0097: the sheets a model's boxes judged, over the bytes the pack
     // bakes. `delvec validate` refused any it would refuse; the ledger is the
     // count, so a judgement that stopped reaching a sheet reads as zero.
-    let mut sheets = crate::compiler::skinparts::Binding::default();
-    let _ = crate::compiler::skinparts::check_skins(plan.campaign, skins, &mut sheets);
-    crate::compiler::skinparts::count_texture_rows(plan.campaign, &textures, &[], &mut sheets);
-    if let Some((code, message)) = sheets.first_refusal.clone() {
-        return Err(BuildFailure::Diagnostic { code, message });
-    }
-    put_json(&mut out, "validation/sheet-gate.json", &sheets.to_json());
+    checks.run(|sink| {
+        let mut sheets = crate::compiler::skinparts::Binding::default();
+        let _ = crate::compiler::skinparts::check_skins(plan.campaign, skins, &mut sheets);
+        crate::compiler::skinparts::count_texture_rows(plan.campaign, &textures, &[], &mut sheets);
+        if let Some((code, message)) = sheets.first_refusal.clone() {
+            return Err(BuildFailure::Diagnostic { code, message });
+        }
+        sink.put_json("validation/sheet-gate.json", &sheets.to_json());
+        Ok(())
+    })?;
     let resource_pack = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
         let zip = crate::compiler::resourcepack::build_pack(skins, &extra_assets);
         let sha1 = crate::compiler::resourcepack::sha1_hex(&zip);
         let overrides = crate::compiler::textures::overrides_vanilla(extra_assets.keys());
-        out.insert("resourcepack.zip".to_string(), zip);
-        out.insert(
+        checks.player().insert("resourcepack.zip".to_string(), zip);
+        checks.player().insert(
             "SKINS.md".to_string(),
             pack_note(
                 &sha1,
@@ -1769,6 +1862,31 @@ fn emit_all(
     // campaign that declares no branch points — nothing moves for anybody who
     // has not opted in. Emitted before the manifest so its hashes cover them,
     // exactly like `critical-path-waypoints.json`.
+    checks.run(|sink| {
+        let walks = sink.open(&proofs.walks);
+        let (path_legs, branch_takes) = (&walks.path_legs, &walks.branch_takes);
+        let (census_cells, branch_waypoints) = (&walks.census_cells, &walks.branch_waypoints);
+        let exported_routes: &[crate::compiler::nav::LegRoute] = path_legs
+            .iter()
+            .find(|(slug, _, _)| slug == "critical-path")
+            .map(|(_, _, r)| r.as_slice())
+            .unwrap_or(&[]);
+        let holder_step_hints = holder_steps(&owned_holders, &sink.open(&stance_judged).0);
+        let watch_binding = sink.open(&watch_walked);
+        let shell = sink.open(&proofs.shell);
+        let (gate_seal_ledger, fluid_escape_ledger) = (&shell.gate_seal, &shell.fluid_escape);
+        let (sea_seepage_ledger, piece_exposure_ledger) = (&shell.sea_seepage, &shell.piece_exposure);
+        let traversal_gate = sink.open(&proofs.traversal);
+        let container_census = sink.open(&container_census);
+        let teleport_gate = sink.open(&teleport_gate);
+        let hazards = sink.open(&proofs.hazards);
+        let (lethal_gate, loop_gate, legs_carried) =
+            (&hazards.lethal_gate, &hazards.loop_gate, hazards.legs_carried);
+        let pulse_gate = sink.open(&proofs.pulse);
+        let sky = sink.open(&proofs.sky);
+        let (firework_gate, lightning_gate) = (&sky.firework, &sky.lightning);
+        let death_plan = sink.open(&proofs.death_plan);
+        let crate::compiler::check::Parts { player, out, .. } = sink.parts();
     out.extend(crate::compiler::branch::artifacts(plan.campaign));
     // spec-0108 §6.1: the endings ledger — per ending its inputs and their
     // writers, its aftermath and how each change is observed, the story worlds
@@ -1828,7 +1946,7 @@ fn emit_all(
             let file = f
                 .split_once(':')
                 .map(|(ns, name)| format!("datapack/data/{ns}/function/{name}.mcfunction"));
-            if !file.is_some_and(|k| out.contains_key(&k)) {
+            if !file.is_some_and(|k| player.contains_key(&k)) {
                 return Err(BuildFailure::Diagnostic {
                     code: plan::DW_BUILD,
                     message: format!(
@@ -1852,7 +1970,7 @@ fn emit_all(
             );
         }
         put_json(
-            &mut out,
+            out,
             &format!("validation/{}.json", world_file(&slug, "path")),
             &path,
         );
@@ -1865,7 +1983,7 @@ fn emit_all(
         .collect();
     crate::note!("{}", limit_binding.line());
     if !limit_binding.rows.is_empty() {
-        put_json(&mut out, "validation/limit.json", &limit_binding.to_json());
+        put_json(out, "validation/limit.json", &limit_binding.to_json());
     }
     limit_verdict.map_err(|f| BuildFailure::Diagnostic {
         code: f.code,
@@ -1875,9 +1993,9 @@ fn emit_all(
     // in the world block above from the same assembled model its per-branch
     // DW0311 proof ran over. The harness derives the name from the branch's
     // `branch-path-<slug>.json`, so the two files are one contract.
-    for (slug, wp) in &branch_waypoints {
+    for (slug, wp) in branch_waypoints {
         put_json(
-            &mut out,
+            out,
             &format!("validation/{}.json", world_file(slug, "waypoints")),
             wp,
         );
@@ -1898,13 +2016,13 @@ fn emit_all(
     // proxy was a rendered shot, and one bearing cannot see a region.
     if let Some(er) = &edit_replay {
         put_json(
-            &mut out,
+            out,
             "validation/placement-gate.json",
             &crate::compiler::edit::placement_gate_json(&er.placements),
         );
     }
     if let Some(gate) = &traversal_gate {
-        put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+        put_json(out, "validation/traversal-gate.json", &gate.to_json());
     }
     // The piece-mating binding ledger (`DW0780`/`DW0781`): how many placed
     // pieces touch, in how many pairs, how many of those pairs a declared face
@@ -1914,7 +2032,7 @@ fn emit_all(
     // declarations reads a library that declares nothing as an honest zero,
     // which is the sentence this check printed while passing.
     put_json(
-        &mut out,
+        out,
         "validation/piece-mating.json",
         &plan.face_binding.to_json(
             crate::compiler::faces::placed_pieces(&plan.areas),
@@ -1926,14 +2044,14 @@ fn emit_all(
     // ended up outside the built volume. `None` only for a campaign that
     // assembles no world at all.
     if let Some(ledger) = &fluid_escape_ledger {
-        put_json(&mut out, "validation/fluid-escape.json", ledger);
+        put_json(out, "validation/fluid-escape.json", ledger);
     }
     // The sea-seepage binding ledger (`DW0851`): the horizon, the open contact
     // face the built volume presents to the ambient sea, how far the sea reaches
     // inside it, and how much of the walk region it submerges or wades. `None`
     // only for a campaign that assembles no world at all.
     if let Some(ledger) = &sea_seepage_ledger {
-        put_json(&mut out, "validation/sea-seepage.json", ledger);
+        put_json(out, "validation/sea-seepage.json", ledger);
     }
     // The piece-exposure binding ledger (`DW0885`): the horizon, the solid
     // boundary the placed pieces carry, how much of it nothing stands in front
@@ -1941,16 +2059,16 @@ fn emit_all(
     // `shown_faces` declarations were read and bound. `None` only for a campaign
     // that assembles no world at all.
     if let Some(ledger) = &piece_exposure_ledger {
-        put_json(&mut out, "validation/piece-exposure.json", ledger);
+        put_json(out, "validation/piece-exposure.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
-        put_json(&mut out, "validation/gate-seal.json", ledger);
+        put_json(out, "validation/gate-seal.json", ledger);
     }
     // The holder census ledger (spec-0105 §4.3, spec-0111 §4.4): one row per
     // holder with its kind, slots and claims, the counts, the notice and the
     // census input's digest.
     put_json(
-        &mut out,
+        out,
         "validation/holders.json",
         &container_census.to_json(),
     );
@@ -1960,7 +2078,7 @@ fn emit_all(
     // between a build and a player, and refuses any place named here.
     if let Some(b) = &plan.blockout {
         put_json(
-            &mut out,
+            out,
             "validation/blockout.json",
             &serde_json::json!({
                 "line": b.binding.line(),
@@ -1978,7 +2096,7 @@ fn emit_all(
     // no file, so a file that exists and reports zero ways is a finding rather
     // than an absence.
     if let Some(gate) = &plan.way_gate {
-        put_json(&mut out, "validation/ways.json", &gate.to_json());
+        put_json(out, "validation/ways.json", &gate.to_json());
     }
     // The lethal-volume proofs' binding ledger (`compiler::lethal`,
     // playtest-methodology.md rule 1): how many volumes were declared, how many
@@ -1991,26 +2109,26 @@ fn emit_all(
         // the same content key `teleport_fns` does), counted from the emission
         // rather than from the declaration, so the ledger reports what was really
         // generated.
-        let mut gate = teleport_gate;
+        let mut gate = teleport_gate.clone();
         gate.packtests = teleport_fns(plan).len();
         gate.legs_carried = legs_carried;
         gate.party_seats = party_seats;
-        put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
+        put_json(out, "validation/teleport-gate.json", &gate.to_json());
     }
     if let Some(gate) = &lethal_gate {
         // Counted from the emission, like the teleport ledger above: every
         // template a volume got (kill, wording guard, a staged volume's shut half).
         let mut gate = gate.clone();
-        gate.packtests = packtest::emitted_lethal_templates(plan, &out);
-        put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
+        gate.packtests = packtest::emitted_lethal_templates(plan, out);
+        put_json(out, "validation/lethal-gate.json", &gate.to_json());
     }
     if let Some(gate) = &loop_gate {
-        put_json(&mut out, "validation/loop-gate.json", &gate.to_json());
+        put_json(out, "validation/loop-gate.json", &gate.to_json());
     }
     // spec-0102 §5.1: one row per declared pulse, the stations the bot listens
     // at included. A campaign that declares none emits no file.
-    if pulse_gate.declared > 0 {
-        put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
+    if let Some(pulse_gate) = pulse_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(out, "validation/pulses.json", &pulse_gate.to_json());
     }
     // spec-0114 §5: what the act check judged over the English titles, so a
     // build of a campaign that has titles and judged none reads as a zero
@@ -2020,7 +2138,7 @@ fn emit_all(
         .act_binding
         .clone()
         .unwrap_or_else(|| crate::compiler::telling::check_acts(plan.campaign).1);
-    put_json(&mut out, "validation/act-gate.json", &acts.to_json());
+    put_json(out, "validation/act-gate.json", &acts.to_json());
     // spec-0131: the activity census — what the player does on every line of
     // the plan, priced per act — beside what the activity check (`DW1079`)
     // judged of each line's declaration. Neither reads a player-facing string,
@@ -2035,27 +2153,27 @@ fn emit_all(
         ledger["declared"] = delvewright_dsl::quest::check::check_activity(plan.campaign)
             .1
             .to_json();
-        put_json(&mut out, "validation/activity-census.json", &ledger);
+        put_json(out, "validation/activity-census.json", &ledger);
     }
     // The engine's quest cues and the objectives that owe them, so the bot
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.
-    put_json(&mut out, "validation/cues.json", &cue_ledger(plan));
+    put_json(out, "validation/cues.json", &cue_ledger(plan));
     // What the journal owes at every quest start, read by the bot off the
     // book it holds. Written exactly when the campaign carries a journal.
     if let Some(j) = guidance::journal_ledger(plan, &guide) {
-        put_json(&mut out, "validation/journal-starts.json", &j);
+        put_json(out, "validation/journal-starts.json", &j);
     }
     // spec-0137 §8: what each walked world leaves on a recorded objective's
     // finished page, read by the bot off the book it holds.
     if let Some(j) = guidance::journal_records_ledger(plan) {
-        put_json(&mut out, "validation/journal-records.json", &j);
+        put_json(out, "validation/journal-records.json", &j);
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
-        put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
+        put_json(out, "validation/firework-gate.json", &gate.to_json());
     }
     if let Some(gate) = lightning_gate.as_ref().filter(|g| g.declared > 0) {
-        put_json(&mut out, "validation/lightning-gate.json", &gate.to_json());
+        put_json(out, "validation/lightning-gate.json", &gate.to_json());
     }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
@@ -2064,14 +2182,14 @@ fn emit_all(
     // campaign that declares no stake emits no file, so a file reporting a zero
     // binding is a finding rather than an absence.
     if let Some(t) = &stake_table {
-        put_json(&mut out, "validation/stake-gate.json", &t.gate.to_json());
+        put_json(out, "validation/stake-gate.json", &t.gate.to_json());
     }
     // The bot tier's death contract (`compiler::deathplan`): what the campaign
     // PROMISES a death does, so the mineflayer tier can assert it against a real
     // client that really died. Same rule again — a campaign that declares no
     // volume, no `on_death` and no stake emits no file at all.
     if let Some(dp) = &death_plan {
-        put_json(&mut out, "validation/death-plan.json", dp);
+        put_json(out, "validation/death-plan.json", dp);
     }
     // spec-0080 §5.3: which biome each carried place stands in at the first
     // tick, as the biome map states it, so a reader that draws a scene inside
@@ -2095,7 +2213,7 @@ fn emit_all(
             .collect();
         if !places.is_empty() {
             put_json(
-                &mut out,
+                out,
                 "validation/biome-map.json",
                 &json!({ "ground": map.ground.id, "places": places }),
             );
@@ -2113,14 +2231,24 @@ fn emit_all(
         let (_, binding, findings) =
             crate::compiler::design::check(plan.campaign, &plan.design_files);
         put_json(
-            &mut out,
+            out,
             "validation/design-record.json",
             &crate::compiler::design::record(&binding, &findings),
         );
     }
+Ok(())
+})?;
 
     // ---- manifest (hashes of inputs + all other outputs) ----
-    let manifest = emit_manifest(plan, input_bytes, &out, language, resource_pack.as_ref());
+    let (mut out, warnings) = checks.close();
+    let manifest = emit_manifest(
+        plan,
+        input_bytes,
+        &out,
+        language,
+        resource_pack.as_ref(),
+        build,
+    );
     put_json(&mut out, "manifest.json", &manifest);
 
     // ---- untranslated-literal scan (DW0185, spec-0029) ----
@@ -2130,11 +2258,13 @@ fn emit_all(
     // component (`tr` / `snbt_component`) or read it as a named exclusion
     // (`plain`). A tag still present in the finished tree is a site that did
     // neither — a string that would ship as an untranslatable literal. This is the
-    // whole reason spec-0029's risk is an invariant rather than an audit.
-    check_untranslated_literals(&out, &extra_assets)?;
+    // whole reason spec-0029's risk is an invariant rather than an audit. Asked
+    // after the bench is closed, of the tree nothing writes again.
+    if build.checks() {
+        check_untranslated_literals(&out, &extra_assets)?;
+    }
 
     crate::compiler::notes::mark("emit: done");
-    warnings.extend(pacing);
     Ok((out, warnings))
 }
 

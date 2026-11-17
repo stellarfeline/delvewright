@@ -535,6 +535,20 @@ class Subject:
         return doc.get("test_level") is True
 
     @property
+    def manifest_look_only(self) -> bool:
+        """Does the BUILD's manifest say it is a look build (`delvec build
+        --look`: no check ran, no validation file was written)? An absent key is
+        `False`, which is what the compiler writes for a build whose checks
+        ran; a manifest that cannot be read is refused by every row that needs
+        it, so it answers `False` here."""
+        m = self.build / "manifest.json"
+        try:
+            doc = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return isinstance(doc, dict) and doc.get("look_only") is True
+
+    @property
     def building_engine(self) -> BuildingEngine:
         """The engine that built this tree — the one a `dw` carrier is judged
         against (`Engine.dw_exists`)."""
@@ -713,6 +727,25 @@ def test_level_refusal(subj: Subject) -> str | None:
 # Binding probes — "how many objects of the class this check quantifies over
 # does THIS campaign actually contain"
 # ---------------------------------------------------------------------------
+
+
+def look_only_refusal(subj: Subject) -> str | None:
+    """Why a look build is not stageable, or `None` for a build whose checks ran.
+
+    `delvec build --look` writes the player tree and runs no check: nothing
+    validated the documents, no proof ran over the world, and no file of the
+    validation tree exists for a row of the ledger to read. Its `manifest.json`
+    says so (`look_only: true`), and the build is refused here, once and in
+    those words, before any row is adjudicated — a look is for a person to walk
+    through, labelled unproven, and `--stage-anyway` is how one is served."""
+    if not subj.manifest_look_only:
+        return None
+    return (
+        f"`{subj.name}`'s build is a look build (`manifest.json` `look_only`): "
+        "`delvec build --look` ran no check and wrote no validation file, so "
+        "nothing about this tree is proven. Build it with `delvec build` and "
+        "stage that build."
+    )
 
 
 def _iter_nodes(node):
@@ -2202,6 +2235,24 @@ def main() -> int:
                 encoding="utf-8",
             )
         print(f"staging-gate: REFUSED — not stageable. {tl_why}", file=sys.stderr)
+        return 1
+    # A look build ran no check. Refused before any row is adjudicated;
+    # `--stage-anyway` overrides it, and prints it.
+    look_why = look_only_refusal(subj)
+    if look_why is not None and override_reason is not None:
+        overrides.append(f"not stageable: {look_why}")
+    elif look_why is not None:
+        stale = args.admit or (args.build / ADMISSION_NAME)
+        if stale.is_file():
+            stale.unlink()
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                f"<!-- {GATE_ARTIFACT_MARKER} -->\n# Staging gate — `{subj.name}`\n\n"
+                f"**REFUSED — not stageable.** {look_why}\n",
+                encoding="utf-8",
+            )
+        print(f"staging-gate: REFUSED — not stageable. {look_why}", file=sys.stderr)
         return 1
     if subj.test_level_declared:
         print(
