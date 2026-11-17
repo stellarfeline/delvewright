@@ -14,7 +14,6 @@ import {
   describeStuckNeighbours,
   installSwimMoves,
   isDoorByHand,
-  hopMovements,
   swimFor,
   type SwimMovements,
 } from "../movement.ts";
@@ -28,7 +27,6 @@ import {
   walkGoals,
   type Climb,
   type Jump,
-  parkourGap,
   type GoalSpec,
   type StandUp,
   type TimedGate,
@@ -834,23 +832,13 @@ export const methods = {
         legWaypoints = kept;
       }
       const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs, legJumps, legStandUps);
-      // spec-0113 §6: a declared jump the pathfinder's parkour move cannot
-      // express is a harness gap, refused by name before the walk starts.
-      for (const j of legJumps) {
-        const gap = parkourGap(j);
-        if (gap !== undefined) {
-          throw new Error(
-            `${label}: the proven leg's jump [${j.from.join(", ")}]→[${j.to.join(", ")}] is a harness ` +
-              `gap — ${gap}; mineflayer-pathfinder 2.4.5's parkour move is the only leap the bot ` +
-              `makes on cue`,
-          );
-        }
-      }
+      // spec-0113 §6: every proven jump on the leg is a hop the executor drives
+      // as the compiler flew it (`jumpHop`).
       const jumpHops = goalsList.filter((g) => g.jump !== undefined).length;
       if (legJumps.length > 0 || jumpHops > 0) {
         process.stderr.write(
           `[jump] ${label}: ${legJumps.length} jump(s) on the proven leg, ${jumpHops} driven ` +
-            `as a parkour hop\n`,
+            `as a jump hop\n`,
         );
       }
       const climbHops = goalsList.filter((g) => g.climb !== undefined).length;
@@ -895,10 +883,6 @@ export const methods = {
           if (door !== undefined && !spec.climb) {
             await this.openDoorBefore(door, spec, glabel, sneak);
           }
-          // The parkour move is on for a proven jump's hop and off for every
-          // other (spec-0113 §6): the bot walks what the proof proved. A sneak
-          // leg sprints only for a sprint jump it makes standing.
-          hopMovements(movements, sneak, spec);
           bot.pathfinder.setMovements(movements);
           // A move of a sneak leg a crouched body cannot make is made standing
           // (`stand_ups`, the compiler's answer).
@@ -906,9 +890,10 @@ export const methods = {
           try {
             await (spec.climb
               ? this.raceDeath(() => this.climbHop(spec, glabel))
-              : this.gotoStaged(spec, glabel, sneak));
+              : spec.jump
+                ? this.raceDeath(() => this.jumpHop(spec, glabel))
+                : this.gotoStaged(spec, glabel, sneak));
           } finally {
-            hopMovements(movements, sneak, {});
             this.crouchYielded = false;
           }
           await this.judgeWatchers(glabel);

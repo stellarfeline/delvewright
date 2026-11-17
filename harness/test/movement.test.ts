@@ -4,7 +4,6 @@ import { walkGoals, type Jump } from "../src/waypoints.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
-  parkourFor,
   swimFor,
   SWIM_LIQUID_COST,
   describeStuckNeighbours,
@@ -172,9 +171,9 @@ test("the stuck report says so when nothing is near, and when nothing classified
   assert.doesNotMatch(line, /Routed AROUND/);
 });
 
-// spec-0113 §6: the pathfinder's parkour move is on for the hop of a proven
-// jump and off for every other hop and every other leg.
-test("allowParkour is on for a proven jump's hop and off for every other", () => {
+// spec-0113 §6: the pathfinder never leaps — a proven jump's hop is marked for
+// the executor, which drives it as the compiler flew it.
+test("a proven jump's hop is marked for the executor and the pathfinder never leaps", () => {
   const jump: Jump = { from: [0, 64, 0], to: [3, 64, 0], sprint: true, runUp: 4 };
   const goals = walkGoals(
     [
@@ -188,17 +187,16 @@ test("allowParkour is on for a proven jump's hop and off for every other", () =>
     [],
     [jump],
   );
-  const movements = freshMovements();
-  configureLeg(new FakeControlBot(), movements, false);
-  const flags = goals.map((g) => {
-    parkourFor(movements, g.jump !== undefined);
-    const on = movements.allowParkour;
-    parkourFor(movements, false);
-    return on;
-  });
-  assert.deepEqual(flags, [false, false, true, false, false]);
-  assert.equal(movements.allowParkour, false, "off again after the hop");
-  // A leg with no jump never turns it on.
+  assert.deepEqual(
+    goals.map((g) => g.jump !== undefined),
+    [false, false, true, false, false],
+  );
+  for (const sneak of [false, true]) {
+    const movements = freshMovements();
+    configureLeg(new FakeControlBot(), movements, sneak);
+    assert.equal(movements.allowParkour, false, `a ${sneak ? "sneak" : "plain"} leg leaps`);
+  }
+  // A leg with no jump marks no hop.
   const plain = walkGoals([[0, 64, 0], [1, 64, 0]], [2, 64, 0], 1);
   assert.ok(plain.every((g) => g.jump === undefined));
 });

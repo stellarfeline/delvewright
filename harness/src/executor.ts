@@ -53,6 +53,7 @@ import { methods as talkMethods } from "./executor/talk.ts";
 import { methods as walkMethods } from "./executor/walk.ts";
 import { methods as timedGateMethods } from "./executor/timed-gate.ts";
 import { methods as climbMethods } from "./executor/climb.ts";
+import { methods as jumpMethods } from "./executor/jump.ts";
 import { methods as cutsceneMethods } from "./executor/cutscene.ts";
 import { methods as transportMethods } from "./executor/transport.ts";
 import { methods as loopMethods } from "./executor/loop.ts";
@@ -734,6 +735,7 @@ type Methods = typeof connectionMethods &
   typeof walkMethods &
   typeof timedGateMethods &
   typeof climbMethods &
+  typeof jumpMethods &
   typeof cutsceneMethods &
   typeof transportMethods &
   typeof loopMethods &
@@ -764,4 +766,4 @@ type Methods = typeof connectionMethods &
   typeof clockMethods &
   typeof pursuitMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, censusMethods, expireMethods, rideMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods, pursuitMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, jumpMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, censusMethods, expireMethods, rideMethods, sustainMethods, deathMethods, pulseMethods, cueMethods, journalMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods, pursuitMethods]) Object.assign(MineflayerExecutor.prototype, methods);
