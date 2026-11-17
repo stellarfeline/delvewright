@@ -38,7 +38,7 @@ Three things the types do not hold, and what holds each instead:
 
 - **A cell of the plan filled late** (`Plan`'s `OnceLock`s) can be written through a shared reference. The ones a check fills — the walks' acts, the shot stances — are read by checks alone; the ones emission reads — the respawn and party seats — are filled by derivations.
 - **A derivation that takes its judge from the bench.** The edit replay proves each batch as it lays it, and the relight pass measures the darkness gate over the survey it places fixtures from; each takes one argument saying whether it judges (`edit::replay_taking`'s `enforce`, `light::relight_judging`), and the bench supplies it. A test holds each judging form to its unjudging one over everything the build writes from.
-- **The whole.** `tests/it/look.rs` builds each fixture campaign both ways and holds the look build's tree to the proven build's player tree, file for file: a check that came to write a player byte, or an emitter that came to run only when checks do, makes the two differ.
+- **The whole.** `tests/it/look.rs` builds each fixture campaign both ways and holds the look build's tree to the proven build's player tree, file for file: a check that came to write a player byte, or an emitter that came to run only when checks do, makes the two differ. The one line that may differ is the quota of a campaign whose PackTest templates need more than its own functions (*not separated*, below).
 
 ### 3. A look build
 
@@ -68,8 +68,8 @@ Every argument of every writer of the player tree was traced to the statement th
 | A shortfall a check refuses (`Derived`) | taken links, respawn seats, branch crossings, party seats, wave seats, NPC walks, actor walks, the stake table, lanes, volleys and collapses, trap hardware, language files |
 | The judged half sealed at the call (`Held::sealed`) | holder stances, the assemblies' strike plans, each assembly's `view_range`, each pulse's range |
 | The judge taken from the bench | the edit replay, the relight pass |
-| Separated outright | the command quota the delve's `load` declares (it measured the PackTest pack; it measures the player tree), the texture rows |
-| Not separated | the plan (`Plan::build`): its refusals — an anchor that resolves nowhere, a layout that cannot be solved — stand inside the derivation, and stop a look build as they stop any other |
+| Separated outright | the texture rows |
+| Not separated | the plan (`Plan::build`): its refusals — an anchor that resolves nowhere, a layout that cannot be solved — stand inside the derivation, and stop a look build as they stop any other. The command quota the delve's `load` declares: a PackTest template runs under it, so a build that runs its checks states it again over the PackTest pack, and that one line of the player tree can read the validation tree (`Sink::whole_restating`); a look build states the player tree's own need. It is separated when the PackTest pack states a quota of its own. |
 
 A sealed judgement is still computed in a look build; nothing reads it there.
 
@@ -77,7 +77,7 @@ A sealed judgement is still computed in a look build; nothing reads it there.
 
 - A check can be deleted, reordered behind another check, or made lazy, and the player tree cannot move: the compiler refuses the program in which it could, and the look test reds on what the compiler cannot see.
 - A look costs the derivations and the emitters. What it serves is unproven and says so in its manifest; nothing that reads a manifest to admit a build admits it.
-- A proven build writes what it wrote. Over the gallery primary the output tree is byte-identical to the tree built before this decision.
+- A proven build writes what it wrote. Over the gallery primary and over the town the output tree is byte-identical to the tree built before this decision.
 - A look build of a campaign with a shortfall writes less than was declared — a wave short of its mobs, a walk not taken — and says nothing about it. That is what unproven means.
 
 ## Revisit triggers

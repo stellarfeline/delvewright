@@ -605,8 +605,6 @@ fn emit_all(
             .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
         // A fill whose cell lies in a place still standing in its stand-in is owed by
         // that place's detail: judged by the build that details it, counted here.
-        // spec-0111 §3.1: the holder entities the placed pieces carry, in world
-        // space — read once off the template bytes and handed to every reader.
         let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
             &assembled.blocks,
             &entity_holders,
@@ -1248,8 +1246,6 @@ fn emit_all(
     let chrome =
         delvewright_dsl::Chrome::for_build(plan.campaign.world.campaign_id.as_str(), language);
 
-    // spec-0094: what the assembly judgement proved about each locked strike
-    // is what the emitter writes — the plans travel, they are never re-derived.
     // spec-0102: a pulse is measured over the assembled world; a campaign that
     // assembles none has no cell to stand in hearing of a beat. The binding
     // line is printed here for it, `0 pulse(s)` included.
@@ -1708,20 +1704,22 @@ Ok(())
         Ok(())
     })?;
 
-    // ---- a template that takes every body runs alone ----
-    // Read off the finished tree, after every emitter, so it reaches templates
-    // not yet written (`crate::compiler::solo`).
     // ---- the quota the delve's own sources need ----
     // Last of the writers of the player tree: every tick repeats work that
     // grows with the campaign and cannot move to a later tick, so when a source
     // outside `load` measures past the game's default quota, the delve's `load`
     // states the one it needs (`crate::compiler::chain`). Nothing is written
-    // when the default holds.
+    // when the default holds. Stated here over the player tree, which is the
+    // whole of it for a build that runs no check.
     crate::compiler::chain::declare(checks.player());
 
     // ---- the passes over the finished tree ----
     checks.run(|sink| {
-        let (verdict, advisories) = sink.whole(|out| {
+        // The delve's `load` is the one player file these passes restate: its
+        // quota line, once the PackTest pack stands beside the delve's.
+        let load = crate::compiler::chain::load_path(sink.player());
+        let restated = |path: &str| load.as_deref() == Some(path);
+        let (verdict, advisories) = sink.whole_restating(restated, |out| {
             // ---- a template that takes every body runs alone ----
             // Read off the finished tree, after every emitter, so it reaches
             // templates not yet written (`crate::compiler::solo`).
@@ -1776,6 +1774,14 @@ Ok(())
             );
             crate::note!("{}", own.line());
             put_json(out, "validation/packtest-own-gates.json", &own.to_json());
+            // ---- the quota the PackTest pack's templates need as well ----
+            // Over the finished tree, after every pass that writes into a
+            // template: a template runs under the quota the delve's `load`
+            // declares, so the statement made over the player tree is made
+            // again over both and replaces it where a template needs more
+            // (ADR-0040, *not separated*: the PackTest pack states no quota of
+            // its own).
+            crate::compiler::chain::declare(out);
             // ---- the checks read off the finished tree ----
             let mut advisories = Vec::new();
             let verdict = check_finished_tree(

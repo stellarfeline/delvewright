@@ -140,7 +140,23 @@ impl Sink {
     /// # Panics
     /// When `pass` added, removed or changed a player file.
     pub fn whole<R>(&mut self, pass: impl FnOnce(&mut BuildOutput) -> R) -> R {
-        let before = digest(&self.player);
+        self.whole_restating(|_| false, pass)
+    }
+
+    /// [`Sink::whole`], with the player files `restated` names left to the
+    /// pass to rewrite. One caller: the passes over the finished tree, for the
+    /// delve's `load`, whose quota line is stated again once the PackTest pack
+    /// exists (`chain::declare`; ADR-0040, *not separated*).
+    ///
+    /// # Panics
+    /// When `pass` added or removed a player file, or changed one `restated`
+    /// does not name.
+    pub fn whole_restating<R>(
+        &mut self,
+        restated: impl Fn(&str) -> bool,
+        pass: impl FnOnce(&mut BuildOutput) -> R,
+    ) -> R {
+        let before = digest(&self.player, &restated);
         let mut tree = std::mem::take(&mut self.player);
         tree.append(&mut self.validation);
         let r = pass(&mut tree);
@@ -149,7 +165,7 @@ impl Sink {
         self.player = player;
         self.validation = validation;
         assert!(
-            digest(&self.player) == before,
+            digest(&self.player, &restated) == before,
             "a pass over the finished tree changed a player file (ADR-0040 §1)"
         );
         r
@@ -168,13 +184,16 @@ pub struct Parts<'a> {
     pub late: &'a mut Vec<delvewright_dsl::Diagnostic>,
 }
 
-/// One number for a tree's paths and bytes, to compare a tree with itself
-/// across a pass. Never written anywhere: it is not an identity of the build.
-fn digest(tree: &BuildOutput) -> (usize, u64) {
+/// One number for a tree's paths and the bytes of every file `restated` does
+/// not name, to compare a tree with itself across a pass. Never written
+/// anywhere: it is not an identity of the build.
+fn digest(tree: &BuildOutput, restated: &impl Fn(&str) -> bool) -> (usize, u64) {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for (k, v) in tree {
         k.hash(&mut h);
-        v.hash(&mut h);
+        if !restated(k) {
+            v.hash(&mut h);
+        }
     }
     (tree.len(), h.finish())
 }
@@ -441,6 +460,45 @@ mod tests {
             });
             Ok(())
         });
+    }
+
+    #[test]
+    fn a_pass_may_restate_the_one_player_file_it_is_handed_and_no_other() {
+        let load = "datapack/data/n/function/load.mcfunction";
+        let other = "datapack/data/n/function/f.mcfunction";
+        let bench = || {
+            let mut bench = Checks::new(Build::Proven);
+            bench.player().insert(load.to_string(), b"say a\n".to_vec());
+            bench
+                .player()
+                .insert(other.to_string(), b"say a\n".to_vec());
+            bench
+        };
+        let mut restating = bench();
+        restating
+            .run(|sink| {
+                sink.whole_restating(
+                    |p| p == load,
+                    |tree| tree.insert(load.to_string(), b"say b\n".to_vec()),
+                );
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(restating.close().0[load], b"say b\n");
+        let mut straying = bench();
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = straying.run(|sink| {
+                sink.whole_restating(
+                    |p| p == load,
+                    |tree| tree.insert(other.to_string(), b"say b\n".to_vec()),
+                );
+                Ok(())
+            });
+        }));
+        assert!(
+            caught.is_err(),
+            "a file the pass was not handed changed, and nothing stopped it"
+        );
     }
 
     #[test]

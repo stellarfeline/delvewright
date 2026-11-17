@@ -761,6 +761,26 @@ pub fn measure_at(out: &BuildOutput, party: u64) -> ChainLedger {
     }
 }
 
+/// The path of the function that carries the declaration: the first the
+/// delve's `#minecraft:load` tag names.
+pub fn load_path(out: &BuildOutput) -> Option<String> {
+    let (ns, name) = delve_load(out)
+        .first()?
+        .split_once(':')
+        .map(|(a, b)| (a.to_string(), b.to_string()))?;
+    Some(format!("{DELVE_PACK}data/{ns}/function/{name}.mcfunction"))
+}
+
+/// The quota `line` states, when it is the unconditional `gamerule
+/// max_command_sequence_length <n>` [`declare`] writes.
+fn stated_quota(line: &str) -> Option<u64> {
+    let mut words = line.split(' ');
+    match (words.next(), words.next(), words.next(), words.next()) {
+        (Some("gamerule"), Some(rule), Some(n), None) if rule == SEQUENCE_RULE => n.parse().ok(),
+        _ => None,
+    }
+}
+
 /// The functions the delve's own `#minecraft:load` tag runs, in order.
 fn delve_load(out: &BuildOutput) -> Vec<String> {
     out.get(&format!(
@@ -820,17 +840,25 @@ fn load_rooted(
 /// quota; `None` when the default holds — the tree is left byte-identical — or
 /// when no declaration can state the need (past the gamerule's `int`, or no
 /// `load` to carry it), which [`check`] then refuses.
+///
+/// Stated twice by a build that runs its checks, and the second statement
+/// replaces the first: over the player tree, by emission; then over the tree
+/// with the PackTest pack in it, whose templates run under the same quota
+/// (ADR-0040, *not separated*). A build that runs no check states the first
+/// alone.
 pub fn declare(out: &mut BuildOutput) -> Option<u64> {
     let mut need = measure(out).need();
     if need <= MAX_COMMAND_SEQUENCE_LENGTH || need > RULE_MAX {
         return None;
     }
-    let (ns, name) = delve_load(out)
-        .first()?
-        .split_once(':')
-        .map(|(a, b)| (a.to_string(), b.to_string()))?;
-    let path = format!("{DELVE_PACK}data/{ns}/function/{name}.mcfunction");
-    let original = String::from_utf8(out.get(&path)?.clone()).ok()?;
+    let path = load_path(out)?;
+    let stated = String::from_utf8(out.get(&path)?.clone()).ok()?;
+    // An earlier statement is the function's first line: no other writer puts
+    // the rule there.
+    let original = match stated.split_once('\n') {
+        Some((first, rest)) if stated_quota(first).is_some() => rest.to_string(),
+        _ => stated,
+    };
     // The line costs one unit wherever it stands, whatever it states, so a
     // second measure settles a `load` that some other source also calls.
     loop {
@@ -1316,6 +1344,49 @@ mod tests {
         body.extend_from_slice(b"say one more\n");
         grown.insert(tick, body);
         assert_eq!(check(&grown).unwrap_err().code.id(), "DW0984");
+    }
+
+    /// **A second statement replaces the first** (ADR-0040, *not
+    /// separated*). The delve's tick is past the default, so the statement
+    /// over the player tree declares it; a PackTest template then calls the
+    /// tick and runs lines of its own, so the statement over both trees
+    /// declares more — in the same first line, with one `gamerule` line in the
+    /// function and the rest of it as written — and the check holds the
+    /// template to it. Stating again over the same tree changes no byte.
+    /// Without the second statement the template is over the limit the first
+    /// declared, which is what the check then refuses.
+    #[test]
+    fn a_second_statement_over_the_packtest_pack_replaces_the_first() {
+        let over = (MAX_COMMAND_SEQUENCE_LENGTH as usize) + 11;
+        let mut out = delve(over, "function dw:setup");
+        let first = declare(&mut out).expect("the player tree declares its tick");
+        out.insert(
+            "packtest-datapack/data/dw/test/drives.mcfunction".to_string(),
+            b"function dw:tick\nsay one\nsay two\n".to_vec(),
+        );
+        assert_eq!(
+            check(&out).unwrap_err().code.id(),
+            "DW0984",
+            "the template is over what the player tree declared"
+        );
+        let second = declare(&mut out).expect("the template needs more");
+        assert!(second > first, "{second} against {first}");
+        let load =
+            String::from_utf8(out["datapack/data/dw/function/load.mcfunction"].clone()).unwrap();
+        assert_eq!(
+            load,
+            format!("gamerule max_command_sequence_length {second}\nfunction dw:setup")
+        );
+        assert_eq!(
+            check(&out).expect("held to the second").declared,
+            Some(second)
+        );
+        let stated = out.clone();
+        assert_eq!(declare(&mut out), Some(second));
+        assert_eq!(
+            out, stated,
+            "a statement over the same tree changes no byte"
+        );
     }
 
     /// The default holds: nothing is declared and the tree is untouched.
