@@ -777,26 +777,50 @@ impl Walk<'_, '_> {
             if self.deeds_done.contains(act) {
                 continue;
             }
-            if !self
-                .flow
-                .deed_performable(act, &self.st, ctx.owed.contains(act))
-            {
-                shut.get_or_insert_with(|| act.to_string());
-                continue;
+            match self.perform_deed(act) {
+                Some(fired) => deeds.push((act.to_string(), fired)),
+                None => {
+                    shut.get_or_insert_with(|| act.to_string());
+                }
             }
-            let from = self.st.fired.len();
-            self.flow
-                .perform_act_ending(&mut self.st, act, self.taken + 1, &mut self.complete_at);
-            self.deeds_done.insert(act.to_string());
-            deeds.push((act.to_string(), self.st.fired[from..].to_vec()));
         }
-        if self.performed.is_none() {
-            let mut flags = std::mem::take(&mut self.st.flags);
-            self.flow
-                .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
-            self.st.flags = flags;
-        }
+        self.saturate();
         (deeds, shut)
+    }
+
+    /// **Perform ambient act `act` here, if its gate lets it fire**
+    /// ([`Flow::deed_performable`], a debt of the world's path counted): its
+    /// bundle fired through the replay's one gate test, the act marked done
+    /// and, under the guaranteed stance, performed. `None`, and nothing
+    /// changed, where its gate is shut. The one place a walk fires an act:
+    /// [`Self::take`], [`Self::with_due_deeds`] and [`Self::performing`] all
+    /// come through it.
+    fn perform_deed(&mut self, act: &str) -> Option<Vec<String>> {
+        let owed = self.story.as_ref().is_some_and(|c| c.owed.contains(act));
+        if !self.flow.deed_performable(act, &self.st, owed) {
+            return None;
+        }
+        let from = self.st.fired.len();
+        self.flow
+            .perform_act_ending(&mut self.st, act, self.taken + 1, &mut self.complete_at);
+        self.deeds_done.insert(act.to_string());
+        if let Some(done) = self.performed.as_mut() {
+            done.insert(act.to_string());
+        }
+        Some(self.st.fired[from..].to_vec())
+    }
+
+    /// Every producer this walk credits, saturated into the flags held.
+    fn saturate(&mut self) {
+        let mut flags = std::mem::take(&mut self.st.flags);
+        self.flow
+            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+        self.st.flags = flags;
+    }
+
+    /// Whether this walk has performed ambient act `act`.
+    pub fn performed_deed(&self, act: &str) -> bool {
+        self.deeds_done.contains(act)
     }
 
     /// Why `step` cannot be completed now, the choices and entry deeds due in
@@ -1076,12 +1100,7 @@ impl Walk<'_, '_> {
     /// The walk itself when none is due there.
     pub fn with_due_deeds(&self, step: &PathStep) -> Self {
         let mut ahead = self.clone();
-        if let Some(ctx) = &self.story {
-            ahead.take_choices(ctx, step);
-            for act in ctx.deeds_before(&step.objective) {
-                ahead = ahead.performing(act);
-            }
-        }
+        ahead.perform_due(step);
         ahead
     }
 
@@ -1099,15 +1118,9 @@ impl Walk<'_, '_> {
     /// the replay's one gate test, its producers then credited.
     pub fn performing(&self, act: &str) -> Self {
         let mut ahead = self.clone();
-        self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
-        ahead.deeds_done.insert(act.to_string());
-        if let Some(done) = ahead.performed.as_mut() {
-            done.insert(act.to_string());
+        if ahead.perform_deed(act).is_some() {
+            ahead.saturate();
         }
-        let mut flags = std::mem::take(&mut ahead.st.flags);
-        self.flow
-            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
-        ahead.st.flags = flags;
         ahead
     }
 
@@ -1343,6 +1356,11 @@ pub struct Flow<'a> {
     /// is ever refused against. See [`Datum::Undatable`] for the reasoning; the
     /// three sources are named where the set is built.
     undatable: BTreeSet<String>,
+    /// The censuses that read zero until a wave is seated
+    /// ([`census_feeds`]): each counted datum whose every body can only be
+    /// put in the world by a `spawn-wave` the replay dates, with the waves
+    /// that can feed it.
+    census_feed: BTreeMap<String, BTreeSet<String>>,
     /// Every final scene's list pointer (spec-0108 §3.2): the replay notes what
     /// the party held the moment each began to fire.
     scene_roots: BTreeSet<String>,
@@ -1424,6 +1442,7 @@ impl<'a> Flow<'a> {
             worlds,
             initial,
             undatable: undatable_state(c),
+            census_feed: census_feeds(c),
             scene_roots: crate::compiler::ending::Scenes::of(c).scene_paths(),
             acts: std::sync::OnceLock::new(),
             story: std::sync::OnceLock::new(),
@@ -2381,15 +2400,36 @@ impl<'a> Flow<'a> {
             }
         }
         for (id, v) in &self.initial {
-            let d = if self.undatable.contains(id) {
-                Datum::Undatable
-            } else {
-                Datum::Known(*v)
-            };
-            st.state.insert(id.clone(), d);
+            st.state
+                .insert(id.clone(), self.datum_at_start(id, *v, &self.undatable));
         }
         self.saturate_ambient_with(&mut st.flags, allow);
         st
+    }
+
+    /// **What datum `id` holds in a walk's first state**, `undatable` the
+    /// data that walk cannot date: its declared `initial` where the walk dates
+    /// it; for a census no body can stand in yet ([`census_feeds`]), zero,
+    /// until a wave that feeds it is seated ([`Self::feed_censuses`]); else
+    /// undatable. The one answer every walk's first state takes.
+    fn datum_at_start(&self, id: &str, initial: i64, undatable: &BTreeSet<String>) -> Datum {
+        if !undatable.contains(id) {
+            Datum::Known(initial)
+        } else if self.census_feed.contains_key(id) {
+            Datum::Known(0)
+        } else {
+            Datum::Undatable
+        }
+    }
+
+    /// Wave `wave` is seated here: every census it can feed may count a body
+    /// from now on, at a moment no walk dates.
+    fn feed_censuses(&self, st: &mut ReplayState, wave: &str) {
+        for (id, feeders) in &self.census_feed {
+            if feeders.contains(wave) {
+                st.state.insert(id.clone(), Datum::Undatable);
+            }
+        }
     }
 
     /// Apply one path step: complete its objective, fire its effect bundles,
@@ -3010,6 +3050,7 @@ impl<'a> Flow<'a> {
                 Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
                     continue;
                 }
+                Verb::SpawnWave { wave } => self.feed_censuses(st, wave.as_str()),
                 _ => {}
             }
             if let Some((id, w)) = e.writes_state() {
@@ -3501,6 +3542,89 @@ fn collect_undated_writes(effs: &[QuestEffect], all: bool, out: &mut BTreeSet<St
         }
         for list in e.nested_effect_lists() {
             collect_undated_writes(list, all || reaction, out);
+        }
+    }
+}
+
+/// **The censuses that read zero until a wave is seated** (spec-0134 §1),
+/// each with the waves that can feed it. The census is written by the engine
+/// from the bodies in its box (`emit::census`), and the world is sealed
+/// against every natural spawn (`gamerule spawn_mobs false`,
+/// `spawn-monsters=false`), so a body it counts stands in the world only
+/// once something the campaign declares has seated one. A counted datum is
+/// here when every such seat is a wave the replay dates:
+///
+/// * a census of a wave counts that wave's tagged bodies, fed by its spawn;
+/// * a census of a kind other than the party's counts every body of the kind,
+///   fed by each wave that seats one ([`delvewright_dsl::CensusOf::may_count_wave`]),
+///   and only when no actor, NPC or vehicle wears that kind — a declared body
+///   of the kind may stand in the box from the world's first state on.
+///
+/// A feeder's every `spawn-wave` must sit where the replay fires it — an
+/// objective's or a quest's completion, not inside a reaction bundle
+/// ([`collect_undated_writes`]'s descent) — or no walk could date the feed,
+/// and the census is left undatable from the start, as is every census not
+/// here: the party's own, a vehicle's riders, an actor's or an NPC's body.
+fn census_feeds(c: &Campaign) -> BTreeMap<String, BTreeSet<String>> {
+    use delvewright_dsl::CensusOf;
+    let content = &c.quests.content;
+    let mut undated: BTreeSet<String> = BTreeSet::new();
+    crate::compiler::plan::for_each_effect_root(c, &mut |site, effs| {
+        let dated = matches!(
+            site.root,
+            crate::compiler::plan::EffectRoot::ObjectiveComplete { .. }
+                | crate::compiler::plan::EffectRoot::QuestComplete(_)
+        );
+        collect_undated_spawns(effs, !dated, &mut undated);
+    });
+    let worn: BTreeSet<String> = content
+        .actors
+        .iter()
+        .map(crate::compiler::nav::actor_body_entity)
+        .chain(
+            c.npcs
+                .content
+                .npcs
+                .iter()
+                .map(crate::compiler::nav::npc_body_entity),
+        )
+        .chain(content.vehicles.iter().map(|v| v.entity.clone()))
+        .collect();
+    let mut out = BTreeMap::new();
+    for s in &content.state {
+        let Some(k) = &s.counts else { continue };
+        let feeders: BTreeSet<String> = match &k.of {
+            CensusOf::Wave(w) => std::iter::once(w.as_str().to_string()).collect(),
+            CensusOf::Kind(kind) if !k.of.counts_the_party() && !worn.contains(kind) => content
+                .waves
+                .iter()
+                .filter(|w| k.of.may_count_wave(w))
+                .map(|w| w.id.as_str().to_string())
+                .collect(),
+            _ => continue,
+        };
+        if feeders.is_empty() || feeders.iter().any(|w| undated.contains(w)) {
+            continue;
+        }
+        out.insert(s.id.as_str().to_string(), feeders);
+    }
+    out
+}
+
+/// The waves `effs` seats that no replay dates: every `spawn-wave` when
+/// `all`, otherwise only those inside a reaction bundle the replay does not
+/// fire — [`collect_undated_writes`]'s descent.
+fn collect_undated_spawns(effs: &[QuestEffect], all: bool, out: &mut BTreeSet<String>) {
+    for e in effs {
+        let reaction = matches!(
+            &e.verb,
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. }
+        );
+        if all && let Verb::SpawnWave { wave } = &e.verb {
+            out.insert(wave.as_str().to_string());
+        }
+        for list in e.nested_effect_lists() {
+            collect_undated_spawns(list, all || reaction, out);
         }
     }
 }

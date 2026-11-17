@@ -602,12 +602,8 @@ impl<'a> Flow<'a> {
         }
         let undatable = &self.acts().story_undatable;
         for (id, v) in &self.initial {
-            let d = if undatable.contains(id) {
-                Datum::Undatable
-            } else {
-                Datum::Known(*v)
-            };
-            st.state.insert(id.clone(), d);
+            st.state
+                .insert(id.clone(), self.datum_at_start(id, *v, undatable));
         }
         let none = BTreeSet::new();
         self.saturate_ambient_with(&mut st.flags, &|g| {
@@ -1002,9 +998,13 @@ impl<'a> Flow<'a> {
         let mut out = Debts::default();
         let mut complete_at: Option<(usize, String)> = None;
         for (i, step) in pt.steps.iter().enumerate() {
+            // A placed deed fires where it stands only where its gate lets
+            // it ([`Self::deed_performable`]), as in every walk of the path.
             for (_, act) in deeds.iter().filter(|(j, _)| *j == i) {
-                self.perform_act(&mut o.st, act, i + 1);
-                o.paid.insert(act.clone());
+                if self.deed_performable(act, &o.st, false) {
+                    self.perform_act(&mut o.st, act, i + 1);
+                    o.paid.insert(act.clone());
+                }
             }
             self.debt_saturate(&mut o);
             let mut still: Vec<PathChoice> = Vec::new();
@@ -1127,7 +1127,7 @@ impl<'a> Flow<'a> {
             let mut dry_complete: Option<(usize, String)> = None;
             for (i, step) in pt.steps.iter().enumerate() {
                 for act in &pending {
-                    if self.act_enabled(act, &dry) {
+                    if self.deed_performable(act, &dry, false) {
                         at.insert(act.clone(), i);
                     }
                 }
