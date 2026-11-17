@@ -6,6 +6,7 @@ import {
   deathPhases,
   dieRetryBinding,
   dieRetryCoverageFailures,
+  fieldedEncounters,
   dieRetryFindings,
   scriptedDeathRefusal,
   openTrial,
@@ -416,6 +417,68 @@ test("two completed trials per encounter is full coverage and says nothing", () 
     trial({ wave: "wave/gate-assault", attempt: 2 }),
   ];
   assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
+});
+
+// --- the encounters a story world fields ------------------------------
+
+/** The main path's plan with a second fight a story world can take away. */
+function twoFightPlan() {
+  const base = PLAN.encounters[0]!;
+  return parseCombatPlan({
+    ...PLAN,
+    encounters: [
+      base,
+      { ...base, wave: "wave/the-landing", objective: "obj/hold-the-dock", step: 14 },
+    ],
+  }).encounters;
+}
+
+const KILL_GATE = { action: "kill", objective: "obj/hold-the-gate", wave: "wave/gate-assault" };
+const KILL_DOCK = { action: "kill", objective: "obj/hold-the-dock", wave: "wave/the-landing" };
+
+test("a world whose story takes a fight off its path is judged on the fights it fields", () => {
+  // The raid-lost world: the landing is despawned and its objective failed, so
+  // its path carries no kill step for it. The die-retry stage owes the gate,
+  // and owes nothing for a fight no player of that world ever meets.
+  const plan = twoFightPlan();
+  const { fielded, unfielded } = fieldedEncounters(plan, [
+    { action: "talk-to", objective: "obj/ready" },
+    KILL_GATE,
+    { action: "trigger" },
+  ]);
+  assert.deepEqual(fielded.map((e) => e.wave), ["wave/gate-assault"]);
+  assert.deepEqual(unfielded.map((e) => e.wave), ["wave/the-landing"]);
+  const trials = [
+    trial({ wave: "wave/gate-assault", attempt: 1 }),
+    trial({ wave: "wave/gate-assault", attempt: 2 }),
+  ];
+  assert.deepEqual(dieRetryCoverageFailures(fielded, new Set(["wave/gate-assault"]), trials), []);
+});
+
+test("a fight the world's path does field is still owed its trials", () => {
+  // Never drop a wave a path really fields: both kills on the path, only one
+  // proven, and the other is red.
+  const plan = twoFightPlan();
+  const { fielded, unfielded } = fieldedEncounters(plan, [KILL_GATE, KILL_DOCK]);
+  assert.equal(unfielded.length, 0);
+  const trials = [
+    trial({ wave: "wave/gate-assault", attempt: 1 }),
+    trial({ wave: "wave/gate-assault", attempt: 2 }),
+  ];
+  const failures = dieRetryCoverageFailures(fielded, new Set(["wave/gate-assault"]), trials);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /^wave\/the-landing: the die-retry stage never reached/);
+});
+
+test("a kill step is a fielded fight only on its own objective AND wave", () => {
+  // A path that kills the same wave for another objective, or another wave for
+  // the same objective, does not field the plan's entry.
+  const plan = twoFightPlan();
+  const { fielded } = fieldedEncounters(plan, [
+    { action: "kill", objective: "obj/hold-the-dock", wave: "wave/gate-assault" },
+    { action: "kill", objective: "obj/elsewhere", wave: "wave/the-landing" },
+  ]);
+  assert.deepEqual(fielded, []);
 });
 
 // --- re-seat fidelity, pure ---------------------------------------
