@@ -109,7 +109,9 @@
 # rebuild of the same campaign is. `--stage-anyway "<reason>"`
 # overrides every refusal the gate makes — ledger reds, a missing or red proof,
 # a stand-in — deliberately: it prints each refusal overridden, one line each,
-# and stamps them and the reason into the build's admission token.
+# and stamps them and the reason into the build's admission token. The build
+# it serves is a look build (`delvec build --look`): the derivations and the
+# emitters, and no check at all, its manifest marked `look_only`.
 # `--acknowledge-red <N>` is an optional guard on the ledger red count.
 #
 # ## What the prefab path does about the staging gate, and why that is honest
@@ -1292,7 +1294,9 @@ DELVEC="$(dw_resolve_delvec "$DELVEC" "$REPO_ROOT" "playtest-server")" || exit 1
 PLAYTEST_IMAGE=""
 if [ "$SUBJECT_KIND" = "campaign" ]; then
   echo "inputs key: hashing what this build and its admission are made from"
-  INPUTS_KEY="$(dw_playtest_inputs_key "$DELVEC" "$CAMPAIGN" "${PREFABS_ARG:-campaigns/prefabs}" "$LANG_ARG" "$REPO_ROOT")" \
+  KEY_KIND=""
+  [ -z "$STAGE_ANYWAY" ] || KEY_KIND="look"
+  INPUTS_KEY="$(dw_playtest_inputs_key "$DELVEC" "$CAMPAIGN" "${PREFABS_ARG:-campaigns/prefabs}" "$LANG_ARG" "$REPO_ROOT" "$KEY_KIND")" \
     || die "cannot compute the inputs key (the line above names the input it could not read)"
   echo "inputs key: $INPUTS_KEY"
   FOUND="$(docker images --filter "reference=$PLAYTEST_REPO" --filter "label=$PLAYTEST_LABEL.inputs=$INPUTS_KEY" \

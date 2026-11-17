@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 use delvec::compiler::blockout::Knob;
 use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 
-use crate::cli::campaign::{run_analyze, run_build, run_textures, run_validate};
+use crate::cli::campaign::{BuildAsk, run_analyze, run_build, run_textures, run_validate};
 use crate::cli::document::{run_allocation, run_codes, run_fmt, run_schema, schema_stage_help};
 use crate::cli::edit::{EditAction, run_edit};
 use crate::cli::l10n::{run_l10n_apply, run_l10n_inventory};
@@ -362,10 +362,12 @@ fn main() -> ExitCode {
             look,
         } => run_build(
             campaign_dir,
-            out.as_deref(),
-            perturb,
-            perturb_place.as_deref(),
-            *look,
+            BuildAsk {
+                out: out.as_deref(),
+                perturb,
+                perturb_place: perturb_place.as_deref(),
+                look: *look,
+            },
             &cli.prefabs,
             &cli.lang,
             cli.json,

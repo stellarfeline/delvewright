@@ -220,6 +220,20 @@ impl<T> Derived<T> {
         Derived { value, short }
     }
 
+    /// A derivation that derived all of its value or none of it: `fallback`
+    /// is what emission writes from when it derived none.
+    pub fn or(derived: Result<T, Failure>, fallback: impl FnOnce() -> T) -> Self {
+        match derived {
+            Ok(value) => Derived::whole(value),
+            Err(f) => Derived::with_short(fallback(), vec![f]),
+        }
+    }
+
+    /// Whether everything was derived.
+    pub fn is_whole(&self) -> bool {
+        self.short.is_empty()
+    }
+
     /// What could not be derived, for the check that refuses it.
     pub fn short(&self, _sink: &Sink) -> &[Failure] {
         &self.short

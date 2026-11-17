@@ -967,18 +967,24 @@ enum BuildKind<'a> {
     LoadWorld(&'a Path),
 }
 
+/// What `delvec build` was asked for, beyond the campaign: where to write,
+/// the defect to demonstrate, and whether this is a look build.
+pub(crate) struct BuildAsk<'a> {
+    pub(crate) out: Option<&'a Path>,
+    pub(crate) perturb: &'a [Knob],
+    pub(crate) perturb_place: Option<&'a str>,
+    pub(crate) look: bool,
+}
+
 pub(crate) fn run_build(
     campaign_dir: &Path,
-    out: Option<&Path>,
-    perturb: &[Knob],
-    perturb_place: Option<&str>,
-    look: bool,
+    ask: BuildAsk<'_>,
     prefabs_dir: &Path,
     lang: &str,
     json: bool,
 ) -> ExitCode {
-    let kind = match resolve_build_kind(out, perturb, perturb_place) {
-        Ok(BuildKind::Ship(out)) if look => BuildKind::Look(out),
+    let kind = match resolve_build_kind(ask.out, ask.perturb, ask.perturb_place) {
+        Ok(BuildKind::Ship(out)) if ask.look => BuildKind::Look(out),
         Ok(k) => k,
         Err(msg) => {
             eprintln!("error: {msg}");

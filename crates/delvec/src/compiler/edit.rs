@@ -378,13 +378,20 @@ pub fn replay(
 /// [`replay`] starting from the pristine assembly the caller already holds in
 /// `pristine`. When the campaign has edits the assembly is taken out of
 /// `pristine` and edited in place; otherwise `pristine` is left as it was.
+///
+/// `enforce` is whether the per-batch invariants are re-proven: the build's
+/// bench says (ADR-0040 §3), so a look build replays the edits and judges
+/// none of them. It gates the proofs and their advisories and nothing the
+/// replay writes — `an_unjudged_replay_writes_what_a_judged_one_writes` holds
+/// the two to each other.
 pub fn replay_taking(
     plan: &Plan,
     prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     pristine: &mut Option<Assembled>,
+    enforce: bool,
 ) -> Result<Option<EditReplay>, Failure> {
-    replay_with(plan, prefabs, structures, true, pristine)
+    replay_with(plan, prefabs, structures, enforce, pristine)
 }
 
 /// [`replay`] for **view** commands (`delvec frames --campaign` / `blocking-chart`): the

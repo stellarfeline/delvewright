@@ -134,6 +134,8 @@ To go in anyway on a build the gate refuses, for any reason (red rows, missing p
 
 `--acknowledge-red <N>` is an optional guard: when given, `<N>` must equal the red count the run above printed.
 
+**A look build is refused by name.** A tree whose `manifest.json` carries `look_only: true` was built to be looked at: no check ran on it. The gate refuses it before any row, and only `--stage-anyway` serves it.
+
 It prints every refusal it overrode, one line each, records them and the reason, and the server announces it at boot — so anything hit from those classes in that session is the override, not a new finding.
 
 ## The report

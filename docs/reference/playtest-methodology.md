@@ -723,6 +723,17 @@ worker ladders (`--profile validate`, plain `compose.yaml`) never name
 `owner-play.yaml`. None of them is a path to her client, and gating them would
 slow every ladder to protect nobody.
 
+**A look build is not a subject either.** `delvec build --look` writes the
+player tree and runs no check (ADR-0040): its `manifest.json` carries
+`look_only: true`, and the gate refuses it by that name before any row is
+adjudicated — nothing about the tree is proven and no validation file exists for
+a row to read. `--stage-anyway` overrides it like any refusal, printed and
+recorded; `tools/creator/playtest-server.sh … --stage-anyway` builds exactly
+this, so a look costs the derivations and the emitters and none of the proofs.
+The delve image (`validation/Dockerfile.delve`) refuses a look build on its own
+account, unless the playtest path tells it the image is for looking
+(`--build-arg DELVE_LOOK=1`).
+
 ### The override, and why it is shaped the way it is
 
 She will sometimes want to look at one beat mid-work. That is legitimate, and an

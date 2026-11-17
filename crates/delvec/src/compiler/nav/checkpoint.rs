@@ -289,14 +289,17 @@ pub(crate) fn earliest_reaching_config(
 /// **Fix every checkpoint's seat for the emitter** ([`Plan::fix_seats`]) from
 /// the build's final world, refusing a checkpoint with none (`DW0316`) before
 /// anything reads its seat.
-pub fn fix_seats(plan: &Plan, world: &World) -> Result<(), Failure> {
-    for c in &plan.checkpoints {
-        if world.rest_seat_of(c).is_none() {
-            return Err(unseated(&c.anchor, c.at, None));
-        }
-    }
+pub fn fix_seats(plan: &Plan, world: &World) -> crate::compiler::check::Derived<()> {
+    // A checkpoint with no safe cell beside it has no seat (ADR-0040 §1): the
+    // seats that exist are fixed, and the check that reads this refuses.
+    let short = plan
+        .checkpoints
+        .iter()
+        .filter(|c| world.rest_seat_of(c).is_none())
+        .map(|c| unseated(&c.anchor, c.at, None))
+        .collect();
     plan.fix_seats(world.rest_seats());
-    Ok(())
+    crate::compiler::check::Derived::with_short((), short)
 }
 
 /// `DW0316`: checkpoint `anchor`, whose rest object is at `at`, has no safe

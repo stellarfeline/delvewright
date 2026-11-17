@@ -33,8 +33,23 @@ COPY datapack /delve/datapack
 # Provenance: the compiler's server config + manifest travel with the image, even
 # though world gen below is driven by the itzg env vars mirrored from it.
 COPY server /delve/server
-COPY manifest.json /delve/manifest.json
-COPY critical-path.json /delve/critical-path.json
+# A look build (`delvec build --look`, `manifest.json` `look_only: true`) ran no
+# check and wrote no validation file, `critical-path.json` among them: it is
+# for a person to walk through and ships to nobody. This image refuses one
+# unless it is told it is being built for a look (`--build-arg DELVE_LOOK=1`,
+# which only `tools/creator/playtest-server.sh --stage-anyway` passes).
+ARG DELVE_LOOK=
+COPY manifest.json critical-path.jso[n] /delve/
+RUN if grep -q '"look_only": true' /delve/manifest.json; then \
+      if [ "$DELVE_LOOK" != "1" ]; then \
+        echo "FATAL: this tree is a look build (manifest.json look_only): no check ran on it." >&2; \
+        echo "A delve image is built from \`delvec build\`, never from \`delvec build --look\`." >&2; \
+        exit 1; \
+      fi; \
+    elif [ ! -f /delve/critical-path.json ]; then \
+      echo "FATAL: the build tree has no critical-path.json and its manifest is not a look build's." >&2; \
+      exit 1; \
+    fi
 
 ENV TYPE=VANILLA \
     VERSION=1.21.11 \

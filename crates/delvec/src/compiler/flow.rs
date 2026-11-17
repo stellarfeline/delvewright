@@ -679,6 +679,11 @@ pub struct JournalStep {
     /// §4.1), in order: each elective ambient act by id, with the pointer of
     /// every effect its bundle fired. Empty outside a story world.
     pub deeds: Vec<(String, Vec<String>)>,
+    /// A story world's dialogue choices taken in front of this step
+    /// ([`StoryCtx::choices`]) — the options its path takes that complete no
+    /// objective — in the order the walk takes them, ahead of the deeds: each
+    /// by its NPC and the option's flat index. Empty outside a story world.
+    pub choices: Vec<(String, usize)>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -861,8 +866,19 @@ impl Walk<'_, '_> {
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
         // A story world's entry deeds due in front of this step (spec-0108
         // §4.1): each elective ambient act it performs, fired once, here.
+        let choices: Vec<(String, usize)> = self
+            .story
+            .as_ref()
+            .map(|ctx| {
+                ctx.choices_before(&step.objective)
+                    .map(|c| (c.npc.clone(), c.n))
+                    .collect()
+            })
+            .unwrap_or_default();
         let (deeds, _) = self.perform_due(step);
-        self.take_after_due(step, deeds)
+        let mut taken = self.take_after_due(step, deeds);
+        taken.choices = choices;
+        taken
     }
 
     /// Complete `step` once [`Self::perform_due`] has performed what is due in
@@ -902,6 +918,7 @@ impl Walk<'_, '_> {
             fired_in_order: self.st.fired.clone(),
             undecided: self.st.undecided.iter().cloned().collect(),
             deeds,
+            choices: Vec::new(),
         }
     }
 

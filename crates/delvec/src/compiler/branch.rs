@@ -470,6 +470,18 @@ impl<'c> Chronicler<'c> {
 
     fn push_step(&mut self, step: &JournalStep) {
         let c = self.c;
+        // A story world's dialogue choices land in front of the step they are
+        // taken at, ahead of its deeds, as the walk takes them
+        // (`flow::Walk::take`): an option that completes no objective and
+        // declares a `happening` is a dated `choice` line, named as the option
+        // that completes a `talk-to` is.
+        for (npc, n) in &step.choices {
+            if let Some((node, opt)) = option_at(c, npc, *n)
+                && let Some(h) = &opt.happening
+            {
+                self.push("choice", format!("{npc} {node}#{n}"), h, h.subject.clone());
+            }
+        }
         // A story world's entry deeds land in front of the step they are
         // performed at (spec-0108 §4.1): each fired effect of the act's bundle
         // that declares a `happening` is a dated `deed` line.

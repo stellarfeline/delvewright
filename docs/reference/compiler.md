@@ -196,6 +196,8 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
+delvec build    <dir> -o <out> --look      # the player tree alone, no check run; the manifest
+                                           #   says `look_only` (*Derivation, emission, check*)
 delvec build    <dir> --perturb <knob> [--perturb-place <place>]
                                            # ask the derivation for a named defect and
                                            #   watch the observer; writes NO tree (delvec/compiler/blockout.md)
@@ -223,6 +225,20 @@ delvec rig describe <rig> [--facing <f>]   # check a library rig (DW0935) and pr
                                            #   footprint relative to the mark (spec-0082)
 delvec --version                           # "delvec x.y.z, dsl a.b.c, mc x.y.z"
 ```
+
+### Derivation, emission, check
+
+A build does three kinds of work, and `compiler::check` holds them apart (ADR-0040).
+
+- A **derivation** computes a fact the bytes are written from: the assembled world and its edit replay, the relight fixtures, the taken links, the respawn and party seats, the wave seats, the walks, the lanes, the stake table, each pulse's range, each assembly's strike plan and `view_range`, the trap hardware, the payload plans, the branch crossings, the language files. It runs in every build. Where it cannot derive part of what was declared it derives the rest and records the shortfall (`check::Derived`), which only a check can read.
+- **Emission** writes the player tree — `datapack/`, `server/`, `creator-datapack/`, `resourcepack.zip`, `SKINS.md` — from the campaign and the derivations.
+- A **check** judges a declared intent against the derivations and the emitted bytes. It runs on the build's bench (`check::Checks::run`), as a closure that can assign to nothing it captured, and what it yields is a refusal, advisories and files of the validation tree: `validation/`, `packtest-datapack/`, `critical-path.json`, `render-plan.json`. What one check keeps for a later one (`check::Held`) opens only inside a check; the judged half of a function that derives and judges in one pass is sealed at its call (`Held::sealed`). The player tree and the validation tree are two maps until the bench is closed, and a pass that reads both as one (`Sink::whole`) is stopped if it changes a player file.
+
+`manifest.json` indexes both trees and is written after the bench is closed; the untranslated-literal scan (`DW0185`) reads the finished tree after it.
+
+**`delvec build --look`** is parsing, the derivations and emission: no validation, no analysis, no closure of the bench is called, no validation file is written, and a shortfall is refused by nothing — the tree holds what could be derived. Its `manifest.json` carries `look_only: true`. Its player tree is the proven build's, byte for byte, wherever the proven build exists (`tests/it/look.rs`). `tools/creator/staging-gate.py` refuses a look build before any row and `validation/Dockerfile.delve` refuses to build an image over one; `tools/creator/playtest-server.sh … --stage-anyway` is what makes and serves one. A document `delvec validate` would refuse may stop a look build part-way with an internal error: `delvec build` is what says why.
+
+Two derivations still refuse in every build, because nothing can be written without them: `Plan::build` (an anchor that resolves nowhere, a layout that cannot be solved) and the edit replay's resolution of its own script (`DW0323`: an area, a region or a recipe it names that does not exist). The replay's per-batch proofs are checks: the bench says whether they run (`edit::replay_taking`'s `enforce`).
 
 Global flags: `--json` (one JSON diagnostic object per line), `--prefabs <dir>`
 (default `campaigns/prefabs`), `--lang <code>` (default `en`; affects `build`
@@ -3250,7 +3266,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   ledger row's `dw` carrier against, since every unreleased revision states the
   same `delvec_version`), `mc_version`, `inputs` (SHA-256 per authored document the build
   read, l10n sidecars included) and `outputs` (SHA-256 per emitted path), plus
-  `test_level: true` on a campaign declaring `world.test_level`, `language` on a non-`en` bake and `resource_pack_sha1` +
+  `test_level: true` on a campaign declaring `world.test_level`, `look_only: true` on a look build (`delvec build --look`), `language` on a non-`en` bake and `resource_pack_sha1` +
   `resource_pack_overrides_vanilla` on a build that ships a pack; `inputs`
   covers `textures/<id>.png` (spec-0084).
   It names no repository, revision or checkout: a revision is a property of a

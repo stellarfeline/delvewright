@@ -1629,10 +1629,20 @@ pub fn final_world(
     plan: &Plan,
     assembled: &crate::compiler::assembled::Assembled,
 ) -> (World, Relight) {
+    final_world_judging(plan, assembled, true)
+}
+
+/// [`final_world`], with the relight pass judging or not
+/// ([`relight_judging`]): the world and the fixtures are the same either way.
+pub fn final_world_judging(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    judge: bool,
+) -> (World, Relight) {
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world is the same cells under the campaign's premises.
     let geometry = geometry_world(assembled);
-    let relight = relight_with(plan, assembled, &geometry, None);
+    let relight = relight_judging(plan, assembled, &geometry, None, judge);
     let world = lit_world(
         assembled,
         &relight,
@@ -1760,6 +1770,24 @@ pub fn relight_with(
     nav: &World,
     since: Option<&World>,
 ) -> Relight {
+    relight_judging(plan, assembled, nav, since, true)
+}
+
+/// [`relight_with`], judging or not (ADR-0040): `judge` is whether the
+/// darkness gate (`DW0210`/`DW0211`) is measured. The fixtures an area's
+/// declared `lighting` places are the same either way — they are derived from
+/// the cells a body reaches in that area and the light there, never from the
+/// gate — so a build that runs no check places them and surveys nothing else:
+/// `diagnostics` stays empty and `binding` counts nothing.
+/// `an_unjudged_relight_places_the_fixtures_a_judged_one_places` holds the two
+/// to each other.
+pub fn relight_judging(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    nav: &World,
+    since: Option<&World>,
+    judge: bool,
+) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
     // Which surfaces this campaign HAS to declare lighting on, asked once. A
@@ -1818,6 +1846,31 @@ pub fn relight_with(
                 }
             })
             .collect();
+        let dsl_area = c
+            .world
+            .content
+            .areas
+            .iter()
+            .find(|a| a.id.as_str() == area.area_id);
+        // A site-plan campaign has no `areas[]` to carry a lighting declaration
+        // — `DW0839` refuses one that does — and states its one setting on the
+        // plan instead, so a blockout interior is walkable at night without
+        // per-box surface. Read here rather than copied into a synthetic `Area`,
+        // because `AreaLighting` is already the engine's "which fixture, to what
+        // level" object and this pass is already the one that consumes it.
+        let lighting = match dsl_area {
+            Some(a) => a.lighting,
+            None if area.area_id == delvewright_dsl::SITE_AREA => {
+                c.site_plan.as_ref().and_then(|p| p.content.lighting)
+            }
+            None => None,
+        };
+        // An area that declares no lighting is only judged (`DW0210`): where
+        // the build's bench runs no check, nothing is surveyed there, and the
+        // fixtures of the areas that do declare it are placed as ever.
+        if !judge && lighting.is_none() {
+            continue;
+        }
         // Every cell a body can stand in — a ledge a body jumps to is a cell
         // that must be lit (spec-0113 §5.1) — over a whole reach graph, or no
         // survey at all (`DW1042`).
@@ -1844,26 +1897,6 @@ pub fn relight_with(
         if reachable.is_empty() {
             continue; // nothing a player can stand on / reach in this area
         }
-
-        let dsl_area = c
-            .world
-            .content
-            .areas
-            .iter()
-            .find(|a| a.id.as_str() == area.area_id);
-        // A site-plan campaign has no `areas[]` to carry a lighting declaration
-        // — `DW0839` refuses one that does — and states its one setting on the
-        // plan instead, so a blockout interior is walkable at night without
-        // per-box surface. Read here rather than copied into a synthetic `Area`,
-        // because `AreaLighting` is already the engine's "which fixture, to what
-        // level" object and this pass is already the one that consumes it.
-        let lighting = match dsl_area {
-            Some(a) => a.lighting,
-            None if area.area_id == delvewright_dsl::SITE_AREA => {
-                c.site_plan.as_ref().and_then(|p| p.content.lighting)
-            }
-            None => None,
-        };
 
         // **The fixture pass applies to DERIVED interiors only** (spec-0050 §3).
         //
@@ -1994,7 +2027,7 @@ pub fn relight_with(
         // Kept per place rather than folded into the area, because the remedy is
         // per place: it is taken inside one piece, and an author handed the union
         // is told a room is dark without being told which one to open.
-        for (frame, cells) in &detailed_by_place {
+        for (frame, cells) in detailed_by_place.iter().filter(|_| judge) {
             let s = survey_undeclared(&model, &mut lit, cells, sky, false);
             dark.entry(DarkSite {
                 area: area.area_id.clone(),
@@ -2011,6 +2044,10 @@ pub fn relight_with(
 
     out.binding.judged = dark.values().map(|s| s.examined).sum();
     out.binding.dark = dark.values().map(|s| s.dark.len()).sum();
+    if !judge {
+        out.diagnostics.clear();
+        return out;
+    }
     if let Some(diag) = dark_diagnostic(&dark, nav, sky, placement) {
         out.diagnostics.push(diag);
     }

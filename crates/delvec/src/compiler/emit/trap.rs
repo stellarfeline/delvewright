@@ -47,8 +47,11 @@ pub(super) fn collapse_fn(eff: &QuestEffect) -> String {
 pub(super) fn trap_gate_hardware(
     plan: &Plan,
     prefabs: &crate::compiler::registry::PrefabRegistry,
-) -> Result<BTreeMap<String, String>, BuildFailure> {
+) -> crate::compiler::check::Derived<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
+    // A gate whose trigger cannot be restored (ADR-0040 §1): the hardware is
+    // read as declared and the check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
         let declared = prefabs.trap_trigger_block(&t.at_anchor);
         let gatable = declared
@@ -59,7 +62,7 @@ pub(super) fn trap_gate_hardware(
                 Some(b) => format!("declares `trigger_block` `{b}`"),
                 None => "declares no `trigger_block`".to_string(),
             };
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: DW_TRAP_GATE_UNSUPPORTED,
                 message: format!(
                     "trap `{}` declares a gate (`requires_flags`/`forbids_flags`/ \
@@ -79,7 +82,7 @@ pub(super) fn trap_gate_hardware(
         }
         out.insert(t.safe.clone(), declared.unwrap_or_default().to_string());
     }
-    Ok(out)
+    crate::compiler::check::Derived::with_short(out, short)
 }
 
 /// Whether `t` declares a gate at all — flags, negative flags, or (DSL v0.10) a
@@ -366,8 +369,11 @@ pub(super) fn plan_payload_verbs(
     plan: &Plan,
     world: &crate::compiler::nav::World,
     blocks: &crate::compiler::blockstate::BlockMap,
-) -> Result<PayloadPlans, BuildFailure> {
+) -> crate::compiler::check::Derived<PayloadPlans> {
     let mut out = PayloadPlans::default();
+    // A payload with no resolved anchor or no geometry is not planned
+    // (ADR-0040 §1); the check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     let placement = delvewright_dsl::Placement::of(plan.campaign);
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
@@ -377,13 +383,29 @@ pub(super) fn plan_payload_verbs(
                 continue;
             }
             let label = format!("volley from `{from_anchor}` into `{}`", kill_zone.anchor);
-            let from = plan
-                .point_any(from_anchor.as_str())
-                .ok_or_else(|| payload_anchor_failure(placement, &label, from_anchor.as_str()))?;
-            let region = plan.zone_box(kill_zone).ok_or_else(|| {
-                payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
-            })?;
-            let geom = crate::compiler::nav::plan_volley(world, from, region, &label)?;
+            let Some(from) = plan.point_any(from_anchor.as_str()) else {
+                short.push(payload_anchor_failure(
+                    placement,
+                    &label,
+                    from_anchor.as_str(),
+                ));
+                continue;
+            };
+            let Some(region) = plan.zone_box(kill_zone) else {
+                short.push(payload_anchor_failure(
+                    placement,
+                    &label,
+                    kill_zone.anchor.as_str(),
+                ));
+                continue;
+            };
+            let geom = match crate::compiler::nav::plan_volley(world, from, region, &label) {
+                Ok(g) => g,
+                Err(f) => {
+                    short.push(f);
+                    continue;
+                }
+            };
             out.volleys.push(VolleyEmit {
                 key,
                 geom,
@@ -396,10 +418,21 @@ pub(super) fn plan_payload_verbs(
                 continue;
             }
             let label = format!("collapse of `{}`", region_anchor.anchor);
-            let region = plan.zone_box(region_anchor).ok_or_else(|| {
-                payload_anchor_failure(placement, &label, region_anchor.anchor.as_str())
-            })?;
-            let geom = crate::compiler::nav::plan_collapse(world, blocks, region, &label)?;
+            let Some(region) = plan.zone_box(region_anchor) else {
+                short.push(payload_anchor_failure(
+                    placement,
+                    &label,
+                    region_anchor.anchor.as_str(),
+                ));
+                continue;
+            };
+            let geom = match crate::compiler::nav::plan_collapse(world, blocks, region, &label) {
+                Ok(g) => g,
+                Err(f) => {
+                    short.push(f);
+                    continue;
+                }
+            };
             out.collapses.push(CollapseEmit {
                 key,
                 geom,
@@ -409,7 +442,18 @@ pub(super) fn plan_payload_verbs(
         }
     }
     // A trap is proven in its SPRUNG state (see `check_collapses`).
-    let labelled: Vec<(String, std::collections::BTreeSet<[i32; 3]>)> = out
+    crate::compiler::check::Derived::with_short(out, short)
+}
+
+/// `DW0445`: every collapse leaves the critical path completable in its
+/// sprung state. A check of the planned collapses (ADR-0040): it reads the
+/// derivation and yields a verdict.
+pub(super) fn check_planned_collapses(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    payloads: &PayloadPlans,
+) -> Result<(), BuildFailure> {
+    let labelled: Vec<(String, std::collections::BTreeSet<[i32; 3]>)> = payloads
         .collapses
         .iter()
         .map(|c| {
@@ -420,7 +464,7 @@ pub(super) fn plan_payload_verbs(
         })
         .collect();
     crate::compiler::nav::check_collapses(plan, world, &labelled)?;
-    Ok(out)
+    Ok(())
 }
 
 /// The `DW0441` failure for a payload-verb anchor that no placed piece provides.
@@ -428,8 +472,8 @@ pub(super) fn payload_anchor_failure(
     placement: delvewright_dsl::Placement,
     label: &str,
     anchor: &str,
-) -> BuildFailure {
-    BuildFailure::Diagnostic {
+) -> Failure {
+    Failure {
         code: DW_PAYLOAD_ANCHOR_UNRESOLVED,
         message: format!(
             "{label}: anchor `{anchor}` is not provided by any placed prefab piece, so the \

@@ -47,29 +47,39 @@ pub type BranchTransportOverlay = BTreeMap<String, Vec<BranchTransport>>;
 /// `branch_points`, and for one whose branches cross only where the exported path
 /// already does. Deterministic: `BTreeMap` keys, rows sorted by branch slug
 /// (ADR-0006).
-pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, BuildFailure> {
+pub fn branch_transport_overlay(
+    plan: &Plan,
+) -> crate::compiler::check::Derived<BranchTransportOverlay> {
     let mut out: BranchTransportOverlay = BTreeMap::new();
     let branches = crate::compiler::branch::realize(plan.campaign);
     if branches.is_empty() {
-        return Ok(out);
+        return crate::compiler::check::Derived::whole(out);
     }
+    // A branch whose path cannot be built carries no crossing, and a crossing
+    // that diverges from the exported path's is not written (ADR-0040 §1); the
+    // check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     let flow = crate::compiler::flow::Flow::new(plan.campaign);
     for r in &branches {
         // An unreachable branch has no world to walk — `DW0482` has already
         // failed the build for it (same skip as `branch_paths`).
         let Some(w) = r.world else { continue };
-        let cp = plan
-            .branch_critical_path(&flow, &flow.story_playthrough(w))
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.failure.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
-            })?;
+        let cp = match plan.branch_critical_path(&flow, &flow.story_playthrough(w)) {
+            Ok(cp) => cp,
+            Err(e) => {
+                short.push(Failure {
+                    code: e.failure.code,
+                    message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
+                });
+                continue;
+            }
+        };
         for (oid, pos) in &cp.transport {
             match plan.transport.get(oid) {
                 // Already emitted unconditionally by the exported path.
                 Some(d) if d == pos => continue,
                 Some(d) => {
-                    return Err(BuildFailure::Diagnostic {
+                    short.push(Failure {
                         code: DW_BRANCH_TRANSPORT_DIVERGES,
                         message: format!(
                             "objective `{oid}` crosses to {d:?} on the exported path but to \
@@ -79,6 +89,7 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
                             r.branch.id
                         ),
                     });
+                    continue;
                 }
                 None => {}
             }
@@ -93,7 +104,7 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
     for rows in out.values_mut() {
         rows.sort_by(|a, b| a.slug.cmp(&b.slug));
     }
-    Ok(out)
+    crate::compiler::check::Derived::with_short(out, short)
 }
 
 pub(super) fn branch_paths(

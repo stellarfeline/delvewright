@@ -79,10 +79,13 @@ pub fn fix_party_seats(
     plan: &Plan,
     world: &World,
     crossings: &[([i32; 3], String)],
-) -> Result<usize, Failure> {
+) -> crate::compiler::check::Derived<usize> {
     if plan.party_carries.is_empty() && crossings.is_empty() {
-        return Ok(0);
+        return crate::compiler::check::Derived::whole(0);
     }
+    // A carry with fewer seats than a party has members keeps the seats found
+    // (ADR-0040 §1); the check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     let shipped = world.seating_world(plan);
     let seating = shipped.as_ref().unwrap_or(world);
     let mut seats: std::collections::BTreeMap<[i32; 3], Vec<[i32; 3]>> =
@@ -94,7 +97,7 @@ pub fn fix_party_seats(
         let s = seating.party_seats(c.to);
         if s.len() < PARTY_SEATS {
             let found = unseated(c.to, &s);
-            return Err(Failure {
+            short.push(Failure {
                 code: DW_PARTY_CARRY_UNSEATED,
                 message: format!(
                     "the party `teleport` at `{}` (fired by {}) puts every member on mark `{}` \
@@ -115,7 +118,7 @@ pub fn fix_party_seats(
         }
         let s = seating.party_seats(*to);
         if s.len() < PARTY_SEATS {
-            return Err(Failure {
+            short.push(Failure {
                 code: DW_PARTY_CARRY_UNSEATED,
                 message: format!(
                     "{words} carries every member present onto the area's entry point at {to:?}, \
@@ -132,7 +135,7 @@ pub fn fix_party_seats(
     }
     let n = seats.values().map(Vec::len).sum();
     let _ = plan.party_seats.set(seats);
-    Ok(n)
+    crate::compiler::check::Derived::with_short(n, short)
 }
 
 /// What a mark with too few seats has, in words.

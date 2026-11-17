@@ -31,6 +31,24 @@ const LANE_MIN_LEG: f64 = 10.0;
 /// cannot right-click a fence gate open, so a lane that "works" only by walking
 /// through one does not work.
 pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, Failure> {
+    let mut out = <LaneRoutes>::default();
+    plan_lanes_into(plan, world, &mut out)?;
+    Ok(out)
+}
+
+/// [`plan_lanes`] as a derivation (ADR-0040 §1): every lane resolved, in
+/// declaration order, up to the first that could not be — the shortfall a
+/// check refuses.
+pub fn derive_lanes(plan: &Plan, world: &World) -> crate::compiler::check::Derived<LaneRoutes> {
+    let mut out = <LaneRoutes>::default();
+    let short = plan_lanes_into(plan, world, &mut out)
+        .err()
+        .into_iter()
+        .collect();
+    crate::compiler::check::Derived::with_short(out, short)
+}
+
+fn plan_lanes_into(plan: &Plan, world: &World, out: &mut LaneRoutes) -> Result<(), Failure> {
     let entity_world_owned;
     let world: &World = if world.has_use_gates() {
         entity_world_owned = world.without_gate_use();
@@ -39,7 +57,6 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, Failure> {
         world
     };
     let c = plan.campaign;
-    let mut out: LaneRoutes = BTreeMap::new();
     for w in &c.quests.content.waves {
         let Some(lane) = &w.lane else { continue };
         let area = crate::compiler::plan::wave_area(c, w.id.as_str());
@@ -134,7 +151,7 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, Failure> {
         }
         out.insert(w.id.as_str().to_string(), cells);
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The measured off-lane drift of a marching TD squad, in blocks — the constraint

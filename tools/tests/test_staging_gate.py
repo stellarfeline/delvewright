@@ -3309,3 +3309,80 @@ def test_the_horizon_class_binds_in_both_spellings(gate, tmp_path, horizon, boun
     for row in _horizon_binding_rows():
         n, _ = gate.probe(row["binding"], subj)
         assert n == bound, (row["id"], horizon, n)
+
+
+def look_cli(tmp_path, *, look, extra=()):
+    """The real gate over a campaign whose build manifest does or does not carry
+    `look_only` (`delvec build --look`)."""
+    root = tmp_path / "cli"
+    root.mkdir(parents=True, exist_ok=True)
+    camp, tree = tl_tree(root, "a-look", declared=None, carried=None)
+    doc = json.loads((tree / "manifest.json").read_text())
+    if look:
+        doc["look_only"] = True
+    (tree / "manifest.json").write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    ledger = root / "led.json"
+    ledger.write_text(json.dumps({"findings": [live_row(r) for r in LIVE_DESIGN_ROWS]}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         *proofs(tree), "--ledger", str(ledger), *extra],
+        capture_output=True, text=True,
+    )
+    return proc, tree
+
+
+def test_a_look_build_is_refused_before_any_row(tmp_path):
+    """`delvec build --look` ran no check: its manifest says `look_only`, and the
+    gate refuses it by that name and writes no token."""
+    proc, tree = look_cli(tmp_path, look=True)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "is a look build (`manifest.json` `look_only`)" in proc.stderr
+    assert "REFUSED — not stageable" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+
+def test_the_same_build_without_the_mark_is_admitted(tmp_path):
+    """The perturbation the look refusal alone can catch: the same tree, the
+    same ledger, the manifest without the one key — admitted. So the refusal
+    above is the mark's, not the tree's."""
+    proc, tree = look_cli(tmp_path, look=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "look build" not in proc.stderr
+    assert (tree / "staging-admission.json").is_file()
+
+
+def test_stage_anyway_overrides_a_look_build_and_prints_it(tmp_path):
+    """`--stage-anyway` overrides every refusal, this one included, and names
+    it: on the page and in the token."""
+    proc, tree = look_cli(tmp_path, look=True, extra=("--stage-anyway", REASON))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "OVERRODE not stageable" in proc.stderr
+    assert "is a look build" in proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert any("is a look build" in r for r in token["override"]["refusals"]), token
+
+
+def test_a_look_build_and_a_proven_one_never_share_an_inputs_key(tmp_path):
+    """The playtest's kept-image key: a look build of the same inputs is another
+    tree, so `look` is a component of the key and the two never answer for each
+    other."""
+    ROOT = SCRIPT.parents[2]
+    lib = ROOT / "tools" / "lib" / "playtest-image.sh"
+    camp = tmp_path / "camp"
+    camp.mkdir()
+    (camp / "world.json").write_text("{}\n")
+    delvec = tmp_path / "delvec"
+    delvec.write_text("#!/bin/sh\n")
+
+    def key(kind):
+        script = (
+            f'. "{ROOT}/tools/lib/checksum.sh"; . "{lib}"; '
+            f'dw_playtest_inputs_list "{delvec}" "{camp}" "" "" "{ROOT}" {kind}'
+        )
+        r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return r.stdout
+
+    proven, look = key('""'), key("look")
+    assert "build look" not in proven
+    assert look == proven.replace("lang default\n", "lang default\nbuild look\n")

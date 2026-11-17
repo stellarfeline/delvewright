@@ -38,7 +38,7 @@ pub(super) struct WaveGeometry<'a> {
 pub(super) fn plan_wave_spawns(
     plan: &Plan,
     world: &crate::compiler::nav::World,
-) -> Result<(WavePlacements, WaveRings), BuildFailure> {
+) -> crate::compiler::check::Derived<(WavePlacements, WaveRings)> {
     // Wave mobs cannot right-click a fence gate open: seat them on the
     // no-gate-use view, where a closed gate cell is a 1.5-tall barrier — never a
     // seat, and never a doorway the seating flood spills through.
@@ -52,6 +52,9 @@ pub(super) fn plan_wave_spawns(
     let c = plan.campaign;
     let mut out: WavePlacements = BTreeMap::new();
     let mut rings: WaveRings = BTreeMap::new();
+    // What could not be seated (ADR-0040 §1): the wave keeps the cells its
+    // room or ring offers, and the check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     for w in &c.quests.content.waves {
         let (Some(anchor), Some(area)) = (
             wave_spawn_pos(plan, w.id.as_str()),
@@ -64,7 +67,7 @@ pub(super) fn plan_wave_spawns(
         // perception instead of seated around its anchor, so its cells come from
         // per-mob rings across the whole ARENA rather than the anchor's room.
         if w.summon == Some(delvewright_dsl::WaveSummon::AggroEdge) {
-            let (cells, centre) = plan_aggro_edge_spawns(plan, world, w, area, anchor)?;
+            let (cells, centre) = plan_aggro_edge_spawns(plan, world, w, area, anchor, &mut short);
             out.insert(w.id.as_str().to_string(), cells);
             rings.insert(w.id.as_str().to_string(), centre);
             continue;
@@ -74,7 +77,7 @@ pub(super) fn plan_wave_spawns(
         let bounds = plan.piece_bounds(area, anchor);
         let cells = world.confined_standable_cells(anchor, bounds);
         if cells.len() < need {
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: DW_WAVE_NO_ROOM,
                 message: format!(
                     "spawn-wave `{wave}` needs {need} standable spawn cell(s) near \
@@ -97,7 +100,7 @@ pub(super) fn plan_wave_spawns(
             cells.into_iter().take(need).collect(),
         );
     }
-    Ok((out, rings))
+    crate::compiler::check::Derived::with_short((out, rings), short)
 }
 
 /// How far inside `follow_range` the aggro ring may reach, in blocks. A discrete
@@ -128,7 +131,8 @@ pub(super) fn plan_aggro_edge_spawns(
     w: &delvewright_dsl::Wave,
     area: &str,
     anchor: [i32; 3],
-) -> Result<(Vec<[i32; 3]>, [i32; 3]), BuildFailure> {
+    short: &mut Vec<Failure>,
+) -> (Vec<[i32; 3]>, [i32; 3]) {
     let bounds = match plan.areas.iter().find(|a| a.area_id == area) {
         Some(a) => a.bounds(),
         None => (anchor, anchor),
@@ -158,7 +162,7 @@ pub(super) fn plan_aggro_edge_spawns(
             .take(need)
             .collect();
         if picked.len() < need {
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: DW_AGGRO_EDGE_NO_RING,
                 message: format!(
                     "`summon: aggro-edge` wave `{wave}` cannot seat {need} × `{entity}` on its \
@@ -182,7 +186,7 @@ pub(super) fn plan_aggro_edge_spawns(
         used.extend(picked.iter().copied());
         cells.extend(picked);
     }
-    Ok((cells, centre))
+    (cells, centre)
 }
 
 /// The absolute spawn position of a wave: the world coords of its `anchor`,
@@ -501,9 +505,14 @@ pub(super) fn wave_fns(
             let tmp = if has_effects { ",\"dw_tmp\"" } else { "" };
             for body_k in 0..mob.count.max() {
                 // Each mob takes the next validated standable cell (ascending BFS
-                // distance from the anchor); `cells` has exactly one per mob. AI is
-                // left enabled (no NoAI) so the mobs fight.
-                let cell = cells[idx as usize];
+                // distance from the anchor). `cells` has one per mob wherever the
+                // seating derived them all; where it came up short (ADR-0040 §1)
+                // the mobs with no seat are not summoned, and the check that
+                // reads the shortfall is what refuses the build. AI is left
+                // enabled (no NoAI) so the mobs fight.
+                let Some(&cell) = cells.get(idx as usize) else {
+                    break;
+                };
                 let c = ent_xyz(cell);
                 // spec-0016 §6 patrol NBT. `patrol_target` is the **snake_case
                 // int-array** form and nothing else: 1.21.11's strict codec

@@ -1781,3 +1781,423 @@ fn the_sea_the_launches_read_is_the_sea_the_rest_relation_reads() {
         "the cases bind nothing: no closure reaches the sea"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Where a body rests, over the six shapes (ADR-0040 §4)
+// ---------------------------------------------------------------------------
+
+/// The shapes every reader of "can a body stand, cross or reach here" is asked
+/// over. Each names the state its cases exist to produce, and the test reds
+/// when a run produces none of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shape {
+    /// A level floor.
+    Dry,
+    /// A floor that rises one course part-way along.
+    Step,
+    /// A bank beside open water that runs to the end of the course.
+    WaterSurface,
+    /// Two banks joined by water that runs under a wall standing on its
+    /// surface: open water at either bank, and between them water whose top
+    /// cell has stone over it, so the one way across is under water.
+    Swim,
+    /// Two banks either side of a pool four deep and open to the sky.
+    Afloat,
+    /// Two banks whose floor is the course the water's surface lies in: the
+    /// standing cell is one over the top water cell.
+    FlushLedge,
+}
+
+const SHAPES: [Shape; 6] = [
+    Shape::Dry,
+    Shape::Step,
+    Shape::WaterSurface,
+    Shape::Swim,
+    Shape::Afloat,
+    Shape::FlushLedge,
+];
+
+/// One generated course over a shape: its blocks, the cell a body starts in,
+/// the wall plane across its middle and the extent every cell is asked over.
+struct Course {
+    blocks: BTreeMap<[i32; 3], &'static str>,
+    root: [i32; 3],
+    /// The `x` of a plane across the course's middle.
+    plane: i32,
+    /// Inclusive corners of the cells asked.
+    span: ([i32; 3], [i32; 3]),
+}
+
+const STONE: &str = "minecraft:stone";
+const WATER: &str = "minecraft:water";
+/// The course the banks' floor lies in.
+const FLOOR: i32 = 10;
+
+/// A course of `shape`: three cells wide over `z` 0..=2, running east from
+/// `x = 0`, its lengths drawn from `seed`, in a stone basin that holds its
+/// water.
+fn course(shape: Shape, seed: u64) -> Course {
+    let mut r = Lcg(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ shape as u64);
+    let near = 2 + r.next(3);
+    let mid = match shape {
+        Shape::Swim => 3 + r.next(2),
+        _ => 1 + r.next(3),
+    };
+    let far = 2 + r.next(3);
+    let mut blocks: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
+    let mut column = |x: i32, from: i32, to: i32, block: &'static str| {
+        for y in from..=to {
+            for z in 0..=2 {
+                blocks.insert([x, y, z], block);
+            }
+        }
+    };
+    let bed = match shape {
+        Shape::Afloat => FLOOR - 4,
+        _ => FLOOR - 2,
+    };
+    for x in 0..near {
+        column(x, bed, FLOOR, STONE);
+    }
+    for x in near..near + mid {
+        match shape {
+            Shape::Dry => column(x, bed, FLOOR, STONE),
+            Shape::Step => column(x, bed, FLOOR + 1, STONE),
+            Shape::WaterSurface | Shape::Afloat | Shape::FlushLedge => {
+                column(x, bed, bed, STONE);
+                column(x, bed + 1, FLOOR, WATER);
+            }
+            Shape::Swim => {
+                column(x, bed, bed, STONE);
+                column(x, bed + 1, FLOOR, WATER);
+                if x > near && x < near + mid - 1 {
+                    column(x, FLOOR + 1, FLOOR + 4, STONE);
+                }
+            }
+        }
+    }
+    for x in near + mid..near + mid + far {
+        match shape {
+            Shape::Dry | Shape::Swim | Shape::Afloat | Shape::FlushLedge => {
+                column(x, bed, FLOOR, STONE)
+            }
+            Shape::Step => column(x, bed, FLOOR + 1, STONE),
+            Shape::WaterSurface => {
+                column(x, bed, bed, STONE);
+                column(x, bed + 1, FLOOR, WATER);
+            }
+        }
+    }
+    let end = near + mid + far - 1;
+    // A stone basin round the course, to the floor's course: still water stays
+    // where the course put it, so the blocks are the whole truth.
+    for x in -1..=end + 1 {
+        for z in -1..=3 {
+            if x == -1 || x == end + 1 || z == -1 || z == 3 {
+                for y in bed..=FLOOR {
+                    blocks.insert([x, y, z], STONE);
+                }
+            }
+        }
+    }
+    Course {
+        blocks,
+        root: [0, FLOOR + 1, 1],
+        plane: near + mid / 2,
+        span: ([0, bed, 0], [end, FLOOR + 4, 2]),
+    }
+}
+
+impl Course {
+    fn world(&self) -> World {
+        let cells: Vec<([i32; 3], &str)> = self.blocks.iter().map(|(c, b)| (*c, *b)).collect();
+        crate::compiler::nav::testkit::blocks_world(&cells)
+    }
+
+    fn cells(&self) -> Vec<[i32; 3]> {
+        let (lo, hi) = self.span;
+        let mut out = Vec::new();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+        out
+    }
+
+    /// **Where a body rests in `c`, read off the blocks the course was built
+    /// from** and nothing of the engine's: in water, afloat with air over it
+    /// and under water otherwise; in air over stone with air over it,
+    /// standing; nowhere else. The courses hold whole stone and still water
+    /// only, which is what makes six lines the whole rule.
+    fn rests(&self, c: [i32; 3]) -> Option<super::RestKind> {
+        let at = |c: [i32; 3]| self.blocks.get(&c).copied();
+        let up = at([c[0], c[1] + 1, c[2]]);
+        match at(c) {
+            Some(WATER) if up.is_none() => Some(super::RestKind::Afloat),
+            Some(WATER) => Some(super::RestKind::Submerged),
+            Some(_) => None,
+            None if at([c[0], c[1] - 1, c[2]]) == Some(STONE) && up.is_none() => {
+                Some(super::RestKind::Standing)
+            }
+            None => None,
+        }
+    }
+}
+
+/// **One answer to "can a body stand, cross or reach here", over dry floor, a
+/// step, a water surface, a swim, a body afloat and a flush ledge** (CLAUDE.md,
+/// "One question, one implementation"; ADR-0040 §4).
+///
+/// The same generated courses are asked of every reader, and each answer is
+/// held to the reach graph's and to the blocks the course was built from:
+///
+/// - the graph's own rest relation ([`World::rest_kind`]);
+/// - the shut model's and the clear width's "a body can be in this cell"
+///   (`DW1011`, `DW1053`/`DW1054`, `DW1057`: `nav::shutmodel::can_be`);
+/// - the standing cell the clear width's floor and the blockout's seat read
+///   ([`World::is_standable`]), on every cell that holds no water;
+/// - the contract walk's ends and the water it swims
+///   ([`crate::grammar::contract::walk_ends`],
+///   [`crate::grammar::contract::swum_cells`]);
+/// - the seam profile's crossing of a wall plane (`DW0877`,
+///   [`crate::compiler::blockout::column_crossed`]), both ways and one way;
+/// - the blockout battery's reached places (`DW0837`,
+///   [`crate::compiler::blockout::reached_from`]), its flood over the commons
+///   (`DW0838`, [`crate::compiler::blockout::crossing_flood`]), its moves out
+///   of a cell (`DW0877`/`DW0986`, [`crate::compiler::blockout::steps_out`])
+///   and its legs (`DW0822`, [`crate::compiler::blockout::leg_routed`]);
+/// - the lethal proof's player arm (`DW0891`,
+///   [`World::reach_into_volumes`]).
+///
+/// Red on any difference, and red when a shape's run never produces the state
+/// it is named for: a step taken, a body afloat, a body under water, a ledge
+/// climbed out onto.
+#[test]
+fn every_reader_of_where_a_body_rests_agrees_over_the_six_shapes() {
+    use super::RestKind;
+    const SEEDS: u64 = 8;
+    let fp = crate::compiler::nav::Footprint::player();
+    let mut asked = 0usize;
+    let mut produced: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut crossed = 0usize;
+    for shape in SHAPES {
+        for seed in 0..SEEDS {
+            let course = course(shape, seed);
+            let w = course.world();
+            let who = format!("{shape:?} course {seed}");
+            let cells = course.cells();
+            let all: BTreeSet<[i32; 3]> = cells.iter().copied().collect();
+
+            // ---- where a body rests, cell by cell ----
+            let mut standing: BTreeSet<[i32; 3]> = BTreeSet::new();
+            let mut water: BTreeSet<[i32; 3]> = BTreeSet::new();
+            for &c in &cells {
+                asked += 1;
+                let built = course.rests(c);
+                assert_eq!(
+                    w.rest_kind(c),
+                    built,
+                    "{who}: the reach graph rests a body at {c:?} differently from the blocks"
+                );
+                assert_eq!(
+                    crate::compiler::nav::shutmodel::can_be(&w, c),
+                    built.is_some(),
+                    "{who}: `can_be` (DW1011, DW1057) at {c:?} differs from the reach graph"
+                );
+                match built {
+                    Some(RestKind::Standing) => {
+                        standing.insert(c);
+                    }
+                    Some(RestKind::Afloat | RestKind::Submerged) => {
+                        water.insert(c);
+                    }
+                    _ => {}
+                }
+                if course.blocks.get(&c) != Some(&WATER) {
+                    assert_eq!(
+                        w.is_standable(c),
+                        built == Some(RestKind::Standing),
+                        "{who}: `is_standable` at {c:?} differs from the reach graph's standing"
+                    );
+                }
+                let swum: BTreeSet<[i32; 3]> =
+                    crate::grammar::contract::swum_cells(&w, &BTreeSet::from([c]));
+                let built_swum: BTreeSet<[i32; 3]> = [c, [c[0], c[1] - 1, c[2]]]
+                    .into_iter()
+                    .filter(|x| {
+                        matches!(
+                            course.rests(*x),
+                            Some(RestKind::Afloat | RestKind::Submerged)
+                        )
+                    })
+                    .collect();
+                assert_eq!(
+                    swum, built_swum,
+                    "{who}: the contract swims different water with a body in {c:?}"
+                );
+            }
+            let ends = crate::grammar::contract::walk_ends(&w, &standing, &all);
+            let built_ends: BTreeSet<[i32; 3]> = standing.union(&water).copied().collect();
+            assert_eq!(
+                ends, built_ends,
+                "{who}: a contract walk's ends differ from where the blocks rest a body"
+            );
+
+            // ---- what a body reaches from the near bank ----
+            let reach = w.body_reach(&[course.root]);
+            let states = reach.cells();
+            let region = w.body_region(&[course.root]);
+            assert_eq!(
+                crate::compiler::blockout::reached_from(&w, &[course.root]),
+                region,
+                "{who}: DW0837's reached cells differ from the reach graph's"
+            );
+            assert_eq!(
+                crate::compiler::blockout::crossing_flood(&w, &[course.root], &|_| true),
+                states,
+                "{who}: DW0838's flood differs from the reach graph's states"
+            );
+            let mut stepped: BTreeSet<[i32; 3]> = BTreeSet::from([course.root]);
+            let mut frontier = vec![course.root];
+            while let Some(c) = frontier.pop() {
+                for n in crate::compiler::blockout::steps_out(&w, c) {
+                    if stepped.insert(n) {
+                        frontier.push(n);
+                    }
+                }
+            }
+            assert_eq!(
+                stepped, states,
+                "{who}: DW0877/DW0986's moves out of a cell differ from the reach graph's"
+            );
+            assert_eq!(
+                w.reach_into_volumes(&[course.root], &fp, false, None, &[])
+                    .reached,
+                states,
+                "{who}: DW0891's player arm differs from the reach graph's states"
+            );
+            for &z in &standing {
+                assert_eq!(
+                    crate::compiler::blockout::leg_routed(&w, course.root, z),
+                    region.contains(&z),
+                    "{who}: DW0822 routes the leg to {z:?} differently from the reach graph"
+                );
+            }
+            for s in &states {
+                assert!(
+                    course.rests(*s).is_some(),
+                    "{who}: the reach graph holds {s:?}, where the blocks rest no body"
+                );
+            }
+
+            // ---- the wall plane across the middle, as the seam profile reads it ----
+            for &c in cells.iter().filter(|c| c[0] == course.plane) {
+                let rests: Vec<[i32; 3]> = [c, [c[0], c[1] - 1, c[2]]]
+                    .into_iter()
+                    .filter(|x| {
+                        *x == c && course.rests(*x).is_some()
+                            || matches!(
+                                course.rests(*x),
+                                Some(RestKind::Afloat | RestKind::Submerged)
+                            )
+                    })
+                    .collect();
+                for sides in [&[-1i64, 1][..], &[1][..], &[-1][..]] {
+                    let graph = rests.iter().any(|r| {
+                        let next: Vec<[i32; 3]> = w.body_reach(&[*r]).next(*r).collect();
+                        sides.iter().all(|off| {
+                            next.iter()
+                                .any(|x| i64::from(x[0] - course.plane).signum() == off.signum())
+                        })
+                    });
+                    let profile = crate::compiler::blockout::column_crossed(
+                        &w,
+                        c,
+                        0,
+                        i64::from(course.plane),
+                        sides,
+                    );
+                    assert_eq!(
+                        profile, graph,
+                        "{who}: the seam profile crosses the plane at {c:?} toward {sides:?} \
+                         differently from the reach graph's edges"
+                    );
+                    if profile {
+                        crossed += 1;
+                    }
+                }
+            }
+
+            // ---- the state the shape is named for ----
+            let far_bank = standing
+                .iter()
+                .filter(|c| c[0] > course.plane)
+                .any(|c| region.contains(c));
+            let made = match shape {
+                Shape::Dry => standing.iter().all(|c| region.contains(c)),
+                Shape::Step => region.iter().any(|c| c[1] == FLOOR + 2),
+                Shape::WaterSurface => states
+                    .iter()
+                    .any(|c| course.rests(*c) == Some(RestKind::Afloat)),
+                Shape::Swim => {
+                    far_bank
+                        && states.iter().any(|c| {
+                            course.rests(*c) == Some(RestKind::Submerged)
+                                && course.blocks.get(&[c[0], FLOOR + 1, c[2]]) == Some(&STONE)
+                        })
+                }
+                Shape::Afloat => {
+                    states
+                        .iter()
+                        .any(|c| course.rests(*c) == Some(RestKind::Afloat))
+                        && states
+                            .iter()
+                            .any(|c| course.rests(*c) == Some(RestKind::Submerged))
+                }
+                Shape::FlushLedge => {
+                    far_bank
+                        && states
+                            .iter()
+                            .any(|c| course.rests(*c) == Some(RestKind::Afloat))
+                }
+            };
+            if made {
+                *produced
+                    .entry(match shape {
+                        Shape::Dry => "dry",
+                        Shape::Step => "step",
+                        Shape::WaterSurface => "water surface",
+                        Shape::Swim => "swim",
+                        Shape::Afloat => "afloat",
+                        Shape::FlushLedge => "flush ledge",
+                    })
+                    .or_default() += 1;
+            }
+        }
+    }
+    assert!(asked > 0, "no cell was asked");
+    assert!(crossed > 0, "no plane was crossed by any course");
+    for name in [
+        "dry",
+        "step",
+        "water surface",
+        "swim",
+        "afloat",
+        "flush ledge",
+    ] {
+        assert_eq!(
+            produced.get(name).copied().unwrap_or(0),
+            SEEDS as usize,
+            "the `{name}` courses did not all produce the state they are named for: {produced:?}"
+        );
+    }
+    eprintln!(
+        "rest agreement: {asked} cell(s) asked over {} course(s) of {} shape(s); {crossed} plane \
+         crossing(s) the seam profile and the graph both make; {produced:?}",
+        SHAPES.len() as u64 * SEEDS,
+        SHAPES.len()
+    );
+}

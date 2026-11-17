@@ -324,7 +324,9 @@ fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
         common::keep_trial_dir(),
     ] {
         let overlay = with_plan(&dir, |plan| {
-            emit::branch_transport_overlay(plan).expect("overlay computes")
+            let overlay = emit::branch_transport_overlay(plan);
+            assert!(overlay.is_whole(), "overlay computes");
+            overlay.value
         });
         assert!(
             overlay.is_empty(),

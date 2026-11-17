@@ -2450,32 +2450,44 @@ fn contact_profile(s: &PlacedSeam, world: &crate::compiler::nav::World) -> Vec<i
             // whose surface lies one cell under the plane is crossed afloat
             // with the head in it. Only a state at the plane is a column of
             // the front; a feet cell off the plane belongs to a side.
-            let crosses = world
-                .rests_with_body_in(narrow(c))
-                .into_iter()
-                .filter(|r| i64::from(r[s.normal_axis]) == s.plane)
-                .any(|r| {
-                    let n = steps_out(world, r);
-                    // A move onto a side lands anywhere past the plane on
-                    // it: a jump clears more than the one cell a step takes.
-                    let side = |off: i64| {
-                        n.iter().any(|x| {
-                            (i64::from(x[s.normal_axis]) - s.plane).signum() == off.signum()
-                        })
-                    };
-                    if need_both {
-                        side(a_off) && side(b_off)
-                    } else {
-                        side(high_off)
-                    }
-                });
-            if crosses {
+            let both = [a_off, b_off];
+            let high = [high_off];
+            let sides: &[i64] = if need_both { &both } else { &high };
+            if column_crossed(world, narrow(c), s.normal_axis, s.plane, sides) {
                 out.push(u);
                 break;
             }
         }
     }
     out
+}
+
+/// **Whether a body crosses the wall plane through `c`**, as the seam profile
+/// (`DW0877`) reads one cell of a front: a rest state of the reach graph with
+/// its body in `c` and its feet at `plane` on `normal_axis`
+/// ([`crate::compiler::nav::World::rests_with_body_in`]), one move out of
+/// which ([`steps_out`]) lands on every side of `sides` (`-1` below the plane,
+/// `1` above it). A move onto a side lands anywhere past the plane on it: a
+/// jump clears more than the one cell a step takes. Nothing of this battery's
+/// own — the agreement test asks it and the graph the same cases.
+pub(crate) fn column_crossed(
+    world: &crate::compiler::nav::World,
+    c: [i32; 3],
+    normal_axis: usize,
+    plane: i64,
+    sides: &[i64],
+) -> bool {
+    world
+        .rests_with_body_in(c)
+        .into_iter()
+        .filter(|r| i64::from(r[normal_axis]) == plane)
+        .any(|r| {
+            let n = steps_out(world, r);
+            sides.iter().all(|off| {
+                n.iter()
+                    .any(|x| (i64::from(x[normal_axis]) - plane).signum() == off.signum())
+            })
+        })
 }
 
 /// The longest unbroken run of consecutive columns in a crossing profile.

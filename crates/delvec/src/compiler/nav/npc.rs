@@ -173,7 +173,25 @@ fn move_target(
 /// [`crate::compiler::traversal`] now fails the build on it (`DW0452`) unless the gate is
 /// genuinely open in the world the delve ships.
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> {
-    let mut out = Vec::new();
+    let mut out = <Vec<MovePlan>>::default();
+    plan_moves_into(plan, world, &mut out)?;
+    Ok(out)
+}
+
+/// [`plan_moves`] as a derivation (ADR-0040 §1): every walk planned, in
+/// timeline order, up to the first that could not be — which is the
+/// shortfall a check refuses, and which a look build leaves unwalked with
+/// every walk after it.
+pub fn derive_moves(plan: &Plan, world: &World) -> crate::compiler::check::Derived<Vec<MovePlan>> {
+    let mut out = <Vec<MovePlan>>::default();
+    let short = plan_moves_into(plan, world, &mut out)
+        .err()
+        .into_iter()
+        .collect();
+    crate::compiler::check::Derived::with_short(out, short)
+}
+
+fn plan_moves_into(plan: &Plan, world: &World, out: &mut Vec<MovePlan>) -> Result<(), Failure> {
     let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6): each NPC's next walk starts from its LAST staged
     // location — the previous move's (snapped) target — not its declared anchor.
@@ -375,7 +393,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             gate_key: gkey,
         });
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The declared facing of one anchor in an NPC's own area, as a yaw — `None`

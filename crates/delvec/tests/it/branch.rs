@@ -3151,3 +3151,118 @@ fn an_entry_choice_is_resolved_against_its_own_speaker() {
         assert_eq!(choices[0]["npc"], "npc/keeper");
     }
 }
+
+/// **A story world's dialogue choice that completes no objective is a dated
+/// line of its chronicle** (ADR-0040 §5). The option a `talk-to` beat is
+/// completed by has always been one (`choice`, named by its node and ordinal);
+/// the options a world's path takes in front of a step — the one its selection
+/// chose, the one a step's flag is owed to (`flow::StoryCtx::choices`) — carry
+/// a `happening` on the same terms and were dated nowhere. Over every fixture's
+/// every realised world: each such option that declares a `happening` is a
+/// `choice` line of that world's chronicle, with the option's own words, ahead
+/// of the objective it is taken in front of. Refuses a run in which no world
+/// owes one. Perturbation: `ChronicleBuilder::push_step` without its loop over
+/// `step.choices` → red (the line is absent).
+#[test]
+fn a_story_worlds_choice_that_completes_no_objective_is_a_dated_chronicle_line() {
+    use delvec::compiler::flow::Flow;
+    let mut worlds = 0usize;
+    let mut owed = 0usize;
+    // The two-endings fixture with one more thing to ask the Keeper: an option
+    // of his lore node that names the road out — it sets a flag, completes no
+    // objective and says what it does to the story — and the bolt, which now
+    // needs the road named. A world that bolts takes that option in front of
+    // the step that reads the flag.
+    let told = campaign_with(|_, quests, dialogue| {
+        let lore = dialogue["content"]["dialogues"][0]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|n| n["id"] == "dlg/lore")
+            .expect("the Keeper's lore node");
+        lore["options"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "label": "Which way is the road?",
+                "effects": [{"type": "set-flag", "flag": "flag/road-named"}],
+                "happening": {
+                    "verb": "learns",
+                    "text": "The Keeper names the drowned road out of the keep.",
+                    "subject": "npc/keeper"
+                }
+            }));
+        let bolt = quest(quests, "quest/bolt");
+        bolt["objectives"][0]["requires_flags"] =
+            serde_json::json!(["flag/flee", "flag/road-named"]);
+    });
+    let mut fixtures = contradiction_fixtures();
+    fixtures.push(("the_road_named", told));
+    for (name, c) in &fixtures {
+        let flow = Flow::new(c);
+        for r in branch::realize(c) {
+            let Some(w) = r.world else { continue };
+            let pt = flow.story_playthrough(w);
+            let Some(ctx) = pt.story.clone() else {
+                continue;
+            };
+            worlds += 1;
+            for (at, ch) in &ctx.choices {
+                let tree = c
+                    .dialogue
+                    .content
+                    .dialogues
+                    .iter()
+                    .find(|t| t.npc.as_str() == ch.npc)
+                    .unwrap_or_else(|| panic!("{name}: no tree for `{}`", ch.npc));
+                let (node, opt) = tree
+                    .nodes
+                    .iter()
+                    .flat_map(|n| n.options.iter().map(move |o| (n.id.as_str(), o)))
+                    .nth(ch.n - 1)
+                    .unwrap_or_else(|| panic!("{name}: `{}` has no option {}", ch.npc, ch.n));
+                let Some(h) = &opt.happening else { continue };
+                owed += 1;
+                let want = format!("{} {node}#{}", ch.npc, ch.n);
+                let line = r
+                    .chronicle
+                    .iter()
+                    .position(|l| l.kind == "choice" && l.node == want)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{name}, branch `{}`: the path takes `{want}` in front of step {at} and \
+                             its chronicle dates no such choice: {:#?}",
+                            r.branch.id, r.chronicle
+                        )
+                    });
+                assert_eq!(
+                    r.chronicle[line].text, h.text,
+                    "{name}: the option's own words"
+                );
+                // …and ahead of the objective it is taken in front of, when
+                // that objective has a line of its own.
+                let step = &pt.steps[*at];
+                if let Some(obj) = r
+                    .chronicle
+                    .iter()
+                    .position(|l| l.kind == "objective" && l.node == step.objective)
+                {
+                    assert!(
+                        line < obj,
+                        "{name}, branch `{}`: `{want}` is dated after `{}`, the step it is taken \
+                         in front of",
+                        r.branch.id,
+                        step.objective
+                    );
+                }
+            }
+        }
+    }
+    assert!(worlds > 0, "no fixture realised a story world");
+    assert!(
+        owed > 0,
+        "no realised world's path takes a choice that completes no objective and declares a \
+         `happening`: {worlds} world(s) asked, and the test bound nothing"
+    );
+    eprintln!("choice lines: {owed} owed over {worlds} realised world(s), each dated");
+}

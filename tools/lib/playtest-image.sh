@@ -78,7 +78,12 @@ dw_sha256_file() {
 # down), and an edit to it must not throw every kept image away.
 DW_PLAYTEST_INPUT_FILES="docs/playtest-findings.json tools/creator/staging-gate.py validation/Dockerfile.delve validation/Dockerfile.playtest validation/staging-admission.sh tools/lib/playtest-image.sh"
 
-# dw_playtest_inputs_key <delvec> <campaign> <prefabs dir or empty> <lang> <repo root>
+# dw_playtest_inputs_key <delvec> <campaign> <prefabs dir or empty> <lang> <repo root> [look]
+#
+# A sixth argument `look` names a look build (`delvec build --look`, what
+# `--stage-anyway` makes): the same inputs make a different tree — the player
+# tree alone, its manifest marked `look_only` — so it is a component of the key,
+# and a look and a proven build of one campaign never answer for each other.
 #
 # The identity of everything a campaign build and its admission are made from,
 # BEFORE building: an image whose inputs label equals this is the build these
@@ -103,7 +108,7 @@ dw_playtest_inputs_key() {
 # A tree's digest file goes to a scratch directory of its own, removed on every
 # path out.
 dw_playtest_inputs_list() {
-  local delvec="$1" campaign="$2" prefabs="$3" lang="$4" root="$5" scratch rel sum rc=0
+  local delvec="$1" campaign="$2" prefabs="$3" lang="$4" root="$5" kind="${6:-}" scratch rel sum rc=0
   scratch="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-tree.XXXXXX")" || return 1
   if ! sum="$(dw_sha256_file "$delvec")"; then
     echo "playtest-server: inputs key: cannot read the delvec binary $delvec" >&2; rc=1
@@ -128,6 +133,7 @@ dw_playtest_inputs_list() {
     fi
   fi
   [ "$rc" = 0 ] && printf 'lang %s\n' "${lang:-default}"
+  if [ "$rc" = 0 ] && [ "$kind" = look ]; then printf 'build look\n'; fi
   if [ "$rc" = 0 ]; then
     for rel in $DW_PLAYTEST_INPUT_FILES; do
       if [ -f "$root/$rel" ]; then
@@ -165,11 +171,15 @@ dw_playtest_bake_context() {
 }
 
 # dw_playtest_build_and_gate — a campaign's `delvec build` into OUT_DIR, then
-# the staging gate against that exact tree.
+# the staging gate against that exact tree. Under `--stage-anyway` the build is
+# a look build (`--look`): the derivations and the emitters, and no check; its
+# manifest carries `look_only`, which the gate refuses and the override
+# overrides, printing it.
 dw_playtest_build_and_gate() {
   BUILD_ARGS=(build "$CAMPAIGN" --out "$OUT_DIR")
   [ -n "$LANG_ARG" ]    && BUILD_ARGS+=(--lang "$LANG_ARG")
   [ -n "$PREFABS_ARG" ] && BUILD_ARGS+=(--prefabs "$PREFABS_ARG")
+  [ -n "$STAGE_ANYWAY" ] && BUILD_ARGS+=(--look)
   echo "delvec ${BUILD_ARGS[*]}"
   # A caller-supplied `--out` that holds anything delvec did not write is
   # refused by the build itself (DW0967) and never cleared here.
@@ -209,6 +219,12 @@ dw_playtest_build_and_gate() {
     "staging gate REFUSED this build — not serving it (full table: $GATE_REPORT)"
 }
 
+# dw_manifest_look_only <manifest.json> — does the build's manifest carry
+# `look_only: true` (`delvec build --look`, ADR-0040 §3)?
+dw_manifest_look_only() {
+  python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("look_only") is True else 1)' "$1" 2>/dev/null
+}
+
 # dw_playtest_make_image — the first `up` of these inputs: the shipped delve
 # image of the build, its placement boot, and the playtest image baked over the
 # placed world. Sets PLAYTEST_IMAGE, MANIFEST_SHA and HEAP_ENV.
@@ -229,7 +245,12 @@ dw_playtest_make_image() {
               --label "$PLAYTEST_LABEL.campaign=$(basename "$CAMPAIGN")")
   BUILD_IMAGE="$(dw_playtest_image_tag "$PLAYTEST_BUILD_REPO" "$MANIFEST_SHA")"
   echo "image: the shipped delve image of this build -> $BUILD_IMAGE (validation/Dockerfile.delve)"
-  docker build -q -f "$REPO_ROOT/validation/Dockerfile.delve" "${LABEL_ARGS[@]}" -t "$BUILD_IMAGE" "$OUT_DIR" >/dev/null \
+  LOOK_ARGS=()
+  if dw_manifest_look_only "$OUT_DIR/manifest.json"; then
+    echo "image: this is a look build (manifest look_only) — the delve image is told so, and it ships to nobody"
+    LOOK_ARGS=(--build-arg DELVE_LOOK=1)
+  fi
+  docker build -q -f "$REPO_ROOT/validation/Dockerfile.delve" ${LOOK_ARGS[@]+"${LOOK_ARGS[@]}"} "${LABEL_ARGS[@]}" -t "$BUILD_IMAGE" "$OUT_DIR" >/dev/null \
     || die "docker build of the delve image refused (validation/Dockerfile.delve over $OUT_DIR)"
 
   HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG" "$OUT_DIR")" || die "cannot read the heap ceiling (the build's server/resources.properties, else versions.toml [server].heap_max)"

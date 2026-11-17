@@ -679,11 +679,15 @@ pub fn build(
     plan: &Plan,
     world: &World,
     entry: Option<[i32; 3]>,
-) -> Result<Option<StakeTable>, Failure> {
+) -> crate::compiler::check::Derived<Option<StakeTable>> {
     let declared = plan.campaign.quests.content.stakes.len();
     if declared == 0 {
-        return Ok(None);
+        return crate::compiler::check::Derived::whole(None);
     }
+    // A death the party cannot walk back to, and a region with no anchor to
+    // project a stake to, leave the table without that row (ADR-0040 §1); the
+    // check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
     let seats = seats(plan, world, entry);
 
     // --- the reachable set per seat, intersected over its quest states ---------
@@ -751,7 +755,7 @@ pub fn build(
             .collect();
         stranded_cells += stranded.len();
         if let Some(first) = stranded.first() {
-            return Err(Failure {
+            short.push(Failure {
                 code: DW_STAKE_NO_ROUTE_BACK,
                 message: format!(
                     "a player can reach and die at {first:?} (and {} other cell(s)), and from {} \
@@ -788,7 +792,7 @@ pub fn build(
                      car, a sealed gate region, a collapsed floor — so a marker left there would \
                      be destroyed by the next ride"
                     };
-                    return Err(Failure {
+                    short.push(Failure {
                         code,
                         message: format!(
                             "a death in {} with {} in force has nowhere to leave its recovery stake: \
@@ -798,6 +802,7 @@ pub fn build(
                             region.label, seat.label, configurations, seat.from_step,
                         ),
                     });
+                    continue;
                 }
             };
             let idx = *anchor_index.entry(cell).or_insert_with(|| {
@@ -824,13 +829,16 @@ pub fn build(
         stranded_cells,
         marking: marking_stakes(plan.campaign).len(),
     };
-    Ok(Some(StakeTable {
-        seats,
-        regions,
-        anchors,
-        rows,
-        gate,
-    }))
+    crate::compiler::check::Derived::with_short(
+        Some(StakeTable {
+            seats,
+            regions,
+            anchors,
+            rows,
+            gate,
+        }),
+        short,
+    )
 }
 
 /// The declared stakes, for a caller that wants them without reaching into the

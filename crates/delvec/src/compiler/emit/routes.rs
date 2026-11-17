@@ -108,6 +108,11 @@ pub(super) struct Walks {
     pub(super) census_cells: BTreeMap<String, Vec<[i32; 3]>>,
 }
 
+/// The bot's witness of each assembly's blow, per assembly, and the exported
+/// path's layout ([`Plan::exported_layout`]): which index each step, rest and
+/// witness carries in `critical-path.json`.
+pub(super) type Exported = (Vec<(String, Vec<Value>)>, plan::ExportedLayout);
+
 /// The world block: the derivations the emitters write from — walks, wave
 /// seats, lanes, payloads, the stake table, each pulse's range — and, between
 /// them, every proof over the assembled world, in the order the build has
@@ -124,7 +129,7 @@ pub(super) fn prove_world(
     structures: &BTreeMap<String, Vec<u8>>,
     relight_placements: &[crate::compiler::light::Placement],
     frame_worlds: &Held<crate::compiler::view::review::FrameWorlds>,
-    exported: &Held<(Vec<(String, Vec<Value>)>, plan::ExportedLayout)>,
+    exported: &Held<Exported>,
 ) -> Result<(WorldFacts, WorldProofs), BuildFailure> {
     let mut facts = WorldFacts::default();
     let mut proofs = WorldProofs::unwalked();
@@ -477,7 +482,9 @@ pub(super) fn prove_world(
     // assembled world (the footing the room really offers), which no
     // reading of the plan alone can produce. Everything below is a
     // consumer of this answer; nothing it needs is computed below it.
-    let (waves, rings) = plan_wave_spawns(plan, world)?;
+    let seated = plan_wave_spawns(plan, world);
+    checks.run(|sink| seated.refuse_short(sink))?;
+    let (waves, rings) = seated.value;
 
     // **spec-0068: a firework bursts in open air, clear of every posted
     // body** (`DW0899`). Asked here, immediately after the seating pass,
@@ -656,11 +663,15 @@ pub(super) fn prove_world(
     })?;
     if crate::compiler::nav::needs_world(plan) {
         crate::compiler::notes::mark("moves: start");
-        let m = crate::compiler::nav::plan_moves(plan, world)?;
+        let walks = crate::compiler::nav::derive_moves(plan, world);
+        checks.run(|sink| walks.refuse_short(sink))?;
+        let m = walks.value;
         // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
         // unroutable. Planned alongside move-npc from the same occupancy model.
         crate::compiler::notes::mark("actor moves: start");
-        let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
+        let walks = crate::compiler::nav::derive_actor_moves(plan, world);
+        checks.run(|sink| walks.refuse_short(sink))?;
+        let am = walks.value;
         crate::compiler::notes::mark("cutscenes: start");
         proofs.cutscenes = checks.hold(|sink| {
             Ok(crate::compiler::nav::check_cutscenes(
@@ -964,7 +975,9 @@ pub(super) fn prove_world(
         // the lethal-volume seat proof because it CONSUMES the volumes as
         // death regions — a volume that strands the party is a worse
         // finding, and it should be reported first.
-        facts.stake_table = crate::compiler::stake::build(plan, world, campaign_spawn(plan))?;
+        let staked = crate::compiler::stake::build(plan, world, campaign_spawn(plan));
+        checks.run(|sink| staked.refuse_short(sink))?;
+        facts.stake_table = staked.value;
         // The critical path's routes: what each pulse's stations are
         // derived over, and what the proofs below walk.
         crate::compiler::notes::mark("critical path routes: start");
@@ -1245,7 +1258,7 @@ pub(super) fn prove_world(
                     &listening,
                     &free,
                     &plan.critical_path_sneak,
-                    &proven_jumps,
+                    proven_jumps,
                 );
                 crate::note!(
                     "{}",
@@ -1302,7 +1315,7 @@ pub(super) fn prove_world(
                 let walked: Vec<&crate::compiler::branch::WorldRow> =
                     rows.iter().filter(|w| w.no_path.is_none()).collect();
                 let proven = crate::par::map(&walked, |row| {
-                    prove_branch_world(plan, world, &flow, row, &listening, &proven_jumps)
+                    prove_branch_world(plan, world, &flow, row, &listening, proven_jumps)
                 });
                 for row in proven {
                     let row = row?;
@@ -1446,7 +1459,9 @@ pub(super) fn prove_world(
     // Before the combat plan: a run-back is measured against where the
     // hostiles actually are, and a lane wave is where it marches.
     crate::compiler::notes::mark("lanes + combat: start");
-    let lanes = crate::compiler::nav::plan_lanes(plan, world)?;
+    let marched = crate::compiler::nav::derive_lanes(plan, world);
+    checks.run(|sink| marched.refuse_short(sink))?;
+    let lanes = marched.value;
     checks.run(|sink| {
         let path_legs = &sink.open(&proofs.walks).path_legs;
         let layout = &sink.open(exported).1;
@@ -1504,7 +1519,12 @@ pub(super) fn prove_world(
     // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
     // collapse must leave the critical path completable in its SPRUNG
     // state (DW0445).
-    let payloads = plan_payload_verbs(plan, world, blocks)?;
+    let sprung = plan_payload_verbs(plan, world, blocks);
+    checks.run(|sink| {
+        sprung.refuse_short(sink)?;
+        check_planned_collapses(plan, world, &sprung.value)
+    })?;
+    let payloads = sprung.value;
     facts.wave_placements = waves;
     facts.wave_rings = rings;
     facts.lane_routes = lanes;

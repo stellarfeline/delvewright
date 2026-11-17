@@ -510,13 +510,17 @@ fn emit_all(
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
     crate::compiler::notes::mark("edit replay: start");
-    let edit_replay =
-        crate::compiler::edit::replay_taking(plan, prefabs, structures, &mut pristine).map_err(
-            |e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            },
-        )?;
+    let edit_replay = crate::compiler::edit::replay_taking(
+        plan,
+        prefabs,
+        structures,
+        &mut pristine,
+        checks.build().checks(),
+    )
+    .map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
     // spec-0134 §6: every by-effect batch's cells join the region model as
     // dated runtime writes, from the step its `apply-edits` fires at — every
     // pass below reads this plan.
@@ -737,7 +741,12 @@ fn emit_all(
     // every reader of the critical path takes (`holders::final_walk`).
     crate::compiler::notes::mark("holders: start");
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
-    let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
+    let (walked, relight) = crate::compiler::holders::final_walk_judging(
+        plan,
+        assembled,
+        &owned_holders,
+        checks.build().checks(),
+    );
     // The derived halves — the world and the fixtures — go on to emission; the
     // judged halves are sealed for the checks (ADR-0040 §2).
     let crate::compiler::holders::Walked {
@@ -887,21 +896,26 @@ fn emit_all(
     // legs all walk takes nothing and keeps the plan it was handed, byte for
     // byte.
     crate::compiler::notes::mark("links taken: start");
-    let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
+    let linked = crate::compiler::check::Derived::or(
+        crate::compiler::nav::with_links_taken(plan, prefabs, &world),
+        || None,
+    );
+    checks.run(|sink| linked.refuse_short(sink))?;
+    let relinked = linked.value;
     let plan: &Plan = relinked.as_ref().unwrap_or(plan);
     // The respawn seats, derived over the final world for the plan every proof
     // below reads — the relinked one, whose path the party approaches each rest
     // object along — and fixed for the emitter before anything reads one. A
     // checkpoint with no safe cell beside it is refused here (`DW0316`).
     let world = world.with_rest_seats(plan);
-    crate::compiler::nav::fix_seats(plan, &world).map_err(|f| BuildFailure::Diagnostic {
-        code: f.code,
-        message: f.message,
-    })?;
+    let rest_seats = crate::compiler::nav::fix_seats(plan, &world);
+    checks.run(|sink| rest_seats.refuse_short(sink))?;
     // The inter-area crossings that exist only on a branch. Computed here so
     // `DW0494` fails the build before a single function is emitted, and before
     // the seats: every crossing is a party carry, seated as one.
-    let branch_transport = branch_transport_overlay(plan)?;
+    let crossings = branch_transport_overlay(plan);
+    checks.run(|sink| crossings.refuse_short(sink))?;
+    let branch_transport = crossings.value;
     let crossing_marks: Vec<([i32; 3], String)> = teleport::crossings(plan, &branch_transport)
         .into_iter()
         .map(|x| {
@@ -913,11 +927,9 @@ fn emit_all(
         .collect();
     // A party carry's seats, one per member, over the same world (`DW1141`):
     // every party teleport's and every crossing's.
-    let party_seats = crate::compiler::nav::fix_party_seats(plan, &world, &crossing_marks)
-        .map_err(|f| BuildFailure::Diagnostic {
-            code: f.code,
-            message: f.message,
-        })?;
+    let carried = crate::compiler::nav::fix_party_seats(plan, &world, &crossing_marks);
+    checks.run(|sink| carried.refuse_short(sink))?;
+    let party_seats = carried.value;
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //
@@ -1223,7 +1235,9 @@ fn emit_all(
     }
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
-    let trap_gates = trap_gate_hardware(plan, prefabs)?;
+    let hardware = trap_gate_hardware(plan, prefabs);
+    checks.run(|sink| hardware.refuse_short(sink))?;
+    let trap_gates = hardware.value;
 
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
@@ -1798,8 +1812,9 @@ Ok(())
     // `en_us.json`, so a client that speaks one of them auto-selects it; every
     // other client — and every player who declines the pack — reads the
     // `fallback` English riding on each component.
-    let lang_files = lang_assets(plan, input_bytes, language)?;
-    extra_assets.extend(lang_files);
+    let lang_files = lang_assets(plan, input_bytes, language);
+    checks.run(|sink| lang_files.refuse_short(sink))?;
+    extra_assets.extend(lang_files.value);
     // spec-0084: the vanilla textures this delve replaces, at the vanilla path,
     // through the one funnel every pack entry takes. Resolved by the same
     // function `delvec validate` refused with, over the same bytes — which the
@@ -1919,9 +1934,9 @@ Ok(())
     let (mut limit_binding, limit_verdict) =
         crate::compiler::nav::judge_limits(plan, exported_routes);
     let mut expired_in_paths: BTreeSet<String> = BTreeSet::new();
-    for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+    for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, branch_takes, path_legs)? {
         annotate_holder_steps(&mut path, &holder_step_hints);
-        census::annotate_census_cells(&mut path, &census_cells);
+        census::annotate_census_cells(&mut path, census_cells);
         for e in path["steps"]
             .as_array()
             .into_iter()

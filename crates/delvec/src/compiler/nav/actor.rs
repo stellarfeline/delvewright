@@ -111,7 +111,31 @@ fn actor_anchor_pos(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
 /// planned* path against its own timeline's seals — that is the path the shared
 /// driver will actually walk.
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, Failure> {
-    let mut out = Vec::new();
+    let mut out = <Vec<ActorMovePlan>>::default();
+    plan_actor_moves_into(plan, world, &mut out)?;
+    Ok(out)
+}
+
+/// [`plan_actor_moves`] as a derivation (ADR-0040 §1): every walk planned,
+/// in timeline order, up to the first that could not be — the shortfall a
+/// check refuses.
+pub fn derive_actor_moves(
+    plan: &Plan,
+    world: &World,
+) -> crate::compiler::check::Derived<Vec<ActorMovePlan>> {
+    let mut out = <Vec<ActorMovePlan>>::default();
+    let short = plan_actor_moves_into(plan, world, &mut out)
+        .err()
+        .into_iter()
+        .collect();
+    crate::compiler::check::Derived::with_short(out, short)
+}
+
+fn plan_actor_moves_into(
+    plan: &Plan,
+    world: &World,
+    out: &mut Vec<ActorMovePlan>,
+) -> Result<(), Failure> {
     let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6, live-server proven): a SECOND consecutive
     // `move-actor` on the same actor must start from the actor's CURRENT staged
@@ -423,7 +447,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             gate_key: gkey,
         });
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Verify every declared actor's spawn anchor resolves to a world position (the

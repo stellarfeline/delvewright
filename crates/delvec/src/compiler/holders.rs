@@ -1516,7 +1516,20 @@ pub fn final_walk(
     assembled: &crate::compiler::assembled::Assembled,
     owned: &[OwnedHolder],
 ) -> (Walked, crate::compiler::light::Relight) {
-    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
+    final_walk_judging(plan, assembled, owned, true)
+}
+
+/// [`final_walk`], with the relight pass judging or not
+/// ([`crate::compiler::light::relight_judging`]): the build's bench says
+/// (ADR-0040 §3). The world, the fixtures and the stances are the same either
+/// way.
+pub fn final_walk_judging(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+    owned: &[OwnedHolder],
+    judge: bool,
+) -> (Walked, crate::compiler::light::Relight) {
+    let (world, relight) = crate::compiler::light::final_world_judging(plan, assembled, judge);
     (walk_world(plan, world, owned), relight)
 }
 

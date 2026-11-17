@@ -19,18 +19,28 @@ pub(super) fn lang_assets(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
     language: Option<&str>,
-) -> Result<BTreeMap<String, Vec<u8>>, BuildFailure> {
+) -> crate::compiler::check::Derived<BTreeMap<String, Vec<u8>>> {
     if language.is_some_and(|l| l != delvewright_dsl::CANONICAL_LANG) {
-        return Ok(BTreeMap::new());
+        return crate::compiler::check::Derived::whole(BTreeMap::new());
     }
     let c = plan.campaign;
-    let declared = delvewright_dsl::declared_mc_codes(c).map_err(|d| BuildFailure::Diagnostic {
-        code: delvewright_dsl::codes::LANG_CODE_UNMAPPED,
-        message: format!("{}: {}", d.path, d.message),
-    })?;
+    // A language with no client code, no sidecar or a row that cannot be
+    // styled ships no file; a sidecar with a hole or an orphan ships as it is
+    // (ADR-0040 §1). The check that reads this refuses the build.
+    let mut short: Vec<Failure> = Vec::new();
+    let declared = match delvewright_dsl::declared_mc_codes(c) {
+        Ok(d) => d,
+        Err(d) => {
+            short.push(Failure {
+                code: delvewright_dsl::codes::LANG_CODE_UNMAPPED,
+                message: format!("{}: {}", d.path, d.message),
+            });
+            return crate::compiler::check::Derived::with_short(BTreeMap::new(), short);
+        }
+    };
     let mut out = BTreeMap::new();
     if declared.is_empty() {
-        return Ok(out);
+        return crate::compiler::check::Derived::whole(out);
     }
     // The campaign reaching emission is tagged, so its inventory values are
     // translation tags; `plain` recovers the canonical English each tag carries.
@@ -68,16 +78,15 @@ pub(super) fn lang_assets(
         bytes.push(b'\n');
         out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
     };
-    put(
-        "en_us",
-        &styled_rows(&english, &english, "en_us")?,
-        delvewright_dsl::chrome::english_entries(),
-    );
+    match styled_rows(&english, &english, "en_us") {
+        Ok(rows) => put("en_us", &rows, delvewright_dsl::chrome::english_entries()),
+        Err(f) => short.push(f),
+    }
 
     for (lang, mc) in declared {
         let path = format!("l10n/{lang}.json");
         let Some(raw) = input_bytes.get(&path) else {
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: delvewright_dsl::codes::L10N_MISSING,
                 message: format!(
                     "declared language `{lang}` has no `{path}` among the build inputs, so the \
@@ -85,17 +94,23 @@ pub(super) fn lang_assets(
                      the sidecar, or remove `{lang}` from `world.languages`"
                 ),
             });
+            continue;
         };
-        let doc: delvewright_dsl::L10nDoc =
-            serde_json::from_slice(raw).map_err(|e| BuildFailure::Diagnostic {
-                code: delvewright_dsl::codes::L10N_MISSING,
-                message: format!("`{path}` is not a readable l10n sidecar: {e}"),
-            })?;
+        let doc: delvewright_dsl::L10nDoc = match serde_json::from_slice(raw) {
+            Ok(doc) => doc,
+            Err(e) => {
+                short.push(Failure {
+                    code: delvewright_dsl::codes::L10N_MISSING,
+                    message: format!("`{path}` is not a readable l10n sidecar: {e}"),
+                });
+                continue;
+            }
+        };
         // The key sets must be EQUAL. Validation already proved it (DW0180/DW0181),
         // but the pack is where a hole becomes a player reading a raw key, so the
         // emitter proves it again over the bytes it is about to write.
         if let Some(missing) = english.keys().find(|k| !doc.content.contains_key(*k)) {
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: delvewright_dsl::codes::L10N_MISSING,
                 message: format!(
                     "`{path}` has no translation for `{missing}`, so \
@@ -105,7 +120,7 @@ pub(super) fn lang_assets(
             });
         }
         if let Some(orphan) = doc.content.keys().find(|k| !english.contains_key(*k)) {
-            return Err(BuildFailure::Diagnostic {
+            short.push(Failure {
                 code: delvewright_dsl::codes::L10N_ORPHAN,
                 message: format!(
                     "`{path}` carries `{orphan}`, which is not in the string inventory — remove \
@@ -118,13 +133,12 @@ pub(super) fn lang_assets(
         // than English-under-a-translated-name: the client falls through to
         // `en_us.json` (or to the component's own fallback, for a player who
         // declined the pack) and reads English. Honest, and never disguised.
-        put(
-            mc,
-            &styled_rows(&english, &doc.content, &path)?,
-            delvewright_dsl::chrome::lang_entries(mc),
-        );
+        match styled_rows(&english, &doc.content, &path) {
+            Ok(rows) => put(mc, &rows, delvewright_dsl::chrome::lang_entries(mc)),
+            Err(f) => short.push(f),
+        }
     }
-    Ok(out)
+    crate::compiler::check::Derived::with_short(out, short)
 }
 
 /// One language's rows with every styled line lowered (spec-0096 §3.3): the
@@ -138,7 +152,7 @@ fn styled_rows(
     english: &BTreeMap<String, String>,
     rows: &BTreeMap<String, String>,
     what: &str,
-) -> Result<BTreeMap<String, String>, BuildFailure> {
+) -> Result<BTreeMap<String, String>, Failure> {
     let mut out = BTreeMap::new();
     for (k, v) in rows {
         let en = english.get(k).map_or(v.as_str(), String::as_str);
@@ -166,7 +180,7 @@ fn styled_rows(
                 }
             }
             Err(why) => {
-                return Err(BuildFailure::Diagnostic {
+                return Err(Failure {
                     code: delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED,
                     message: format!(
                         "`{what}` row `{k}` cannot be written into the language file: {why}"
