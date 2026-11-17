@@ -293,6 +293,29 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
     window_guard(plan, o, quest_active, true)
 }
 
+/// **The first line of `complete_<obj>`**: a body already run for this
+/// objective returns before anything else. Its callers fork over players, and
+/// a fork's guard is read for every player before the body runs for any, so
+/// the guard on the caller is not enough (see `quest_completion_fns`).
+pub(super) fn complete_latch(objective_id: &str) -> String {
+    format!(
+        "execute if score {} {} matches 1 run return 0",
+        plan::PARTY,
+        obj_score(objective_id)
+    )
+}
+
+/// **The line a PackTest drives `complete_<obj>` behind**: the objective made
+/// not-done on the party holder, so [`complete_latch`] lets the drive through
+/// whatever a sibling template in the batch left on the shared `#party`.
+pub(super) fn complete_latch_open(objective_id: &str) -> String {
+    format!(
+        "scoreboard players set {} {} 0",
+        plan::PARTY,
+        obj_score(objective_id)
+    )
+}
+
 /// [`pending_guard`], with (`completes`) or without the term a declared
 /// `course` adds: the window an objective completes in, or the wider one the
 /// party is told of it in.
@@ -410,6 +433,16 @@ pub(super) fn quest_completion_fns(
             }
 
             let mut body: Vec<String> = Vec::new();
+            // **A completion runs once, whatever dispatched it.** Every caller
+            // is a fork over players (`execute as @a … run function
+            // complete_<obj>`), and vanilla applies each of an `execute`'s
+            // conditions to every forked context before it runs the function
+            // for any of them: the caller's own `unless … dw.o_<obj> matches 1`
+            // admits every player present, so a party of `n` completed the
+            // objective `n` times in one tick — each run firing the whole
+            // bundle, a wave seated once per player. The latch is the body's
+            // own first line, so no caller can fire the bundle twice.
+            body.push(complete_latch(oid));
             // spec-0114 §6.3: an item laid at a place leaves the hand. The
             // function runs `as` the player the tick's hand guard found holding
             // the item, so `@s` is the one who presented it, and exactly one of

@@ -247,6 +247,7 @@ mod score_seeding;
 mod scratch_paths;
 mod sculk_free_bodies;
 mod sculpt;
+mod seat_once;
 mod seating_cli;
 mod server_properties;
 mod shortcut_wrong_side;
