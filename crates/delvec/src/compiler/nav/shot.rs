@@ -115,7 +115,7 @@ pub fn shot_stance(
                 .then(|| ((d * 1000.0).round() as u64, cell, d))
         })
         .collect();
-    near.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    near.sort_by_key(|&(key, cell, _)| (key, cell));
     near.into_iter()
         .find(|&(_, cell, _)| clear_arc(world, eye_of(cell), target))
         .map(|(_, cell, distance)| ShotStance { cell, distance })
