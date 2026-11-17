@@ -65,7 +65,8 @@
 //   node validation/festival-probe.mjs dw-<round>-festival [only=T1,T5]
 //
 // The bot joins the container's own address (no host port is published), so the
-// script runs on the Docker host. mineflayer is the harness's pinned copy,
+// script runs on the Docker host; `PROBE_ADDR=127.0.0.1:<port>` joins a port the
+// container publishes instead. mineflayer is the harness's pinned copy,
 // resolved from `harness/` (run `npm ci` there first).
 //
 // Output: one TSV line per reading — trial, elapsed ms, and the fields the trial
@@ -211,8 +212,10 @@ async function containerIp() {
   return ip
 }
 async function joinBot(username = BOT) {
-  const host = await containerIp()
-  const bot = mineflayer.createBot({ host, port: 25565, version: '1.21.11', username, auth: 'offline' })
+  // PROBE_ADDR=host:port joins a published port instead, for a Docker host
+  // whose containers' own addresses the script cannot reach (Docker Desktop).
+  const [host, port] = process.env.PROBE_ADDR ? process.env.PROBE_ADDR.split(':') : [await containerIp(), '25565']
+  const bot = mineflayer.createBot({ host, port: Number(port), version: '1.21.11', username, auth: 'offline' })
   await new Promise((resolve, reject) => {
     bot.once('spawn', resolve)
     bot.once('kicked', (r) => reject(new Error(`kicked: ${JSON.stringify(r)}`)))
