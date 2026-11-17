@@ -175,6 +175,40 @@ impl World {
         self.find_route(start, goal)
     }
 
+    /// **The climbs out of the water at `c` the cell band does not make**
+    /// (spec-0134 §10): for each side, a standing cell one course over the
+    /// band's — its floor a partial support whose top is within the band's
+    /// reach plus the auto-step, a lily pad on the water — with headroom over
+    /// the water for the lift, that the reach graph's flown climb out lands a
+    /// body in ([`World::climbs_out_onto`]). The band's own edge is
+    /// [`World::swim_moves`]'s; this one is proven by flying it, as a hop is.
+    fn flown_climb_outs(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let mut out = Vec::new();
+        if !self.swims_in(c) {
+            return out;
+        }
+        let rise = AFLOAT_CLIMB_OUT_CELLS + 1;
+        // The highest floor the band climbs onto: a full support one course
+        // over the water's top cell, and the auto-step over it.
+        let band_top_16 = i64::from(c[1] + AFLOAT_CLIMB_OUT_CELLS)
+            * delvewright_dsl::metrics::FULL_16
+            + delvewright_dsl::metrics::MAX_AUTO_STEP_16;
+        for (dx, dz) in HORIZ {
+            let up = [c[0] + dx, c[1] + rise, c[2] + dz];
+            let headroom = (c[1] + 1..=c[1] + rise + 1)
+                .all(|y| !self.is_occupied([c[0], y, c[2]]) || self.is_water([c[0], y, c[2]]));
+            if headroom
+                && self.standable_fp(up, fp)
+                && self.feet_16_fp(up, fp) <= band_top_16
+                && self.climbs_out_onto(c, up)
+            {
+                out.push(up);
+            }
+        }
+        out
+    }
+
     /// A player body afloat or submerged with its feet in `c`: water at the
     /// feet (never lava, never a lethal volume) and water or air at the head.
     pub fn swims_in(&self, c: [i32; 3]) -> bool {
@@ -321,6 +355,15 @@ impl World {
             } else {
                 Vec::new()
             };
+            // The hop pass's climbs out of the water past the cell band: a
+            // floor the flown climb out proves a body reaches.
+            if hop && wet {
+                for n in self.flown_climb_outs(cur, fp) {
+                    if !next.contains(&n) {
+                        next.push(n);
+                    }
+                }
+            }
             for n in &hops {
                 if !next.contains(n) {
                     next.push(*n);

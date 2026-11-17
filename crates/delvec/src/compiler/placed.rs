@@ -31,7 +31,8 @@ pub enum Firing {
     Setup,
     /// At the completion, activation or performance of `critical_path[i]`.
     Step(usize),
-    /// On a beat nobody has to play (a sprung trap, an optional quest), named:
+    /// On a beat nobody has to play (a sprung trap, an optional quest the path
+    /// does not play), named:
     /// no configuration lays it.
     Unforced(String),
 }
@@ -671,10 +672,11 @@ fn firings_of(
         return Some(vec![activation_on(path, o.id().as_str())]);
     }
     if let Some(safe) = name.strip_prefix("complete_o_") {
-        let (q, o) = objectives().find(|(_, o)| safe_local(o.id().as_str()) == safe)?;
-        let optional = plan.campaign.quest_plan.content.optional();
+        // On a path that plays the objective it completes at its step, an
+        // optional quest's included, as `plan::firing_of` dates its bundle.
+        let (_, o) = objectives().find(|(_, o)| safe_local(o.id().as_str()) == safe)?;
         return Some(vec![match path.obj_step.get(o.id().as_str()) {
-            Some(s) if !optional.contains(q.id.as_str()) => Firing::Step(*s),
+            Some(s) => Firing::Step(*s),
             _ => Firing::Unforced(format!(
                 "the completion of `{}`, which the critical path does not force",
                 o.id().as_str()
@@ -691,14 +693,13 @@ fn firings_of(
             .quests
             .iter()
             .find(|q| safe_local(q.id.as_str()) == safe)?;
-        let optional = plan.campaign.quest_plan.content.optional();
         let steps: Option<Vec<usize>> = q
             .objectives
             .iter()
             .map(|o| path.obj_step.get(o.id().as_str()).copied())
             .collect();
         return Some(vec![match steps.and_then(|s| s.into_iter().max()) {
-            Some(s) if !optional.contains(q.id.as_str()) => Firing::Step(s),
+            Some(s) => Firing::Step(s),
             _ => Firing::Unforced(format!(
                 "the completion of `{}`, which the critical path does not force",
                 q.id.as_str()
@@ -811,7 +812,6 @@ fn firings_of(
         }
         None => safe,
     };
-    let optional = plan.campaign.quest_plan.content.optional();
     let mut out: Vec<Firing> = Vec::new();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
         use delvewright_dsl::Verb;
@@ -828,7 +828,7 @@ fn firings_of(
         if safe_local(target) != safe {
             return;
         }
-        let (step, forced) = crate::compiler::plan::firing_of(site, path.firing, &optional);
+        let (step, forced) = crate::compiler::plan::firing_of(site, path.firing);
         let f = if forced {
             Firing::Step(step)
         } else {

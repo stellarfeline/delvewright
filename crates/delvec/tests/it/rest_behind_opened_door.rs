@@ -32,7 +32,7 @@
 
 use crate::common;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
@@ -285,10 +285,16 @@ fn a_rest_point_the_last_beat_seals_in_is_refused() {
 // The optional half: what the arrivals past the last objective may credit
 // ---------------------------------------------------------------------------
 
-/// A two-quest plan whose finale depends on an errand declared `mandatory`
-/// according to the argument — so the errand's objective sits on the exported
-/// critical path either way, and only its forcedness differs.
+/// A two-quest plan with an errand declared `mandatory` according to the
+/// argument. Mandatory, the finale depends on it and the exported path plays
+/// it; optional, nothing depends on it (an optional quest on the finale's
+/// closure is `DW0866`), so the exported path plays the finale alone.
 fn two_quest_plan(errand_is_mandatory: bool) -> String {
+    let finale_deps = if errand_is_mandatory {
+        r#"["quest/side-errand"]"#
+    } else {
+        "[]"
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -303,7 +309,7 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
          "mandatory": {errand_is_mandatory} }},
       {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
          "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
-         "activity": ["talk"], "depends_on": ["quest/side-errand"], "mandatory": true }}
+         "activity": ["talk"], "depends_on": {finale_deps}, "mandatory": true }}
     ]
   }}
 }}"#
@@ -312,7 +318,15 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
 
 /// The stage-5 pair: the errand opens `anchor/door`, and the bonfire behind it is
 /// armed by the finale's own beat. The rest point's only way home is that door.
-fn errand_opens_the_door_quests() -> String {
+/// The finale waits on the errand's completion when the errand is mandatory,
+/// and starts with the campaign when it is optional (a mandatory quest waiting
+/// on an optional one is `DW0867`).
+fn errand_opens_the_door_quests(errand_is_mandatory: bool) -> String {
+    let finale_trigger = if errand_is_mandatory {
+        r#"{ "type": "quest-complete", "quest": "quest/side-errand" }"#
+    } else {
+        r#"{ "type": "campaign-start" }"#
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -334,7 +348,7 @@ fn errand_opens_the_door_quests() -> String {
       }},
       {{
         "id": "quest/open-the-door",
-        "trigger": {{ "type": "quest-complete", "quest": "quest/side-errand" }},
+        "trigger": {finale_trigger},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }}
         ],
@@ -351,56 +365,38 @@ fn errand_opens_the_door_quests() -> String {
 
 /// **A door only OPTIONAL content opens does not free the rest point behind it.**
 ///
-/// The arrivals past the last objective credit every objective on the exported
-/// path, and `quest/side-errand` is on that path — the finale depends on it, so
-/// `obj/errand` has a step and that step is in the set. The question spec-0051
-/// makes worth asking is whether the party can be made to reach it, and the
-/// campaign below says no: the errand is `mandatory: false`.
-///
-/// **The mechanism that excludes it is forcedness, and it is applied one layer
-/// earlier**, where the constitution puts it: `plan::collect_region_events` drops
-/// a write that does not FILL when its root is unforced (`if !write.fills() &&
-/// !forced { continue; }`), and `open-gate` is `RegionWrite::Unseal`. So the
-/// opening is never in `plan.region_events` at all and no ancestor relation can
-/// credit it. The complement holds for the same reason: an unforced FILL is kept,
-/// because crediting a wall the party may find standing is the conservative
-/// reading, and the arrivals past the last objective must credit it too.
-///
-/// That is why this set is every objective on the path and not "every objective
-/// whose quest is mandatory": forcedness has one authority, and re-deciding it
-/// here would be a second one — which would also, for a fill, be the answer that
-/// ships.
+/// An optional quest's bundle fires on a path that plays it (`plan::firing_of`),
+/// and the exported path plays the finale's closure alone, which an optional
+/// quest is never on (`DW0866`). So the errand has no step on the exported
+/// path, its `open-gate` is unforced there, and `plan::collect_region_events`
+/// drops a write that does not FILL when its root is unforced: the opening is
+/// never in `plan.region_events` at all and no ancestor relation can credit it.
+/// The complement holds for the same reason: an unforced FILL is kept, because
+/// crediting a wall the party may find standing is the conservative reading.
 ///
 /// The pair is the element. The same campaign with the errand declared
-/// `mandatory: true` builds clean, so the refusal below is about optionality and
-/// not about anything else in the shape.
+/// `mandatory: true` (and the finale depending on it) builds clean, so the
+/// refusal below is about optionality and not about anything else in the shape.
 #[test]
 fn a_door_only_optional_content_opens_does_not_free_a_rest_point() {
-    let optional = parse_hw_planned(&errand_opens_the_door_quests(), &two_quest_plan(false));
+    let optional = parse_hw_planned(&errand_opens_the_door_quests(false), &two_quest_plan(false));
 
-    // The binding, so the refusal below is about the set this change adds and not
-    // about a shape that never reaches it. The path is
-    // `[select-class, obj/errand, obj/talk, assert-complete]`, and the two arrivals
-    // past the last objective carry BOTH objective steps — the errand's included,
-    // although the party may never play it.
+    // The binding, so the refusal below is about the opening this rule drops
+    // and not about a shape that never reaches it. The path is
+    // `[select-class, obj/talk, assert-complete]`: the errand is no step of it.
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&optional, &prefabs).expect("plan builds");
     assert_eq!(
         plan.critical_path.len(),
-        4,
-        "select-class, the errand, the talk, and the completion assertion"
+        3,
+        "select-class, the talk, and the completion assertion"
     );
-    let every: BTreeSet<usize> = [1, 2].into_iter().collect();
-    for arrival in [3usize, 4] {
-        assert_eq!(
-            plan.strict_ancestor_steps.get(&arrival),
-            Some(&every),
-            "arrival {arrival} carries every objective on the path"
-        );
-    }
-    // And the opening is not in the model to be credited: `collect_region_events`
-    // kept every FILL and dropped the unforced unseal, so nothing here can open
-    // that door however the ancestor relation answers.
+    assert!(
+        !plan.objective_steps.contains_key("obj/errand"),
+        "the exported path never plays the optional errand: {:?}",
+        plan.objective_steps
+    );
+    // And the opening is not in the model to be credited.
     assert!(
         plan.region_events.iter().all(|e| e.fills()),
         "an unforced `open-gate` is dropped before the seal model sees it: {:#?}",
@@ -423,7 +419,7 @@ fn a_door_only_optional_content_opens_does_not_free_a_rest_point() {
         Err(other) => panic!("expected a diagnostic failure, got {other:?}"),
     }
 
-    let forced = parse_hw_planned(&errand_opens_the_door_quests(), &two_quest_plan(true));
+    let forced = parse_hw_planned(&errand_opens_the_door_quests(true), &two_quest_plan(true));
     let forced_plan = Plan::build(&forced, &prefabs).expect("plan builds");
     assert_eq!(
         forced_plan

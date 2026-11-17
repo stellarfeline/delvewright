@@ -1204,3 +1204,61 @@ fn a_shot_steps_leg_ends_at_its_stance() {
         "with no stance fixed, the target"
     );
 }
+
+/// A pond fifteen across (x, z 0..=14) in a stone bank, floor at y 60, water
+/// from y 61 to y 63 (the banks stand a body at feet 64), with one block on
+/// the water at `[7, 64, 7]` — seven cells from every bank, past any hop. The
+/// world is laid from block states, so the block's measured collision is read.
+fn pond_with(block: &str) -> World {
+    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    for x in -3..=17 {
+        for z in -3..=17 {
+            let wet = (0..=14).contains(&x) && (0..=14).contains(&z);
+            blocks.insert([x, 60, z], "minecraft:stone".to_string());
+            for y in 61..=63 {
+                let b = if wet {
+                    "minecraft:water"
+                } else {
+                    "minecraft:stone"
+                };
+                blocks.insert([x, y, z], b.to_string());
+            }
+        }
+    }
+    blocks.insert([7, 64, 7], block.to_string());
+    World::of_piece(blocks, [-3, 55, -3], [18, 72, 18])
+}
+
+/// **A swimmer climbs onto a lily pad** (spec-0134 §10). A pad on the water
+/// is a floor two sixteenths over the band's (`AFLOAT_CLIMB_OUT_CELLS`): its
+/// standing cell is two over the water's top cell, so the cell band never
+/// offers it, and the route's only way onto a pad out in the pond was a hop
+/// that lands on a phantom full cube. The flown climb out
+/// (`World::climbs_out_onto`, the reach graph's own) lands a body on it, so
+/// the route swims out and climbs on. A full block in the same cell stands a
+/// body fourteen sixteenths higher, past any climb out, and is refused.
+#[test]
+fn a_swimmer_climbs_onto_a_lily_pad_and_not_onto_a_block_as_high_as_its_cell() {
+    let bank = [-2, 64, 7];
+    let pad = pond_with("minecraft:lily_pad");
+    let on_pad = [7, 65, 7];
+    assert!(pad.standable(on_pad), "a body stands on the pad");
+    let route = pad
+        .find_route(bank, on_pad)
+        .expect("the route swims out and climbs onto the pad");
+    let swum = route.iter().filter(|c| pad.swims_in(**c)).count();
+    assert!(swum > 0, "the route swims: {route:?}");
+    let last_wet = route.iter().rposition(|c| pad.swims_in(*c)).unwrap();
+    assert_eq!(
+        route[last_wet + 1],
+        on_pad,
+        "it climbs out onto the pad: {route:?}"
+    );
+
+    let stone = pond_with("minecraft:stone");
+    assert!(stone.standable(on_pad), "a body stands on the block");
+    assert!(
+        stone.find_route(bank, on_pad).is_none(),
+        "a full block's top is a block over the water's, past every climb out"
+    );
+}
