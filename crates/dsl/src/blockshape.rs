@@ -844,8 +844,10 @@ pub fn collision_top_16(name: &str) -> u8 {
         return 0;
     }
     // A trapdoor's thin closed box is a door a hand opens, not a floor
-    // decoration: it keeps the class `collision_class` gives a door.
-    if id.ends_with("_trapdoor") {
+    // decoration: it keeps the class `collision_class` gives a door. A block
+    // that hurts (a campfire at 7) stays a wall to a walk rather than a step it
+    // takes through the fire.
+    if id.ends_with("_trapdoor") || hurts_body(name) {
         return measured_partial_floor_16(name).unwrap_or(FULL_HEIGHT_16);
     }
     // Every block no rule above names: the pinned jar's own collision box, where
@@ -2539,8 +2541,14 @@ mod tests {
                 };
                 judged += 1;
                 let e = i32::from(collision_top_16(&state));
+                // A floor-based box's fraction is read rounded up, as the
+                // module reads it (a lily pad's 1.5 is 2).
                 let top = match extent.span {
                     None => Some(0),
+                    Some((lo, hi)) if lo.whole() == Some(0) && hi.den > 1 => {
+                        let den = hi.den as i32;
+                        Some((hi.num + den - 1).div_euclid(den))
+                    }
                     Some((_, hi)) => hi.whole(),
                 };
                 if Some(e) == top {

@@ -3637,7 +3637,6 @@ mod tests {
             "minecraft:cactus",
             "minecraft:pointed_dripstone",
             "minecraft:oak_leaves[persistent=true]",
-            "minecraft:sea_pickle",
         ] {
             assert!(
                 collision_top_16(id) >= delvewright_dsl::blockshape::THIN_HEIGHT_16,
@@ -3645,6 +3644,9 @@ mod tests {
             );
             assert!(!is_thin_decoration(id), "{id} is not walked through");
         }
+        // A dry sea pickle's box is the jar's 6/16 on the cell floor: stepped
+        // over, as a candle is, never a floor a block higher.
+        assert!(is_thin_decoration("minecraft:sea_pickle"));
     }
 
     /// The occupancy consequence of the class: a tuft/flower/petal cell is
