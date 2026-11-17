@@ -161,16 +161,21 @@ pub(super) fn census_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(
 
 /// **Each body a census places stands on a cell of its own** (spec-0134
 /// §1): every census row the harness performs by placement (`select`) gains
-/// `cells`, `count` of them, taken in order from its datum's cells
-/// (`nav::CensusProof::cells`) and never one a body was already put on along
-/// the same path. A body the census moved stays where it was put once it is
-/// let go: two data counted over one box (three goats' pen) share it, and a
-/// body put onto another, in the same step or a later one, is pushed out of
-/// the box or into a wall. A census of a kind (`stand_in`) places bodies the
-/// harness removes when the act ends, so its cells are free again for the
-/// next step. A datum whose box holds fewer such cells than the row places
-/// hands over what it holds; the harness refuses a row short of its count by
-/// name.
+/// `cells`, taken in order from its datum's cells (`nav::CensusProof::cells`)
+/// and never one a body was already put on along the same path. A body the
+/// census moved stays where it was put once it is let go: two data counted
+/// over one box (three goats' pen) share it, and a body put onto another, in
+/// the same step or a later one, is pushed out of the box or into a wall.
+///
+/// A row that moves bodies of a declared set takes exactly `count` cells. A
+/// census of a kind (`stand_in`) takes every cell left once the step's other
+/// rows have taken theirs: the bodies of the kind already in the box (a
+/// penned goat an earlier step's story put there) count toward it, so the
+/// harness summons only the shortfall, each onto a cell no body stands in
+/// when it acts, and removes them when the act ends — its cells are free
+/// again for the next step. A datum whose box holds fewer such cells than
+/// the row places hands over what it holds; the harness refuses a row short
+/// of its count by name.
 pub(super) fn annotate_census_cells(cp: &mut Value, cells: &BTreeMap<String, Vec<[i32; 3]>>) {
     let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) else {
         return;
@@ -182,26 +187,31 @@ pub(super) fn annotate_census_cells(cp: &mut Value, cells: &BTreeMap<String, Vec
             continue;
         };
         let mut taken: BTreeSet<[i32; 3]> = kept.clone();
-        for row in rows {
-            if row.get("select").is_none() {
-                continue;
-            }
-            let count = row["count"].as_u64().unwrap_or(0) as usize;
-            let state = row["state"].as_str().unwrap_or("");
-            let mine: Vec<[i32; 3]> = cells
-                .get(state)
-                .into_iter()
-                .flatten()
-                .filter(|c| !taken.contains(*c))
-                .take(count)
-                .copied()
-                .collect();
-            taken.extend(mine.iter().copied());
-            if row.get("stand_in").is_none() {
-                kept.extend(mine.iter().copied());
-            }
-            if let Some(o) = row.as_object_mut() {
-                o.insert("cells".to_string(), json!(mine));
+        // The rows that move a declared set's bodies first, then the kinds'.
+        for stand_ins in [false, true] {
+            for row in rows.iter_mut() {
+                if row.get("select").is_none() || row.get("stand_in").is_some() != stand_ins {
+                    continue;
+                }
+                let count = row["count"].as_u64().unwrap_or(0) as usize;
+                let state = row["state"].as_str().unwrap_or("");
+                let free = cells
+                    .get(state)
+                    .into_iter()
+                    .flatten()
+                    .filter(|c| !taken.contains(*c));
+                let mine: Vec<[i32; 3]> = if stand_ins {
+                    free.copied().collect()
+                } else {
+                    free.take(count).copied().collect()
+                };
+                if !stand_ins {
+                    taken.extend(mine.iter().copied());
+                    kept.extend(mine.iter().copied());
+                }
+                if let Some(o) = row.as_object_mut() {
+                    o.insert("cells".to_string(), json!(mine));
+                }
             }
         }
     }
@@ -244,10 +254,11 @@ mod tests {
     }
 
     /// A body moved by one step's census still stands on its cell when a
-    /// later step places another: the later one takes the next cell. A body
-    /// of a kind's census is removed when its act ends, so its cell is free
-    /// again. Red before: every step started from the first cell, and the
-    /// three goats homed one step at a time were put on one cell.
+    /// later step places another: the later one takes the next cell. A kind's
+    /// census is handed every cell still free, and its bodies are removed
+    /// when its act ends, so its cells are free again. Red before: every step
+    /// started from the first cell, and the three goats homed one step at a
+    /// time were put on one cell.
     #[test]
     fn a_later_step_never_takes_a_cell_a_moved_body_still_stands_on() {
         let row = |s: &str| json!({"state": s, "objective": "o", "select": "tag=t", "count": 1});
@@ -275,10 +286,29 @@ mod tests {
             got,
             vec![
                 json!([[1, 65, 1]]),
-                json!([[2, 65, 1], [1, 65, 2]]),
+                json!([[2, 65, 1], [1, 65, 2], [2, 65, 2]]),
                 json!([[2, 65, 1]]),
                 json!([[1, 65, 2], [2, 65, 2]]),
             ]
         );
+    }
+
+    /// In one step a kind's census listed first still takes only what the
+    /// rows moving declared bodies leave.
+    #[test]
+    fn a_kinds_census_takes_what_the_steps_other_rows_leave() {
+        let mut cp = json!({"steps": [{"action": "interact", "census": [
+            {"state": "state/k", "objective": "o", "select": "type=g", "stand_in": "g", "count": 1},
+            {"state": "state/a", "objective": "o", "select": "tag=t", "count": 2},
+        ]}]});
+        let pen = vec![[1, 65, 1], [2, 65, 1], [1, 65, 2]];
+        let cells: BTreeMap<String, Vec<[i32; 3]>> = ["state/a", "state/k"]
+            .iter()
+            .map(|s| (s.to_string(), pen.clone()))
+            .collect();
+        annotate_census_cells(&mut cp, &cells);
+        let rows = &cp["steps"][0]["census"];
+        assert_eq!(rows[1]["cells"], json!([[1, 65, 1], [2, 65, 1]]));
+        assert_eq!(rows[0]["cells"], json!([[1, 65, 2]]));
     }
 }
