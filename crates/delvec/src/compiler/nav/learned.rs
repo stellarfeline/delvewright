@@ -1013,69 +1013,121 @@ fn judge_hidden(
     let high_t = if wants(true) { &high_cells } else { &empty };
     let flooded: Vec<[i32; 3]> = gate.iter().chain(low_t).chain(high_t).copied().collect();
     let rooms = SightRooms::new(w, &eye_cells, &flooded);
-    let gate_runs: Vec<Vec<u32>> = gate.iter().map(|t| rooms.runs_around(*t)).collect();
-    let low_runs: Vec<Vec<u32>> = low_t.iter().map(|t| rooms.runs_around(*t)).collect();
-    let high_runs: Vec<Vec<u32>> = high_t.iter().map(|t| rooms.runs_around(*t)).collect();
+    // Each list of targets indexed by the runs around its cells, so an eye
+    // asks only the targets [`SightRooms::may_see`] lets through, in the
+    // list's own order, and the lines the cull refuses are counted without
+    // being visited: the work is the eyes plus the lines cast, not the eyes
+    // times the targets.
+    let gate_by = ByRun::new(&rooms, &gate);
+    let low_by = ByRun::new(&rooms, low_t);
+    let high_by = ByRun::new(&rooms, high_t);
     let mut lines = 0usize;
     for ((e, ec), looks_high) in order.iter().zip(&eye_cells).zip(&looks) {
         let eye = eye_of(*e, eye_height);
         let run = rooms.run(*ec);
-        let may = |t: [i32; 3], runs: &[u32]| SightRooms::may_see(*ec, run, t, runs);
-        let far: Vec<(&[i32; 3], &[u32], bool)> = match looks_high {
-            Some(true) => high_t
-                .iter()
-                .zip(&high_runs)
-                .map(|(c, r)| (c, r.as_slice(), true))
-                .collect(),
-            Some(false) => low_t
-                .iter()
-                .zip(&low_runs)
-                .map(|(c, r)| (c, r.as_slice(), false))
-                .collect(),
-            None => low_t
-                .iter()
-                .zip(&low_runs)
-                .map(|(c, r)| (c, r.as_slice(), false))
-                .chain(
-                    high_t
-                        .iter()
-                        .zip(&high_runs)
-                        .map(|(c, r)| (c, r.as_slice(), true)),
-                )
-                .collect(),
-        };
-        for (t, runs) in gate.iter().zip(&gate_runs) {
-            lines += 1;
-            if may(*t, runs) && eye_meets(w, eye, *t).is_none() {
-                return (
-                    targets,
-                    lines,
-                    Some(EyeLine {
-                        eye: *e,
-                        target: *t,
-                        what: format!("`{}`", way.bar_block),
-                        shutter: true,
-                    }),
-                );
-            }
+        let clear = |t: [i32; 3]| eye_meets(w, eye, t).is_none();
+        if let Some(i) = gate_by.first(*ec, run, clear) {
+            lines += i + 1;
+            return (
+                targets,
+                lines,
+                Some(EyeLine {
+                    eye: *e,
+                    target: gate[i],
+                    what: format!("`{}`", way.bar_block),
+                    shutter: true,
+                }),
+            );
         }
-        for (t, runs, high) in far {
-            lines += 1;
-            if may(*t, runs) && eye_meets(w, eye, *t).is_none() {
+        lines += gate.len();
+        let far: Vec<(bool, &[[i32; 3]], &ByRun)> = match looks_high {
+            Some(true) => vec![(true, high_t.as_slice(), &high_by)],
+            Some(false) => vec![(false, low_t.as_slice(), &low_by)],
+            None => vec![
+                (false, low_t.as_slice(), &low_by),
+                (true, high_t.as_slice(), &high_by),
+            ],
+        };
+        for (high, cells, by) in far {
+            if let Some(i) = by.first(*ec, run, clear) {
+                lines += i + 1;
                 return (
                     targets,
                     lines,
                     Some(EyeLine {
                         eye: *e,
-                        target: *t,
+                        target: cells[i],
                         what: place(high),
                         shutter: false,
                     }),
                 );
             }
+            lines += cells.len();
         }
     }
     (targets, lines, None)
+}
+
+/// **One list of sight targets, indexed for [`SightRooms::may_see`]**: for
+/// every run, the targets that run lies around, in list order, and each
+/// target's place in the list by its cell. [`Self::first`] answers what a
+/// walk of the whole list asking `may_see` and then [`eye_meets`] of each
+/// target would answer, visiting only the targets the cull lets through.
+struct ByRun {
+    cells: Vec<[i32; 3]>,
+    by_run: BTreeMap<u32, Vec<usize>>,
+    at: BTreeMap<[i32; 3], usize>,
+}
+
+impl ByRun {
+    fn new(rooms: &SightRooms, cells: &[[i32; 3]]) -> ByRun {
+        let mut by_run: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        let mut at = BTreeMap::new();
+        for (i, t) in cells.iter().enumerate() {
+            for r in rooms.runs_around(*t) {
+                by_run.entry(r).or_default().push(i);
+            }
+            at.entry(*t).or_insert(i);
+        }
+        ByRun {
+            cells: cells.to_vec(),
+            by_run,
+            at,
+        }
+    }
+
+    /// The first target, by its place in the list, an eye standing in cell
+    /// `eye` of run `run` may see ([`SightRooms::may_see`]) and `clear` finds
+    /// seen.
+    fn first(
+        &self,
+        eye: [i32; 3],
+        run: u32,
+        mut clear: impl FnMut([i32; 3]) -> bool,
+    ) -> Option<usize> {
+        let own = self.at.get(&eye).copied();
+        let in_run: &[usize] = if run == 0 {
+            &[]
+        } else {
+            self.by_run.get(&run).map_or(&[], Vec::as_slice)
+        };
+        // The run's targets ascend; the eye's own cell is merged in at its place.
+        let mut own = own.filter(|i| in_run.binary_search(i).is_err());
+        let mut rest = in_run.iter().copied().peekable();
+        loop {
+            let next = match (own, rest.peek().copied()) {
+                (Some(o), Some(r)) if o < r => own.take(),
+                (Some(_), None) => own.take(),
+                (_, Some(_)) => rest.next(),
+                (None, None) => return None,
+            };
+            let i = next.expect("a candidate is taken");
+            let t = self.cells[i];
+            if clear(t) {
+                return Some(i);
+            }
+        }
+    }
 }
 
 /// The cell a point stands in.
@@ -1184,7 +1236,9 @@ impl SightRooms {
 
     /// Whether some line from an eye standing in cell `eye`, of run `run`,
     /// may reach `t`, whose runs around it are `runs` ([`Self::runs_around`]):
-    /// `false` only where every line is blocked.
+    /// `false` only where every line is blocked. [`ByRun`] is its index, and
+    /// the test of the cull asks it pair by pair.
+    #[cfg(test)]
     fn may_see(eye: [i32; 3], run: u32, t: [i32; 3], runs: &[u32]) -> bool {
         eye == t || (run != 0 && runs.contains(&run))
     }
