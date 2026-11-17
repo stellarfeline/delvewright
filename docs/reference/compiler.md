@@ -4595,6 +4595,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     `combat-plan.json`, over the main path; a per-branch path is laid out by its
     own `exported_layout`, whose rests `Plan::rest_after` finds through the
     objective the arming beat names.
+    A story world's run is owed die-retry trials for the entries whose `kill`
+    step (same `objective`, same `wave`) its own path carries
+    (`fieldedEncounters`, `harness/src/combat.ts`): a world whose story takes a
+    fight off its path — despawned, its objective failed — carries no `kill`
+    step for it and owes nothing for it. On the main path every entry is one
+    of its own kills, so an entry it does not carry refuses the run.
   - `census` is `{census, brand, unbrand}` — the fully-qualified ids
     of this wave's `wave_census_<wave>` / `wave_brand_<wave>` /
     `wave_unbrand_<wave>` functions. It exists so the harness calls what the
