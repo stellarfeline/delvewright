@@ -310,8 +310,10 @@ struct HiddenFinding {
     reach: usize,
     /// Distinct targets the eye was tried against.
     targets: usize,
-    /// Sight lines walked.
+    /// (Eye, target) pairs examined, a line cast or culled for each.
     lines: usize,
+    /// Of them, the lines cast: the pairs the sight culls let through.
+    cast: usize,
     /// The first line that sees, by moves from the route then by cell.
     seen: Option<EyeLine>,
 }
@@ -353,8 +355,11 @@ pub struct ShutWayBinding {
     pub hidden_ways: usize,
     /// (Hidden way, configuration it is shut in) pairs judged.
     pub hidden_configurations: usize,
-    /// Sight lines walked for the hidden ways.
+    /// (Eye, target) pairs examined for the hidden ways, a line cast or
+    /// culled for each.
     pub eye_lines: usize,
+    /// Of them, the lines cast ([`SightRooms`], [`Shell`]).
+    pub eye_lines_cast: usize,
     /// The ledger rows, one per triple.
     pub rows: Vec<serde_json::Value>,
     /// The hidden ways' rows, one per configuration each is shut in.
@@ -375,7 +380,7 @@ impl ShutWayBinding {
              shut way(s) met — {} at a face, {} by the eye alone — {} declared ({} seen, {} told, \
              {} rewarded, {} hidden), {} undeclared, {} declaration(s) not confirmed; {} declared \
              and never met shut; {} hidden way(s) judged over {} configuration(s), {} eye line(s) \
-             examined",
+             examined, {} of them cast",
             self.gated,
             self.configurations,
             self.met,
@@ -392,6 +397,7 @@ impl ShutWayBinding {
             self.hidden_ways,
             self.hidden_configurations,
             self.eye_lines,
+            self.eye_lines_cast,
         )
     }
 
@@ -417,6 +423,7 @@ impl ShutWayBinding {
             "hidden_ways": self.hidden_ways,
             "hidden_configurations": self.hidden_configurations,
             "eye_lines": self.eye_lines,
+            "eye_lines_cast": self.eye_lines_cast,
             "inert_ways": self.inert_ways,
             "rows": self.rows,
             "hidden_rows": self.hidden_rows,
@@ -955,7 +962,7 @@ fn judge_hidden(
     axis: usize,
     order: &[[i32; 3]],
     eye_height: f64,
-) -> (usize, usize, Option<EyeLine>) {
+) -> (usize, usize, usize, Option<EyeLine>) {
     let region = way.gate.region;
     let gate: Vec<[i32; 3]> = crate::compiler::assembled::region_cells(region.0, region.1)
         .filter(|c| !w.hides(*c))
@@ -1022,15 +1029,21 @@ fn judge_hidden(
     let low_by = ByRun::new(w, &rooms, low_t);
     let high_by = ByRun::new(w, &rooms, high_t);
     let mut lines = 0usize;
+    // The lines cast: the work, beside the pairs counted.
+    let cast = std::cell::Cell::new(0usize);
     for ((e, ec), looks_high) in order.iter().zip(&eye_cells).zip(&looks) {
         let eye = eye_of(*e, eye_height);
         let run = rooms.run(*ec);
-        let clear = |t: [i32; 3]| eye_meets(w, eye, t).is_none();
+        let clear = |t: [i32; 3]| {
+            cast.set(cast.get() + 1);
+            eye_meets(w, eye, t).is_none()
+        };
         if let Some(i) = gate_by.first(eye, *ec, run, clear) {
             lines += i + 1;
             return (
                 targets,
                 lines,
+                cast.get(),
                 Some(EyeLine {
                     eye: *e,
                     target: gate[i],
@@ -1054,6 +1067,7 @@ fn judge_hidden(
                 return (
                     targets,
                     lines,
+                    cast.get(),
                     Some(EyeLine {
                         eye: *e,
                         target: cells[i],
@@ -1065,7 +1079,7 @@ fn judge_hidden(
             lines += cells.len();
         }
     }
-    (targets, lines, None)
+    (targets, lines, cast.get(), None)
 }
 
 /// **One list of sight targets, indexed for the two exact culls**: for every
@@ -1552,7 +1566,7 @@ fn verify_with_eye(
                 // A hidden way owes its eye in every configuration it is shut
                 // in, met or not; an undeclared one is judged for its message.
                 if matches!(ways[gi].learned, Some(Learned::Hidden) | None) {
-                    let (targets, lines, seen) =
+                    let (targets, lines, cast, seen) =
                         judge_hidden(w, &ways[gi], f.axis, &order, eye_height);
                     hidden.push(HiddenFinding {
                         way: gi,
@@ -1560,6 +1574,7 @@ fn verify_with_eye(
                         reach: reach.len(),
                         targets,
                         lines,
+                        cast,
                         seen,
                     });
                 }
@@ -1717,6 +1732,7 @@ fn verify_with_eye(
         shut_hidden.insert(h.way);
         binding.hidden_configurations += 1;
         binding.eye_lines += h.lines;
+        binding.eye_lines_cast += h.cast;
         if !met_ways.contains(&h.way) && (h.seen.is_some() || !shot_ok(&ways[h.way])) {
             binding.unconfirmed += 1;
             unconfirmed.entry(h.way).or_insert((None, 0)).1 += 1;
@@ -2103,6 +2119,7 @@ fn hidden_row(
         "reach": h.reach,
         "targets": h.targets,
         "eye_lines": h.lines,
+        "eye_lines_cast": h.cast,
         "eye": eye,
         "shots": shots,
         "text": null,
@@ -2855,7 +2872,7 @@ mod learned_tests {
              way(s) met — 0 at a face, 0 by the eye alone — 0 declared (0 seen, 0 told, 0 \
              rewarded, 0 hidden), 0 undeclared, 0 declaration(s) not confirmed; 0 declared and \
              never met shut; 0 hidden way(s) judged over 0 configuration(s), 0 eye line(s) \
-             examined"
+             examined, 0 of them cast"
         );
         assert_eq!(b.to_json()["met"], 0);
         assert_eq!(b.to_json()["hidden_rows"], serde_json::json!([]));
@@ -3076,6 +3093,7 @@ mod learned_tests {
             b.line()
         );
         assert!(b.eye_lines > 0, "{}", b.line());
+        assert!(b.eye_lines_cast <= b.eye_lines, "{}", b.line());
         assert_eq!(b.hidden_rows[0]["eye"], "hidden", "{:?}", b.hidden_rows);
 
         let bars = "minecraft:iron_bars[east=true,west=true]";
