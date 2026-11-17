@@ -77,7 +77,7 @@ A sealed judgement is still computed in a look build; nothing reads it there.
 
 - A check can be deleted, reordered behind another check, or made lazy, and the player tree cannot move: the compiler refuses the program in which it could, and the look test reds on what the compiler cannot see.
 - A look costs the derivations and the emitters. What it serves is unproven and says so in its manifest; nothing that reads a manifest to admit a build admits it.
-- A proven build writes what it wrote. Over the gallery primary and over the town the output tree is byte-identical to the tree built before this decision.
+- A proven build writes what it wrote. Over the gallery primary the output tree is byte-identical to the tree built before this decision; over the town the player tree is, and the validation tree differs in the world chronicles, which gain the choice lines of §5.
 - A look build of a campaign with a shortfall writes less than was declared — a wave short of its mobs, a walk not taken — and says nothing about it. That is what unproven means.
 
 ## Revisit triggers
