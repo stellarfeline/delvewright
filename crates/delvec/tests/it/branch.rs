@@ -1142,6 +1142,18 @@ fn a_clash_that_needs_every_step_between_its_beats_is_dw0485() {
 /// entry deed), gated on `gate` when one is named. `lines` names each objective whose own line `arrives` about
 /// `anchor/exit` — the landing coming ashore.
 fn landing_fixture(landing: &[&str], gate: Option<&str>, lines: &[&str]) -> Campaign {
+    landing_fixture_with(landing, gate, lines, false)
+}
+
+/// [`landing_fixture`], the loss `forbids` its own `flag/lost` when
+/// `forbids_own` — the town's raid as written: `trigger/cake-taken` forbids the
+/// `flag/cake-taken` it sets, so it fires once.
+fn landing_fixture_with(
+    landing: &[&str],
+    gate: Option<&str>,
+    lines: &[&str],
+    forbids_own: bool,
+) -> Campaign {
     campaign_with(|plan, quests, _| {
         let objective = |id: &str| {
             let mut o = serde_json::json!({
@@ -1210,6 +1222,9 @@ fn landing_fixture(landing: &[&str], gate: Option<&str>, lines: &[&str]) -> Camp
         });
         if let Some(gate) = gate {
             lose["requires_flags"] = serde_json::json!([gate]);
+        }
+        if forbids_own {
+            lose["forbids_flags"] = serde_json::json!(["flag/lost"]);
         }
         quests["content"]["triggers"] = serde_json::json!([lose]);
         plan["content"]["branch_points"]
@@ -1378,6 +1393,145 @@ fn a_deed_in_its_place_still_shows_a_true_clash() {
             && at(&order, "obj/stand") < at(&order, "obj/stroll-1"),
         "the order performs the deed in its place, the stroll after it: {order:?}"
     );
+}
+
+/// The campaign [`a_deed_that_forbids_its_own_flag_is_performed_where_it_stands`]
+/// judges: the landing with no line that arrives, the loss ungated but for
+/// forbidding the flag it sets — so nothing but the deed's own flag can shut it.
+fn a_deed_that_forbids_its_own_flag_campaign() -> Campaign {
+    landing_fixture_with(&["obj/muster", "obj/stand"], None, &[], true)
+}
+
+/// **A deed writes nothing before it is performed, from the world's first
+/// state on.** The loss forbids `flag/lost`, the flag it sets, so it fires
+/// once. The story run places it in front of `obj/stand` with its gate open;
+/// the replay of the world's exported path (`DW0204`) and every order the
+/// branch search walks start from the same first state, so `flag/lost` is not
+/// held there either and the deed is performed where it stands.
+#[test]
+fn a_deed_that_forbids_its_own_flag_is_performed_where_it_stands() {
+    let c = a_deed_that_forbids_its_own_flag_campaign();
+    let (_, deeds) = lost_landing(&c);
+    assert_eq!(
+        deeds,
+        [("obj/stand".to_string(), "trigger/lose".to_string())],
+        "the premise: the story run performs the loss in front of the stand"
+    );
+    let prefabs =
+        delvec::compiler::registry::PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let bad: Vec<_> = delvec::compiler::analyze::analyze_campaign(&c, &prefabs)
+        .into_iter()
+        .filter(|d| d.code == "DW0204")
+        .map(|d| d.message)
+        .collect();
+    assert!(bad.is_empty(), "{bad:#?}");
+    let refused = lost_landing_refusals(&c);
+    assert!(refused.is_empty(), "{refused:#?}");
+    let (_, bind) = branch::check_branches_bound(&c);
+    assert!(bind.states > 0 && bind.unproven == 0, "{bind:?}");
+}
+
+/// The campaign [`a_true_clash_behind_a_deed_that_forbids_its_own_flag_still_refuses`]
+/// judges: [`a_deed_in_its_place_with_a_true_clash_campaign`], the loss
+/// forbidding the flag it sets.
+fn a_true_clash_behind_a_deed_that_forbids_its_own_flag_campaign() -> Campaign {
+    landing_fixture_with(
+        &["obj/muster", "obj/stroll-1", "obj/stand"],
+        None,
+        &["obj/stroll-1"],
+        true,
+    )
+}
+
+/// **The search walks past such a deed.** [`a_deed_in_its_place_still_shows_a_true_clash`]
+/// with the loss forbidding its own flag: an order that musters, loses the
+/// landing in front of `obj/stand` and only then strolls still shows the
+/// clash. A walk that read the deed's own flag as held from the start stopped
+/// at the deed, and the clash went unseen.
+#[test]
+fn a_true_clash_behind_a_deed_that_forbids_its_own_flag_still_refuses() {
+    let c = a_true_clash_behind_a_deed_that_forbids_its_own_flag_campaign();
+    let refused = lost_landing_refusals(&c);
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    let m = &refused[0];
+    assert!(
+        m.contains("[dies] obj/stand") && m.contains("[arrives] obj/stroll-1"),
+        "{m}"
+    );
+}
+
+/// **One rule places a story world's deed and says whether it fires**, and
+/// every reader of the world's path agrees with it. Per story world of every
+/// fixture in this file: the story run that exports the path (its deeds, what
+/// it fired, the first step it calls incoherent), the replay `DW0204` makes of
+/// it (`Flow::replay`), and the walk the branch search starts every order from
+/// (`Flow::walk_for`, `Walk::legal`/`Walk::take`) taking the exported order.
+/// Red on any difference. Bound: worlds and deeds counted.
+#[test]
+fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
+    use delvec::compiler::flow::Flow;
+    let (mut worlds, mut deeds, mut bad) = (0usize, 0usize, Vec::new());
+    for (name, c) in &contradiction_fixtures() {
+        let flow = Flow::new(c);
+        for (k, run) in flow.story().runs.iter().enumerate() {
+            worlds += 1;
+            let pt = &run.playthrough;
+            let ctx = pt.story.clone().expect("a story world's playthrough");
+            let mut w = flow.walk_for(pt);
+            let mut walked: Vec<(usize, String)> = Vec::new();
+            let mut fired: std::collections::BTreeSet<String> = Default::default();
+            let mut first_illegal = None;
+            for (i, step) in pt.steps.iter().enumerate() {
+                if !w.legal(step) {
+                    first_illegal.get_or_insert(i + 1);
+                }
+                let j = w.take(step);
+                for (a, f) in &j.deeds {
+                    walked.push((i, a.clone()));
+                    fired.extend(f.iter().cloned());
+                }
+                fired.extend(j.fired.iter().cloned());
+            }
+            let incoherent = run.incoherent.as_ref().map(|why| {
+                why.strip_prefix("step ")
+                    .and_then(|r| r.split(' ').next())
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .expect("`step N (...)`")
+            });
+            let replayed = flow.replay(pt).err().map(|f| f.position);
+            deeds += ctx.deeds.len();
+            if walked != ctx.deeds {
+                bad.push(format!(
+                    "{name} world/{k}: run {:?}, walk {walked:?}",
+                    ctx.deeds
+                ));
+            }
+            if fired != run.fired {
+                bad.push(format!(
+                    "{name} world/{k}: fired by the run only {:?}, by the walk only {:?}",
+                    run.fired.difference(&fired).collect::<Vec<_>>(),
+                    fired.difference(&run.fired).collect::<Vec<_>>()
+                ));
+            }
+            if first_illegal != incoherent {
+                bad.push(format!(
+                    "{name} world/{k}: the run's first incoherent step {incoherent:?}, the walk's {first_illegal:?}"
+                ));
+            }
+            if replayed.is_some_and(|p| Some(p) != first_illegal && first_illegal.is_some()) {
+                bad.push(format!(
+                    "{name} world/{k}: the replay refuses at {replayed:?}, the walk at {first_illegal:?}"
+                ));
+            }
+            if first_illegal.is_some() && replayed.is_none() {
+                bad.push(format!(
+                    "{name} world/{k}: the walk refuses, the replay does not"
+                ));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{bad:#?}");
+    assert!(worlds > 50 && deeds > 5, "worlds {worlds}, deeds {deeds}");
 }
 
 // --- the DW0485 fixtures, by name ----------------------------------------
@@ -1712,6 +1866,11 @@ fn contradiction_fixtures() -> Vec<(&'static str, Campaign)> {
         ("a_deed_in_front_of_its_own_step", a_deed_in_front_of_its_own_step_campaign()),
         ("a_deed_whose_gate_is_shut", a_deed_whose_gate_is_shut_campaign()),
         ("a_deed_in_its_place_with_a_true_clash", a_deed_in_its_place_with_a_true_clash_campaign()),
+        ("a_deed_that_forbids_its_own_flag", a_deed_that_forbids_its_own_flag_campaign()),
+        (
+            "a_true_clash_behind_a_deed_that_forbids_its_own_flag",
+            a_true_clash_behind_a_deed_that_forbids_its_own_flag_campaign(),
+        ),
         ("a_purse_two_tallies_fill", a_purse_two_tallies_fill_campaign()),
         ("a_bar_a_strand_must_be_primed_for", a_bar_a_strand_must_be_primed_for_campaign()),
         ("a_count_two_strands_write", a_count_two_strands_write_campaign()),
@@ -2460,9 +2619,9 @@ fn the_search_finds_what_walking_every_order_finds() {
         );
         with_clash += usize::from(!enumerated.is_empty());
     }
-    assert_eq!(fixtures.len(), 29, "every DW0485 fixture is compared");
+    assert_eq!(fixtures.len(), 31, "every DW0485 fixture is compared");
     assert_eq!(
-        with_clash, 23,
+        with_clash, 24,
         "the comparison binds: the fixtures that carry a clash carry one in both"
     );
 }

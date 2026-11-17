@@ -392,6 +392,10 @@ pub struct StoryCtx {
     /// performable where they stand by the debt walk, so their own gate is not
     /// read again ([`Flow::deed_performable`]).
     pub owed: BTreeSet<String>,
+    /// Every act the run placed as a deed, performed or not: each writes
+    /// nothing until a walk performs it ([`Flow::deed_credit`]) — so one whose
+    /// gate was shut where it stands writes nothing at all.
+    pub held: BTreeSet<String>,
 }
 
 impl StoryCtx {
@@ -717,12 +721,9 @@ impl Walk<'_, '_> {
             // A deed's producers are credited from the step it is performed
             // at, never before (`Flow::run_story`).
             Some(ctx) => match &self.performed {
-                None => {
-                    self.flow.story_credit(g, &ctx.performs)
-                        && !g.act.as_ref().is_some_and(|a| {
-                            ctx.deeds.iter().any(|(_, d)| d == a) && !self.deeds_done.contains(a)
-                        })
-                }
+                None => self
+                    .flow
+                    .deed_credit(g, &ctx.performs, &ctx.held, &self.deeds_done),
                 Some(_) => stance,
             },
         }
@@ -784,7 +785,8 @@ impl Walk<'_, '_> {
                 continue;
             }
             let from = self.st.fired.len();
-            self.flow.perform_act(&mut self.st, act, self.taken + 1);
+            self.flow
+                .perform_act_ending(&mut self.st, act, self.taken + 1, &mut self.complete_at);
             self.deeds_done.insert(act.to_string());
             deeds.push((act.to_string(), self.st.fired[from..].to_vec()));
         }
@@ -836,6 +838,16 @@ impl Walk<'_, '_> {
         // A story world's entry deeds due in front of this step (spec-0108
         // §4.1): each elective ambient act it performs, fired once, here.
         let (deeds, _) = self.perform_due(step);
+        self.take_after_due(step, deeds)
+    }
+
+    /// Complete `step` once [`Self::perform_due`] has performed what is due in
+    /// front of it (`deeds`, what that returned).
+    fn take_after_due(
+        &mut self,
+        step: &PathStep,
+        deeds: Vec<(String, Vec<String>)>,
+    ) -> JournalStep {
         let before = self.st.clone();
         self.taken += 1;
         let mut st = std::mem::take(&mut self.st);
