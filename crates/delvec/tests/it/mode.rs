@@ -592,3 +592,178 @@ fn a_journal_template_owns_the_mode_its_pages_read() {
         );
     }
 }
+
+/// keep-crawl with a mode entered mid-story: `quest/a-raid` enters
+/// `mode/raid` (keeping it and `kept`) at its one objective, `quest/b-errand`
+/// and `quest/c-errand` are a strand `mode/raid` holds, and the finale
+/// `quest/reach-shrine` waits on all of them and starts as the raid ends.
+/// Every quest after the keeper is started by `greet-keeper`'s completion,
+/// except the ones `after_raid` names, which wait on `quest/a-raid` — in the
+/// stage-4 plan and the stage-5 trigger both.
+fn raid(tag: &str, kept: &[&str], after_raid: &[&str]) -> PathBuf {
+    let dir = scratch(tag);
+    common::copy_dir_all(&common::keep_crawl_dir(), &dir);
+    let side = [
+        ("quest/a-raid", "obj/raid", "anchor/keeper-stand"),
+        ("quest/b-errand", "obj/errand-b", "anchor/exit"),
+        ("quest/c-errand", "obj/errand-c", "anchor/keeper-stand"),
+    ];
+    let dep = |id: &str| {
+        if after_raid.contains(&id) {
+            "quest/a-raid"
+        } else if id == "quest/c-errand" {
+            "quest/b-errand"
+        } else {
+            "quest/greet-keeper"
+        }
+    };
+    common::patch_file(&dir.join("quest-plan.json"), |v| {
+        let quests = v["content"]["quests"].as_array_mut().unwrap();
+        for (id, _, _) in side {
+            quests.push(json!({
+                "act": 1, "activity": ["reach"],
+                "area": "area/gatehouse",
+                "depends_on": [dep(id)], "goal": format!("Do {id}."), "id": id,
+                "mandatory": true, "npcs": []
+            }));
+        }
+        quests[1]["depends_on"] = json!(["quest/a-raid", "quest/b-errand", "quest/c-errand"]);
+    });
+    common::patch_file(&dir.join("quests.json"), |v| {
+        let q = &mut v["content"];
+        let mut keeps = vec!["quest/a-raid"];
+        keeps.extend_from_slice(kept);
+        q["modes"] = json!([{"id": "mode/raid", "keeps": keeps}]);
+        q["quests"][1]["trigger"] = json!({"type": "quest-complete", "quest": "quest/a-raid"});
+        let quests = q["quests"].as_array_mut().unwrap();
+        for (id, obj, anchor) in side {
+            let bundle = if id == "quest/a-raid" {
+                json!([{"type": "enter-mode", "mode": "mode/raid"}])
+            } else {
+                json!([])
+            };
+            quests.push(json!({
+                "id": id,
+                "happening": {"text": format!("the party takes on {id}"), "verb": "learns"},
+                "trigger": {"type": "quest-complete", "quest": dep(id)},
+                "objectives": [{
+                    "type": "reach-anchor", "id": obj, "anchor": anchor, "radius": 2,
+                    "happening": {"text": format!("the party completes {obj}"), "verb": "arrives"}
+                }],
+                "on_objective_complete": {obj: bundle},
+                "on_complete": []
+            }));
+        }
+    });
+    dir
+}
+
+/// The objectives a built plan's exported path performs, in order.
+fn path_of(dir: &Path) -> Result<Vec<String>, delvec::compiler::plan::PlanError> {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let diags = validate_campaign_with(
+        &campaign,
+        &FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &FullEntityRegistry::v1_21_11(),
+    );
+    let errors: Vec<_> = diags
+        .iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(errors.is_empty(), "the fixture must validate: {errors:#?}");
+    Plan::build(&campaign, &prefabs).map(|p| {
+        p.critical_path
+            .iter()
+            .filter_map(|s| s.objective().map(str::to_string))
+            .collect()
+    })
+}
+
+/// The quests story world `k`'s playthrough walks, in order — the
+/// whole-world order every story world's path is built on.
+fn world_order(dir: &Path) -> Vec<String> {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let flow = delvec::compiler::flow::Flow::new(&campaign);
+    flow.playthrough_in(0).quests
+}
+
+/// A strand the raid holds, ready beside the quest that enters the raid, is
+/// walked before the entry: walked after it, its objectives would be held and
+/// the path would stop at the first (`DW1124`). Both the exported path (the
+/// finale's closure) and a story world's (every quest) walk it so.
+#[test]
+fn a_held_strand_ready_beside_the_entry_is_walked_before_the_mode() {
+    let dir = raid("before", &["quest/reach-shrine"], &[]);
+    let path = path_of(&dir).unwrap_or_else(|e| panic!("the path builds: {}", e.failure.message));
+    assert_eq!(
+        path,
+        [
+            "obj/talk",
+            "obj/errand-b",
+            "obj/errand-c",
+            "obj/raid",
+            "obj/arrive",
+            "obj/reach"
+        ]
+    );
+    assert_eq!(
+        world_order(&dir),
+        [
+            "quest/greet-keeper",
+            "quest/b-errand",
+            "quest/c-errand",
+            "quest/a-raid",
+            "quest/reach-shrine"
+        ]
+    );
+}
+
+/// A held quest that can only start once the raid is entered is walked after
+/// what the raid keeps, once the settlement has left it.
+#[test]
+fn a_held_quest_after_the_entry_waits_for_the_mode_to_be_left() {
+    // Both errands start on the raid quest's completion; the raid keeps
+    // `c-errand` and holds `b-errand`, which is ready first.
+    let dir = raid(
+        "after",
+        &["quest/c-errand"],
+        &["quest/b-errand", "quest/c-errand"],
+    );
+    let path = path_of(&dir).unwrap_or_else(|e| panic!("the path builds: {}", e.failure.message));
+    assert_eq!(
+        path,
+        [
+            "obj/talk",
+            "obj/raid",
+            "obj/errand-c",
+            "obj/errand-b",
+            "obj/arrive",
+            "obj/reach"
+        ]
+    );
+}
+
+/// Where the content forces a held objective inside its mode — the strand
+/// starts only once the raid is entered, and the raid keeps the finale, which
+/// starts at the same moment — no order exists, and the build still refuses
+/// with `DW1124`.
+#[test]
+fn a_held_objective_the_content_forces_inside_the_mode_is_still_dw1124() {
+    let dir = raid("forced", &["quest/reach-shrine"], &["quest/b-errand"]);
+    let e = path_of(&dir).expect_err("no order walks the strand outside the raid");
+    assert_eq!(
+        e.failure.code.to_string(),
+        "DW1124",
+        "{}",
+        e.failure.message
+    );
+    assert!(
+        e.failure.message.contains("`obj/errand-b`") && e.failure.message.contains("`mode/raid`"),
+        "{}",
+        e.failure.message
+    );
+}

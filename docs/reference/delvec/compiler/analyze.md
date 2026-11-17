@@ -205,7 +205,9 @@ there is `DW0204` naming the world and its `world-path-<k>.json`. A branch path 
 completes by `depends_on` (`flow::dag_order`); a quest that can end the delve
 (any `campaign-complete` in its effect lists, nested ones included) is held
 until no other quest is ready, so an optional strand that becomes ready beside
-the ending is walked before it. `compiler::plan`'s gate-aware reachability (`DW0306`) judges the same
+the ending is walked before it. Both this order and the exported path's
+(`flow::finale_order`) also walk a mode's held quests outside it wherever the
+dependency order allows ([`mode`](mode.md)). `compiler::plan`'s gate-aware reachability (`DW0306`) judges the same
 sequence, so the static proofs and the exported bot contract agree by
 construction. When no world completes the finale the campaign is already
 `DW0201`; the model then degenerates to the whole closure so the geometry-only
