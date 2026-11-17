@@ -171,12 +171,14 @@ pub(super) fn emit_seat_once_packtests(
             *waves.entry(wid).or_insert(0) += 1;
         }
     }
-    for (oid, waves) in by_obj {
+    for (n, (oid, waves)) in by_obj.into_iter().enumerate() {
         let osafe = plan::safe_local(oid);
         let name = format!("party_seat_once_{osafe}");
         let before = format!("dw_t_pso_{osafe}");
         let members: Vec<String> = (1..SEAT_ONCE_PARTY)
-            .map(|k| format!("dwso{k}{osafe}"))
+            // A player's name is at most 16 characters: numbered, never named
+            // after the objective.
+            .map(|k| format!("dwso{n}p{k}"))
             .collect();
         let named: Vec<String> = waves.keys().map(|w| format!("`{w}`")).collect();
         let mut t = packtest_header(&format!(
