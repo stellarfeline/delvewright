@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { CensusRow, ReachStep } from "../src/critical-path.ts";
 import { parseCensus } from "../src/critical-path.ts";
-import { censusCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../src/census.ts";
+import { censusCommands, censusHoldCommands, censusReleaseCommands, censusTerm, censusVerdict } from "../src/census.ts";
 import { methods as censusMethods } from "../src/executor/census.ts";
 import { methods as walkMethods } from "../src/executor/walk.ts";
 import { runSequence } from "../src/sequencer.ts";
@@ -59,10 +59,41 @@ test("a box that holds fewer standable cells than the bodies it places is refuse
 test("a census of a kind summons its own bodies and takes none some fight owns", () => {
   const kind: CensusRow = { ...row, select: "type=minecraft:pillager", standIn: "minecraft:pillager", count: 1 };
   const cmds = censusCommands(kind);
-  assert.deepEqual(cmds, [
-    '/summon minecraft:pillager 11.5 64 21.5 {Tags:["dw_census_standin","dw_census_taken"],NoAI:1b,PersistenceRequired:1b}',
+  assert.deepEqual(cmds.slice(0, 5), [
+    "/scoreboard players set #dw_census_need dw.sys 1",
+    "/scoreboard players operation #dw_census_need dw.sys -= #party dw.s_goats_home",
+    "/execute if score #dw_census_need dw.sys matches 1.. unless entity @e[x=11,y=64,z=21,dx=0,dy=0,dz=0] " +
+      'run summon minecraft:pillager 11.5 64 21.5 {Tags:["dw_census_standin","dw_census_taken","dw_census_fresh"],NoAI:1b,PersistenceRequired:1b}',
+    "/execute as @e[tag=dw_census_fresh] run scoreboard players remove #dw_census_need dw.sys 1",
+    "/execute as @e[tag=dw_census_fresh] run tag @s remove dw_census_fresh",
   ]);
   assert.ok(!cmds.some((c) => c.includes("@e[type=minecraft:pillager")), "no existing pillager is taken");
+  assert.ok(!cmds.some((c) => c.startsWith("/tp ")), "no body is moved");
+});
+
+test("a census of a kind summons only the shortfall the game's own count leaves, onto cells no body stands in", () => {
+  // Three goats penned by the story already stand in the box; the census of
+  // the kind asks for three. Red before: three stand-ins were summoned
+  // whatever the box held, the game read six, and the step failed — or, with
+  // a goat on a handed cell, a stand-in was summoned onto it.
+  const kind: CensusRow = { ...row, select: "type=minecraft:goat", standIn: "minecraft:goat", count: 3 };
+  const holds = censusHoldCommands(kind);
+  assert.deepEqual(holds, [
+    "/execute as @e[type=minecraft:goat,x=10,y=64,z=20,dx=2,dy=1,dz=2,tag=!dw_census_taken,nbt=!{NoAI:1b}] run tag @s add dw_census_held",
+    "/execute as @e[tag=dw_census_held] run data merge entity @s {NoAI:1b}",
+  ]);
+  assert.ok(!holds.some((c) => c.startsWith("/tp ")), "a body already in the box is held, never moved");
+  const cmds = censusCommands(kind);
+  const summons = cmds.filter((c) => c.includes(" run summon "));
+  assert.equal(summons.length, kind.cells!.length, "every handed cell is offered, in order");
+  for (const s of summons) {
+    assert.match(s, /^\/execute if score #dw_census_need dw\.sys matches 1\.\. unless entity @e\[x=\d+,y=64,z=21,dx=0,dy=0,dz=0\] run summon /);
+  }
+  // The shortfall is the asked count less what the game already counts.
+  assert.equal(cmds[1], "/scoreboard players operation #dw_census_need dw.sys -= #party dw.s_goats_home");
+  // Only a census of a kind holds before it places.
+  assert.deepEqual(censusHoldCommands(row), []);
+  assert.deepEqual(censusHoldCommands({ ...kind, count: 0 }), []);
 });
 
 test("the count read back is the party's, and exactly the bodies placed", () => {

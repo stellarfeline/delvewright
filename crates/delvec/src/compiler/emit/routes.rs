@@ -33,7 +33,7 @@ pub(super) struct WorldProofs {
     pub(super) death_plan: Option<Value>,
     pub(super) pulse_gate: Option<crate::compiler::pulse::PulseGate>,
     /// spec-0134 §1: per counted datum, the cells its census places bodies on
-    /// (`nav::census_cells`).
+    /// (`nav::CensusProof::cells`).
     pub(super) census_cells: BTreeMap<String, Vec<[i32; 3]>>,
 }
 
@@ -1220,8 +1220,8 @@ pub(super) fn prove_world(
                                 message: f.message,
                             }
                         })?;
-                    crate::note!("{}", census.line());
-                    census_cells = crate::compiler::nav::census_cells(plan, world);
+                    crate::note!("{}", census.binding.line());
+                    census_cells = census.cells;
                 }
                 let water = crate::compiler::waypoints::water_json(world, &routes);
                 crate::note!("{}", crate::compiler::waypoints::water_line(&water));
