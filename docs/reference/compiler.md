@@ -3911,7 +3911,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   performs and skips, the class each ending input is left in, its endings, the
   dialogue choices and the entry deeds that make it this world, and its path —
   plus one chronicle per world (every node's `happening` line in compiled play
-  order; an elective trigger's or trap's beat the world performs as an entry
+  order; a dialogue option the world's path takes that completes no objective
+  is a dated `choice` line in front of the step it is taken at, ahead of that
+  step's deeds; an elective trigger's or trap's beat the world performs as an entry
   deed is a dated `deed` line in front of the step it is performed at, one the
   world skips has no line, and every other trigger or trap beat is listed after
   the dated account as ambient) and, per world with a path, one **executable path** in the ordinary

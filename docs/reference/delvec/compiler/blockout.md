@@ -137,7 +137,15 @@ the flood that does not cross the commons, the commons' floor walled too —
 routes (`blockout::leg_routed`). No step rule of this battery's own exists; a
 second one would make this the one proof in the compiler taken under different
 physics. `compiler::nav::world::reach::agreement` asks each of them and the graph
-the same generated courses and reds on any difference.
+the same generated courses and reds on any difference. A second set of courses —
+dry floor, a step, a water surface, a swim, a body afloat and a flush ledge,
+each read against the blocks it was built from — holds the rest relation
+(`World::rest_kind`) and every reader of it to one answer: `shutmodel::can_be`
+(`DW1011`, `DW1057`), `World::is_standable` on every cell that holds no water,
+the contract's `walk_ends` and `swum_cells`, the seam profile's crossing of a
+wall plane (`blockout::column_crossed`) and the four readers above
+(`every_reader_of_where_a_body_rests_agrees_over_the_six_shapes`); it reds when
+a shape's run never produces the state it is named for.
 
 | Code | Rule |
 |---|---|

@@ -185,7 +185,8 @@ dynamic layer.
   start to ending, followed by the undated ambient beats and the endings reached.
   The dated account carries four kinds of line — `quest`, `objective`, `choice`
   and `effect`. A **`choice` line is the dialogue option this branch takes to
-  complete a `talk-to` beat**, and it is where a fork's divergence lives: a
+  complete a `talk-to` beat**, or one a story world's path takes in front of a
+  step, completing no objective; it is where a fork's divergence lives: a
   `DialogueEffect` carries no `happening` of its own, so the option is the only
   thing on that side of the campaign that says what the choice did to the story.
   The line names the option's own NPC, the node it stands in and its 1-based
