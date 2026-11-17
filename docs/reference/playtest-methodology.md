@@ -256,7 +256,11 @@ pathfinder 2.4.5 leaps gaps on its own (`allowParkour` defaults on), so the
 harness turns the move off for every leg and every hop (`configureLeg`,
 `harness/src/movement.ts`). The hop from a proven jump's launch to its landing
 is driven by the executor (`driveJump`, `harness/src/executor/jump.ts`) as the
-proof flew it: crouched to the centre of the run-up's start, still, then
+proof flew it. A bot off the run-up (`onRunUp`: off the straight run of cells
+from the run-up's start to the launch — knocked off a one-wide plank, say) is
+walked to the start by the staged pathfinder walk first, and the drive refuses
+any body off the run-up at once rather than creep across the geometry. From
+the run-up: crouched along it to the centre of its start, still, then
 standing, facing along the jump's axis, forward held (sprinting only when the
 jump is sprinted), jump pressed once on one of the last two ticks the body
 stands over the launch cell's column, released on landing. The feet must come

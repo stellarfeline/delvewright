@@ -339,6 +339,50 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 lines(&b).into_bytes(),
             );
 
+            // -- expires with its gate shut (spec-0133 §3 as amended) -------
+            if let Some(shut) = shut_term(plan, o) {
+                let name = shut_template_name(oid);
+                let mut b = vec![
+                    format!(
+                        "#> {title}: `{oid}` expires when its window runs out with its gate shut \
+                         (spec-0133 §3)"
+                    ),
+                    alone(ns, &name, out),
+                    "# @dummy".to_string(),
+                    format!("# @timeout {}", step + 100),
+                    String::new(),
+                    format!("function {ns}:setup"),
+                ];
+                b.extend(hold.iter().cloned());
+                b.extend(open.iter().cloned());
+                // Every term of the gate open, then exactly one shut: a body
+                // the task needed is lost, and nothing opens the gate again.
+                b.extend(shut.shut.iter().cloned());
+                b.push(format!("function {ns}:{start}"));
+                b.push(format!("await delay {step}t"));
+                b.push(format!("assert score {} {expired} matches 1", plan::PARTY));
+                b.push(format!(
+                    "execute store success score #lim_sd_{safe} dw.sys if score {} {done_score} matches 1",
+                    plan::PARTY
+                ));
+                b.push(format!("assert score #lim_sd_{safe} dw.sys matches 0"));
+                // The gate was still shut at the wake: nothing in the window
+                // opened it, so the expiry settled under a shut gate.
+                b.push(format!("scoreboard players set #lim_sg_{safe} dw.sys 0"));
+                b.push(format!(
+                    "execute{} run scoreboard players set #lim_sg_{safe} dw.sys 1",
+                    gate_cond(plan, o.gate())
+                ));
+                b.push(format!("assert score #lim_sg_{safe} dw.sys matches 0"));
+                b.extend(close.iter().cloned());
+                b.extend(shut.restore.iter().cloned());
+                b.extend(give_back.iter().cloned());
+                out.insert(
+                    format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+                    lines(&b).into_bytes(),
+                );
+            }
+
             // -- a member who joins late is shown the bar (spec-0141 §6) ---
             if !redraws(l.ticks) {
                 continue;
@@ -385,6 +429,82 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
                 format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
                 lines(&b).into_bytes(),
             );
+        }
+    }
+}
+
+/// The shut-gate expiry template of the limit on `oid`.
+pub(super) fn shut_template_name(oid: &str) -> String {
+    format!("limit_{}_expires_shut", safe_obj_fn(oid))
+}
+
+/// One term of a limited objective's gate, shut: the lines that shut it after
+/// the gate has been driven open, and the lines that give it back.
+struct ShutTerm {
+    shut: Vec<String>,
+    restore: Vec<String>,
+}
+
+/// The term a shut-gate expiry template shuts: the first required flag, else
+/// the first party-scoped numeric term, else the first forbidden flag — the
+/// first one nothing in `on_expire` writes, so the template's closing read
+/// of the gate is answered by the window alone. `None` for an objective with
+/// no such term (an ungated one, or one whose every term is a player's datum
+/// or written by its expiry): it owes no template.
+fn shut_term(plan: &Plan, o: &Objective) -> Option<ShutTerm> {
+    let p = plan::PARTY;
+    let (mut flags, mut data) = (BTreeSet::new(), BTreeSet::new());
+    expiry_writes(o.limit()?.on_expire(), &mut flags, &mut data);
+    if let Some(f) = o
+        .requires_flags()
+        .iter()
+        .find(|f| !flags.contains(f.as_str()))
+    {
+        return Some(ShutTerm {
+            shut: vec![format!(
+                "scoreboard players set {p} {} 0",
+                plan::flag_score(f.as_str())
+            )],
+            // `close` puts every required flag back already.
+            restore: Vec::new(),
+        });
+    }
+    if let Some(cmp) = o.requires_state().iter().find(|cmp| {
+        !data.contains(cmp.state.as_str())
+            && super::super::state::state_holder(plan, &cmp.state) == p
+    }) {
+        return Some(ShutTerm {
+            shut: state_drive_lines(plan, std::slice::from_ref(cmp), false),
+            // `close` puts every numeric term back to its initial already.
+            restore: Vec::new(),
+        });
+    }
+    let f = o
+        .forbids_flags()
+        .iter()
+        .find(|f| !flags.contains(f.as_str()))?;
+    let score = plan::flag_score(f.as_str());
+    Some(ShutTerm {
+        shut: vec![format!("scoreboard players set {p} {score} 1")],
+        restore: vec![format!("scoreboard players set {p} {score} 0")],
+    })
+}
+
+/// Every flag and datum `effs` writes, at any depth.
+fn expiry_writes<'a>(
+    effs: &'a [QuestEffect],
+    flags: &mut BTreeSet<&'a str>,
+    data: &mut BTreeSet<&'a str>,
+) {
+    for e in effs {
+        if let Some(f) = e.set_flag() {
+            flags.insert(f.as_str());
+        }
+        if let Some((s, _)) = e.writes_state() {
+            data.insert(s.as_str());
+        }
+        for list in e.nested_effect_lists() {
+            expiry_writes(list, flags, data);
         }
     }
 }

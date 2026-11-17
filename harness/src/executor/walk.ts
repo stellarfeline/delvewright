@@ -891,7 +891,7 @@ export const methods = {
             await (spec.climb
               ? this.raceDeath(() => this.climbHop(spec, glabel))
               : spec.jump
-                ? this.raceDeath(() => this.jumpHop(spec, glabel))
+                ? this.raceDeath(() => this.jumpHop(spec, glabel, sneak))
                 : this.gotoStaged(spec, glabel, sneak));
           } finally {
             this.crouchYielded = false;
