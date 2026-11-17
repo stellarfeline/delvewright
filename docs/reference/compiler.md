@@ -3272,11 +3272,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   and whose gate may hold while the step is taken, a term on a census read as open
   (`flow::Walk::unattended_triggers`, `PathFiring::unattended`,
   `combat::fight_may_fire`); present only when there is one. A death takes the
-  party off the fight and leaves those bodies free to fire one, which carries the
-  run out of the world the path walks, so the die-retry stage takes no death
-  there and says so as an advisory (`skipped_unattended` in the run report's
-  `die_retry_binding`); the loop is proven in a world where no such trigger is
-  open at that fight. **A `census` row
+  party off the fight and leaves those bodies free to fire one, which would carry
+  the run out of the world the path walks, so the die-retry trial there holds
+  still every body of each `story_bodies` row whose `waves` names the fight's
+  wave from its first death to its end (`held` in the run report's
+  `die_retry_binding`; a step with no such row is red, `skipped_unholdable`). **A `census` row
   placed by teleport carries `cells`, the cells its bodies go on, and a
   census of a kind `stand_in`** (format 12; `state[].counts`). **A `keep_out` row
   may name its `trigger`, and an `expire` step may carry `aboard`** (format
