@@ -99,26 +99,26 @@ pub fn shot_stance(
         f64::from(target[1]) + 0.5,
         f64::from(target[2]) + 0.5,
     ];
-    let mut best: Option<(u64, [i32; 3], f64)> = None;
-    for &cell in walk {
-        let eye = eye_of(cell);
-        let d = ((eye[0] - centre[0]).powi(2)
-            + (eye[1] - centre[1]).powi(2)
-            + (eye[2] - centre[2]).powi(2))
-        .sqrt();
-        if !(lo..=hi).contains(&d) {
-            continue;
-        }
-        // Distances compared in thousandths, so the order is exact (ADR-0006).
-        let key = (d * 1000.0).round() as u64;
-        if best.is_some_and(|(k, c, _)| (k, c) <= (key, cell)) {
-            continue;
-        }
-        if clear_arc(world, eye, target) {
-            best = Some((key, cell, d));
-        }
-    }
-    best.map(|(_, cell, distance)| ShotStance { cell, distance })
+    // Every cell in reach, nearest first (distances in thousandths, so the
+    // order is exact, ADR-0006), ties by cell order; the first whose arc is
+    // clear is the stance, and no farther cell's flight is solved.
+    let mut near: Vec<(u64, [i32; 3], f64)> = walk
+        .iter()
+        .filter_map(|&cell| {
+            let eye = eye_of(cell);
+            let d = ((eye[0] - centre[0]).powi(2)
+                + (eye[1] - centre[1]).powi(2)
+                + (eye[2] - centre[2]).powi(2))
+            .sqrt();
+            (lo..=hi)
+                .contains(&d)
+                .then(|| ((d * 1000.0).round() as u64, cell, d))
+        })
+        .collect();
+    near.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    near.into_iter()
+        .find(|&(_, cell, _)| clear_arc(world, eye_of(cell), target))
+        .map(|(_, cell, distance)| ShotStance { cell, distance })
 }
 
 /// The stance of `shot` trigger `id` at `cell`, or its `DW1091`.
