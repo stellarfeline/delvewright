@@ -1018,15 +1018,15 @@ fn judge_hidden(
     // list's own order, and the lines the cull refuses are counted without
     // being visited: the work is the eyes plus the lines cast, not the eyes
     // times the targets.
-    let gate_by = ByRun::new(&rooms, &gate);
-    let low_by = ByRun::new(&rooms, low_t);
-    let high_by = ByRun::new(&rooms, high_t);
+    let gate_by = ByRun::new(w, &rooms, &gate);
+    let low_by = ByRun::new(w, &rooms, low_t);
+    let high_by = ByRun::new(w, &rooms, high_t);
     let mut lines = 0usize;
     for ((e, ec), looks_high) in order.iter().zip(&eye_cells).zip(&looks) {
         let eye = eye_of(*e, eye_height);
         let run = rooms.run(*ec);
         let clear = |t: [i32; 3]| eye_meets(w, eye, t).is_none();
-        if let Some(i) = gate_by.first(*ec, run, clear) {
+        if let Some(i) = gate_by.first(eye, *ec, run, clear) {
             lines += i + 1;
             return (
                 targets,
@@ -1049,7 +1049,7 @@ fn judge_hidden(
             ],
         };
         for (high, cells, by) in far {
-            if let Some(i) = by.first(*ec, run, clear) {
+            if let Some(i) = by.first(eye, *ec, run, clear) {
                 lines += i + 1;
                 return (
                     targets,
@@ -1068,50 +1068,73 @@ fn judge_hidden(
     (targets, lines, None)
 }
 
-/// **One list of sight targets, indexed for [`SightRooms::may_see`]**: for
-/// every run, the targets that run lies around, in list order, and each
-/// target's place in the list by its cell. [`Self::first`] answers what a
-/// walk of the whole list asking `may_see` and then [`eye_meets`] of each
-/// target would answer, visiting only the targets the cull lets through.
+/// **One list of sight targets, indexed for the two exact culls**: for every
+/// run, the targets that run lies around, in list order
+/// ([`SightRooms::may_see`]), each target's place in the list by its cell, and
+/// the [`Shell`] round the list where it has few openings. [`Self::first`]
+/// answers what a walk of the whole list asking `may_see` and then
+/// [`eye_meets`] of each target would answer, visiting only the targets both
+/// culls let through.
 struct ByRun {
     cells: Vec<[i32; 3]>,
     by_run: BTreeMap<u32, Vec<usize>>,
+    /// The runs around each target, by its place in the list.
+    runs: Vec<Vec<u32>>,
     at: BTreeMap<[i32; 3], usize>,
+    shell: Option<Shell>,
 }
 
 impl ByRun {
-    fn new(rooms: &SightRooms, cells: &[[i32; 3]]) -> ByRun {
+    fn new(w: &World, rooms: &SightRooms, cells: &[[i32; 3]]) -> ByRun {
         let mut by_run: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
         let mut at = BTreeMap::new();
+        let mut runs = Vec::with_capacity(cells.len());
         for (i, t) in cells.iter().enumerate() {
-            for r in rooms.runs_around(*t) {
-                by_run.entry(r).or_default().push(i);
+            let around = rooms.runs_around(*t);
+            for r in &around {
+                by_run.entry(*r).or_default().push(i);
             }
+            runs.push(around);
             at.entry(*t).or_insert(i);
         }
         ByRun {
             cells: cells.to_vec(),
             by_run,
+            runs,
             at,
+            shell: Shell::round(w, cells),
         }
     }
 
-    /// The first target, by its place in the list, an eye standing in cell
-    /// `eye` of run `run` may see ([`SightRooms::may_see`]) and `clear` finds
-    /// seen.
+    /// The first target, by its place in the list, that an eye at `eye`,
+    /// standing in cell `ec` of run `run`, may see ([`SightRooms::may_see`])
+    /// and `clear` finds seen.
     fn first(
         &self,
-        eye: [i32; 3],
+        eye: [f64; 3],
+        ec: [i32; 3],
         run: u32,
         mut clear: impl FnMut([i32; 3]) -> bool,
     ) -> Option<usize> {
-        let own = self.at.get(&eye).copied();
         let in_run: &[usize] = if run == 0 {
             &[]
         } else {
             self.by_run.get(&run).map_or(&[], Vec::as_slice)
         };
+        // Through the shell's openings, where the eye stands outside it: the
+        // targets of the eye's run among them, ascending.
+        if let Some(through) = self
+            .shell
+            .as_ref()
+            .and_then(|sh| sh.through(eye, ec, &self.at))
+        {
+            return through
+                .into_iter()
+                .filter(|i| run != 0 && self.runs[*i].contains(&run))
+                .find(|i| clear(self.cells[*i]));
+        }
         // The run's targets ascend; the eye's own cell is merged in at its place.
+        let own = self.at.get(&ec).copied();
         let mut own = own.filter(|i| in_run.binary_search(i).is_err());
         let mut rest = in_run.iter().copied().peekable();
         loop {
@@ -1122,11 +1145,170 @@ impl ByRun {
                 (None, None) => return None,
             };
             let i = next.expect("a candidate is taken");
-            let t = self.cells[i];
-            if clear(t) {
+            if clear(self.cells[i]) {
                 return Some(i);
             }
         }
+    }
+}
+
+/// **The shell round a list of targets, and its openings** — an exact cull
+/// for [`eye_meets`] from an eye outside it. The shell is the one-cell layer
+/// round the targets' box. A sight line (`walk_cells`) visits a face-connected
+/// run of cells from the eye's cell to the target's, so a line from an eye
+/// outside the shell to a target inside it visits a cell of the shell, and is
+/// clear only where that cell does not hide (a shell cell is never the
+/// target's own, the one cell a line is not stopped by). The shell's cells
+/// that do not hide are its **openings**; a clear line passes through one.
+/// So a target is asked only where its cell meets the cone from the eye
+/// through an opening, grown by [`Shell::GROW`] against the walk's float
+/// error, and every other target is answered "blocked" without a line.
+///
+/// The cull is kept only where the openings are few beside the targets
+/// ([`Shell::FEW`]); a shell with many is no cull, and every target is asked.
+struct Shell {
+    /// The targets' box: the shell lies one cell outside it.
+    lo: [i32; 3],
+    hi: [i32; 3],
+    openings: Vec<[i32; 3]>,
+}
+
+impl Shell {
+    /// How far an opening's cube is grown before the cone is taken through
+    /// it: far past the error of a walk's float arithmetic over a region the
+    /// size of a map, far short of a cell.
+    const GROW: f64 = 1e-4;
+    /// The most openings per target at which the shell is kept as a cull.
+    const FEW: usize = 16;
+
+    fn round(w: &World, cells: &[[i32; 3]]) -> Option<Shell> {
+        let mut lo = *cells.first()?;
+        let mut hi = lo;
+        for c in cells {
+            for a in 0..3 {
+                lo[a] = lo[a].min(c[a]);
+                hi[a] = hi[a].max(c[a]);
+            }
+        }
+        let (glo, ghi) = (lo.map(|v| v - 1), hi.map(|v| v + 1));
+        let mut openings = Vec::new();
+        for c in crate::compiler::assembled::region_cells(glo, ghi) {
+            let on = (0..3).any(|a| c[a] == glo[a] || c[a] == ghi[a]);
+            if on && !w.hides(c) {
+                openings.push(c);
+                if openings.len() * Self::FEW > cells.len() {
+                    return None;
+                }
+            }
+        }
+        Some(Shell { lo, hi, openings })
+    }
+
+    /// The places in the list, ascending, of the targets whose cells meet
+    /// the cone from `eye` through some opening; `None` where the eye's cell
+    /// `ec` is not outside the shell, or the eye stands in an opening's
+    /// grown cube, and the cull does not apply.
+    fn through(
+        &self,
+        eye: [f64; 3],
+        ec: [i32; 3],
+        at: &BTreeMap<[i32; 3], usize>,
+    ) -> Option<Vec<usize>> {
+        if (0..3).all(|a| self.lo[a] - 1 <= ec[a] && ec[a] <= self.hi[a] + 1) {
+            return None;
+        }
+        let mut out: Vec<usize> = Vec::new();
+        for o in &self.openings {
+            self.cone(eye, *o, at, &mut out)?;
+        }
+        out.sort_unstable();
+        out.dedup();
+        Some(out)
+    }
+
+    /// Push the places of the targets whose cells meet the cone from `eye`
+    /// through the grown cube of opening `o`: slab by slab of the targets'
+    /// box along the axis the eye is farthest from the cube on, the box
+    /// round the cone's two cross-sections at the slab's faces — each the
+    /// hull of the cube's eight corners projected from the eye, so the
+    /// box holds the cone's whole slab. `None` where the eye is in the cube.
+    fn cone(
+        &self,
+        eye: [f64; 3],
+        o: [i32; 3],
+        at: &BTreeMap<[i32; 3], usize>,
+        out: &mut Vec<usize>,
+    ) -> Option<()> {
+        let g = Self::GROW;
+        let qlo = o.map(|v| f64::from(v) - g);
+        let qhi = o.map(|v| f64::from(v) + 1.0 + g);
+        let sep = |a: usize| {
+            if eye[a] < qlo[a] {
+                qlo[a] - eye[a]
+            } else if eye[a] > qhi[a] {
+                eye[a] - qhi[a]
+            } else {
+                0.0
+            }
+        };
+        let a = (0..3).fold(0, |m, i| if sep(i) > sep(m) { i } else { m });
+        if sep(a) <= 0.0 {
+            return None;
+        }
+        let up = eye[a] < qlo[a];
+        let (b, d) = ((a + 1) % 3, (a + 2) % 3);
+        let corners: Vec<[f64; 3]> = (0..8)
+            .map(|i| [0, 1, 2].map(|k| if i >> k & 1 == 0 { qlo[k] } else { qhi[k] }))
+            .collect();
+        for k in self.lo[a]..=self.hi[a] {
+            let (mut c0, mut c1) = (f64::from(k), f64::from(k) + 1.0);
+            if up {
+                if c1 <= eye[a] {
+                    continue;
+                }
+                c0 = c0.max(eye[a]);
+            } else {
+                if c0 >= eye[a] {
+                    continue;
+                }
+                c1 = c1.min(eye[a]);
+            }
+            let (mut lb, mut hb, mut ld, mut hd) = (
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            );
+            for c in [c0, c1] {
+                for q in &corners {
+                    let m = (c - eye[a]) / (q[a] - eye[a]);
+                    let pb = eye[b] + m * (q[b] - eye[b]);
+                    let pd = eye[d] + m * (q[d] - eye[d]);
+                    lb = lb.min(pb);
+                    hb = hb.max(pb);
+                    ld = ld.min(pd);
+                    hd = hd.max(pd);
+                }
+            }
+            // A cell [t, t + 1] meets [l, h] where t + 1 >= l and t <= h.
+            let span = |l: f64, h: f64, a: usize| {
+                let from = ((l - g).ceil() as i32 - 1).max(self.lo[a]);
+                let to = ((h + g).floor() as i32).min(self.hi[a]);
+                from..=to
+            };
+            for tb in span(lb, hb, b) {
+                for td in span(ld, hd, d) {
+                    let mut t = [0; 3];
+                    t[a] = k;
+                    t[b] = tb;
+                    t[d] = td;
+                    if let Some(i) = at.get(&t) {
+                        out.push(*i);
+                    }
+                }
+            }
+        }
+        Some(())
     }
 }
 
@@ -3099,6 +3281,164 @@ mod learned_tests {
             met_any += learned.met_triples.len();
         }
         assert!(met_any > 0, "the generator meets some face");
+    }
+
+    /// A chamber of air in a block of rock, `n` wide on each side, with
+    /// `holes` cells of its rock skin opened, and rock scattered round it:
+    /// the shape a cave under a hatch has. Returns the world and the
+    /// chamber's cells.
+    fn chamber(next: &mut impl FnMut(u64) -> u64, n: i32, holes: usize) -> (World, Vec<[i32; 3]>) {
+        let (lo, hi) = (10, 10 + n - 1);
+        let mut solid = BTreeSet::new();
+        for x in lo - 1..=hi + 1 {
+            for y in lo - 1..=hi + 1 {
+                for z in lo - 1..=hi + 1 {
+                    let inside = [x, y, z].iter().all(|v| (lo..=hi).contains(v));
+                    if !inside {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let skin: Vec<[i32; 3]> = solid.iter().copied().collect();
+        for _ in 0..holes {
+            let c = skin[next(skin.len() as u64) as usize];
+            solid.remove(&c);
+        }
+        for _ in 0..60 {
+            let c = [next(30) as i32, next(30) as i32, next(30) as i32];
+            if !(lo - 1..=hi + 1).contains(&c[0])
+                || !(lo - 1..=hi + 1).contains(&c[1])
+                || !(lo - 1..=hi + 1).contains(&c[2])
+            {
+                solid.insert(c);
+            }
+        }
+        let cells = crate::compiler::assembled::region_cells([lo; 3], [hi; 3]).collect();
+        (World::from_solid_cells(solid), cells)
+    }
+
+    /// **The indexed walk answers what the whole list answers**: over
+    /// generated chambers with a few openings, for eyes inside, outside and
+    /// in the skin, [`ByRun::first`] returns the first target, by list
+    /// order, that the walk asking [`SightRooms::may_see`] and [`eye_meets`]
+    /// of every target returns. Bound: the shell cull applies to some eyes,
+    /// some eyes see a target and some see none.
+    #[test]
+    fn the_indexed_eye_answers_what_the_whole_list_answers() {
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = |n: u64| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 33) % n
+        };
+        let (mut culled, mut seen, mut blind) = (0usize, 0usize, 0usize);
+        for case in 0..24 {
+            let (w, cells) = chamber(&mut next, 4 + (case % 3) as i32, 1 + case % 4);
+            let eyes: Vec<[i32; 3]> = (0..120)
+                .map(|_| [next(30) as i32, next(30) as i32, next(30) as i32])
+                .collect();
+            let eye_cells: Vec<[i32; 3]> = eyes
+                .iter()
+                .map(|e| cell_of(eye_of(*e, PLAYER_EYE)))
+                .collect();
+            let rooms = SightRooms::new(&w, &eye_cells, &cells);
+            let by = ByRun::new(&w, &rooms, &cells);
+            for (e, ec) in eyes.iter().zip(&eye_cells) {
+                let eye = eye_of(*e, PLAYER_EYE);
+                let run = rooms.run(*ec);
+                let whole = cells.iter().position(|t| {
+                    SightRooms::may_see(*ec, run, *t, &rooms.runs_around(*t))
+                        && eye_meets(&w, eye, *t).is_none()
+                });
+                let indexed = by.first(eye, *ec, run, |t| eye_meets(&w, eye, t).is_none());
+                assert_eq!(indexed, whole, "case {case}: eye {e:?}");
+                if by
+                    .shell
+                    .as_ref()
+                    .is_some_and(|sh| sh.through(eye, *ec, &by.at).is_some())
+                {
+                    culled += 1;
+                }
+                if whole.is_some() {
+                    seen += 1;
+                } else {
+                    blind += 1;
+                }
+            }
+        }
+        assert!(
+            culled > 0 && seen > 0 && blind > 0,
+            "bound: {culled} eye(s) culled by the shell, {seen} seeing, {blind} blind"
+        );
+    }
+
+    /// **The eye asks a cave's targets through its hatch, not one by one**:
+    /// from eyes outside a chamber whose one opening is a hatch, the lines
+    /// cast are bounded by the cone through the hatch, not by eyes times
+    /// targets. The red side is the shell cull switched off, which asks
+    /// every target the run cull lets through.
+    #[test]
+    fn a_cave_behind_one_hatch_is_asked_through_the_hatch() {
+        let n = 12;
+        let (lo, hi) = (10, 10 + n - 1);
+        let mut solid = BTreeSet::new();
+        for x in lo - 1..=hi + 1 {
+            for y in lo - 1..=hi + 1 {
+                for z in lo - 1..=hi + 1 {
+                    if ![x, y, z].iter().all(|v| (lo..=hi).contains(v)) {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        // The hatch: one cell of the roof, open.
+        solid.remove(&[lo + 5, hi + 1, lo + 5]);
+        // A floor the eyes stand over, far above and beside the roof.
+        let w = World::from_solid_cells(solid);
+        let cells: Vec<[i32; 3]> =
+            crate::compiler::assembled::region_cells([lo; 3], [hi; 3]).collect();
+        let eyes: Vec<[i32; 3]> = (-20..=40)
+            .step_by(3)
+            .flat_map(|x| (-20..=40).step_by(3).map(move |z| [x, hi + 12, z]))
+            .collect();
+        let eye_cells: Vec<[i32; 3]> = eyes
+            .iter()
+            .map(|e| cell_of(eye_of(*e, PLAYER_EYE)))
+            .collect();
+        let rooms = SightRooms::new(&w, &eye_cells, &cells);
+        let count = |by: &ByRun| {
+            let mut asked = 0usize;
+            for (e, ec) in eyes.iter().zip(&eye_cells) {
+                let eye = eye_of(*e, PLAYER_EYE);
+                by.first(eye, *ec, rooms.run(*ec), |t| {
+                    asked += 1;
+                    eye_meets(&w, eye, t).is_none()
+                });
+            }
+            asked
+        };
+        let by = ByRun::new(&w, &rooms, &cells);
+        assert!(
+            by.shell.is_some(),
+            "one opening against {} target(s) is a shell",
+            cells.len()
+        );
+        let mut whole = ByRun::new(&w, &rooms, &cells);
+        whole.shell = None;
+        let (through, every) = (count(&by), count(&whole));
+        let pairs = eyes.len() * cells.len();
+        assert!(
+            every * 2 >= pairs,
+            "the run cull lets most pairs through a hatch: {every} of {pairs}"
+        );
+        assert!(
+            through * 20 <= every,
+            "{through} line(s) asked through the hatch, {every} without it, of {pairs} pair(s) ({} eye(s), {} target(s))",
+            eyes.len(),
+            cells.len()
+        );
     }
 
     /// **The sight cull agrees with the sight rule**: over generated worlds of
