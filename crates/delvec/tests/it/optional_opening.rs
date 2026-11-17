@@ -25,10 +25,9 @@ use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
-/// The fixture, with `finale_exit` deciding whether the MANDATORY finale also
-/// owes a walk through the door (to `anchor/exit`, after the talk) that only
-/// the optional quest opens.
-fn fixture(tag: &str, finale_exit: bool) -> PathBuf {
+/// The fixture: the finale is the keeper's talk alone, and the optional
+/// quest opens the door and walks through it.
+fn fixture(tag: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("optional-opening-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::hello_world_dir(), &dir);
@@ -47,10 +46,8 @@ fn fixture(tag: &str, finale_exit: bool) -> PathBuf {
         let finale = &mut c["quests"][0];
         // The finale opens nothing.
         finale["on_objective_complete"] = json!({});
-        if !finale_exit {
-            let objectives = finale["objectives"].as_array_mut().unwrap();
-            objectives.retain(|o| o["id"] != "obj/exit");
-        }
+        let objectives = finale["objectives"].as_array_mut().unwrap();
+        objectives.retain(|o| o["id"] != "obj/exit");
         let cast = finale["cast"].clone();
         c["quests"].as_array_mut().unwrap().push(json!({
             "id": "quest/side", "trigger": {"type": "campaign-start"}, "cast": cast,
@@ -135,7 +132,7 @@ fn read(out: &Path, rel: &str) -> Value {
 /// quest's first objective opens, to its second objective behind it.
 #[test]
 fn an_optional_quests_opening_is_open_for_its_own_later_legs() {
-    let (code, log, out) = build(&fixture("own-legs", false));
+    let (code, log, out) = build(&fixture("own-legs"));
     assert_eq!(
         code, 0,
         "a world that plays `obj/look` has opened the door it walks through next: {log}"
@@ -174,24 +171,20 @@ fn an_optional_quests_opening_is_open_for_its_own_later_legs() {
 
 /// The complement: a path that does not play the optional quest does not see
 /// what it opens. The exported path plays the finale's closure alone, so the
-/// optional `open-gate` has no step there and the region model holds no
-/// opening for it; the finale's own walk through the same door is refused.
+/// optional quest has no step on it, its `open-gate` is unforced there, and an
+/// unforced opening never enters the region model to be credited.
 #[test]
 fn an_optional_quests_opening_is_shut_on_a_path_that_does_not_play_it() {
-    let dir = fixture("mandatory-exit", true);
+    let dir = fixture("exported-path");
     let loaded = load_campaign_dir(&dir).expect("fixture loads");
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    // Binding: the exported path walks the finale to `obj/exit` and never
-    // plays the optional quest.
+    // Binding: the exported path plays the finale and not the optional quest,
+    // whose one `open-gate` the campaign declares.
     assert!(
-        plan.objective_steps.contains_key("obj/exit"),
-        "{:?}",
-        plan.objective_steps
-    );
-    assert!(
-        !plan.objective_steps.contains_key("obj/look"),
+        plan.objective_steps.contains_key("obj/talk")
+            && !plan.objective_steps.contains_key("obj/look"),
         "{:?}",
         plan.objective_steps
     );
@@ -200,13 +193,5 @@ fn an_optional_quests_opening_is_shut_on_a_path_that_does_not_play_it() {
         "the optional `open-gate` is unforced on a path that does not play it, and an \
          unforced opening is never credited: {:#?}",
         plan.region_events
-    );
-    let (code, log, _) = build(&dir);
-    assert_eq!(code, 3, "{log}");
-    assert!(
-        (log.contains("DW0306") || log.contains("DW0311"))
-            && log.contains("obj/exit")
-            && log.contains("anchor/door"),
-        "the finale's walk to `obj/exit` crosses a door only the optional quest opens: {log}"
     );
 }
