@@ -45,6 +45,12 @@
 //       armour; beside them a phantom held still, bare and helmeted; at daytime
 //       1000. Is each body alive, on fire, still under its rider, and is the
 //       armour piece worn down, read every 2 s for 60 s.
+//   T18 the belfry's shot, rebuilt on the pad: a target block 17 up, 17 east and
+//       15 south of the bot's feet over a top slab, loosed at as the harness
+//       looses (`harness/src/shot.ts`: the low arc through the centre, drawn for
+//       `SHOT_DRAW_MS`); for every arrow, on its first tick (a tick function),
+//       the shooter's position and rotation and the arrow's position and
+//       motion, then where it lies and whether the target was hit.
 //
 // One mineflayer bot is the player wherever a player is the question. Everything
 // else is read back over rcon through the repo's one rejection rule
@@ -1241,6 +1247,85 @@ async function t16(bot) {
   await rcon.probe(`fill ${B.x1} ${FLOOR_Y} ${B.z1} ${B.x2} ${FLOOR_Y} ${B.z2} minecraft:stone`)
 }
 
+// ---- T18: the belfry's shot -------------------------------------------------------
+const T18_ARROWS = Number(process.env.T18_ARROWS ?? 100)
+function t18Numbers(s) {
+  return (s ?? '').match(/-?\d+(?:\.\d+)?(?:E-?\d+)?/gi)?.map(Number) ?? []
+}
+async function t18(bot) {
+  const shot = await import('../harness/src/shot.ts')
+  await clearBodies()
+  const feet = { x: H.x + 0.5, y: H.y, z: H.z + 0.5 }
+  const T = { x: H.x + 17, y: H.y + 17, z: H.z + 15 }
+  await rcon.run(`setblock ${T.x} ${T.y} ${T.z} minecraft:target`)
+  await rcon.run(`setblock ${T.x} ${T.y - 1} ${T.z} minecraft:stone_slab[type=top]`)
+  await writeInContainer(`${PACK}/data/dw_probe/function/arrow_tick.mcfunction`, 'execute as @e[type=minecraft:arrow,tag=!dw_seen] run function dw_probe:arrow_first\n')
+  await writeInContainer(
+    `${PACK}/data/dw_probe/function/arrow_first.mcfunction`,
+    'tag @s add dw_seen\n' +
+      'data modify storage dw_probe:t18 first set value {}\n' +
+      'data modify storage dw_probe:t18 first.pos set from entity @s Pos\n' +
+      'data modify storage dw_probe:t18 first.motion set from entity @s Motion\n' +
+      `data modify storage dw_probe:t18 first.rot set from entity @p[name=${BOT}] Rotation\n` +
+      `data modify storage dw_probe:t18 first.feet set from entity @p[name=${BOT}] Pos\n` +
+      `execute store result storage dw_probe:t18 first.sneak byte 1 if entity @p[name=${BOT},predicate=dw_probe:sneaking]\n`,
+  )
+  await writeInContainer(`${PACK}/data/dw_probe/predicate/sneaking.json`, JSON.stringify({ condition: 'minecraft:entity_properties', entity: 'this', predicate: { flags: { is_sneaking: true } } }))
+  await writeInContainer(`${PACK}/data/minecraft/tags/function/tick.json`, JSON.stringify({ values: ['dw_probe:arrow_tick'] }))
+  row('reload', await rcon.probe('reload'))
+  await rcon.run(`tp ${BOT} ${feet.x} ${feet.y} ${feet.z}`)
+  bot.clearControlStates()
+  await rcon.run(`gamemode survival ${BOT}`)
+  await heal()
+  await hold(bot, 'bow')
+  await rcon.run(`give ${BOT} minecraft:arrow 64`)
+  await rcon.run(`give ${BOT} minecraft:arrow 64`)
+  await sleep(1500)
+  begin('T18-belfry-shot', `a target ${T.x - H.x} east, ${T.y - H.y} up, ${T.z - H.z} south of the bot's feet at ${feet.x} ${feet.y} ${feet.z}, over a top slab; ${T18_ARROWS} arrows on the harness's arc through the centre, drawn ${shot.SHOT_DRAW_MS} ms`)
+  await resetScore('#target_any')
+  let hits = 0
+  for (let k = 0; k < T18_ARROWS; k++) {
+    if (k % 30 === 29) await heal()
+    await rcon.probe('data remove storage dw_probe:t18 first')
+    const before = await score('#target_any')
+    const p = bot.entity.position
+    const eye = [p.x, p.y + bot.entity.height * 0.9, p.z]
+    const aim = shot.shotAim(eye, [T.x, T.y, T.z])
+    if (!aim) throw new Error('no arc')
+    await bot.lookAt(p.offset(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z), true)
+    bot.activateItem()
+    await sleep(shot.SHOT_DRAW_MS)
+    bot.deactivateItem()
+    await sleep(2500)
+    const first = valueOf((await rcon.probe('data get storage dw_probe:t18 first')).replace(/^.*has the following contents: /s, 'entity data: '))
+    const lay = await entityGet('@e[type=minecraft:arrow,tag=dw_seen,limit=1]', 'Pos')
+    const block = await entityGet('@e[type=minecraft:arrow,tag=dw_seen,limit=1]', 'inBlockState.Name')
+    const hit = (await score('#target_any')) - before
+    hits += hit > 0 ? 1 : 0
+    const m = (re) => t18Numbers(first?.match(re)?.[1])
+    row(
+      `arrow=${k + 1}`,
+      `hit=${hit}`,
+      `botPos=${[p.x, p.y, p.z].join(',')}`,
+      `botLook=${bot.entity.yaw},${bot.entity.pitch}`,
+      `aim=${aim.join(',')}`,
+      `feet=${m(/feet: \[([^\]]*)\]/).join(',')}`,
+      `rot=${m(/rot: \[([^\]]*)\]/).join(',')}`,
+      `pos=${m(/pos: \[([^\]]*)\]/).join(',')}`,
+      `motion=${m(/motion: \[([^\]]*)\]/).join(',')}`,
+      `sneak=${m(/sneak: (\d)/).join(',')}`,
+      `lay=${parsePos(lay)?.join(',') ?? '-'}`,
+      `block=${block ?? '-'}`,
+    )
+    await rcon.probe('kill @e[type=minecraft:arrow]')
+  }
+  row(`hits=${hits}`, `arrows=${T18_ARROWS}`)
+  await execFileP('docker', ['exec', container, 'rm', '-f', `${PACK}/data/minecraft/tags/function/tick.json`])
+  await rcon.probe('reload')
+  await rcon.probe(`setblock ${T.x} ${T.y} ${T.z} minecraft:air`)
+  await rcon.probe(`setblock ${T.x} ${T.y - 1} ${T.z} minecraft:air`)
+}
+
 // ---- T17: a mount under the sun ---------------------------------------------------
 // The summon a build emits for a wave stack declared with a mount
 // (`emit::mount::ride_on`): the mount, with the rider in `Passengers`, both
@@ -1374,6 +1459,7 @@ try {
   if (wants('T15')) await t15(bot)
   if (wants('T16')) await t16(bot)
   if (wants('T17')) await t17(bot)
+  if (wants('T18')) await t18(bot)
   console.log('== probe complete ==')
 } catch (e) {
   console.error(`probe failed: ${e.stack ?? e}`)
