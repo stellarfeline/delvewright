@@ -3464,6 +3464,22 @@ impl World {
         }
     }
 
+    /// **Whether a body afloat in `c` climbs out onto the standing cell `to`**,
+    /// as the reach graph flies it ([`World::climb_out`]): one of the simulated
+    /// ways out of the water lands a body standing in `to`. The route's swim
+    /// asks it where the cell band ([`super::AFLOAT_CLIMB_OUT_CELLS`]) stops
+    /// short of a floor whose top a partial support brings back into reach — a
+    /// lily pad on the water, whose standing cell is two over the water's top
+    /// cell and whose floor is two sixteenths over the band's.
+    pub(in crate::compiler::nav) fn climbs_out_onto(&self, c: [i32; 3], to: [i32; 3]) -> bool {
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        let mut edges: Edges = HashMap::default();
+        let mut out = NodeEdges::default();
+        self.climb_out(&memo, &params, c, &mut edges, &mut out);
+        edges.contains_key(&(to, EdgeKind::Climb))
+    }
+
     /// The simulated ways out of the water at `c`: facing every sixteenth of a
     /// turn, forward with the jump held, from the cell's foot and its top.
     fn climb_out(
