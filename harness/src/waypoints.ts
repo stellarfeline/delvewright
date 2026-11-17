@@ -80,8 +80,8 @@ export interface Climb {
  * `world.jumps[]` entry the compiler proved makeable, from the cell the body
  * launches in to the cell it lands in — both kept waypoints of the leg — with
  * whether it is sprinted and the run-up the compiler measured behind it. The
- * harness drives the hop `from → to` with mineflayer-pathfinder's parkour move,
- * on for that hop only ({@link parkourGap} says when the move cannot express it).
+ * harness drives the hop `from → to` itself, as the compiler flew it
+ * (`executor/jump.ts`), never with the pathfinder's parkour move.
  */
 export interface Jump {
   readonly from: Vec3Tuple;
@@ -91,25 +91,13 @@ export interface Jump {
 }
 
 /**
- * Why mineflayer-pathfinder 2.4.5's parkour move (`getMoveParkourForward`)
- * cannot express `jump`, or `undefined` when it can: the move goes along one
- * axis, lands two to four cells forward (two without the sprint), one up only
- * short of four, and one down at most. A jump outside it is a harness gap the
- * run refuses by name, never a hop the pathfinder is left to improvise.
+ * The jump's axis as `[dx, dz]`, one of them zero: the compiler's `jump_axis`,
+ * the larger of the two offsets taking it.
  */
-export function parkourGap(jump: Jump): string | undefined {
+export function jumpAxis(jump: Pick<Jump, "from" | "to">): readonly [number, number] {
   const dx = jump.to[0] - jump.from[0];
-  const dy = jump.to[1] - jump.from[1];
   const dz = jump.to[2] - jump.from[2];
-  if (dx !== 0 && dz !== 0) return "it is not along one axis (the parkour move leaps only straight ahead)";
-  const d = Math.abs(dx) + Math.abs(dz);
-  const maxD = jump.sprint ? 4 : 2;
-  if (d < 2) return "it lands in the next cell (a step, not a leap)";
-  if (d > maxD) return `it lands ${d} cells forward, beyond the parkour move's ${maxD}`;
-  if (dy > 1) return `it rises ${dy}, beyond the parkour move's one`;
-  if (dy === 1 && d === 4) return "it rises one at four cells forward, which the parkour move refuses";
-  if (dy < -1) return `it drops ${-dy}, beyond the parkour move's one`;
-  return undefined;
+  return Math.abs(dx) >= Math.abs(dz) ? [Math.sign(dx), 0] : [0, Math.sign(dz)];
 }
 
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
@@ -165,8 +153,9 @@ export interface GoalSpec {
   /** Set when this hop is a climb the compiler proved: the hop from `climb.from`
    * to this goal (`climb.to`) is driven by the climb, never by the pathfinder. */
   readonly climb?: Climb;
-  /** Set when this hop is a declared jump the compiler proved (spec-0113 §6):
-   * the pathfinder's parkour move is on for it, and for no other hop. */
+  /** Set when this hop is a jump the compiler proved (spec-0113 §6): the hop
+   * from `jump.from` to this goal (`jump.to`) is driven by the executor as the
+   * compiler flew it, never by the pathfinder. */
   readonly jump?: Jump;
   /** Set when this hop is a move of a sneak leg the body makes standing
    * (`stand_ups`, spec-0132 §5.2). */

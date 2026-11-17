@@ -21,6 +21,8 @@ import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import registryFor from "prismarine-registry";
+import { driveJump, type JumpBot } from "../src/executor/jump.ts";
+import type { Jump } from "../src/waypoints.ts";
 
 const requireCjs = createRequire(import.meta.url);
 
@@ -223,3 +225,30 @@ export function simWalk(
 }
 
 export const fmtPos = (p: readonly number[]): string => `[${p.map((v) => v.toFixed(2)).join(", ")}]`;
+
+/** Drive `jump` with the executor's own drive over the sim, one tick per turn. */
+export async function simJump(
+  bot: SimBot,
+  jump: Jump,
+  standing: (up: boolean) => void = () => {},
+  ticks = 600,
+): Promise<{ landed: boolean; why: string }> {
+  let settled = false;
+  let why = "";
+  let landed = false;
+  driveJump(bot as unknown as JumpBot, jump, standing).then(
+    () => {
+      settled = true;
+      landed = true;
+    },
+    (e: unknown) => {
+      settled = true;
+      why = (e as Error).message;
+    },
+  );
+  for (let t = 0; t < ticks && !settled; t++) {
+    bot.tick();
+    await new Promise((r) => setImmediate(r));
+  }
+  return { landed, why: settled ? why : `still driving after ${ticks} ticks` };
+}
