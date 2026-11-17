@@ -3742,56 +3742,195 @@ fn enumerate_worlds(groups: &[ChoiceGroup], read: &BTreeSet<String>) -> Vec<Worl
 }
 
 /// The finale quest and its transitive stage-4 `depends_on`, restricted to
-/// `keep` (the quests that complete in the chosen world) and topologically
-/// sorted. Returns `(order, cyclic)`.
+/// `keep` (the quests that complete in the chosen world), in the order
+/// [`quest_order`] walks them. Returns `(order, cyclic)`.
 fn finale_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
     let plan = &c.quest_plan.content;
-    let deps: BTreeMap<&str, Vec<&str>> = plan
-        .quests
-        .iter()
-        .map(|q| {
-            (
-                q.id.as_str(),
-                q.depends_on.iter().map(|d| d.as_str()).collect(),
-            )
-        })
-        .collect();
-
     let mut needed: BTreeSet<&str> = BTreeSet::new();
     let mut stack = vec![plan.finale.as_str()];
     while let Some(q) = stack.pop() {
         if !keep.contains(q) || !needed.insert(q) {
             continue;
         }
-        if let Some(ds) = deps.get(q) {
-            stack.extend(ds.iter().copied());
+        if let Some(x) = plan.quests.iter().find(|x| x.id.as_str() == q) {
+            stack.extend(x.depends_on.iter().map(|d| d.as_str()));
         }
     }
+    quest_order(c, &needed, false)
+}
 
-    let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|q| (*q, 0)).collect();
-    for q in &needed {
-        if let Some(ds) = deps.get(q) {
+/// **Every** quest in `keep`, in the order [`quest_order`] walks them, rather
+/// than only the finale's dependency closure — the branch playthrough's
+/// ordering (spec-0025). A quest that can end the delve is walked as late as
+/// its dependants allow: `campaign-complete` belongs to the path's last step,
+/// so every other quest this world completes (an optional strand included) is
+/// walked before it.
+fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
+    let needed: BTreeSet<&str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .filter(|q| keep.contains(*q))
+        .collect();
+    quest_order(c, &needed, true)
+}
+
+/// **The order a path walks the quests of `needed` in**: Kahn over stage-4
+/// `depends_on`, a quest becoming ready once every dependency in `needed` is
+/// walked, ties in the order quests became ready. Returns `(order, cyclic)`.
+///
+/// Three preferences break the ties, each only ever choosing among quests the
+/// dependency order already allows:
+///
+/// * With `endings_last`, a quest that can end the delve
+///   ([`quest_can_end_the_delve`]) waits until nothing else is ready.
+/// * **A mode is entered after what it would hold** (spec-0140 §5): a quest
+///   whose own bundles enter a mode that keeps some other quest — a mode that
+///   can outlast the quest — waits while a ready quest that mode does not
+///   keep could be walked first. Walked after the entry, that quest's
+///   objectives would be held, and the path would stop there (`DW1124`).
+/// * **While a mode is on, what it keeps is walked first**: the map's mode is
+///   replayed over the walk as [`crate::compiler::plan::walk_modes`] replays
+///   it over the path — entered and left by the `enter-mode`/`leave-mode`
+///   lines of a walked quest's `on_objective_complete` and `on_complete`
+///   (reaction bundles excepted), left by the settlement once no quest it
+///   keeps is started and not complete — and a ready quest it keeps goes
+///   before one it holds, so the held one is walked once the mode is left.
+///
+/// Where no order puts a held quest outside its mode, none is invented: the
+/// path walks it inside, and `DW1124` refuses the build.
+fn quest_order<'c>(
+    c: &'c Campaign,
+    needed: &BTreeSet<&'c str>,
+    endings_last: bool,
+) -> (Vec<String>, bool) {
+    let plan = &c.quest_plan.content;
+    let q = &c.quests.content;
+    let deps: BTreeMap<&str, Vec<&str>> = plan
+        .quests
+        .iter()
+        .map(|x| {
+            (
+                x.id.as_str(),
+                x.depends_on.iter().map(|d| d.as_str()).collect(),
+            )
+        })
+        .collect();
+    let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|x| (*x, 0)).collect();
+    for x in needed {
+        if let Some(ds) = deps.get(x) {
             for d in ds {
                 if needed.contains(d) {
-                    *indeg.get_mut(q).unwrap() += 1;
+                    *indeg.get_mut(x).unwrap() += 1;
                 }
             }
         }
     }
-    let mut queue: VecDeque<&str> = indeg
+    let ending: BTreeSet<&str> = if endings_last {
+        q.quests
+            .iter()
+            .filter(|x| quest_can_end_the_delve(x))
+            .map(|x| x.id.as_str())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    // Per quest, the mode lines its own bundles fire, in walk order:
+    // `(enters, mode)`.
+    let lines: BTreeMap<&str, Vec<(bool, &str)>> = q
+        .quests
         .iter()
-        .filter(|&(_, &d)| d == 0)
-        .map(|(q, _)| *q)
+        .map(|x| (x.id.as_str(), mode_lines(x)))
         .collect();
+    // The modes a quest enters that keep some other quest.
+    let outlasting = |x: &str| -> Vec<&delvewright_dsl::Mode> {
+        lines
+            .get(x)
+            .into_iter()
+            .flatten()
+            .filter(|(enters, _)| *enters)
+            .filter_map(|(_, m)| q.mode(m))
+            .filter(|m| m.keeps.iter().any(|k| k.as_str() != x))
+            .collect()
+    };
+    let mut walked: BTreeSet<&str> = BTreeSet::new();
+    let in_progress = |k: &str, walked: &BTreeSet<&str>, current: Option<&str>| -> bool {
+        let Some(x) = q.quests.iter().find(|x| x.id.as_str() == k) else {
+            return false;
+        };
+        let started = Some(k) == current
+            || match &x.trigger {
+                Trigger::CampaignStart => true,
+                Trigger::QuestComplete { quest } => walked.contains(quest.as_str()),
+            };
+        started && !walked.contains(k)
+    };
+    let mut on: Option<&delvewright_dsl::Mode> = None;
+    let mut ready: Vec<&'c str> = Vec::new();
+    let mut held: VecDeque<&'c str> = VecDeque::new();
+    let queue = |x: &'c str, ready: &mut Vec<&'c str>, held: &mut VecDeque<&'c str>| {
+        if ending.contains(x) {
+            held.push_back(x);
+        } else {
+            ready.push(x);
+        }
+    };
+    for (x, _) in indeg.iter().filter(|&(_, &d)| d == 0) {
+        queue(x, &mut ready, &mut held);
+    }
     let mut order = Vec::new();
-    while let Some(q) = queue.pop_front() {
-        order.push(q.to_string());
-        for r in &needed {
-            if deps.get(r).is_some_and(|ds| ds.contains(&q)) {
+    loop {
+        let pick = if ready.is_empty() {
+            held.pop_front()
+        } else {
+            let kept = on.and_then(|m| ready.iter().position(|x| m.keeps(x)));
+            let waits = |x: &str| {
+                outlasting(x)
+                    .iter()
+                    .any(|m| ready.iter().any(|r| *r != x && !m.keeps(r)))
+            };
+            let i = kept
+                .or_else(|| ready.iter().position(|x| !waits(x)))
+                .unwrap_or(0);
+            Some(ready.remove(i))
+        };
+        let Some(x) = pick else { break };
+        // The mode over the quest's own walk, then its completion.
+        for &(enters, m) in lines.get(x).into_iter().flatten() {
+            let Some(m) = q.mode(m) else { continue };
+            match (enters, on) {
+                (true, Some(cur)) if cur.id == m.id => {}
+                (true, _) => on = Some(m),
+                (false, Some(cur)) if cur.id == m.id => on = None,
+                (false, _) => {}
+            }
+            if let Some(cur) = on
+                && !cur
+                    .keeps
+                    .iter()
+                    .any(|k| in_progress(k.as_str(), &walked, Some(x)))
+            {
+                on = None;
+            }
+        }
+        walked.insert(x);
+        if let Some(cur) = on
+            && !cur
+                .keeps
+                .iter()
+                .any(|k| in_progress(k.as_str(), &walked, None))
+        {
+            on = None;
+        }
+        order.push(x.to_string());
+        for r in needed {
+            if deps.get(r).is_some_and(|ds| ds.contains(&x)) {
                 let e = indeg.get_mut(*r).unwrap();
                 *e -= 1;
                 if *e == 0 {
-                    queue.push_back(r);
+                    queue(r, &mut ready, &mut held);
                 }
             }
         }
@@ -3800,79 +3939,34 @@ fn finale_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
     (order, cyclic)
 }
 
-/// Topologically order **every** quest in `keep` by `depends_on` (Kahn), rather
-/// than only the finale's dependency closure — the branch playthrough's ordering
-/// (spec-0025). Same algorithm as [`finale_order`], different root set.
-fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
-    let plan = &c.quest_plan.content;
-    let deps: BTreeMap<&str, Vec<&str>> = plan
-        .quests
-        .iter()
-        .map(|q| {
-            (
-                q.id.as_str(),
-                q.depends_on.iter().map(|d| d.as_str()).collect(),
-            )
-        })
-        .collect();
-    let needed: BTreeSet<&str> = plan
-        .quests
-        .iter()
-        .map(|q| q.id.as_str())
-        .filter(|q| keep.contains(*q))
-        .collect();
-    let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|q| (*q, 0)).collect();
-    for q in &needed {
-        if let Some(ds) = deps.get(q) {
-            for d in ds {
-                if needed.contains(d) {
-                    *indeg.get_mut(q).unwrap() += 1;
+/// The `enter-mode` (`true`) and `leave-mode` (`false`) lines quest `x`'s
+/// own bundles fire, in the order its walk fires them: each objective's
+/// `on_objective_complete` in [`objectives_in_order`], then `on_complete`,
+/// every nested list but a reaction bundle's (`on_respawn`, `on_rest`,
+/// `on_caught`), which no walk dates.
+fn mode_lines(x: &delvewright_dsl::Quest) -> Vec<(bool, &str)> {
+    fn walk<'e>(list: &'e [QuestEffect], out: &mut Vec<(bool, &'e str)>) {
+        for e in list {
+            match &e.verb {
+                Verb::EnterMode { mode } => out.push((true, mode.as_str())),
+                Verb::LeaveMode { mode } => out.push((false, mode.as_str())),
+                _ => {}
+            }
+            for (seg, _, nested) in e.nested_effect_lists_labeled() {
+                if !matches!(seg.as_str(), "on_respawn" | "on_rest" | "on_caught") {
+                    walk(nested, out);
                 }
             }
         }
     }
-    // A quest that can end the delve is walked as late as its dependants allow:
-    // `campaign-complete` belongs to the path's last step, so every other quest
-    // this world completes (an optional strand included) is walked before it.
-    // Without this the tie between a ready ending and a ready strand fell to the
-    // id order, and a strand whose id sorts after the ending was exported past
-    // the end of the delve, where no player can walk it.
-    let ending: BTreeSet<&str> = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .filter(|q| quest_can_end_the_delve(q))
-        .map(|q| q.id.as_str())
-        .collect();
-    let mut ready: VecDeque<&str> = VecDeque::new();
-    let mut held: VecDeque<&str> = VecDeque::new();
-    for (q, _) in indeg.iter().filter(|&(_, &d)| d == 0) {
-        if ending.contains(q) {
-            held.push_back(q);
-        } else {
-            ready.push_back(q);
+    let mut out = Vec::new();
+    for o in objectives_in_order(&x.objectives) {
+        if let Some(list) = x.on_objective_complete.get(o.id()) {
+            walk(list, &mut out);
         }
     }
-    let mut order = Vec::new();
-    while let Some(q) = ready.pop_front().or_else(|| held.pop_front()) {
-        order.push(q.to_string());
-        for r in &needed {
-            if deps.get(r).is_some_and(|ds| ds.contains(&q)) {
-                let e = indeg.get_mut(*r).unwrap();
-                *e -= 1;
-                if *e == 0 {
-                    if ending.contains(r) {
-                        held.push_back(r);
-                    } else {
-                        ready.push_back(r);
-                    }
-                }
-            }
-        }
-    }
-    let cyclic = order.len() != needed.len();
-    (order, cyclic)
+    walk(&x.on_complete, &mut out);
+    out
 }
 
 /// Whether any effect list `q` declares (its own `on_complete`, any objective's
