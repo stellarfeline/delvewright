@@ -4516,8 +4516,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   configuration, face) triples) with `at_face` and `by_eye` (met by the eye
   alone), `declared` with `seen`/`told`/`rewarded`/`hidden`, `undeclared`,
   `unconfirmed`, `inert` with `inert_ways` (declared and never met shut; a
-  hidden way: never shut), `hidden_ways`, `hidden_configurations` and
-  `eye_lines`, one row per shut way met (connection, gating, configuration,
+  hidden way: never shut), `hidden_ways`, `hidden_configurations`,
+  `eye_lines` (every (eye, target) pair) and `eye_lines_cast` (the lines the
+  sight culls let through: the work), one row per shut way met (connection, gating, configuration,
   face, `openable`, `met` (`at a face`, or `by_the_eye_from` a cell),
   `junction`, `branch_length`, `branch_rise`, `branch_cut` (where the branch
   ground is cut: `at: path` one body wide, or the declared way's station with
@@ -4525,7 +4526,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   branch ground), `learned`, `confirmed`, and each word's finding — the
   `rewarded` finding `null` on a hidden way), and one
   `hidden_rows` entry per (hidden way, configuration it is shut in):
-  `reach`, `targets`, `eye_lines`, `eye` (`hidden`, or `seen_from`/`reaches`/
+  `reach`, `targets`, `eye_lines`, `eye_lines_cast`, `eye` (`hidden`, or `seen_from`/`reaches`/
   `what`), `shots` (each opening list and its shot) and `text` (`DW1060`'s
   English reading: the shot, the strings read before it, each word's first
   early mention and whether it is told after). Written on every build that
