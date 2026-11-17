@@ -9,7 +9,7 @@ import { OBJECTIVE_TIMEOUT_MS, EFFECT_SETTLE_MS } from "./objective.ts";
 import { SCORE_POLL_MS } from "./score.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 import {
-  SHOT_DRAW_MS,
+  SHOT_DRAW_TICKS,
   SHOT_FLIGHT_MS,
   SHOT_TRIES,
   USE_ITEM_HOLD_MS,
@@ -162,7 +162,8 @@ export const methods = {
   /**
    * spec-0134 §2: one real hit — equip the bow, aim along the full-drawn
    * arrow's arc through the target's centre (`shot.ts`, the pinned version's
-   * ballistics), draw past a full charge, release, and pass on the trigger's
+   * ballistics), draw past a full charge counted in the server's game ticks
+   * (`SHOT_DRAW_TICKS`), release, and pass on the trigger's
    * fired marker; a miss looses again on the same arc, and the step fails by
    * name once `SHOT_TRIES` arrows are spent, or at once when no arc reaches
    * the target. Every arrow loosed is counted on the run log.
@@ -186,7 +187,12 @@ export const methods = {
       if (aim === undefined) throw new Error(shotOutOfReach(label));
       await bot.lookAt(p.offset(aim[0] - p.x, aim[1] - p.y, aim[2] - p.z), true);
       bot.activateItem();
-      await delay(SHOT_DRAW_MS);
+      // The draw is counted in the server's ticks: the reading is answered in
+      // a tick no earlier than the one the draw began in (packets are handled
+      // in the order sent), and the release is sent only after a reading
+      // SHOT_DRAW_TICKS later has come back.
+      const drawn = await this.readGameTime(`${label}: the draw`);
+      await this.waitForGameTicks(SHOT_DRAW_TICKS, `${label}: a full draw`, drawn.tick);
       bot.deactivateItem();
       loosed += 1;
       const hit = await this.waitFor(

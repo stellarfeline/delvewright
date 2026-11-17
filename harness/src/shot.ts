@@ -12,8 +12,8 @@ export const ARROW_LAUNCH_SPEED = 3.0;
 export const ARROW_DRAG = 0.99;
 /** Blocks a tick taken from the vertical velocity after the drag. */
 export const ARROW_GRAVITY = 0.05;
-/** The arrow spawns this far under the shooter's eye. */
-export const ARROW_LAUNCH_DROP = 0.1;
+/** The arrow spawns this far under the shooter's eye (`0.1F`, widened). */
+export const ARROW_LAUNCH_DROP = 0.10000000149011612;
 /** The ticks a flight is followed before it is given up as out of reach. */
 const FLIGHT_TICKS = 200;
 
@@ -21,15 +21,28 @@ const FLIGHT_TICKS = 200;
  * How many arrows the bot looses for one hit before the step fails. The
  * server scatters every arrow (each component of its unit direction moved by
  * a triangular draw of half-width 0.0172275, the record §14), so an arc
- * through the centre is a chance per arrow, not a certainty: on the town's
- * belfry, a target over a slab a stray arrow strikes first, 3 arrows of 12
- * hit (the model alone says about half), and at a quarter thirty-two leave
- * about one hit in ten thousand unmade.
+ * through the centre is a chance per arrow, not a certainty. On the town's
+ * belfry — a target in a wall, a top slab under it and a stone column beside
+ * it — the model gives 44 to 47 % per arrow from anywhere within 0.3 of the
+ * stance's centre (the record §14); twenty leave at most one hit in a
+ * hundred thousand unmade (0.56^20).
  */
-export const SHOT_TRIES = 32;
+export const SHOT_TRIES = 20;
 
-/** How long the bot holds the bow drawn: past a full charge (20 ticks). */
-export const SHOT_DRAW_MS = 1200;
+/**
+ * The game ticks a bow is drawn for a full charge (`BowItem.getPowerForTime`:
+ * power `(f² + 2f) / 3` of `f = ticks / 20`, capped at 1).
+ */
+export const BOW_FULL_DRAW_TICKS = 20;
+
+/**
+ * The game ticks the bot holds the bow drawn, read from the server's game time
+ * between the draw and the release: one past a full charge. A draw timed by the
+ * wall clock is short whenever the server falls behind — on a server running
+ * fifteen ticks a second a 1.2 s draw is 18 ticks, power 0.87, an arrow at 2.6
+ * blocks a tick that falls short of the arc it was aimed on.
+ */
+export const SHOT_DRAW_TICKS = BOW_FULL_DRAW_TICKS + 1;
 
 /** How long the bot holds a raised item in use (spec-0134 §3). */
 export const USE_ITEM_HOLD_MS = 1000;
@@ -94,6 +107,42 @@ export function shotPitch(distance: number, rise: number): number | undefined {
     else hi = mid;
   }
   return (lo + hi) / 2;
+}
+
+/**
+ * The flight of a full-drawn arrow loosed from `eye` on the low arc through
+ * `point`, with no spread: its position at launch and after each tick, up to
+ * the first tick at or past `point`'s column. `undefined` when no arc reaches
+ * `point`, or it stands straight over or under the eye. The compiler's shot
+ * proof follows the same flight (`delvewright_dsl::metrics::arrow::flight`),
+ * held to this one by the case file `test/shot.test.ts` writes.
+ */
+export function arrowFlight(
+  eye: readonly [number, number, number],
+  point: readonly [number, number, number],
+): [number, number, number][] | undefined {
+  const launch: [number, number, number] = [eye[0], eye[1] - ARROW_LAUNCH_DROP, eye[2]];
+  const dx = point[0] - launch[0];
+  const dz = point[2] - launch[2];
+  const d = Math.hypot(dx, dz);
+  if (d === 0) return undefined;
+  const pitch = shotPitch(d, point[1] - launch[1]);
+  if (pitch === undefined) return undefined;
+  const [ux, uz] = [dx / d, dz / d];
+  let vh = ARROW_LAUNCH_SPEED * Math.cos(pitch);
+  let vy = ARROW_LAUNCH_SPEED * Math.sin(pitch);
+  let p = launch;
+  const out: [number, number, number][] = [p];
+  let run = 0;
+  for (let n = 0; n < FLIGHT_TICKS; n++) {
+    p = [p[0] + vh * ux, p[1] + vy, p[2] + vh * uz];
+    run += vh;
+    out.push(p);
+    if (run >= d) return out;
+    vh *= ARROW_DRAG;
+    vy = vy * ARROW_DRAG - ARROW_GRAVITY;
+  }
+  return undefined;
 }
 
 /**
