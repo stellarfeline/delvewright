@@ -30,6 +30,13 @@ import { fmt } from "./connection.ts";
  * it is taken as standing there. */
 const START_REACH = 0.12;
 
+/** How far (blocks, horizontally) off the run-up a body may stand for the
+ * drive to take it from there — across the line, and past either end along
+ * it: inside the run-up's own cells, so the crouched creep only ever walks
+ * the straight run of standable cells the compiler measured. Farther, the
+ * executor walks it there first ({@link methods.jumpHop}). */
+export const RUN_UP_REACH = 0.75;
+
 /** The body's half width (a player's box is 0.6 wide). */
 const HALF_WIDTH = 0.3;
 
@@ -58,6 +65,23 @@ export function boxOverColumn(x: number, z: number, cell: Vec3Tuple): boolean {
     x - HALF_WIDTH < cell[0] + 1 &&
     z + HALF_WIDTH > cell[2] &&
     z - HALF_WIDTH < cell[2] + 1
+  );
+}
+
+/** Whether a body at `pos` stands on the run-up: on the straight run of
+ * cells from its start to the launch, within {@link RUN_UP_REACH}, its feet at
+ * their height. */
+export function onRunUp(pos: { x: number; y: number; z: number }, jump: Jump): boolean {
+  const [ax, az] = jumpAxis(jump);
+  const [fx, fz] = [jump.from[0] + 0.5, jump.from[2] + 0.5];
+  // Along the axis from the launch's centre (negative behind it), and across.
+  const along = (pos.x - fx) * ax + (pos.z - fz) * az;
+  const across = Math.abs((pos.x - fx) * az - (pos.z - fz) * ax);
+  return (
+    along <= RUN_UP_REACH &&
+    along >= -jump.runUp - RUN_UP_REACH &&
+    across <= RUN_UP_REACH &&
+    Math.abs(pos.y - jump.from[1]) <= 0.6
   );
 }
 
@@ -105,9 +129,10 @@ export interface JumpLanding {
 /**
  * **Drive `jump` as the compiler flew it**, one physics tick at a time:
  *
- * 1. creep, crouched, to the centre of the run-up's start — a crouched body
- *    does not walk off an edge, and it stops where it is let go — and stand
- *    still there;
+ * 1. from a body standing on the run-up ({@link onRunUp}; any other is
+ *    refused at once, never walked across the geometry), creep, crouched,
+ *    along it to the start's centre — a crouched body does not walk off an
+ *    edge, and it stops where it is let go — and stand still there;
  * 2. face along the jump's axis, hold forward (and sprint when the jump is
  *    sprinted), and press jump once, on one of the last two ticks the body
  *    stands over the launch cell's column ({@link pressNow});
@@ -148,6 +173,10 @@ export function driveJump(
         finish(`did not land within ${budget} ticks (stuck in its ${phase})`);
         return;
       }
+      if (tick === 1 && !onRunUp(p, jump)) {
+        finish(`is not on its run-up [${start.join(", ")}]..[${jump.from.join(", ")}]`);
+        return;
+      }
       switch (phase) {
         case "creep": {
           const dx = sx - p.x;
@@ -162,7 +191,6 @@ export function driveJump(
           void bot.look(Math.atan2(-dx, -dz), 0, true);
           bot.setControlState("sneak", true);
           bot.setControlState("forward", true);
-          bot.setControlState("jump", e.isCollidedHorizontally === true);
           return;
         }
         case "settle": {
@@ -217,11 +245,19 @@ export function driveJump(
 
 export const methods = {
   /**
-   * Drive the jump `spec.jump` ({@link driveJump}), from wherever the previous
-   * hop left the bot (within a block of the jump's `from`) to `spec` (the
-   * jump's `to`). Fails loudly, naming where the bot is.
+   * Drive the jump `spec.jump` ({@link driveJump}) to `spec` (the jump's `to`).
+   * A bot off the run-up — a blow knocked it off a one-wide plank, or the
+   * previous hop left it beside the line — is walked to the run-up's start first, by the
+   * staged pathfinder walk every other hop takes (`sneak` as its leg), so the
+   * drive starts where the proof's run starts. Fails loudly, naming where the
+   * bot is.
    */
-  async jumpHop(this: MineflayerExecutor, spec: GoalSpec, label: string): Promise<void> {
+  async jumpHop(
+    this: MineflayerExecutor,
+    spec: GoalSpec,
+    label: string,
+    sneak = false,
+  ): Promise<void> {
     const jump = spec.jump;
     if (!jump) throw new Error(`${label}: jumpHop called on a hop with no jump`);
     const bot = this.requireBot();
@@ -230,6 +266,14 @@ export const methods = {
       `[jump] ${label}: [${jump.from.join(", ")}] → [${jump.to.join(", ")}] (${how}) from ` +
         `[${runUpStart(jump).join(", ")}]\n`,
     );
+    const start = runUpStart(jump);
+    if (!onRunUp(bot.entity.position, jump)) {
+      process.stderr.write(
+        `[jump] ${label}: the bot is at ${fmt(bot.entity.position)}, off the run-up; ` +
+          `walking it to [${start.join(", ")}]\n`,
+      );
+      await this.gotoStaged({ x: start[0], y: start[1], z: start[2], range: 0 }, `${label} (run-up)`, sneak);
+    }
     const yielded = this.crouchYielded;
     try {
       const landing = await driveJump(bot as unknown as JumpBot, jump, (up) => {
