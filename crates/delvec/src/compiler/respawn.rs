@@ -109,9 +109,9 @@ struct Sited {
     /// it as forced would credit a removal on a route the party need never take.
     optional: bool,
     /// Whether the exported path is guaranteed to fire this line — the ONE rule,
-    /// `plan::firing_of`, over `Plan::path_firing`: the beat is on the path, the
-    /// quest is not optional, and the replay fires the line with its whole gate
-    /// decided open. Never re-derived here.
+    /// `plan::firing_of`, over `Plan::path_firing`: the beat is on the path (the
+    /// exported path plays no optional quest) and the replay fires the line
+    /// with its whole gate decided open. Never re-derived here.
     path_forced: bool,
     root: Root,
     act: Act,
@@ -481,7 +481,6 @@ fn distance(a: [i32; 3], b: [i32; 3]) -> f64 {
 /// enumeration (`delvewright_dsl::for_each_effect_root`) — so a new root cannot
 /// leave a staging beat invisible here.
 fn site_effects(plan: &Plan) -> Vec<Sited> {
-    let optional = plan.campaign.quest_plan.content.optional();
     let mut out: Vec<Sited> = Vec::new();
     let mut bundle = 0usize;
     crate::compiler::plan::for_each_effect_root(plan.campaign, &mut |site, list| {
@@ -538,7 +537,6 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
                     root: site.root,
                 },
                 &plan.path_firing,
-                &optional,
             );
             let step = match root {
                 Root::Quest => fired_at,

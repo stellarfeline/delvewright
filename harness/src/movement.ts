@@ -385,6 +385,9 @@ export interface SwimCell {
   readonly boundingBox: string;
   readonly physical: boolean;
   readonly safe: boolean;
+  /** The block's collision boxes, each `[x0, y0, z0, x1, y1, z1]` in blocks
+   * of its own cell, as the library's `Block.shapes` gives them. */
+  readonly shapes?: readonly (readonly number[])[];
   readonly position?: { readonly x: number; readonly y: number; readonly z: number } | null;
 }
 
@@ -408,6 +411,19 @@ export interface SwimMovements {
  * the route proof's `AFLOAT_CLIMB_OUT_CELLS` (`compiler/nav/world/body.rs`). */
 export const SWIM_CLIMB_OUT_CELLS = 1;
 
+/** The vanilla auto-step in blocks, `metrics::MAX_AUTO_STEP_16` (9/16): a
+ * floor in the cell one over the band whose collision top is no higher than
+ * this over that cell's bottom is one the route proof's flown climb out may
+ * land a body on (`World::flown_climb_outs`, a lily pad on the water). */
+export const SWIM_CLIMB_OUT_THIN_TOP = 9 / 16;
+
+/** A floor whose every collision box tops out within {@link SWIM_CLIMB_OUT_THIN_TOP}. */
+const thinFloor = (b: SwimCell): boolean =>
+  b.physical &&
+  b.shapes !== undefined &&
+  b.shapes.length > 0 &&
+  b.shapes.every((s) => (s[4] ?? Number.POSITIVE_INFINITY) <= SWIM_CLIMB_OUT_THIN_TOP + 1e-9);
+
 const { Move } = { Move: requireCjs("mineflayer-pathfinder/lib/move") } as {
   Move: new (x: number, y: number, z: number, remainingBlocks: number, cost: number) => SwimNode;
 };
@@ -425,8 +441,9 @@ const installed = new WeakSet<object>();
  * swims up and steps out. The route proof (`World::swim_moves`,
  * `compiler/nav/route/mod.rs`) crosses both: from a cell a body swims in, up
  * to the swim cell over it, and out onto a standable cell beside it within
- * {@link SWIM_CLIMB_OUT_CELLS}, with open or water headroom in its own column
- * for the lift. This adds exactly those moves to the library's own, on a leg
+ * {@link SWIM_CLIMB_OUT_CELLS}, or onto a thin floor (a lily pad) one course
+ * over it ({@link SWIM_CLIMB_OUT_THIN_TOP}), with open or water headroom in its
+ * own column for the lift. This adds exactly those moves to the library's own, on a leg
  * whose liquid is admitted ({@link swimFor}) and on no other; the library's
  * steering already holds the jump in water, which rises the body and makes
  * the fluid jump over the rim. Lava is never swum. Installed once per
@@ -485,6 +502,22 @@ export function swimMoves(movements: SwimMovements, node: SwimNode, liquidCost: 
         push(dx, rise, dz, 1 + rise);
         break;
       }
+    }
+    // Or onto a thin floor in the cell one over the band's floor, a lily pad
+    // on the water, where the route proof's flown climb out lands a body
+    // (the route proof's standing cell is the one over the pad; the library's
+    // node is the cell the body's feet are in, the pad's own).
+    const rise = SWIM_CLIMB_OUT_CELLS;
+    let headroom = true;
+    for (let y = 1; y <= rise + 2; y++) {
+      const b = at(0, y, 0);
+      if (!open(b) && !isWater(b)) headroom = false;
+    }
+    const pad = at(dx, rise, dz);
+    const head = at(dx, rise + 1, dz);
+    const over = at(dx, rise + 2, dz);
+    if (headroom && thinFloor(pad) && head.safe && !isWater(head) && over.safe) {
+      push(dx, rise, dz, 2 + rise);
     }
   }
   return out;
