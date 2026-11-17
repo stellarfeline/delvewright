@@ -449,6 +449,28 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// **Whether a story world credits producer `g` now, its entry deeds
+    /// placed** (spec-0108 §4.1): [`Self::story_credit`], except that an act
+    /// the world places as a deed (`held`) writes nothing until it is
+    /// performed (`done`) — never from the start, and never at all when its
+    /// gate is shut where it stands. The one answer to "has this deed
+    /// written yet", read by the story run that places the deeds, by the
+    /// replay of its path and by every order the branch search walks
+    /// ([`Walk`]), from the world's first state ([`Self::story_initial`]) on.
+    pub(super) fn deed_credit(
+        &self,
+        g: &GatedFlag,
+        performs: &BTreeSet<String>,
+        held: &BTreeSet<String>,
+        done: &BTreeSet<String>,
+    ) -> bool {
+        self.story_credit(g, performs)
+            && !g
+                .act
+                .as_ref()
+                .is_some_and(|a| held.contains(a) && !done.contains(a))
+    }
+
     /// Perform ambient act `id` against `st`: its bundle fired through the one
     /// gate test the replay applies everywhere, or its disarm flag set.
     pub(super) fn perform_act(&self, st: &mut ReplayState, id: &str, pos: usize) {
@@ -456,7 +478,7 @@ impl<'a> Flow<'a> {
         self.perform_act_ending(st, id, pos, &mut complete_at);
     }
 
-    fn perform_act_ending(
+    pub(super) fn perform_act_ending(
         &self,
         st: &mut ReplayState,
         id: &str,
@@ -560,8 +582,14 @@ impl<'a> Flow<'a> {
     }
 
     /// A story world's starting state: its barred quests never active, the
-    /// data it dates known, its credited producers saturated.
-    fn story_initial(&self, performs: &BTreeSet<String>, barred: &BTreeSet<String>) -> ReplayState {
+    /// data it dates known, its credited producers saturated — no producer of
+    /// a deed it places (`held`) among them ([`Self::deed_credit`]).
+    fn story_initial(
+        &self,
+        performs: &BTreeSet<String>,
+        barred: &BTreeSet<String>,
+        held: &BTreeSet<String>,
+    ) -> ReplayState {
         let mut st = ReplayState {
             barred: barred.clone(),
             expired: self.expired_in(performs),
@@ -581,7 +609,10 @@ impl<'a> Flow<'a> {
             };
             st.state.insert(id.clone(), d);
         }
-        self.saturate_ambient_with(&mut st.flags, &|g| self.story_credit(g, performs));
+        let none = BTreeSet::new();
+        self.saturate_ambient_with(&mut st.flags, &|g| {
+            self.deed_credit(g, performs, held, &none)
+        });
         st
     }
 
@@ -662,7 +693,7 @@ impl<'a> Flow<'a> {
         barred: &BTreeSet<String>,
     ) -> (Option<String>, Option<String>, BTreeMap<String, SceneState>) {
         let credit = |g: &GatedFlag| self.story_credit(g, performs);
-        let mut st = self.story_initial(performs, barred);
+        let mut st = self.story_initial(performs, barred, &BTreeSet::new());
         let mut complete_at: Option<(usize, String)> = None;
         let mut blocked = None;
         for (i, step) in steps.iter().enumerate() {
@@ -930,7 +961,7 @@ impl<'a> Flow<'a> {
         let performs = &w.performs;
         let sel = &self.worlds[w.selection];
         let mut o = Owing {
-            st: self.story_initial(performs, barred),
+            st: self.story_initial(performs, barred, &BTreeSet::new()),
             paid: BTreeSet::new(),
         };
         o.st.flags.clear();
@@ -1065,7 +1096,6 @@ impl<'a> Flow<'a> {
         let completed = sol.completed.clone();
         let mut pt = self.playthrough_from(Some(sol), true);
         self.place_lapses(&mut pt.steps, performs, &barred, &expired);
-        let mut st = self.story_initial(performs, &barred);
         // The ambient electives this world performs that write what an ending
         // reads — its entry deeds — in act-id order.
         let relevant = self.relevant_acts();
@@ -1090,11 +1120,10 @@ impl<'a> Flow<'a> {
             // An act to be placed writes nothing before it is performed: its
             // own flags, credited from the start, would read as its own gate
             // shut (a purchase that `forbids` what it buys).
-            let dry_credit =
-                |g: &GatedFlag| credit(g) && !g.act.as_ref().is_some_and(|a| pending.contains(a));
-            let mut dry = self.story_initial(performs, &barred);
-            dry.flags.clear();
-            self.saturate_ambient_with(&mut dry.flags, &dry_credit);
+            let held: BTreeSet<String> = pending.iter().cloned().collect();
+            let none = BTreeSet::new();
+            let dry_credit = |g: &GatedFlag| self.deed_credit(g, performs, &held, &none);
+            let mut dry = self.story_initial(performs, &barred, &held);
             let mut dry_complete: Option<(usize, String)> = None;
             for (i, step) in pt.steps.iter().enumerate() {
                 for act in &pending {
@@ -1149,56 +1178,28 @@ impl<'a> Flow<'a> {
             .cloned()
             .collect();
         let mut deeds: Vec<(usize, String)> = Vec::new();
-        let mut complete_at: Option<(usize, String)> = None;
         let mut fired: BTreeSet<String> = BTreeSet::new();
         let mut fired_in_order: Vec<(usize, String)> = Vec::new();
         let mut undecided: BTreeSet<String> = BTreeSet::new();
         let mut incoherent: Option<String> = None;
-        // A placed deed writes at its step, once (spec-0108 §4.1): its
-        // producers are credited from the step it is performed at, never
-        // before.
-        let credit_at = |g: &GatedFlag, i: usize| {
-            credit(g)
-                && !g
-                    .act
-                    .as_ref()
-                    .is_some_and(|a| at.get(a).is_some_and(|j| *j > i))
-        };
-        st.flags.clear();
-        self.saturate_ambient_with(&mut st.flags, &|g| credit_at(g, 0));
-        for (i, step) in pt.steps.iter().enumerate() {
-            for (_, c) in debts.choices.iter().filter(|(j, _)| *j == i) {
-                st.flags.extend(c.sets.iter().cloned());
-            }
-            for act in pending.iter().filter(|a| at.get(*a) == Some(&i)) {
-                if !self.deed_performable(act, &st, owed.contains(act.as_str())) {
-                    // An earlier deed shut its gate: it is not performed.
-                    unperformed.push(act.clone());
-                    continue;
-                }
-                st.fired.clear();
-                st.undecided.clear();
-                self.perform_act_ending(&mut st, act, i + 1, &mut complete_at);
-                fired.extend(st.fired.iter().cloned());
-                fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
-                undecided.extend(st.undecided.iter().cloned());
-                deeds.push((i, act.clone()));
-            }
-            self.saturate_ambient_with(&mut st.flags, &|g| credit_at(g, i));
-            if incoherent.is_none()
-                && let Some(why) = self.step_blocked(&st, step)
-            {
-                incoherent = Some(format!("step {} (`{}`): {why}", i + 1, step.objective));
-            }
-            self.advance_with(&mut st, step, i + 1, &mut complete_at, &|g| credit_at(g, i));
-            fired.extend(st.fired.iter().cloned());
-            fired_in_order.extend(st.fired.iter().map(|p| (i, p.clone())));
-            undecided.extend(st.undecided.iter().cloned());
+        // The world's path is walked by the one walk every reader of it takes
+        // ([`Walk`]: the replay of the exported path, every order the branch
+        // search walks): each placed deed performed in front of its step where
+        // [`Self::deed_performable`] holds, its producers credited once it is
+        // performed and never before ([`Self::deed_credit`]).
+        let held: BTreeSet<String> = at.keys().cloned().collect();
+        let mut placed: Vec<(usize, String)> = Vec::new();
+        for i in 0..pt.steps.len() {
+            placed.extend(
+                pending
+                    .iter()
+                    .filter(|a| at.get(*a) == Some(&i))
+                    .map(|a| (i, a.clone())),
+            );
         }
-        let owed: BTreeSet<String> = owed.into_iter().map(str::to_string).collect();
-        pt.story = Some(std::sync::Arc::new(StoryCtx {
+        let ctx = std::sync::Arc::new(StoryCtx {
             performs: performs.clone(),
-            deeds,
+            deeds: placed,
             choices: debts.choices,
             triggers: debts.triggers,
             slots: pt
@@ -1207,8 +1208,46 @@ impl<'a> Flow<'a> {
                 .enumerate()
                 .map(|(i, s)| (s.objective.clone(), i))
                 .collect(),
-            owed,
-        }));
+            owed: owed.into_iter().map(str::to_string).collect(),
+            held,
+        });
+        let mut w = Walk {
+            flow: self,
+            st: self.story_initial(performs, &barred, &ctx.held),
+            complete_at: None,
+            taken: 0,
+            performed: None,
+            story: Some(ctx.clone()),
+            deeds_done: BTreeSet::new(),
+        };
+        for (i, step) in pt.steps.iter().enumerate() {
+            let (done, _) = w.perform_due(step);
+            // A deed whose gate is shut where it stands is not performed.
+            for act in ctx.deeds_before(&step.objective) {
+                if !w.deeds_done.contains(act) {
+                    unperformed.push(act.to_string());
+                }
+            }
+            for (act, f) in &done {
+                fired.extend(f.iter().cloned());
+                fired_in_order.extend(f.iter().map(|p| (i, p.clone())));
+                deeds.push((i, act.clone()));
+            }
+            undecided.extend(w.st.undecided.iter().cloned());
+            if incoherent.is_none()
+                && let Some(why) = self.step_blocked(&w.st, step)
+            {
+                incoherent = Some(format!("step {} (`{}`): {why}", i + 1, step.objective));
+            }
+            w.take_after_due(step, done);
+            fired.extend(w.st.fired.iter().cloned());
+            fired_in_order.extend(w.st.fired.iter().map(|p| (i, p.clone())));
+            undecided.extend(w.st.undecided.iter().cloned());
+        }
+        let st = w.st;
+        let mut ctx = (*ctx).clone();
+        ctx.deeds = deeds;
+        pt.story = Some(std::sync::Arc::new(ctx));
         StoryRun {
             playthrough: pt,
             fired,
@@ -2324,7 +2363,7 @@ impl<'a> Flow<'a> {
             None => self.walk_performing(),
             Some(ctx) => {
                 let barred = self.barred(&ctx.performs);
-                let mut st = self.story_initial(&ctx.performs, &barred);
+                let mut st = self.story_initial(&ctx.performs, &barred, &ctx.held);
                 st.flags = self.initial_state_with(&|_| false).flags;
                 Walk {
                     flow: self,
@@ -2346,7 +2385,7 @@ impl<'a> Flow<'a> {
                 let barred = self.barred(&ctx.performs);
                 Walk {
                     flow: self,
-                    st: self.story_initial(&ctx.performs, &barred),
+                    st: self.story_initial(&ctx.performs, &barred, &ctx.held),
                     complete_at: None,
                     taken: 0,
                     performed: None,
