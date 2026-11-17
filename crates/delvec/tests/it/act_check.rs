@@ -511,10 +511,16 @@ fn file(out: &BuildOutput, suffix: &str) -> String {
 fn the_laid_roll_leaves_the_hand() {
     let out = build(&muster_loft(lay_interact()));
     let complete = file(&out, "/function/complete_o_shrine.mcfunction");
+    let mut lines = complete.lines();
     assert_eq!(
-        complete.lines().next(),
+        lines.next(),
+        Some("execute if score #party dw.o_shrine matches 1 run return 0"),
+        "a completion already run returns before it takes anything: {complete}"
+    );
+    assert_eq!(
+        lines.next(),
         Some("clear @s minecraft:paper 1"),
-        "the take opens the completion: {complete}"
+        "then the take, before anything else: {complete}"
     );
     // The door presents the paper and keeps it: no take there.
     let door = file(&out, "/function/complete_o_door.mcfunction");

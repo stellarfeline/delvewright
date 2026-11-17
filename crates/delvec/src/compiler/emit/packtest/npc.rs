@@ -184,6 +184,7 @@ pub(super) fn emit_v04_packtests(
             "execute store result score #open_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
         ));
         b.push("assert score #open_iclr dw.sys matches 0".to_string());
+        b.push(super::super::quest::complete_latch_open(id.as_str()));
         b.push(format!(
             "execute as {sel} run function {ns}:complete_{}",
             safe_obj_fn(id.as_str())
