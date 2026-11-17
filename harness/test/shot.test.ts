@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -132,8 +133,12 @@ test("a point no full draw reaches has no aim, and the failures name the step", 
  * (`delvewright_dsl::metrics::arrow`, `the_solver_matches_the_bots_aim`):
  * this aim's low-arc pitch over a grid of distances and rises, the unreached
  * among them, and the flight tick by tick over a grid of rises and falls.
- * Refused when the committed file is not what this writes; rewrite it with
- * `DELVEWRIGHT_WRITE_ARROW_ARCS=1 npm test -- test/shot.test.ts`.
+ * Refused when the committed file's values are not what this computes. The
+ * file's bytes are `delvec fmt`'s (the one canonical form, swept in CI), so the
+ * comparison is of parsed values; the rewrite
+ * `DELVEWRIGHT_WRITE_ARROW_ARCS=1 npm test -- test/shot.test.ts` writes the
+ * values and then runs `delvec fmt` (the binary at `DELVEC`, default
+ * `target/debug/delvec`) over the file.
  */
 const ARC_FILE = fileURLToPath(
   new URL("../../crates/dsl/tests/fixtures/movement/arrow-arcs-1.21.11.json", import.meta.url),
@@ -169,8 +174,16 @@ function arcCases(): unknown {
 
 test("the committed arc cases are what this aim writes", () => {
   const text = `${JSON.stringify(arcCases(), null, 1)}\n`;
-  if (process.env.DELVEWRIGHT_WRITE_ARROW_ARCS === "1") writeFileSync(ARC_FILE, text);
-  assert.equal(readFileSync(ARC_FILE, "utf8"), text, "rewrite with DELVEWRIGHT_WRITE_ARROW_ARCS=1");
+  if (process.env.DELVEWRIGHT_WRITE_ARROW_ARCS === "1") {
+    writeFileSync(ARC_FILE, text);
+    const delvec = process.env.DELVEC ?? fileURLToPath(new URL("../../target/debug/delvec", import.meta.url));
+    execFileSync(delvec, ["fmt", ARC_FILE], { stdio: "inherit" });
+  }
+  assert.deepEqual(
+    JSON.parse(readFileSync(ARC_FILE, "utf8")),
+    JSON.parse(text),
+    "rewrite with DELVEWRIGHT_WRITE_ARROW_ARCS=1",
+  );
 });
 
 test("the flight crosses the point it is aimed through", () => {
