@@ -84,7 +84,11 @@
 //! boxes ([`measured_collision`], `crates/dsl/data/collision-tops-1.21.11.tsv`):
 //! a box that rests on the cell floor and tops out at 8..15 sixteenths is a
 //! [`Collision::PartialFloor`] at that height — an upward dripstone tip at 11, a
-//! chest at 14. Everything else is a [`Collision::FullCube`], which
+//! chest at 14 — and one that tops out under 8 is [`Collision::Thin`], its top
+//! rounded up to a whole sixteenth (a lily pad's 1.5 is 2): a full cube there
+//! would be a floor a block higher than the game's, which admits a landing the
+//! game refuses. A trapdoor keeps the class a door has. Everything else is a
+//! [`Collision::FullCube`], which
 //! **over-blocks**: it can only make a walk refuse a step vanilla admits, never
 //! admit one vanilla refuses. So a box this module does not route through is
 //! left a wall on purpose rather than guessed at, and the places that happens
@@ -839,12 +843,37 @@ pub fn collision_top_16(name: &str) -> u8 {
     {
         return 0;
     }
+    // A trapdoor's thin closed box is a door a hand opens, not a floor
+    // decoration: it keeps the class `collision_class` gives a door.
+    if id.ends_with("_trapdoor") {
+        return measured_partial_floor_16(name).unwrap_or(FULL_HEIGHT_16);
+    }
     // Every block no rule above names: the pinned jar's own collision box, where
-    // it rests on the cell floor and tops out at a floor height (an upward
-    // dripstone tip at 11, a chest at 14, a bed at 9, soul sand at 14). A box
-    // under the thin line, one that does not start at the floor, or one the
-    // table does not hold stays the full-cube default, which over-blocks.
-    measured_partial_floor_16(name).unwrap_or(FULL_HEIGHT_16)
+    // it rests on the cell floor — a floor height (an upward dripstone tip at
+    // 11, a chest at 14, a bed at 9, soul sand at 14), or under the thin line,
+    // where a body stands within a step of the cell floor (a lily pad at 1.5, a
+    // repeater at 2, a turtle egg at 7). A thin box read as a full cube is a
+    // floor a whole block higher than the game's: a jump proven onto a lily
+    // pad's phantom top overshoots the real one into the pond. A box that does
+    // not start at the floor, or one the table does not hold, stays the
+    // full-cube default, which over-blocks.
+    measured_floor_16(name).unwrap_or(FULL_HEIGHT_16)
+}
+
+/// The measured top of a block whose collision box rests on its cell floor
+/// and tops out under a full cube, in whole sixteenths rounded up (a lily
+/// pad's 1.5 is 2). `None` for any other box.
+fn measured_floor_16(name: &str) -> Option<u8> {
+    let (lo, hi) = measured_collision(name)?.span?;
+    if lo.whole() != Some(0) {
+        return None;
+    }
+    let den = i32::try_from(hi.den).ok()?.max(1);
+    let top = (hi.num + den - 1).div_euclid(den);
+    if !(1..i32::from(FULL_HEIGHT_16)).contains(&top) {
+        return None;
+    }
+    u8::try_from(top).ok()
 }
 
 /// The pinned jar's collision-box extent per blockstate, in sixteenths:
@@ -2020,6 +2049,39 @@ pub fn hurts_body(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A measured box under the thin line is thin, its top rounded up: a lily
+    /// pad is a step over its water, not a full cube a block higher (the jump
+    /// the festival town's pond route took onto that phantom top overshot the
+    /// real one). A trapdoor keeps the class a door has.
+    #[test]
+    fn a_thin_measured_box_is_thin_not_a_phantom_floor() {
+        for (name, top) in [
+            ("minecraft:lily_pad", 2),
+            ("minecraft:repeater", 2),
+            ("minecraft:comparator", 2),
+            ("minecraft:turtle_egg", 7),
+            ("minecraft:daylight_detector", 6),
+        ] {
+            assert_eq!(collision_top_16(name), top, "{name}");
+            assert_eq!(collision_class(name), Collision::Thin(top), "{name}");
+            assert!(!supports_body(name), "{name}");
+        }
+        assert_eq!(
+            collision_class("minecraft:oak_trapdoor"),
+            Collision::OpensByHand
+        );
+        assert_eq!(
+            collision_class("minecraft:iron_trapdoor"),
+            Collision::FullCube,
+            "an iron trapdoor is what its box makes it, as before"
+        );
+        // A box that does not start at the floor keeps the full-cube default.
+        assert_eq!(
+            collision_top_16("minecraft:iron_chain[axis=x]"),
+            FULL_HEIGHT_16
+        );
+    }
 
     /// The table in the module header, asserted row by row. Every other test here
     /// is a measurement of one block; this one is the RULE, and it is what reds if
