@@ -825,6 +825,11 @@ impl Walk<'_, '_> {
         }
     }
 
+    /// Whether this walk has performed ambient act `act`.
+    pub fn performed_deed(&self, act: &str) -> bool {
+        self.deeds_done.contains(act)
+    }
+
     /// Can `step` be completed now — the replay's own per-step test, the
     /// choices and entry deeds due in front of it performed first, and not
     /// already done.

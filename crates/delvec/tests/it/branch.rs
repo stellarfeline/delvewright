@@ -1154,7 +1154,19 @@ fn landing_fixture_with(
     lines: &[&str],
     forbids_own: bool,
 ) -> Campaign {
-    campaign_with(|plan, quests, _| {
+    campaign_with(|plan, quests, _| landing_docs(plan, quests, landing, gate, lines, forbids_own))
+}
+
+/// [`landing_fixture_with`]'s documents, written into `plan` and `quests`.
+fn landing_docs(
+    plan: &mut Value,
+    quests: &mut Value,
+    landing: &[&str],
+    gate: Option<&str>,
+    lines: &[&str],
+    forbids_own: bool,
+) {
+    {
         let objective = |id: &str| {
             let mut o = serde_json::json!({
                 "id": id, "type": "reach-anchor", "anchor": "anchor/exit", "radius": 2,
@@ -1238,7 +1250,155 @@ fn landing_fixture_with(
                     { "id": "branch/lost", "flags": ["flag/lost"], "leads_to": "quest/decide" }
                 ]
             }));
+    }
+}
+
+/// **The town's raid, as written**: [`landing_fixture`] with the loss a
+/// census trigger. `trigger/lose` fires when a body stands in the census
+/// `state/raiders` (`of`, at `anchor/exit`), its gate `state/raiders ≥ 1`,
+/// and forbids its own `flag/lost`; `wave/landing`, a wave of pillagers, is
+/// seated by `obj/muster`'s completion — no raider stands anywhere before.
+fn census_landing_fixture(landing: &[&str], lines: &[&str], of: Value) -> Campaign {
+    campaign_with(|plan, quests, _| {
+        landing_docs(plan, quests, landing, None, lines, true);
+        let q = &mut quests["content"];
+        if q["state"].is_null() {
+            q["state"] = serde_json::json!([]);
+        }
+        q["state"]
+            .as_array_mut()
+            .expect("state is a list")
+            .push(serde_json::json!({
+                "id": "state/raiders", "initial": 0, "scope": "party",
+                "counts": {
+                    "of": of.clone(),
+                    "region": { "anchor": "anchor/exit", "extent": [3, 2, 3] }
+                }
+            }));
+        q["waves"] = serde_json::json!([{
+            "id": "wave/landing", "anchor": "anchor/exit",
+            "mobs": [{ "entity": "minecraft:pillager", "count": { "base": 2 } }]
+        }]);
+        let lose = &mut q["triggers"][0];
+        lose.as_object_mut().unwrap().remove("at");
+        lose["on"] = serde_json::json!({ "on": "body-enters", "state": "state/raiders" });
+        lose["requires_state"] =
+            serde_json::json!([{ "op": "at-least", "state": "state/raiders", "value": 1 }]);
+        let landing_quest = q["quests"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|x| x["id"] == "quest/landing")
+            .unwrap();
+        landing_quest["on_objective_complete"]["obj/muster"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({ "type": "spawn-wave", "wave": "wave/landing" }));
     })
+}
+
+/// The campaign [`a_census_deed_waits_for_the_wave_that_feeds_it`] judges:
+/// the muster brings the raiders ashore (its line `arrives`) and seats the
+/// wave the census counts.
+fn a_census_deed_waits_for_its_wave_campaign() -> Campaign {
+    census_landing_fixture(
+        &["obj/muster", "obj/stand"],
+        &["obj/muster"],
+        serde_json::json!({ "kind": "minecraft:pillager" }),
+    )
+}
+
+/// **A census reads zero until a body it counts can stand in the world.**
+/// The loss fires when a raider reaches the census box; the raiders are a
+/// wave the muster seats, and the world is sealed against every natural
+/// spawn, so before the muster no raider exists and the census is 0 — which
+/// is what the datapack's census tick stores (`execute store result score …
+/// if entity @e[type=minecraft:pillager,…]`). An order that takes the stand
+/// before the muster would have the loss fail it there and print its `dies`
+/// before the muster's `arrives`; the loss's gate is shut there, so that order
+/// is not one this world plays, and no order shows a clash.
+#[test]
+fn a_census_deed_waits_for_the_wave_that_feeds_it() {
+    let c = a_census_deed_waits_for_its_wave_campaign();
+    let (path, deeds) = lost_landing(&c);
+    assert!(
+        at(&path, "obj/muster") < at(&path, "obj/stand"),
+        "the premise: the exported path musters before the stand: {path:?}"
+    );
+    assert_eq!(
+        deeds,
+        [("obj/stand".to_string(), "trigger/lose".to_string())],
+        "the premise: the loss is performed in front of the stand"
+    );
+    let refused = lost_landing_refusals(&c);
+    assert!(refused.is_empty(), "{refused:#?}");
+    let (_, bind) = branch::check_branches_bound(&c);
+    assert!(bind.states > 0 && bind.unproven == 0, "{bind:?}");
+}
+
+/// The same census counting the wave by its tag: the same answer.
+#[test]
+fn a_census_of_a_wave_deed_waits_for_the_wave() {
+    let c = census_landing_fixture(
+        &["obj/muster", "obj/stand"],
+        &["obj/muster"],
+        serde_json::json!({ "wave": "wave/landing" }),
+    );
+    let refused = lost_landing_refusals(&c);
+    assert!(refused.is_empty(), "{refused:#?}");
+}
+
+/// **A census of a kind no wave seats is read as it always was**: a body of
+/// it may stand in the box from the world's first state on, so the loss may
+/// fire before the muster and the order that takes the stand first shows the
+/// clash. The feed is what closes the gate, nothing else.
+#[test]
+fn a_census_no_wave_feeds_is_open_from_the_start() {
+    let c = census_landing_fixture(
+        &["obj/muster", "obj/stand"],
+        &["obj/muster"],
+        serde_json::json!({ "kind": "minecraft:zombie" }),
+    );
+    let refused = lost_landing_refusals(&c);
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    assert!(
+        refused[0].contains("[dies] obj/stand") && refused[0].contains("[arrives] obj/muster"),
+        "{}",
+        refused[0]
+    );
+}
+
+/// The campaign [`a_true_clash_behind_a_census_deed_still_refuses`] judges:
+/// the muster seats the raiders, and the first stroll is the line that brings
+/// the landing ashore.
+fn a_true_clash_behind_a_census_deed_campaign() -> Campaign {
+    census_landing_fixture(
+        &["obj/muster", "obj/stroll-1", "obj/stand"],
+        &["obj/stroll-1"],
+        serde_json::json!({ "kind": "minecraft:pillager" }),
+    )
+}
+
+/// **A real clash still refuses.** Once the muster has seated the raiders,
+/// the census may count one and the loss may fire: an order that musters,
+/// loses the landing in front of the stand and only then strolls shows the
+/// clash, the deed in its own place.
+#[test]
+fn a_true_clash_behind_a_census_deed_still_refuses() {
+    let c = a_true_clash_behind_a_census_deed_campaign();
+    let refused = lost_landing_refusals(&c);
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    let m = &refused[0];
+    assert!(
+        m.contains("[dies] obj/stand") && m.contains("[arrives] obj/stroll-1"),
+        "{m}"
+    );
+    let order = printed_order(m);
+    assert!(
+        at(&order, "obj/muster") < at(&order, "obj/stand")
+            && at(&order, "obj/stand") < at(&order, "obj/stroll-1"),
+        "{order:?}"
+    );
 }
 
 /// The branch of [`landing_fixture`] that holds the gate and loses the
@@ -1464,13 +1624,19 @@ fn a_true_clash_behind_a_deed_that_forbids_its_own_flag_still_refuses() {
 /// every reader of the world's path agrees with it. Per story world of every
 /// fixture in this file: the story run that exports the path (its deeds, what
 /// it fired, the first step it calls incoherent), the replay `DW0204` makes of
-/// it (`Flow::replay`), and the walk the branch search starts every order from
-/// (`Flow::walk_for`, `Walk::legal`/`Walk::take`) taking the exported order.
-/// Red on any difference. Bound: worlds and deeds counted.
+/// it (`Flow::replay`), the walk the branch search starts every order from
+/// (`Flow::walk_for`, `Walk::legal`/`Walk::take`) taking the exported order,
+/// and, at every step, under both the replay's stance and the guaranteed one
+/// (`Flow::walk_for_performing`), the look-ahead the path's readers take
+/// (`Walk::with_due_deeds`) and the act performed alone (`Walk::performing`,
+/// where no choice is due in front of the step) — each must perform exactly
+/// the deeds `Walk::take` performs there. Red on any difference. Bound:
+/// worlds, deeds and look-aheads counted.
 #[test]
 fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
     use delvec::compiler::flow::Flow;
     let (mut worlds, mut deeds, mut bad) = (0usize, 0usize, Vec::new());
+    let mut looked = 0usize;
     for (name, c) in &contradiction_fixtures() {
         let flow = Flow::new(c);
         for (k, run) in flow.story().runs.iter().enumerate() {
@@ -1481,11 +1647,53 @@ fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
             let mut walked: Vec<(usize, String)> = Vec::new();
             let mut fired: std::collections::BTreeSet<String> = Default::default();
             let mut first_illegal = None;
+            let mut g = flow.walk_for_performing(pt);
             for (i, step) in pt.steps.iter().enumerate() {
                 if !w.legal(step) {
                     first_illegal.get_or_insert(i + 1);
                 }
+                let due: Vec<&str> = ctx.deeds_before(&step.objective).collect();
+                let no_choice = !ctx.choices.iter().any(|(j, _)| *j == i);
+                let mut looks: Vec<(&str, std::collections::BTreeSet<String>)> = Vec::new();
+                for (stance, walk) in [("replay", &w), ("guaranteed", &g)] {
+                    let ahead = walk.with_due_deeds(step);
+                    looks.push((
+                        stance,
+                        due.iter()
+                            .filter(|a| ahead.performed_deed(a))
+                            .map(|a| a.to_string())
+                            .collect(),
+                    ));
+                    if no_choice {
+                        let mut alone = walk.clone();
+                        for a in &due {
+                            alone = alone.performing(a);
+                        }
+                        looks.push((
+                            stance,
+                            due.iter()
+                                .filter(|a| alone.performed_deed(a))
+                                .map(|a| a.to_string())
+                                .collect(),
+                        ));
+                    }
+                }
+                let gj = g.take(step);
                 let j = w.take(step);
+                let taken: std::collections::BTreeSet<String> =
+                    j.deeds.iter().map(|(a, _)| a.clone()).collect();
+                let taken_g: std::collections::BTreeSet<String> =
+                    gj.deeds.iter().map(|(a, _)| a.clone()).collect();
+                for (stance, set) in looks {
+                    looked += usize::from(!due.is_empty());
+                    let want = if stance == "replay" { &taken } else { &taken_g };
+                    if &set != want {
+                        bad.push(format!(
+                            "{name} world/{k} step {}: under the {stance} stance a look-ahead performs {set:?}, the walk {want:?}",
+                            i + 1
+                        ));
+                    }
+                }
                 for (a, f) in &j.deeds {
                     walked.push((i, a.clone()));
                     fired.extend(f.iter().cloned());
@@ -1531,7 +1739,10 @@ fn the_story_run_the_replay_and_the_order_walk_agree_on_every_deed() {
         }
     }
     assert!(bad.is_empty(), "{bad:#?}");
-    assert!(worlds > 50 && deeds > 5, "worlds {worlds}, deeds {deeds}");
+    assert!(
+        worlds > 50 && deeds > 5 && looked > 0,
+        "worlds {worlds}, deeds {deeds}, looks {looked}"
+    );
 }
 
 // --- the DW0485 fixtures, by name ----------------------------------------
@@ -1867,6 +2078,14 @@ fn contradiction_fixtures() -> Vec<(&'static str, Campaign)> {
         ("a_deed_whose_gate_is_shut", a_deed_whose_gate_is_shut_campaign()),
         ("a_deed_in_its_place_with_a_true_clash", a_deed_in_its_place_with_a_true_clash_campaign()),
         ("a_deed_that_forbids_its_own_flag", a_deed_that_forbids_its_own_flag_campaign()),
+        (
+            "a_census_deed_waits_for_its_wave",
+            a_census_deed_waits_for_its_wave_campaign(),
+        ),
+        (
+            "a_true_clash_behind_a_census_deed",
+            a_true_clash_behind_a_census_deed_campaign(),
+        ),
         (
             "a_true_clash_behind_a_deed_that_forbids_its_own_flag",
             a_true_clash_behind_a_deed_that_forbids_its_own_flag_campaign(),
