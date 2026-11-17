@@ -535,6 +535,11 @@ export class MineflayerExecutor implements StepExecutor {
   readonly censusSummaries = new Map<string, CensusSummary>();
   censusSeq = 0;
   readonly censusMobs = new Map<number, CensusMob[]>();
+  /** Per wave, where the newest census that found any of it standing read each
+   * body: the last place a body stood before it fell, which a `dropped_by`
+   * collect searches around (`nearestDropOf`). Never cleared by an empty
+   * census — that census is the one after the fall. */
+  readonly waveLastStood = new Map<string, (readonly [number, number, number])[]>();
   /** The latest muster summary line per wave, and the body readings filed under
    * its seq. Per wave for the same reason as {@link censusSummaries}. */
   readonly musterSummaries = new Map<string, MusterSummary>();

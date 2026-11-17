@@ -11,12 +11,10 @@ import { REACH_POLL_MS, UNSTICK_BURST_MS } from "./walk.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /**
- * How far from a `collect` step's anchor a drop is still this fight's.
- *
- * `WAVE_ENGAGE_NEAR`'s 32, because a drop lies where the BODY fell and a wave
- * body chases the party across a room before it does. Narrowed to 12 by
- * inspection, the bell `wave/drowned-choir`'s Precentor leaves was outside the
- * search and `obj/take-the-tongue` timed out on vesperhold.
+ * How far from a search centre ({@link nearestDropOf}) a drop is still this
+ * fight's: `WAVE_ENGAGE_NEAR`'s 32, because a wave body chases the party
+ * across a room before it falls. The centres carry where the body was last
+ * read standing, so a body that fled farther than this is still found.
  */
 const DROP_SEARCH_NEAR = WAVE_ENGAGE_NEAR;
 
@@ -34,29 +32,63 @@ const FRAME_CHECK_MS = 150;
  */
 const WINDOW_CONTENTS_MS = 3000;
 
+/** One item entity as the drop search reads it: its id, where it lies, and
+ * the unnamespaced id of the stack it carries. */
+export interface SeenDrop {
+  readonly id: number;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+  readonly item: string | undefined;
+}
+
+/** A dropped stack the search chose, and its distance from the nearest centre. */
+export interface FoundDrop {
+  readonly id: number;
+  readonly position: SeenDrop["position"];
+  /** Blocks from the nearest search centre. */
+  readonly from: number;
+  /** Index into the centres it was measured from: 0 is the step's anchor. */
+  readonly centre: number;
+}
+
 /**
- * The dropped `item` (unnamespaced id) nearest `anchor` within `radius` blocks,
- * off the item entities the client tracks, or `undefined` when none is in sight.
+ * **Where a drop is looked for** (pure): the dropped `item` nearest any of
+ * `centres` within `radius` blocks of it, or `undefined`. The centres are the
+ * step's anchor cell (its centre) first, then every position the server last
+ * read a body of the dropping wave standing at — a drop lies where the body
+ * FELL, and a body that fled the anchor (a struck hen, a wave left alone
+ * through a die-retry trial) falls where it fled to.
  */
-function nearestDrop(
-  bot: Bot,
+export function nearestDropOf(
+  drops: Iterable<SeenDrop>,
   item: string,
   anchor: readonly [number, number, number],
+  stood: readonly (readonly [number, number, number])[],
   radius: number,
-): { id: number; position: Entity["position"]; fromAnchor: number } | undefined {
-  let best: { id: number; position: Entity["position"]; fromAnchor: number } | undefined;
-  for (const e of Object.values(bot.entities)) {
-    if (!e?.position || e.name !== "item") continue;
-    if (e.getDroppedItem()?.name !== item) continue;
-    const fromAnchor = Math.hypot(
-      e.position.x - (anchor[0] + 0.5),
-      e.position.y - anchor[1],
-      e.position.z - (anchor[2] + 0.5),
-    );
-    if (fromAnchor > radius) continue;
-    if (!best || fromAnchor < best.fromAnchor) best = { id: e.id, position: e.position, fromAnchor };
+): FoundDrop | undefined {
+  const centres: (readonly [number, number, number])[] = [
+    [anchor[0] + 0.5, anchor[1], anchor[2] + 0.5],
+    ...stood,
+  ];
+  let best: FoundDrop | undefined;
+  for (const d of drops) {
+    if (d.item !== item) continue;
+    for (const [i, c] of centres.entries()) {
+      const from = Math.hypot(d.position.x - c[0], d.position.y - c[1], d.position.z - c[2]);
+      if (from > radius) continue;
+      if (!best || from < best.from) best = { id: d.id, position: d.position, from, centre: i };
+    }
   }
   return best;
+}
+
+/** The item entities the client tracks, as {@link nearestDropOf} reads them. */
+function seenDrops(bot: Bot): SeenDrop[] {
+  const out: SeenDrop[] = [];
+  for (const e of Object.values(bot.entities)) {
+    if (!e?.position || e.name !== "item") continue;
+    out.push({ id: e.id, position: e.position, item: e.getDroppedItem()?.name });
+  }
+  return out;
 }
 
 /**
@@ -284,14 +316,15 @@ export const methods = {
   },
 
   /**
-   * Walk onto the dropped `step.item` nearest the fight's anchor until the
-   * objective completes, the drop is gone, or the objective's own budget runs out.
+   * Walk onto the dropped `step.item` nearest the fight's anchor, or nearest
+   * where the server last read a body of the dropping wave standing
+   * ({@link nearestDropOf}), until the objective completes, the drop is gone,
+   * or the objective's own budget runs out.
    *
-   * What a player does: look at the floor of the room the fight was in, see the
-   * item, walk over it. The search is bounded by {@link WAVE_ENGAGE_NEAR}, the
-   * radius inside which this harness already counts a body as still part of a
-   * fight — a drop outside it is not one this fight left. Seeing none is not a failure here:
-   * the objective's marker decides, and its timeout names the step.
+   * What a player does: look at the floor where the fight ended, see the item,
+   * walk over it. The search is bounded by {@link WAVE_ENGAGE_NEAR} around each
+   * centre. Seeing none is not a failure here: the objective's marker decides,
+   * and its timeout names the step.
    */
   async pickUpDrop(this: MineflayerExecutor, step: CollectStep): Promise<void> {
     const bot = this.requireBot();
@@ -300,16 +333,22 @@ export const methods = {
     let reported = false;
     while (Date.now() < deadline && !this.completedObjectives.has(step.objective)) {
       if (this.death) throw this.death;
-      const drop = nearestDrop(bot, want, step.pos, DROP_SEARCH_NEAR);
+      const stood =
+        step.droppedBy === undefined ? [] : (this.waveLastStood.get(step.droppedBy) ?? []);
+      const drop = nearestDropOf(seenDrops(bot), want, step.pos, stood, DROP_SEARCH_NEAR);
       if (drop === undefined) {
         await delay(REACH_POLL_MS);
         continue;
       }
       if (!reported) {
         reported = true;
+        const where =
+          drop.centre === 0
+            ? "the anchor"
+            : `where the server last read ${step.droppedBy}'s body ${drop.centre} of ${stood.length} standing`;
         process.stderr.write(
           `[collect ${step.objective}] the ${want} lies at ${fmt(drop.position)}, ` +
-            `${drop.fromAnchor.toFixed(1)} blocks from the anchor — walking onto it\n`,
+            `${drop.from.toFixed(1)} blocks from ${where} — walking onto it\n`,
         );
       }
       const cell: Vec3Tuple = [
