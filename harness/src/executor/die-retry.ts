@@ -6,7 +6,11 @@ import {
   CONTROLLED_GAMEMODE,
   deathPhases,
   checkpointPrecondition,
-  unattendedPrecondition,
+  retryHold,
+  retryHoldCommands,
+  retryHeldCount,
+  retryReleaseCommands,
+  RETRY_HELD_COUNT_COMMAND,
   observationOf,
   openTrial,
   describeStanding,
@@ -20,6 +24,7 @@ import {
   type RunBack,
 } from "../combat.ts";
 import { delay } from "./connection.ts";
+import { isRejection } from "../rejection.ts";
 import { CUTSCENE_POLL_MS } from "./cutscene.ts";
 import { RESPAWN_PROTECTION_TICKS, serverAge, RESPAWN_TIMEOUT_MS } from "./death.ts";
 import { REACH_POLL_MS } from "./walk.ts";
@@ -63,6 +68,20 @@ export const REENGAGE_SETTLE_MS = 6_000;
  */
 const RESEAT_SETTLE_MS = 3_000;
 
+/**
+ * How often a held trial takes the bodies the story seated since its last
+ * turn ({@link methods.beginRetryHold}): one second, twenty ticks — a body
+ * seated inside it walks for at most that long before it is held.
+ */
+export const RETRY_HOLD_PERIOD_MS = 1_000;
+
+/** A hold in force: its re-hold loop and the first refusal that loop met. */
+export interface RetryHolding {
+  stop: boolean;
+  refused: string | undefined;
+  loop: Promise<void>;
+}
+
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
   /** Every scripted death of the die-retry stage — including the ones whose loop
@@ -97,16 +116,12 @@ export const methods = {
     // no completed trial into a red stage, so a run that dies on the way in can
     // never report a passed die-retry.
     // PRECONDITION: the loop this stage proves is
-    // "death → respawn at the governing checkpoint → walk back". Two ways that
-    // premise can be false, and they are different kinds of fact:
-    //   * the checkpoint exists but was never ARMED (a bonfire the route walked
-    //     past) — the harness's own gap, and every measurement below would
-    //     describe it rather than the delve. Red;
-    //   * the campaign fires NO checkpoint before this fight at all — a content
-    //     fact: every death here is a full restart. Advisory, because the
-    //     compiler's retry-cost and checkpoint rules are what judge that.
-    // Either way: take NO death. A scripted death would blame the campaign for a
-    // proof that was never in a position to be made.
+    // "death → respawn at the governing checkpoint → walk back". Where that
+    // checkpoint exists but was never ARMED (a bonfire the route walked past),
+    // every measurement below would describe the harness's own gap rather than
+    // the delve: take NO death, and red. Where the campaign fires no checkpoint
+    // before this fight, the respawn is the world spawn and the loop is proven
+    // from there.
     const precondition = checkpointPrecondition(
       enc,
       this.restSteps,
@@ -114,23 +129,20 @@ export const methods = {
       this.currentStep,
     );
     if (precondition !== undefined) {
-      (precondition.reds ? this.preconditionFindings : this.preconditionAdvisories).push(
-        precondition.finding,
-      );
+      this.preconditionFindings.push(precondition.finding);
       this.preconditionWaves.add(enc.wave);
       process.stderr.write(`[die-retry] ${precondition.finding}\n`);
       return;
     }
-    // PRECONDITION: the run stays in the world it is judged against. A death
-    // leaves the fight's bodies unattended; where the compiler shows they may
-    // fire a story trigger this world never performs, the trial would carry
-    // the run into another world and every later reading would judge it
-    // against the wrong one. Take no death.
-    const away = unattendedPrecondition(enc.wave, step.unattended);
-    if (away !== undefined) {
-      this.unattendedAdvisories.push(away);
+    // The run stays in the world it is judged against: where the compiler shows
+    // the fight's own bodies may fire a story trigger this world never performs,
+    // the trial holds still every body a census may count among them
+    // (`retryHold`). One it cannot hold is a trial it cannot take: red.
+    const hold = retryHold(enc.wave, step.unattended, this.requireStoryBodies());
+    if (hold?.kind === "unholdable") {
+      this.unholdableFindings.push(hold.finding);
       this.preconditionWaves.add(enc.wave);
-      process.stderr.write(`[die-retry] ${away}\n`);
+      process.stderr.write(`[die-retry] ${hold.finding}\n`);
       return;
     }
     this.dieRetryEngaged.add(enc.wave);
@@ -156,225 +168,233 @@ export const methods = {
       }
     }
     const phases = deathPhases();
-    for (const [i, phase] of phases.entries()) {
-      const attempt = i + 1;
-      // A death still latched from the last loop (the bot was killed for real on
-      // the way back) would make the next scripted death resolve instantly and
-      // credit a trial that never happened. Clear it first, honestly.
-      if (this.death) {
-        process.stderr.write(
-          `[die-retry] an unscripted death is still pending — recovering from it and walking ` +
-            `back to the fight before taking the next scripted one\n`,
-        );
-        await this.respawnAndRearm();
-        // The respawn put the bot at the checkpoint. A death scripted THERE is not a
-        // death at this encounter, and the trial would measure the checkpoint.
-        await this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak);
-      }
-      // "mid-fight" is a state of the WAVE, not of the bot: bodies below their own
-      // `max_health`, which a faithful re-seat must replace. One attributed point
-      // of damage to every body puts the wave in exactly that state, with no
-      // fencing in it — and, unlike a traded exchange, it does so deterministically
-      // and without ever risking the unscripted death that would credit this trial
-      // to a life the harness never opened.
-      if (phase === "mid-fight") {
-        await this.chipWave(enc);
+    // The hold stands from before the first scripted death to the trial's end,
+    // however it ends: every body a census may count stays where it stood, and
+    // one the story seats while the trial runs is taken at the next period.
+    const holding = hold === undefined ? undefined : await this.beginRetryHold(enc.wave, hold.triggers, hold.selects);
+    try {
+      for (const [i, phase] of phases.entries()) {
+        const attempt = i + 1;
+        // A death still latched from the last loop (the bot was killed for real on
+        // the way back) would make the next scripted death resolve instantly and
+        // credit a trial that never happened. Clear it first, honestly.
         if (this.death) {
           process.stderr.write(
-            `[die-retry] the wave killed the bot while it stood there — recovering before ` +
-              `taking the scripted death, so the death this trial records is the one it asked for\n`,
+            `[die-retry] an unscripted death is still pending — recovering from it and walking ` +
+              `back to the fight before taking the next scripted one\n`,
           );
           await this.respawnAndRearm();
+          // The respawn put the bot at the checkpoint. A death scripted THERE is not a
+          // death at this encounter, and the trial would measure the checkpoint.
           await this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak);
         }
-      }
-      const before = new Set(this.completedObjectives.keys());
-      // BRAND the mobs this life fought. A re-seat must replace every
-      // one of them; a mob still wearing the brand in the next life IS the chipped
-      // survivor a faithful re-seat forbids. The stamp rides the wave's
-      // own tag, so it can only ever land on this wave — the mistake the previous
-      // id-based baseline made, which branded whatever the client happened to be
-      // tracking.
-      this.brandWave(enc);
-      process.stderr.write(
-        `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
-      );
-      // The record exists from the moment the harness commits to dying. Everything
-      // below MUTATES it, so however the run ends the artifact still says a death
-      // was taken here and what was (and was not) learned from it.
-      const trial = openTrial(enc, attempt, phase);
-      this.trials.push(trial);
-      try {
-        // A cutscene cannot be allowed to eat this death. The encounter's own
-        // objective completion may start one, and a cutscene's first act is
-        // `gamemode spectator @a` — so a trade that finished the wave hands the
-        // next scripted death an invulnerable body, `/damage` does nothing, and
-        // the stage used to report that as a missing op.
-        await this.awaitControlForScriptedDeath(step, enc);
-        await this.awaitRespawnProtection(enc);
-        const seq = this.deathSeq;
-        // What the bot carries INTO the death — the baseline `keep_inventory` is
-        // judged against on the way out.
-        this.itemsBeforeDeath = bot.inventory.items().length;
-        // Whether the fight was already won when the bot died: then the death
-        // is after the encounter's step, and the seat that governs it is the
-        // one in force after that step (`respawnedAtEncounterSeat`).
-        const clearedBeforeDeath = this.completedObjectives.has(enc.objective);
-        const chatFrom = this.chatMark();
-        bot.chat(scriptedDeathCommand());
-        if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
-          // No death followed, so the stage proves nothing and the trial fails —
-          // but it fails saying what it SAW. The bot is opped and receives the
-          // server's own answer on the chat stream, and its gamemode decides
-          // whether the command could ever have worked.
-          trial.abortedWith = scriptedDeathRefusal(
-            scriptedDeathCommand(),
-            RESPAWN_TIMEOUT_MS,
-            this.gameModeNow(),
-            this.chatSince(chatFrom).lines,
-          );
-          throw new Error(`die-retry: ${trial.abortedWith}`);
+        // "mid-fight" is a state of the WAVE, not of the bot: bodies below their own
+        // `max_health`, which a faithful re-seat must replace. One attributed point
+        // of damage to every body puts the wave in exactly that state, with no
+        // fencing in it — and, unlike a traded exchange, it does so deterministically
+        // and without ever risking the unscripted death that would credit this trial
+        // to a life the harness never opened.
+        if (phase === "mid-fight") {
+          await this.chipWave(enc);
+          if (this.death) {
+            process.stderr.write(
+              `[die-retry] the wave killed the bot while it stood there — recovering before ` +
+                `taking the scripted death, so the death this trial records is the one it asked for\n`,
+            );
+            await this.respawnAndRearm();
+            await this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak);
+          }
         }
-        trial.cause = this.death?.likelyCause;
-        const respawn = await this.respawnAndRearm();
-        trial.respawnPos = respawn.pos;
-        trial.kitKept = respawn.kitKept;
-        trial.atCheckpoint = respawnedAtEncounterSeat(
-          trial.respawnPos ?? [0, 0, 0],
-          enc,
-          clearedBeforeDeath,
-          this.deathPlan?.seats,
-        );
-        const governing =
-          clearedBeforeDeath && this.deathPlan !== undefined
-            ? `the seat(s) in force after step ${enc.step}, which ${enc.objective} completed before the death`
-            : `the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`;
+        const before = new Set(this.completedObjectives.keys());
+        // BRAND the mobs this life fought. A re-seat must replace every
+        // one of them; a mob still wearing the brand in the next life IS the chipped
+        // survivor a faithful re-seat forbids. The stamp rides the wave's
+        // own tag, so it can only ever land on this wave — the mistake the previous
+        // id-based baseline made, which branded whatever the client happened to be
+        // tracking.
+        this.brandWave(enc);
         process.stderr.write(
-          `[die-retry] ${step.wave} death ${attempt}: respawned at ` +
-            `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
-            `${trial.atCheckpoint ? (clearedBeforeDeath ? ` — ${governing}` : "") : ` — NOT ${governing}`}\n`,
+          `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
         );
-        // Fidelity is read HERE, at the event it guards: the re-seat has just
-        // landed (`cp_respawn_fire` runs on the first tick after the respawn) and
-        // nothing has touched the new cohort yet. Read after the walk back, the
-        // same census also carried everything the wave did to itself on the way
-        // and everything the world did to it (vesperhold's choir,
-        // drowned in a lethal well) — and blamed the re-seat for both.
-        if (enc.respawnsOnRest) {
-          const at = await this.awaitReseat(enc);
-          trial.reseat = at;
-          process.stderr.write(
-            `[die-retry] ${step.wave} death ${attempt}: re-seat read ${at.present}/${at.declared} ` +
-              `wave mob(s) after ${at.settleMs}ms` +
-              `${at.carriedOver > 0 ? `, ${at.carriedOver} carried over from a previous life` : ""}` +
-              `${at.healthReadable > 0 ? `, ${at.damaged}/${at.healthReadable} damaged` : ""}\n`,
-          );
-        }
-        // The walk back ends inside the re-seated wave; whether the ROUTE is walkable
-        // is the measurement, and anything that hits the bot on it is staged away.
+        // The record exists from the moment the harness commits to dying. Everything
+        // below MUTATES it, so however the run ends the artifact still says a death
+        // was taken here and what was (and was not) learned from it.
+        const trial = openTrial(enc, attempt, phase);
+        this.trials.push(trial);
         try {
-          await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
-          trial.returned = true;
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          // A leg that ended in a death has said nothing about the ROUTE: the bot
-          // was killed on it. Recorded as what it was, so the verdict never reads a
-          // death on the way back as unwalkable geometry.
-          trial.returnFailure = {
-            killed: err instanceof BotDeathError,
-            detail,
-          };
-          process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
-        }
-        const after = new Set(this.completedObjectives.keys());
-        trial.lostObjectives = [...before].filter((o) => !after.has(o));
-        trial.objectivesIntact = trial.lostObjectives.length === 0;
-        // Provisional: a trial that never got back keeps this reading; one that
-        // did reads it again with the census it is judged by (below).
-        trial.objectiveComplete = this.completedObjectives.has(enc.objective);
-        // Two observations, one verdict (see RetryOutcome). A wave mob standing
-        // here again means the fight is retriable. Nothing left to fight is only
-        // a failure if the encounter's objective is ALSO unfinished — then the
-        // party can neither complete it nor re-fight it, which is a soft lock.
-        // A wave already beaten before the death is a won fight staying won.
-        //
-        // Observed ONLY when the bot got back. The probe reads the
-        // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
-        // is not observing the encounter at all — it is observing wherever it is
-        // stuck. Reporting that as `re_engaged` produced the run-five artifact in
-        // which one trial said "the route back is not walkable" and "the fight
-        // re-engaged" at once. A trial that never returned leaves `re_engaged`
-        // false, `reengage` null and its outcome `unproven`: not looked at is not
-        // the same fact as looked at and empty, and neither is a pass.
-        if (trial.returned) {
-          // What the party had felled of this seating when it landed: the bodies
-          // it fells from here on met it on the way back, and that IS the fight
-          // re-engaging — a re-seating wave's bodies are removed when they hit
-          // the bot (see `dieRetryHolds`), and the census credits each one. Only a
-          // re-seating wave has a landing reading to count from; a wave that does
-          // not re-seat is never removed during the stage, so only what stands
-          // answers for it.
-          const landed = trial.reseat?.credited;
-          const obs = await this.awaitReengage(enc, landed);
-          trial.reengage = obs;
-          trial.reEngaged = obs.present > 0 || (landed !== undefined && obs.credited > landed);
-          // The objective is read AFTER the census, never before it: the two
-          // observations make one verdict, so they are taken of one server state.
-          // The probe settles for seconds, and a body that comes to the bot inside
-          // them may be staged away. When it was the last one, the server completes
-          // the `kill` objective on the tick the wave's live count reaches zero,
-          // and the marker is on the chat stream ahead of any census that then
-          // reads the wave empty (a census counts a body through its death
-          // animation, so its empty answer comes ticks after the completion). Read
-          // before the probe, the objective was paired with a wave the harness
-          // had emptied after that read, and the trial called the encounter
-          // stranded (the town's castle yard). Incomplete here is incomplete on
-          // the server.
+          // A cutscene cannot be allowed to eat this death. The encounter's own
+          // objective completion may start one, and a cutscene's first act is
+          // `gamemode spectator @a` — so a trade that finished the wave hands the
+          // next scripted death an invulnerable body, `/damage` does nothing, and
+          // the stage used to report that as a missing op.
+          await this.awaitControlForScriptedDeath(step, enc);
+          await this.awaitRespawnProtection(enc);
+          const seq = this.deathSeq;
+          // What the bot carries INTO the death — the baseline `keep_inventory` is
+          // judged against on the way out.
+          this.itemsBeforeDeath = bot.inventory.items().length;
+          // Whether the fight was already won when the bot died: then the death
+          // is after the encounter's step, and the seat that governs it is the
+          // one in force after that step (`respawnedAtEncounterSeat`).
+          const clearedBeforeDeath = this.completedObjectives.has(enc.objective);
+          const chatFrom = this.chatMark();
+          bot.chat(scriptedDeathCommand());
+          if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
+            // No death followed, so the stage proves nothing and the trial fails —
+            // but it fails saying what it SAW. The bot is opped and receives the
+            // server's own answer on the chat stream, and its gamemode decides
+            // whether the command could ever have worked.
+            trial.abortedWith = scriptedDeathRefusal(
+              scriptedDeathCommand(),
+              RESPAWN_TIMEOUT_MS,
+              this.gameModeNow(),
+              this.chatSince(chatFrom).lines,
+            );
+            throw new Error(`die-retry: ${trial.abortedWith}`);
+          }
+          trial.cause = this.death?.likelyCause;
+          const respawn = await this.respawnAndRearm();
+          trial.respawnPos = respawn.pos;
+          trial.kitKept = respawn.kitKept;
+          trial.atCheckpoint = respawnedAtEncounterSeat(
+            trial.respawnPos ?? [0, 0, 0],
+            enc,
+            clearedBeforeDeath,
+            this.deathPlan?.seats,
+          );
+          const governing =
+            clearedBeforeDeath && this.deathPlan !== undefined
+              ? `the seat(s) in force after step ${enc.step}, which ${enc.objective} completed before the death`
+              : `the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`;
+          process.stderr.write(
+            `[die-retry] ${step.wave} death ${attempt}: respawned at ` +
+              `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
+              `${trial.atCheckpoint ? (clearedBeforeDeath ? ` — ${governing}` : "") : ` — NOT ${governing}`}\n`,
+          );
+          // Fidelity is read HERE, at the event it guards: the re-seat has just
+          // landed (`cp_respawn_fire` runs on the first tick after the respawn) and
+          // nothing has touched the new cohort yet. Read after the walk back, the
+          // same census also carried everything the wave did to itself on the way
+          // and everything the world did to it (vesperhold's choir,
+          // drowned in a lethal well) — and blamed the re-seat for both.
+          if (enc.respawnsOnRest) {
+            const at = await this.awaitReseat(enc);
+            trial.reseat = at;
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: re-seat read ${at.present}/${at.declared} ` +
+                `wave mob(s) after ${at.settleMs}ms` +
+                `${at.carriedOver > 0 ? `, ${at.carriedOver} carried over from a previous life` : ""}` +
+                `${at.healthReadable > 0 ? `, ${at.damaged}/${at.healthReadable} damaged` : ""}\n`,
+            );
+          }
+          // The walk back ends inside the re-seated wave; whether the ROUTE is walkable
+          // is the measurement, and anything that hits the bot on it is staged away.
+          try {
+            await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
+            trial.returned = true;
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            // A leg that ended in a death has said nothing about the ROUTE: the bot
+            // was killed on it. Recorded as what it was, so the verdict never reads a
+            // death on the way back as unwalkable geometry.
+            trial.returnFailure = {
+              killed: err instanceof BotDeathError,
+              detail,
+            };
+            process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+          }
+          const after = new Set(this.completedObjectives.keys());
+          trial.lostObjectives = [...before].filter((o) => !after.has(o));
+          trial.objectivesIntact = trial.lostObjectives.length === 0;
+          // Provisional: a trial that never got back keeps this reading; one that
+          // did reads it again with the census it is judged by (below).
           trial.objectiveComplete = this.completedObjectives.has(enc.objective);
-          trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+          // Two observations, one verdict (see RetryOutcome). A wave mob standing
+          // here again means the fight is retriable. Nothing left to fight is only
+          // a failure if the encounter's objective is ALSO unfinished — then the
+          // party can neither complete it nor re-fight it, which is a soft lock.
+          // A wave already beaten before the death is a won fight staying won.
+          //
+          // Observed ONLY when the bot got back. The probe reads the
+          // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
+          // is not observing the encounter at all — it is observing wherever it is
+          // stuck. Reporting that as `re_engaged` produced the run-five artifact in
+          // which one trial said "the route back is not walkable" and "the fight
+          // re-engaged" at once. A trial that never returned leaves `re_engaged`
+          // false, `reengage` null and its outcome `unproven`: not looked at is not
+          // the same fact as looked at and empty, and neither is a pass.
+          if (trial.returned) {
+            // What the party had felled of this seating when it landed: the bodies
+            // it fells from here on met it on the way back, and that IS the fight
+            // re-engaging — a re-seating wave's bodies are removed when they hit
+            // the bot (see `dieRetryHolds`), and the census credits each one. Only a
+            // re-seating wave has a landing reading to count from; a wave that does
+            // not re-seat is never removed during the stage, so only what stands
+            // answers for it.
+            const landed = trial.reseat?.credited;
+            const obs = await this.awaitReengage(enc, landed);
+            trial.reengage = obs;
+            trial.reEngaged = obs.present > 0 || (landed !== undefined && obs.credited > landed);
+            // The objective is read AFTER the census, never before it: the two
+            // observations make one verdict, so they are taken of one server state.
+            // The probe settles for seconds, and a body that comes to the bot inside
+            // them may be staged away. When it was the last one, the server completes
+            // the `kill` objective on the tick the wave's live count reaches zero,
+            // and the marker is on the chat stream ahead of any census that then
+            // reads the wave empty (a census counts a body through its death
+            // animation, so its empty answer comes ticks after the completion). Read
+            // before the probe, the objective was paired with a wave the harness
+            // had emptied after that read, and the trial called the encounter
+            // stranded (the town's castle yard). Incomplete here is incomplete on
+            // the server.
+            trial.objectiveComplete = this.completedObjectives.has(enc.objective);
+            trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
+                `after ${obs.settleMs}ms` +
+                `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
+                `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
+                `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+            );
+          } else {
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
+                `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
+            );
+          }
           process.stderr.write(
-            `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
-              `after ${obs.settleMs}ms` +
-              `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
-              `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
-              `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+            `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
+              `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
           );
-        } else {
+          const reading = await respawn.reading;
+          trial.respawnReading = reading;
           process.stderr.write(
-            `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
-              `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
+            `[die-retry] ${step.wave} death ${attempt}: respawn readings — client ` +
+              `${JSON.stringify(reading.client.pos)} at world age ` +
+              `${reading.client.age ?? "unknown"} after ` +
+              `${reading.client.respawnPackets} respawn packet(s); server ` +
+              ("pos" in reading.server
+                ? `${JSON.stringify(reading.server.pos)} between ticks ` +
+                  `${reading.server.tickFrom} and ${reading.server.tickTo}`
+                : `unread (${reading.server.unread})`) +
+              `\n`,
           );
+          trial.completed = true;
+        } catch (err) {
+          trial.abortedWith ??= err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[die-retry] ${step.wave} death ${attempt} loop abandoned: ${trial.abortedWith}\n`,
+          );
+          throw err;
+        } finally {
+          // Clear the brand however the trial ended, so the NEXT death brands a
+          // clean slate and a stale stamp can never be read as a survivor. In the
+          // `finally` because an abandoned trial leaves mobs standing too.
+          this.unbrandWave(enc);
         }
-        process.stderr.write(
-          `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
-            `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
-        );
-        const reading = await respawn.reading;
-        trial.respawnReading = reading;
-        process.stderr.write(
-          `[die-retry] ${step.wave} death ${attempt}: respawn readings — client ` +
-            `${JSON.stringify(reading.client.pos)} at world age ` +
-            `${reading.client.age ?? "unknown"} after ` +
-            `${reading.client.respawnPackets} respawn packet(s); server ` +
-            ("pos" in reading.server
-              ? `${JSON.stringify(reading.server.pos)} between ticks ` +
-                `${reading.server.tickFrom} and ${reading.server.tickTo}`
-              : `unread (${reading.server.unread})`) +
-            `\n`,
-        );
-        trial.completed = true;
-      } catch (err) {
-        trial.abortedWith ??= err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[die-retry] ${step.wave} death ${attempt} loop abandoned: ${trial.abortedWith}\n`,
-        );
-        throw err;
-      } finally {
-        // Clear the brand however the trial ended, so the NEXT death brands a
-        // clean slate and a stale stamp can never be read as a survivor. In the
-        // `finally` because an abandoned trial leaves mobs standing too.
-        this.unbrandWave(enc);
       }
+    } finally {
+      if (holding !== undefined) await this.endRetryHold(enc.wave, holding);
     }
   },
 
@@ -609,24 +629,92 @@ export const methods = {
     return this.preconditionFindings;
   },
 
-  /** Encounters whose scripted deaths were skipped because the campaign fires no
-   * governing checkpoint before them. Advisory: the retry loop there went
-   * unproven, and whether that staging is acceptable is the compiler's call, not
-   * this stage's. Reported, never graded — and never silent. */
-  dieRetryPreconditionAdvisories(this: MineflayerExecutor): readonly string[] {
-    return this.preconditionAdvisories;
+  /** Encounters whose scripted deaths were skipped because a story trigger the
+   * fight's own bodies may fire had no body to hold still ({@link retryHold}).
+   * Red: the loop is proven in no world this run walked. */
+  dieRetryUnholdableFindings(this: MineflayerExecutor): readonly string[] {
+    return this.unholdableFindings;
   },
 
-  /** Encounters whose scripted deaths were skipped because the fight's own
-   * bodies may fire a story trigger the walked world never performs. Advisory. */
-  dieRetryUnattendedAdvisories(this: MineflayerExecutor): readonly string[] {
-    return this.unattendedAdvisories;
-  },
-
-  /** The waves those findings name. Coverage stays silent about them: the
-   * precondition already says why they are unproven, and "never reached this
-   * encounter" would be plainly untrue — the bot stood in the room and declined. */
+  /** The waves those findings name: each still reds the coverage, which says
+   * the stage declined rather than "never reached this encounter" — the bot
+   * stood in the room. */
   dieRetryPreconditionWaves(this: MineflayerExecutor): ReadonlySet<string> {
     return this.preconditionWaves;
+  },
+
+  /** Every trial run under a hold, with the bodies it stood on. */
+  dieRetryHeldBodies(this: MineflayerExecutor): readonly { wave: string; triggers: readonly string[]; held: number }[] {
+    return this.retryHolds;
+  },
+
+  /**
+   * Start holding still every body of `selects` for a die-retry trial at
+   * `wave` ({@link retryHold}), and keep taking any the story seats while it
+   * runs, once a {@link RETRY_HOLD_PERIOD_MS}. The first turn is read back: a
+   * refusal, or a hold that stands on no body at all — the fight's own bodies
+   * are standing at its first contact, so a census that may count one of them
+   * finds it — ends the trial before its first death, by name.
+   */
+  async beginRetryHold(
+    this: MineflayerExecutor,
+    wave: string,
+    triggers: readonly string[],
+    selects: readonly string[],
+  ): Promise<RetryHolding> {
+    const commands = retryHoldCommands(selects);
+    const first = await this.bracketed([...commands, RETRY_HELD_COUNT_COMMAND]);
+    const refused = first.answered ? first.lines.find((l) => isRejection(l)) : "the closing marker never arrived";
+    const held = retryHeldCount(first.lines);
+    const row = { wave, triggers, held: held ?? 0 };
+    this.retryHolds.push(row);
+    const named = triggers.map((t) => `\`${t}\``).join(", ");
+    if (refused !== undefined || held === undefined || held === 0) {
+      await this.bracketed(retryReleaseCommands());
+      throw new Error(
+        `${wave}: the trial holds still every body a census may count among this fight's ` +
+          `(${selects.join(" | ")}), because they may fire ${named} while the party is away — ` +
+          (refused !== undefined
+            ? `and the hold was refused: ${refused}`
+            : held === undefined
+              ? `and the server never said how many it held`
+              : `and it held no body: the hold binds nothing, so the trial would prove nothing ` +
+                `about the world it is judged against`),
+      );
+    }
+    process.stderr.write(
+      `[die-retry] ${wave}: the fight's bodies may fire ${named} while the party is away; ` +
+        `the trial holds ${held} body(ies) of ${selects.join(" | ")} still until it ends\n`,
+    );
+    const holding: RetryHolding = { stop: false, refused: undefined, loop: Promise.resolve() };
+    holding.loop = (async () => {
+      while (!holding.stop) {
+        await delay(RETRY_HOLD_PERIOD_MS);
+        if (holding.stop) break;
+        const reply = await this.bracketed(commands);
+        const r = reply.answered ? reply.lines.find((l) => isRejection(l)) : undefined;
+        if (r !== undefined && holding.refused === undefined) holding.refused = r;
+      }
+    })();
+    return holding;
+  },
+
+  /** Let every held body go, and say how many the hold stood on at its end. A
+   * re-hold the server refused while the trial ran is the trial's failure. */
+  async endRetryHold(this: MineflayerExecutor, wave: string, holding: RetryHolding): Promise<void> {
+    holding.stop = true;
+    await holding.loop;
+    const count = retryHeldCount((await this.bracketed([RETRY_HELD_COUNT_COMMAND])).lines);
+    const reply = await this.bracketed(retryReleaseCommands());
+    const refused = reply.answered ? reply.lines.find((l) => isRejection(l)) : "the closing marker never arrived";
+    const row = this.retryHolds.findLast((h) => h.wave === wave);
+    if (row !== undefined && count !== undefined) row.held = Math.max(row.held, count);
+    process.stderr.write(
+      `[die-retry] ${wave}: the hold let ${count ?? "an unread number of"} body(ies) go\n`,
+    );
+    const failure = holding.refused ?? refused;
+    if (failure !== undefined) {
+      throw new Error(`${wave}: the trial's hold was refused by the server — ${failure}`);
+    }
   },
 };

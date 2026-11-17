@@ -1237,24 +1237,13 @@ function near(a: Vec3Tuple, b: Vec3Tuple, radius: number): boolean {
 }
 
 /**
- * Why the die-retry stage may not script a death at an encounter.
- *
- * `reds` is the whole reason this is a structure rather than a string. Both gaps
- * stop the scripted death, but they are different KINDS of fact:
- *
- *   * `unarmed` is about the RUN — the proof walked past the fire it was about to
- *     be measured against. That is the harness's own gap, and it reds the stage;
- *   * `no-checkpoint` is about the CONTENT — the campaign fires no checkpoint
- *     before this fight at all, so every death here is a full restart by design.
- *     Whether that is acceptable is a pacing judgement the compiler already owns
- *     (`DW0379` retry cost, the checkpoint proofs `DW0315`/`DW0316`), so the
- *     harness states it and declines to grade it.
+ * Why the die-retry stage may not script a death at an encounter: the proof
+ * walked past the fire it was about to be measured against. That is the
+ * harness's own gap, and it reds the stage.
  */
 export interface CheckpointPreconditionGap {
-  readonly kind: "unarmed" | "no-checkpoint";
+  readonly kind: "unarmed";
   readonly finding: string;
-  /** Whether this gap makes the die-retry stage RED, or is advisory only. */
-  readonly reds: boolean;
 }
 
 /**
@@ -1269,23 +1258,20 @@ export interface CheckpointPreconditionGap {
  *
  * The harness settles it from the two artifacts it already holds: the path's
  * `rest` steps say which checkpoints are bonfires, and the executor knows which
- * of those it performed. Four cases, and only two of them stop the death:
+ * of those it performed. Four cases, and only one of them stops the death:
  *
  *   * the governing checkpoint sits on a bonfire the bot rested at → armed,
  *     proceed;
  *   * it matches no bonfire in the path → an ordinary `set-checkpoint`, which
  *     arms itself when its beat fires. Nothing to contradict, proceed;
+ *   * the plan names **no governing checkpoint at all** → the campaign fires none
+ *     before this fight, so a death respawns at world spawn and the walk back
+ *     starts there. That IS the loop a player has here, so it is the loop the
+ *     stage proves: proceed. (`fire_step < i` means a checkpoint armed by the
+ *     encounter's own kill step is correctly NOT its governing one.)
  *   * it sits on a bonfire the bot walked past → **unarmed**, and a scripted
  *     death here would measure the campaign against a respawn point the player
- *     loop was never performed for. Red;
- *   * the plan names **no governing checkpoint at all** → the campaign fires none
- *     before this fight, so a death respawns at world spawn and the retry loop is
- *     a full restart. Advisory: this is a content fact, and in a souls campaign a
- *     design smell, but the compiler's checkpoint/retry-cost rules are what judge
- *     it. This is not hypothetical — `fire_step < i` means a checkpoint armed
- *     by the encounter's own kill step is correctly NOT its governing one, and
- *     souls-bonfire's encounter truthfully reports none. Reading it as "armed"
- *     instead is the answer that flatters the campaign.
+ *     loop was never performed for. Red.
  */
 export function checkpointPrecondition(
   enc: Encounter,
@@ -1293,20 +1279,7 @@ export function checkpointPrecondition(
   rested: ReadonlySet<number>,
   beforeStep: number,
 ): CheckpointPreconditionGap | undefined {
-  if (enc.checkpoint === undefined) {
-    return {
-      kind: "no-checkpoint",
-      reds: false,
-      finding:
-        `${enc.wave}: die-retry precondition: no governing checkpoint — die-retry cannot ` +
-        `prove safe death here. The plan names no checkpoint fired before this encounter, so ` +
-        `a death respawns at world spawn and the retry loop is a full restart of the delve. ` +
-        `No death was taken. Advisory, not a failure: this is a CONTENT fact about where the ` +
-        `campaign puts its rest points, and the compiler's rules own that judgement (DW0379 ` +
-        `retry cost, DW0315/DW0316 checkpoint proofs) — the harness only reports that this ` +
-        `fight's retry loop went unproven.`,
-    };
-  }
+  if (enc.checkpoint === undefined) return undefined;
   // Matched by POSITION, never by step order: what makes a checkpoint unarmed is
   // that nobody has rested at it yet, and that is true whether the path rests
   // there later or never. Order only changes the sentence.
@@ -1325,7 +1298,6 @@ export function checkpointPrecondition(
         `this encounter (path step ${fire.step})`;
   return {
     kind: "unarmed",
-    reds: true,
     finding:
       `${enc.wave}: die-retry precondition: no checkpoint armed — ${why}, so the governing ` +
       `checkpoint at ${enc.checkpoint.join(",")} has never moved. A bonfire ARMS on arrival ` +
@@ -1335,33 +1307,92 @@ export function checkpointPrecondition(
   };
 }
 
+/** The tag a body carries while a die-retry trial holds it still. */
+export const RETRY_HELD_TAG = "dw_retry_held";
+
 /**
- * Why the die-retry stage takes no death at a fight whose own bodies may fire a
- * story trigger the walked world never performs (the step's `unattended`,
- * critical-path format 13), or `undefined` when they may fire none.
+ * **What a die-retry trial holds still while it runs**, at a fight whose own
+ * bodies may fire a story trigger the walked world never performs (the kill
+ * step's `unattended`, critical-path format 13).
  *
- * A death takes the party off the fight: it respawns at the checkpoint and
- * walks back, and the fight's bodies walk where they would with nobody to
- * fight. Where the compiler shows they may walk into a census box whose trigger
- * writes the world, the run would leave the world it is judged against — the
- * journal, the endings and every later reading would then compare it with a
- * world it is not in. Advisory, never red: that a death here can change the
- * story is the content's design, and the trigger's own world judges it; the
- * finding says the retry loop went unproven in this world, and why.
+ * A death takes the party off the fight. In play the fight goes on without it:
+ * the bodies walk where they would, and where the compiler shows one of them
+ * may walk into a census box whose trigger writes the world, a death there can
+ * hand the story to that trigger's world — the festival town's raid, whose
+ * pillagers march on the cake while the party wakes in the inn. That outcome is
+ * a world of its own, walked to its end by its own run. The trial proves the
+ * other side of the same moment: the party got back first — the respawn, the
+ * kit, every objective kept, the walk back and a fight still standing to win —
+ * and so it must not hand the run to another world while it does.
+ *
+ * So from its first scripted death to its end the trial holds still (`NoAI`)
+ * every body the compiler states a census may count among this fight's bodies:
+ * the `story_bodies` rows (format 14) whose `waves` name the fight's wave —
+ * every census that may count one of its bodies (`CensusOf::may_count_wave`,
+ * the set the step's `unattended` was filtered by) and the wave itself. A body
+ * already without its AI is never taken, so the release never wakes a puppet.
+ *
+ * `undefined` when the step names no such trigger. A step that names one with
+ * no row to hold is a trial the run cannot take without leaving its world: a
+ * red finding, never a skip.
  */
-export function unattendedPrecondition(
+export type RetryHold =
+  | { readonly kind: "hold"; readonly triggers: readonly string[]; readonly selects: readonly string[] }
+  | { readonly kind: "unholdable"; readonly finding: string };
+
+export function retryHold(
   wave: string,
   unattended: readonly string[] | undefined,
-): string | undefined {
+  storyBodies: readonly { readonly select: string; readonly waves: readonly string[] }[],
+): RetryHold | undefined {
   if (unattended === undefined || unattended.length === 0) return undefined;
-  return (
-    `${wave}: die-retry precondition: the fight's own bodies may fire ` +
-    `${unattended.map((t) => `\`${t}\``).join(", ")} while the party is away from it, ` +
-    `which this world never performs — a death here takes the run out of the world it is ` +
-    `judged against. No death was taken. Advisory, not a failure: the retry loop is ` +
-    `proven in a world where no such trigger is open at this fight; in this one it went ` +
-    `unproven.`
-  );
+  const selects = [...new Set(storyBodies.filter((b) => b.waves.includes(wave)).map((b) => b.select))];
+  const named = unattended.map((t) => `\`${t}\``).join(", ");
+  if (selects.length === 0) {
+    return {
+      kind: "unholdable",
+      finding:
+        `${wave}: die-retry: the fight's own bodies may fire ${named} while the party is away, ` +
+        `and the path's \`story_bodies\` names no body of this wave to hold still while the trial ` +
+        `runs — a death here would carry the run out of the world it is judged against, so ` +
+        `no death was taken and this fight's retry loop is unproven in this world.`,
+    };
+  }
+  return { kind: "hold", triggers: [...unattended], selects };
+}
+
+/** The commands that hold still every body of `selects` that has its AI. Run
+ * as their bodies, so a selector that matches none answers nothing. */
+export function retryHoldCommands(selects: readonly string[]): string[] {
+  return [
+    ...selects.map(
+      (s) =>
+        `/execute as @e[${s},tag=!${RETRY_HELD_TAG},nbt=!{NoAI:1b}] run tag @s add ${RETRY_HELD_TAG}`,
+    ),
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run data merge entity @s {NoAI:1b}`,
+  ];
+}
+
+/** How many bodies the hold stands on, asked of the server. */
+export const RETRY_HELD_COUNT_COMMAND = `/execute if entity @e[tag=${RETRY_HELD_TAG}]`;
+
+/** The held count in a reply to {@link RETRY_HELD_COUNT_COMMAND}: `Test passed,
+ * count: N` is N, `Test failed` is 0, anything else is unread. */
+export function retryHeldCount(lines: readonly string[]): number | undefined {
+  for (const line of lines) {
+    const m = /^Test passed, count: (\d+)$/.exec(line.trim());
+    if (m) return Number(m[1]);
+    if (line.trim() === "Test failed") return 0;
+  }
+  return undefined;
+}
+
+/** The commands that give every held body its AI back. */
+export function retryReleaseCommands(): string[] {
+  return [
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run data merge entity @s {NoAI:0b}`,
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run tag @s remove ${RETRY_HELD_TAG}`,
+  ];
 }
 
 /** Every finding across a stage's trials, in order. */
@@ -1389,13 +1420,17 @@ export function dieRetryFidelityGaps(trials: readonly DeathTrial[]): string[] {
  * findings, and therefore read `passed: true` — which is exactly how a run that
  * aborted at its first scripted death reported a green die-retry stage.
  * Coverage closes that: the stage owes `expected` COMPLETED trials for
- * every encounter the compiler put in the plan, and anything less is a stage
- * that did not prove its property, whatever else went right.
+ * every encounter the world fields, and anything less is a stage that did not
+ * prove its property, whatever else went right. There is no exemption: an
+ * encounter the stage declined to die at (`declined`, whose reason a finding
+ * above already states) is unproven in this world, and no other world's run is
+ * read in its place.
  */
 export function dieRetryCoverageFailures(
   plan: readonly Encounter[],
   engagedWaves: ReadonlySet<string>,
   trials: readonly DeathTrial[],
+  declined: ReadonlySet<string> = new Set(),
   expected: number = DIE_RETRY_DEATHS,
 ): string[] {
   const out: string[] = [];
@@ -1403,7 +1438,12 @@ export function dieRetryCoverageFailures(
     const recorded = trials.filter((t) => t.wave === enc.wave);
     const proved = recorded.filter((t) => t.completed).length;
     if (proved >= expected) continue;
-    if (engagedWaves.has(enc.wave)) {
+    if (declined.has(enc.wave)) {
+      out.push(
+        `${enc.wave}: the die-retry stage took no death at this encounter (the precondition ` +
+          `above says why), so its retry loop is proven in no world this run walked.`,
+      );
+    } else if (engagedWaves.has(enc.wave)) {
       out.push(
         `${enc.wave}: the die-retry stage ENGAGED this encounter but proved only ` +
           `${proved}/${expected} scripted death(s) (${recorded.length} recorded). ` +
@@ -1417,6 +1457,32 @@ export function dieRetryCoverageFailures(
     }
   }
   return out;
+}
+
+/**
+ * **The die-retry stage's failures in one world**, in the order a reader needs
+ * them: why the stage declined an encounter first (an unarmed checkpoint, a
+ * trigger with no body to hold), then every trial's verdict, then the
+ * coverage of every encounter the world fields — none exempt, so an encounter
+ * declined here is red here, whatever any other world proved.
+ */
+export function dieRetryStageFailures(input: {
+  readonly ran: boolean;
+  readonly fielded: readonly Encounter[];
+  readonly engaged: ReadonlySet<string>;
+  readonly declined: ReadonlySet<string>;
+  readonly trials: readonly DeathTrial[];
+  readonly preconditionFindings: readonly string[];
+  readonly unholdableFindings: readonly string[];
+}): string[] {
+  return [
+    ...input.preconditionFindings,
+    ...input.unholdableFindings,
+    ...dieRetryFindings(input.trials),
+    ...(input.ran
+      ? dieRetryCoverageFailures(input.fielded, input.engaged, input.trials, input.declined)
+      : []),
+  ];
 }
 
 /**
@@ -1459,28 +1525,15 @@ export function fieldedEncounters(
  *
  * ## Why this exists
  *
- * The stage's precondition is an ARMED checkpoint before a mandatory encounter,
- * and an encounter that has none is excluded with an advisory — correctly,
- * because where a campaign puts its rest points is a content judgement the
- * compiler's rules own, not the bot's. But the arithmetic downstream of that
- * exclusion is `dieRetryCoverageFailures` over an already-emptied list, so a build
- * where EVERY encounter is excluded produces no failures and reports
- * `passed: true`. The stage then reads as "dying is safe here" while having
- * scripted no death at all.
- *
- * That is not hypothetical and it is not rare: measured 2026-08-11 across every
- * campaign and fixture in both repos, **no build exercises a scripted death**.
- * `keep-trial` and `hollow-vigil` field encounters with no checkpoint before them;
- * `nobodys-cave-island` reports zero mandatory encounters; the drowned bell has no
- * stage documents yet. Every one of those runs was green on this stage.
- *
- * This is the same shape as the island's combat floor gate examining zero enemies
- * for nineteen rounds, and it gets the same treatment: the count travels in the
- * run artifact and an unbound stage says so out loud, so nobody has to notice an
- * empty `die_retry` array to learn that nothing was proven.
+ * A stage that takes no death has proven nothing about dying, whatever its
+ * verdict says. Every fielded encounter the stage did not prove reds it
+ * (`dieRetryCoverageFailures`); this count says how much it examined, so a
+ * reader never has to notice an empty `die_retry` array to learn that nothing
+ * was proven — the same treatment the island's combat floor gate got after
+ * examining zero enemies for nineteen rounds.
  */
 export interface DieRetryBinding {
-  /** Mandatory encounters the compiler put in the plan. */
+  /** Encounters this world fields. */
   readonly declared: number;
   /** Encounters the stage entered. */
   readonly engaged: number;
@@ -1488,13 +1541,14 @@ export interface DieRetryBinding {
   readonly deathsScripted: number;
   /** Of those, how many reached a verdict about the retry loop. */
   readonly trialsCompleted: number;
-  /** Encounters excluded because the campaign fires no checkpoint before them. */
-  readonly skippedNoCheckpoint: number;
   /** Encounters excluded because the governing checkpoint was never armed. */
   readonly skippedUnarmed: number;
-  /** Encounters excluded because the fight's own bodies may fire a story
-   * trigger this world never performs ({@link unattendedPrecondition}). */
-  readonly skippedUnattended: number;
+  /** Encounters excluded because a story trigger their bodies may fire had no
+   * body to hold still ({@link retryHold}). */
+  readonly skippedUnholdable: number;
+  /** Encounters whose trials ran with the bodies a census may count held
+   * still ({@link retryHold}). */
+  readonly held: number;
   /** True when no scripted death was taken — nothing about dying was examined. */
   readonly unbound: boolean;
   /** Why it examined nothing. `undefined` exactly when it examined something. */
@@ -1507,9 +1561,9 @@ export function dieRetryBinding(
   declared: number,
   engagedWaves: ReadonlySet<string>,
   trials: readonly DeathTrial[],
-  skippedNoCheckpoint: number,
   skippedUnarmed: number,
-  skippedUnattended: number,
+  skippedUnholdable: number,
+  held: number,
 ): DieRetryBinding {
   const deathsScripted = trials.length;
   const base = {
@@ -1517,9 +1571,9 @@ export function dieRetryBinding(
     engaged: engagedWaves.size,
     deathsScripted,
     trialsCompleted: trials.filter((t) => t.completed).length,
-    skippedNoCheckpoint,
     skippedUnarmed,
-    skippedUnattended,
+    skippedUnholdable,
+    held,
     unbound: deathsScripted === 0,
   };
   if (deathsScripted > 0) return base;
@@ -1530,26 +1584,14 @@ export function dieRetryBinding(
       "nothing about dying is proven or disproven by this run";
   } else if (declared === 0) {
     reason =
-      "this build declares NO mandatory encounter, so the stage had nothing to script a " +
+      "this world fields NO mandatory encounter, so the stage had nothing to script a " +
       "death at. A campaign whose fights are not named by a `kill` objective cannot have " +
       "its retry loop proven by this tier at all";
-  } else if (skippedNoCheckpoint >= declared) {
+  } else if (skippedUnarmed + skippedUnholdable > 0) {
     reason =
-      `all ${declared} mandatory encounter(s) were excluded because the campaign fires NO ` +
-      `checkpoint before them: every death there is a full restart, so the stage took no ` +
-      `death and proved nothing. Where the rest points go is a CONTENT judgement ` +
-      `(DW0379/DW0315/DW0316), but the consequence for this stage is that it examined zero`;
-  } else if (skippedNoCheckpoint + skippedUnattended >= declared) {
-    reason =
-      `all ${declared} mandatory encounter(s) were excluded: ${skippedNoCheckpoint} for want of ` +
-      `a checkpoint before them, ${skippedUnattended} because the fight's own bodies may fire ` +
-      `a story trigger this world never performs while the party is away — so the stage ` +
-      `took no death in this world and proved nothing here`;
-  } else if (skippedUnarmed > 0) {
-    reason =
-      `${skippedUnarmed} encounter(s) were excluded because the governing checkpoint was ` +
-      `never armed — the run's own gap, not the delve's — and no other encounter yielded a ` +
-      `scripted death`;
+      `${skippedUnarmed + skippedUnholdable} encounter(s) were excluded (${skippedUnarmed} for a ` +
+      `governing checkpoint never armed, ${skippedUnholdable} for a story trigger with no body ` +
+      `to hold) and no other encounter yielded a scripted death`;
   } else {
     reason =
       `the stage ran over ${declared} declared encounter(s) and took NO scripted death; ` +
