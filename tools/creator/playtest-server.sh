@@ -390,19 +390,6 @@ dw_playtest_identity_check() {
   printf '%s\n' "$verdict"
 }
 
-# The line the vanilla watchdog logs as it halts a server whose tick ran past
-# `max-tick-time`; read so a halt is reported as what it is, not as whatever
-# probe it interrupted.
-DW_SERVER_WATCHDOG_MARKER='A single server tick took'
-
-# dw_server_log_shows_watchdog <text>
-dw_server_log_shows_watchdog() {
-  case "${1-}" in
-    *"$DW_SERVER_WATCHDOG_MARKER"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 # dw_playtest_wait_done <container> <budget_s> <poll_s>
 #
 # Poll the container's log for the server's `Done (` line. A container that

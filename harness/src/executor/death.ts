@@ -395,13 +395,14 @@ export const methods = {
       }
       return refused !== undefined || (pos !== undefined && tickTo !== undefined);
     };
-    const deadline = Date.now() + SCORE_TRACK_TIMEOUT_MS;
-    while (!answered() && Date.now() < deadline) await delay(LEDGER_POLL_MS);
+    // Counted on the server's clock as well as the wall's (`server-deadline.ts`).
+    const deadline = this.serverDeadline(SCORE_TRACK_TIMEOUT_MS);
+    while (!answered() && !this.deadlineOver(deadline)) await delay(LEDGER_POLL_MS);
     if (refused !== undefined) return { unread: `refused: ${refused}` };
     if (pos === undefined || tickFrom === undefined || tickTo === undefined) {
       return {
         unread:
-          `no complete answer in ${SCORE_TRACK_TIMEOUT_MS}ms: ` +
+          `no complete answer in ${this.deadlineSpent(deadline)}: ` +
           JSON.stringify(this.chatSince(from).lines.filter((l) => l.includes("[dw:pos "))),
       };
     }

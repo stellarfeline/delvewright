@@ -57,7 +57,12 @@
 # clock once its bot is walking — the vanilla `Can't keep up!` warning — is
 # named on its verdict line:
 # a run under load is a run whose verdict a boat ride or a timed window may owe
-# to the load, so N is chosen below where that line appears.
+# to the load, so N is chosen below where that line appears. A world whose
+# server stood still (the vanilla watchdog halted it, or its bot heard no
+# keepalive) while the host held swap — the host's memory sampled through the
+# world's server every 5 s, and the crash report's own reading — is reported
+# UNPROVEN with the host's numbers, never as a failure of its path
+# (`dw_host_overload`, validation/lib/branch-jobs.sh). It still fails the ladder.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -222,19 +227,34 @@ echo "==> images: built once for $n_selected world(s)"
 "$here/fresh-volumes.sh" --project "$PROJECT"
 "${COMPOSE[@]}" build server bot
 
+# The host's memory while world project $1 runs, one `dw_host_memory_sample`
+# line every 5 s into $2, read through the world's server container; ends with
+# the process $3 (the world's compose run).
+sample_host() {
+  local wp="$1" out="$2" owner="$3" cid
+  while kill -0 "$owner" 2>/dev/null; do
+    cid="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate ps -q server 2>/dev/null | head -n 1)"
+    [ -z "$cid" ] || dw_host_memory_sample "$cid" >>"$out" || true
+    sleep 5
+  done
+}
+
 # One world, start to verdict, in its own project. Leaves `<slug>.rc` (the
 # compose exit code), `<slug>.infra` (why no report was written, when none
-# was) and `<slug>.lag` (the server's `Can't keep up!` lines) in $RUN_OUT, and
-# files the bot's report as `run-report-<slug>.json`.
+# was), `<slug>.host` (the host verdict, when the server stood still because
+# the host could not hold it: `dw_host_overload`), `<slug>.mem` (the host's
+# memory over the run) and `<slug>.lag` (the server's `Can't keep up!` lines)
+# in $RUN_OUT, and files the bot's report as `run-report-<slug>.json`.
 run_world() {
-  local branch="$1" slug wp bot_rel bot_dir report log rc server_log oom t0
+  local branch="$1" slug wp bot_rel bot_dir report log rc server_log oom t0 up sampler host
   slug="$(printf '%s' "$branch" | tr '/' '-')"
   wp="$(world_project "$branch")"
   bot_rel="./run-out/$PROJECT/branch-bot/$slug"
   bot_dir="$here/${bot_rel#./}"
   report="$RUN_OUT/run-report-$slug.json"
   log="$RUN_OUT/branch-$slug.log"
-  rm -f "$report" "$bot_dir/run-report.json" "$RUN_OUT/$slug.rc" "$RUN_OUT/$slug.infra" "$RUN_OUT/$slug.lag"
+  rm -f "$report" "$bot_dir/run-report.json" "$RUN_OUT/$slug.rc" "$RUN_OUT/$slug.infra" "$RUN_OUT/$slug.lag" \
+    "$RUN_OUT/$slug.host" "$RUN_OUT/$slug.mem"
   mkdir -p "$bot_dir"
   t0="$(date +%s)"
   echo "==> ${branch}: fresh world (project $wp)" >"$log"
@@ -247,12 +267,18 @@ run_world() {
   set +e
   DW_BOT_OUT="$bot_rel" DELVEWRIGHT_BRANCH="$branch" DELVEWRIGHT_BRANCHES="$TIER" \
     docker compose -p "$wp" -f "$here/compose.yaml" --profile validate \
-    up --no-build --abort-on-container-exit --exit-code-from bot >>"$log" 2>&1
+    up --no-build --abort-on-container-exit --exit-code-from bot >>"$log" 2>&1 &
+  up=$!
+  sample_host "$wp" "$RUN_OUT/$slug.mem" "$up" &
+  sampler=$!
+  wait "$up"
   rc=$?
   # An OOM'd server takes the bot down before spawn, and the bot's exit says
   # nothing about why; the server's own log does, read before the teardown
   # removes it. The same log says whether the server fell behind the clock.
   server_log="$(docker compose -p "$wp" -f "$here/compose.yaml" --profile validate logs --no-color server 2>&1)"
+  kill "$sampler" 2>/dev/null
+  wait "$sampler" 2>/dev/null
   set -e
   # Only once the bot walks its first leg: the first join's placement and
   # setup fall behind on every world, alone or not (two lines, about 6 s and
@@ -264,6 +290,12 @@ run_world() {
     oom=1
     echo "::error:: branch $branch: $(dw_server_oom_advice)" >>"$log"
     [ "$rc" -ne 0 ] || rc=1
+  fi
+  # A server that stood still while the host was swapping failed nothing of
+  # the path: the world is a host verdict, whatever the bot said after it.
+  if [ "$rc" -ne 0 ] && host="$(dw_host_overload "$server_log" "$log" "$RUN_OUT/$slug.mem" "$JOBS" "$OUT")"; then
+    echo "::error:: branch $branch: $host" >>"$log"
+    printf '%s=%s\n' "$branch" "$host" >"$RUN_OUT/$slug.host"
   fi
   # The bot writes into its world's mounted directory; file its copy under
   # the world's name in $RUN_OUT so the merge can read them all back.
@@ -314,6 +346,10 @@ infra=()
 # check outside the report's stages (the sculk ear's verdict) failed it, and
 # the exit code is the verdict. Entries are `branch=exit-code`.
 exited=()
+# Branches whose server stood still because the host could not hold it
+# (`dw_host_overload`): unproven, and not a verdict on the path. Entries are
+# `branch=reason`.
+host=()
 # Every verdict, in the plan's order.
 while IFS= read -r branch; do
   [ -n "$branch" ] || continue
@@ -325,10 +361,14 @@ while IFS= read -r branch; do
     [ "$rc" -eq 0 ] || exited+=("$branch=$rc")
   fi
   if [ -f "$RUN_OUT/$slug.infra" ]; then infra+=("$(cat "$RUN_OUT/$slug.infra")"); fi
+  if [ -f "$RUN_OUT/$slug.host" ]; then host+=("$(cat "$RUN_OUT/$slug.host")"); fi
   lag="$(grep -c . "$RUN_OUT/$slug.lag" 2>/dev/null || true)"
   lag_note=""
   [ "${lag:-0}" = 0 ] || lag_note=", and its server fell behind the clock ${lag} time(s)"
-  if [ "$rc" -ne 0 ]; then
+  if [ -f "$RUN_OUT/$slug.host" ]; then
+    echo "::error:: branch $branch UNPROVEN (exit $rc) — $(cut -d= -f2- "$RUN_OUT/$slug.host") — $RUN_OUT/branch-$slug.log"
+    status=1
+  elif [ "$rc" -ne 0 ]; then
     echo "::error:: branch $branch FAILED (exit $rc)$lag_note — $RUN_OUT/branch-$slug.log"
     tail -n 40 "$RUN_OUT/branch-$slug.log" 2>/dev/null | sed 's/^/    /' || true
     status=1
@@ -351,6 +391,7 @@ echo "==> merging per-branch reports into $MERGED"
 # (the bot walked and failed a step) and from a tier skip (never attempted) —
 # and no other session's "skipped" row may paper over them.
 DW_INFRA="$(printf '%s\n' ${infra[@]+"${infra[@]}"})" \
+DW_HOST="$(printf '%s\n' ${host[@]+"${host[@]}"})" \
 DW_EXITED="$(printf '%s\n' ${exited[@]+"${exited[@]}"})" \
 python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
 import json, os, sys
@@ -422,6 +463,17 @@ for bid in plan.get("branches_unrealized", []):
         "endings": [],
         "entry_commands": [],
     }
+# A world whose server stood still because the host could not hold it is
+# unproven, whatever its bot reported after the stall: the row is the host's
+# verdict, never the path's, and never a pass.
+for line in os.environ.get("DW_HOST", "").splitlines():
+    if "=" not in line:
+        continue
+    branch, why = line.split("=", 1)
+    if branch in rows:
+        rows[branch] = dict(
+            rows[branch], ran=False, passed=False, infra_failed=True, host_overloaded=True, reason=why
+        )
 # A run that walked its branch and still exited non-zero failed on a check
 # its report does not carry as a stage: the exit code is the verdict, so the
 # row is never a pass (the staging gate reads `passed`).
@@ -445,6 +497,8 @@ for row in merged["branches"]:
         state = "RAN/passed"
     elif row["ran"]:
         state = "RAN/FAILED"
+    elif row.get("host_overloaded"):
+        state = "HOST-OVERLOADED"
     elif row.get("infra_failed"):
         state = "INFRA-FAILED"
     else:

@@ -86,3 +86,78 @@ dw_branch_jobs_why() {
   heap="$(dw_server_heap_max "$1")"
   echo "daemon ${cap% *} MiB and ${cap#* } CPUs; a world is the build's heap-max ${heap} plus ${DW_BRANCH_WORLD_OVERHEAD_MIB} MiB, and ${DW_BRANCH_WORLD_CPUS} CPUs"
 }
+
+# ## A world whose server stood still because the host could not hold it
+#
+# A server's tick stands still when its host runs out of memory and pages it
+# to swap: the town's branch worlds 30, 31, 32 and 34 were halted by the
+# vanilla watchdog (`A single server tick took 60.00 seconds`) during their
+# first join's placement, with 8406, 13059, 12127 and 8792 MiB of the host's
+# swap in use (each crash report's own `Swap memory used`), while this ladder's
+# two worlds held at most 16 GiB of its 30.5. The same host idled at 113 MiB
+# of swap with two worlds walking. A stall like that says nothing about the
+# path, and the ladder says so instead of reporting it as a failed world.
+
+# MiB of the host's swap in use at which a stall is the host's: a gibibyte out
+# of RAM is demand past what the host holds.
+DW_HOST_SWAP_OVERLOAD_MIB=1024
+
+# dw_host_memory_sample <container> -> `<epoch> <MemAvailable MiB> <swap used MiB>`,
+# from /proc/meminfo as <container> sees it: the daemon host's, which is the
+# machine the worlds share. Prints nothing when the container does not answer.
+dw_host_memory_sample() {
+  docker exec "$1" cat /proc/meminfo 2>/dev/null |
+    awk -v now="$(date +%s)" '
+      /^MemAvailable:/ { a = $2 } /^SwapTotal:/ { st = $2 } /^SwapFree:/ { sf = $2 }
+      END { if (a != "") printf "%d %d %d\n", now, a / 1024, (st - sf) / 1024 }'
+}
+
+# dw_world_stall <server-log> <run-log> -> why the world's server stood still,
+# one phrase, or nothing (exit 1) when it did not: the vanilla watchdog halted
+# it, or the bot heard no keepalive for minecraft-protocol's 30 s.
+dw_world_stall() {
+  if dw_server_log_shows_watchdog "$1"; then
+    echo "the vanilla watchdog halted it ($(printf '%s\n' "$1" | grep -o "$DW_SERVER_WATCHDOG_MARKER [0-9.]* seconds" | head -n 1))"
+    return 0
+  fi
+  if grep -qF "connection ended: keepAliveError" "$2" 2>/dev/null; then
+    echo "the bot heard no keepalive from it for 30 s (keepAliveError)"
+    return 0
+  fi
+  return 1
+}
+
+# dw_swap_peak_mib <server-log> <samples-file> -> the most swap (MiB) the host
+# was seen holding over the world's run: the sampler's readings and the crash
+# report's `Swap memory used (MiB)`, whichever is larger; nothing when neither
+# was read.
+dw_swap_peak_mib() {
+  {
+    printf '%s\n' "$1" | sed -n 's/.*Swap memory used (MiB): \([0-9]*\).*/\1/p'
+    [ ! -f "$2" ] || awk '{ print $3 }' "$2"
+  } | sort -n | tail -n 1
+}
+
+# dw_host_overload <server-log> <run-log> <samples-file> <jobs> <build-dir>
+# -> the host verdict for a world, and exit 0, when its server stood still
+# (`dw_world_stall`) while the host held at least DW_HOST_SWAP_OVERLOAD_MIB of
+# swap; exit 1 otherwise, printing nothing — then the stall, if any, is the
+# build's or the path's, and the world's failure stands as it is.
+dw_host_overload() {
+  local stall peak cap mem heap per held beside
+  stall="$(dw_world_stall "$1" "$2")" || return 1
+  peak="$(dw_swap_peak_mib "$1" "$3")"
+  [ -n "$peak" ] && [ "$peak" -ge "$DW_HOST_SWAP_OVERLOAD_MIB" ] || return 1
+  cap="$(dw_docker_capacity)"
+  mem="${cap% *}"
+  heap="$(dw_size_mib "$(dw_server_heap_max "$5")")"
+  [ -n "$heap" ] || heap=4096
+  per=$(( heap + DW_BRANCH_WORLD_OVERHEAD_MIB ))
+  held=$(( $4 * per ))
+  if [ -n "$mem" ] && [ "$held" -lt "$mem" ]; then
+    beside="this ladder's $4 world(s) hold at most $held MiB of the host's $mem MiB, so something beside this ladder held the rest"
+  else
+    beside="this ladder's $4 world(s) can hold $held MiB, the host's whole memory${mem:+ ($mem MiB)}: the fit admitted more than the host holds"
+  fi
+  echo "HOST OVERLOADED, not a verdict on the path: the server's tick stood still — $stall — while the host held $peak MiB of swap (at least $DW_HOST_SWAP_OVERLOAD_MIB is demand past its memory); $beside. The world is unproven: run it again on a host with room"
+}
