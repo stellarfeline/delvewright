@@ -352,3 +352,115 @@ fn a_batch_that_waits_is_written_at_its_beat_and_the_frames_after_it_carry_it() 
     );
     assert_ne!(laid(0).as_deref(), Some(block.as_str()), "before it");
 }
+
+/// One by-effect batch selecting `region/<name>` at `[x, y, z]` in the keep's
+/// room and filling it with `block`, as the town's night batch writes its cloth
+/// and its lamps.
+fn hung(id: &str, rows: &[(&str, [i64; 3], [i64; 3], &str)]) -> Value {
+    let mut edits = Vec::new();
+    for (name, min, max, block) in rows {
+        edits.push(json!({"verb": "select", "name": name,
+            "shape": {"kind": "box", "frame": {"kind": "piece-local", "piece": 0,
+                      "prefab": "prefab/hello-room"}, "min": min, "max": max}}));
+        edits.push(json!({"verb": "fill", "region": name,
+            "recipe": {"blocks": [{"block": block, "weight": 1.0}]}}));
+    }
+    json!({"id": id, "area": "area/keep", "applied": "by-effect", "edits": edits})
+}
+
+const CLOTH: (&str, [i64; 3], [i64; 3], &str) =
+    ("region/cloth", [8, 4, 4], [9, 4, 5], "minecraft:red_wool");
+const LAMP: (&str, [i64; 3], [i64; 3], &str) = (
+    "region/lamp",
+    [9, 3, 5],
+    [9, 3, 5],
+    "minecraft:lantern[hanging=true,waterlogged=false]",
+);
+
+/// Add `batches` to the keep's world edits, and apply each at the objective
+/// named beside it.
+fn hang(dir: &std::path::Path, batches: Vec<(Value, &'static str)>) {
+    let applies: Vec<(String, &'static str)> = batches
+        .iter()
+        .map(|(b, at)| (b["id"].as_str().unwrap().to_string(), *at))
+        .collect();
+    common::patch_file(&dir.join("world-edits.json"), move |w| {
+        let list = w["content"]["batches"].as_array_mut().unwrap();
+        for (b, _) in &batches {
+            list.push(b.clone());
+        }
+    });
+    common::patch_file(&dir.join("quests.json"), move |q| {
+        let on = &mut q["content"]["quests"][0]["on_objective_complete"];
+        for (id, at) in &applies {
+            if on.get(*at).is_none() {
+                on[*at] = json!([]);
+            }
+            on[*at].as_array_mut().unwrap().push(json!({
+                "type": "apply-edits", "batch": id,
+                "happening": {"text": "the keep is dressed", "verb": "learns"}}));
+        }
+    });
+}
+
+/// **A lantern a by-effect batch hangs under the cloth the same batch writes
+/// is held** (`DW1002`'s runtime arm, `compiler::attached`): the batch is one
+/// function the beat runs whole, so wherever the lantern stands the cloth is
+/// over it, whichever row the batch writes first. Built end to end, so the
+/// shape the emitter gives a batch's function is the one the arm reads.
+#[test]
+fn a_lantern_a_batch_hangs_under_its_own_cloth_builds() {
+    for (name, rows) in [
+        ("deferred-edit-lamp-under-cloth", vec![CLOTH, LAMP]),
+        ("deferred-edit-lamp-before-cloth", vec![LAMP, CLOTH]),
+    ] {
+        let dir = edits_copy(name);
+        hang(
+            &dir,
+            vec![(hung("batch/festival-night", &rows), "obj/talk")],
+        );
+        let out = dir.with_extension("out");
+        let r = build_dir(&dir, &out);
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&r.stdout),
+            String::from_utf8_lossy(&r.stderr)
+        );
+        assert!(r.status.success(), "{name}: {all}");
+        assert!(!all.contains("error[DW1002]"), "{name}: {all}");
+        let fns = all_functions(&out);
+        let edit = fns
+            .get("edit_festival_night")
+            .expect("the batch is its own function");
+        assert!(
+            edit.lines().any(|l| l.contains("minecraft:lantern"))
+                && edit.lines().any(|l| l.contains("minecraft:red_wool")),
+            "{name}: the batch writes both: {edit}"
+        );
+    }
+}
+
+/// **A lantern whose cloth another beat writes is still refused**: the lamps'
+/// batch runs when the keeper is talked to, the cloth's only once the party is
+/// through the door, so between the two the lantern hangs under air.
+#[test]
+fn a_lantern_whose_cloth_a_later_beat_writes_is_dw1002() {
+    let dir = edits_copy("deferred-edit-lamp-cloth-later");
+    hang(
+        &dir,
+        vec![
+            (hung("batch/festival-lamps", &[LAMP]), "obj/talk"),
+            (hung("batch/festival-cloth", &[CLOTH]), "obj/exit"),
+        ],
+    );
+    let out = dir.with_extension("out");
+    let r = build_dir(&dir, &out);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(!r.status.success(), "the unheld lantern built: {all}");
+    assert!(all.contains("DW1002"), "{all}");
+    assert!(all.contains("minecraft:lantern"), "{all}");
+}
