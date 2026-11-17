@@ -441,8 +441,9 @@ const installed = new WeakSet<object>();
  * swims up and steps out. The route proof (`World::swim_moves`,
  * `compiler/nav/route/mod.rs`) crosses both: from a cell a body swims in, up
  * to the swim cell over it, and out onto a standable cell beside it within
- * {@link SWIM_CLIMB_OUT_CELLS}, with open or water headroom in its own column
- * for the lift. This adds exactly those moves to the library's own, on a leg
+ * {@link SWIM_CLIMB_OUT_CELLS}, or onto a thin floor (a lily pad) one course
+ * over it ({@link SWIM_CLIMB_OUT_THIN_TOP}), with open or water headroom in its
+ * own column for the lift. This adds exactly those moves to the library's own, on a leg
  * whose liquid is admitted ({@link swimFor}) and on no other; the library's
  * steering already holds the jump in water, which rises the body and makes
  * the fluid jump over the rim. Lava is never swum. Installed once per
