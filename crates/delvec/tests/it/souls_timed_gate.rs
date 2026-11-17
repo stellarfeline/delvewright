@@ -355,6 +355,8 @@ fn crush_false_is_inert() {
         "validation/packtest-fresh.json".to_string(),
         // So does the own-cells binding.
         "validation/packtest-own-cells.json".to_string(),
+        // So does the gate-ownership binding.
+        "validation/packtest-own-gates.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
