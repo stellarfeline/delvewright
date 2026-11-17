@@ -9,7 +9,6 @@
 //!
 //! - [`absent`]: the party is every member, present or not — the census of lasting writes onto the present and of picks of one player (`DW1126`/`DW1127`).
 //! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863` and by [`clue`].
-//! - [`clue`]: a step's stated clue is presented before the step on the main line (`DW1137`, `DW1136`; spec-0143).
 //! - [`affordance`]: the engine-fixture class tags and the region-selector exclusion (`DW0545`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
@@ -37,6 +36,7 @@
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`clickbox`]: the one rule every compiler-placed click box is built by — each face near the block grid pushed one margin past it — and its proof over the shipped bytes that a box is strictly nearer than any block it stands in (`DW1013`).
 //! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
+//! - [`clue`]: a step's stated clue is presented before the step on the main line (`DW1137`, `DW1136`; spec-0143).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
