@@ -44,9 +44,8 @@ import {
 } from "./waypoints.ts";
 import {
   dieRetryBinding,
-  dieRetryCoverageFailures,
+  dieRetryStageFailures,
   dieRetryFidelityGaps,
-  dieRetryFindings,
   loadCombatPlanForCriticalPath,
   fieldedEncounters,
 } from "./combat.ts";
@@ -637,20 +636,18 @@ async function main(): Promise<number> {
     // Two independent ways the stage can be red: a trial that reached a verdict
     // and failed it, and a trial (or a whole encounter) the run never proved at
     // all. The second is the one an empty `die_retry` array used to hide.
-    const dieRetryFailures = [
-      // A precondition gap comes FIRST: it explains why the trials below are
-      // missing, and reading the coverage failure without it sends a reader
-      // hunting a content bug that is not there.
-      ...executor.dieRetryPreconditionFindings(),
-      ...dieRetryFindings(trials),
-      ...(dieRetry
-        ? dieRetryCoverageFailures(
-            fielded.filter((e) => !executor.dieRetryPreconditionWaves().has(e.wave)),
-            executor.dieRetryEngagements(),
-            trials,
-          )
-        : []),
-    ];
+    // A precondition gap comes FIRST: it explains why the trials below are
+    // missing, and reading the coverage failure without it sends a reader
+    // hunting a content bug that is not there.
+    const dieRetryFailures = dieRetryStageFailures({
+      ran: dieRetry,
+      fielded,
+      engaged: executor.dieRetryEngagements(),
+      declined: executor.dieRetryPreconditionWaves(),
+      trials,
+      preconditionFindings: executor.dieRetryPreconditionFindings(),
+      unholdableFindings: executor.dieRetryUnholdableFindings(),
+    });
     // playtest-methodology rule 1, for the stage that most needed it. Measured
     // 2026-08-11: NO campaign or fixture in either repo exercises a scripted
     // death, and every one of those runs reported this stage green. A green that
@@ -662,9 +659,9 @@ async function main(): Promise<number> {
       fielded.length,
       executor.dieRetryEngagements(),
       trials,
-      executor.dieRetryPreconditionAdvisories().length,
       executor.dieRetryPreconditionFindings().length,
-      executor.dieRetryUnattendedAdvisories().length,
+      executor.dieRetryUnholdableFindings().length,
+      executor.dieRetryHeldBodies().length,
     );
     if (retryBinding.unbound) {
       process.stderr.write(
@@ -901,10 +898,8 @@ async function main(): Promise<number> {
       passed: dieRetry && dieRetryFailures.length === 0,
       findings: dieRetry
         ? // A zero binding is a FINDING, not a pass (playtest-methodology rule 1).
-          // Advisory rather than red on purpose: whether a campaign owes a
-          // checkpoint before a fight is `DW0379`/`DW0315`/`DW0316`'s judgement,
-          // not this stage's — but a stage that scripted no death may never read
-          // as one that proved dying is safe.
+          // Where the world fields an encounter, its coverage already reds;
+          // this line says the stage examined nothing either way.
           [
             ...(retryBinding.unbound
               ? [
@@ -913,15 +908,6 @@ async function main(): Promise<number> {
                     `${retryBinding.reason ?? "no reason given"}`,
                 ]
               : []),
-            // An encounter the campaign fires NO checkpoint before has its
-          // scripted death skipped, and the stage says so out loud rather than
-          // passing quietly. Advisory, not a failure — every death there is a full
-          // restart, which is a content staging fact the compiler's retry-cost and
-            // checkpoint rules judge, not this stage.
-            ...executor.dieRetryPreconditionAdvisories(),
-            // …and every fight whose own bodies may fire a story trigger this
-            // world never performs: a death there would leave the world.
-            ...executor.dieRetryUnattendedAdvisories(),
             // …and every re-seat reading the return leg's own defence confounded.
             // Named here so a stage that judged no health reading can never be
             // read as one that judged them all and found the wave whole.

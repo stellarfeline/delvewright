@@ -331,3 +331,63 @@ fn a_fight_whose_bodies_may_fire_an_unperformed_trigger_names_it() {
         steps[kill]
     );
 }
+
+/// **Every body an `unattended` trigger's census may count is one the
+/// die-retry trial can hold.** The harness holds still, from a trial's first
+/// death to its end, every body of the `story_bodies` rows whose `waves` name
+/// the fight's wave; the census of each trigger the kill step names must be
+/// one of those rows, or the trial at that fight is red for want of a body to
+/// hold. Perturbation: a census of a kind the guard is not names no
+/// `unattended` and needs no row.
+#[test]
+fn the_census_of_every_unattended_trigger_is_a_story_body_of_the_fight() {
+    for (tag, of, set) in [
+        (
+            "hold-zombie",
+            serde_json::json!({"kind": "minecraft:zombie"}),
+            "minecraft:zombie",
+        ),
+        (
+            "hold-wave",
+            serde_json::json!({"wave": "wave/guards"}),
+            "wave/guards",
+        ),
+    ] {
+        let dir = fixture_with_an_unattended_trigger(tag, of, |_| {});
+        let campaign = parse_dir(&dir);
+        let out = build(&campaign, &dir);
+        let path = json(&out, "critical-path.json");
+        let kill = path["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["action"] == "kill")
+            .cloned()
+            .unwrap();
+        let wave = kill["wave"].as_str().unwrap();
+        assert_eq!(
+            kill["unattended"],
+            serde_json::json!(["trigger/stone-overrun"])
+        );
+        let rows: Vec<&serde_json::Value> = path["story_bodies"]["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| {
+                r["waves"]
+                    .as_array()
+                    .is_some_and(|w| w.iter().any(|x| x == wave))
+            })
+            .collect();
+        assert!(
+            rows.iter().any(|r| r["of"] == set
+                && r["reads"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|x| x.as_str().unwrap().contains("state/guards-at-the-stone"))),
+            "{tag}: the census of `trigger/stone-overrun` is a row naming {wave}: {:#}",
+            path["story_bodies"]
+        );
+    }
+}

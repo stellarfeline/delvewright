@@ -641,11 +641,13 @@ fn choices_before(
 ///
 /// * `13` — a `kill` step may carry `unattended`: the world-writing triggers
 ///   this path never performs that a body other than the party may fire while
-///   the fight is taken ([`PathFiring::unattended`]). The die-retry stage takes
-///   no death at such a fight: the party away, the fight's own bodies may fire
-///   one, and the run leaves the world it is judged against. A format change
-///   for `4`'s reason: a format-12 bot would refuse the key, and one that
-///   ignored it would die there and judge a world the run left.
+///   the fight is taken ([`PathFiring::unattended`]). The die-retry trial at
+///   such a fight holds still every body a census may count among the fight's
+///   (the `story_bodies` rows naming its wave): the party away, the fight's own
+///   bodies may fire one, and the run would leave the world it is judged
+///   against. A format change for `4`'s reason: a format-12 bot would refuse
+///   the key, and one that ignored it would die there and judge a world the
+///   run left.
 ///
 /// * `14` — the path carries `story_bodies`
 ///   ([`crate::compiler::combat::story_bodies_json`]): the bodies whose death

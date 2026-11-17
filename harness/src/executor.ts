@@ -516,14 +516,13 @@ export class MineflayerExecutor implements StepExecutor {
   /** Encounters whose scripted deaths were SKIPPED because the checkpoint the
    * stage would measure against was never armed — the RUN's own gap, and red. */
   readonly preconditionFindings: string[] = [];
-  /** Encounters whose scripted deaths were skipped because the campaign fires NO
-   * checkpoint before them — a content fact, reported and not graded. */
-  readonly preconditionAdvisories: string[] = [];
-  /** Encounters whose scripted deaths were skipped because the fight's own
-   * bodies may fire a story trigger the walked world never performs — reported,
-   * not graded. */
-  readonly unattendedAdvisories: string[] = [];
+  /** Encounters whose scripted deaths were skipped because a story trigger the
+   * fight's own bodies may fire had no body to hold still — red. */
+  readonly unholdableFindings: string[] = [];
+  /** Waves whose scripted deaths the stage declined, for either reason above. */
   readonly preconditionWaves = new Set<string>();
+  /** Every die-retry trial run under a hold, and how many bodies it stood on. */
+  readonly retryHolds: { wave: string; triggers: readonly string[]; held: number }[] = [];
   /** The newest census summary the chat channel has delivered FOR EACH WAVE, and
    * the mob lines that closed each census, keyed by the server's own sequence
    * number. `censusSeq` is how a fresh answer is told from a stale one without the

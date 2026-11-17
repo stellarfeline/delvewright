@@ -6,11 +6,17 @@ import {
   deathPhases,
   dieRetryBinding,
   dieRetryCoverageFailures,
+  dieRetryStageFailures,
   fieldedEncounters,
   dieRetryFindings,
   scriptedDeathRefusal,
   openTrial,
   checkpointPrecondition,
+  retryHold,
+  retryHoldCommands,
+  retryHeldCount,
+  retryReleaseCommands,
+  RETRY_HELD_TAG,
   observationOf,
   CombatPlanParseError,
   parseCombatPlan,
@@ -419,6 +425,54 @@ test("two completed trials per encounter is full coverage and says nothing", () 
   assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
 });
 
+test("an encounter the stage declined in this world reds its coverage by name", () => {
+  // The vacuous shape: a fight skipped in every world it is fielded in. No
+  // other world's run is read in its place — the stage declined here, so its
+  // retry loop is proven nowhere this run walked, and the stage is red.
+  const plan = parseCombatPlan(PLAN).encounters;
+  const failures = dieRetryCoverageFailures(plan, new Set(), [], new Set(["wave/gate-assault"]));
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /^wave\/gate-assault: the die-retry stage took no death at this encounter/);
+  assert.match(failures[0]!, /proven in no world/);
+});
+
+test("an encounter skipped in every world it is fielded in reds each world's stage", () => {
+  // The vacuous shape planted: two worlds field the gate; in each the stage
+  // declined it (its bodies may fire a trigger with no body to hold). Each
+  // world's stage is red with the encounter named — neither reads the other's
+  // claim in place of a trial it ran.
+  const plan = parseCombatPlan(PLAN).encounters;
+  const finding = "wave/gate-assault: die-retry: no body to hold";
+  for (const world of ["world/16", "world/24"]) {
+    const failures = dieRetryStageFailures({
+      ran: true,
+      fielded: plan,
+      engaged: new Set(),
+      declined: new Set(["wave/gate-assault"]),
+      trials: [],
+      preconditionFindings: [],
+      unholdableFindings: [finding],
+    });
+    assert.deepEqual(
+      failures.map((f) => f.split(":")[0]),
+      ["wave/gate-assault", "wave/gate-assault"],
+      `${world}: the reason, then the coverage`,
+    );
+    assert.match(failures[1]!, /proven in no world/);
+  }
+  // A world that ran the trial is green, and only on the trials it ran.
+  const ran = dieRetryStageFailures({
+    ran: true,
+    fielded: plan,
+    engaged: new Set(["wave/gate-assault"]),
+    declined: new Set(),
+    trials: [trial({ wave: "wave/gate-assault", attempt: 1 }), trial({ wave: "wave/gate-assault", attempt: 2 })],
+    preconditionFindings: [],
+    unholdableFindings: [],
+  });
+  assert.deepEqual(ran, []);
+});
+
 // --- the encounters a story world fields ------------------------------
 
 /** The main path's plan with a second fight a story world can take away. */
@@ -669,10 +723,9 @@ test("a bonfire the route walked past leaves the checkpoint unarmed", () => {
   // Bell round 3: a fire only ARMS on arrival; the respawn point moves when the
   // party RESTS. Every fire walked past, so both trials respawned at world spawn.
   const v = checkpointPrecondition(encounter(), [FIRE], new Set(), 16);
-  assert.equal(v?.kind, "unarmed");
   // The RUN's own gap, so it reds the stage: every measurement after it would
   // describe the harness's skipped rest rather than the delve.
-  assert.equal(v?.reds, true);
+  assert.equal(v?.kind, "unarmed");
   assert.match(String(v?.finding), /no checkpoint armed/);
   assert.match(String(v?.finding), /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
   assert.match(String(v?.finding), /No death was taken/);
@@ -683,25 +736,12 @@ test("a checkpoint that is no bonfire arms itself — nothing to contradict", ()
   assert.equal(checkpointPrecondition(encounter(), [], new Set(), 16), undefined);
 });
 
-test("an encounter with NO governing checkpoint is named, skipped, and not graded", () => {
-  // This is the truthful reading of souls-bonfire's encounter: with
-  // `fire_step < i`, a checkpoint armed by the encounter's OWN kill step is
-  // correctly not its governing one, so the plan names none. A death there
-  // respawns at world spawn — the retry loop is a full restart of the delve.
-  //
-  // That is a CONTENT fact about where the campaign puts its rest points, and in
-  // a souls campaign a design smell; but the compiler's retry-cost and checkpoint
-  // rules own that judgement, so the harness states it and declines to grade it.
-  // What it must never do is take the death anyway (it would measure the delve
-  // against world spawn) or say nothing (the loop went unproven).
-  const v = checkpointPrecondition(encounter({ checkpoint: undefined }), [FIRE], new Set(), 16);
-  assert.equal(v?.kind, "no-checkpoint");
-  assert.equal(v?.reds, false, "advisory — the compiler owns this judgement, not the stage");
-  assert.match(String(v?.finding), /no governing checkpoint/);
-  assert.match(String(v?.finding), /die-retry cannot prove safe death here/);
-  assert.match(String(v?.finding), /full restart/);
-  assert.match(String(v?.finding), /No death was taken/);
-  assert.match(String(v?.finding), /DW0379/);
+test("an encounter with NO governing checkpoint takes its deaths: the world spawn is its seat", () => {
+  // souls-bonfire's truthful reading: with `fire_step < i`, a checkpoint armed by
+  // the encounter's OWN kill step is not its governing one, so the plan names
+  // none. A death there respawns at world spawn and the walk back starts there —
+  // the loop a player has at this fight, so the loop the stage proves.
+  assert.equal(checkpointPrecondition(encounter({ checkpoint: undefined }), [FIRE], new Set(), 16), undefined);
 });
 
 test("a governing bonfire the path only rests at LATER is still unarmed now", () => {
@@ -710,9 +750,59 @@ test("a governing bonfire the path only rests at LATER is still unarmed now", ()
   // step sits AFTER it. The respawn point has not moved when the death would be
   // scripted, whatever the path does afterwards.
   const v = checkpointPrecondition(encounter(), [{ ...FIRE, step: 40 }], new Set(), 16);
-  assert.equal(v?.reds, true);
+  assert.equal(v?.kind, "unarmed");
   assert.match(String(v?.finding), /does not rest at bonfire 1 \(anchor\/beach-fire\) until AFTER/);
   assert.match(String(v?.finding), /path step 40/);
+});
+
+// --- die-retry hold: a fight whose bodies may fire an unperformed trigger ----
+
+const RAID_BODIES = [
+  { select: "type=minecraft:pillager", waves: ["wave/dock-landing", "wave/the-captain"] },
+  { select: "tag=dw_wave_goat_admiral", waves: ["wave/goat-admiral"] },
+];
+
+test("a fight that names no unattended trigger is trialled with nothing held", () => {
+  assert.equal(retryHold("wave/dock-landing", undefined, RAID_BODIES), undefined);
+  assert.equal(retryHold("wave/dock-landing", [], RAID_BODIES), undefined);
+});
+
+test("a fight whose bodies may fire an unperformed trigger holds every census that may count them", () => {
+  // The festival town: the raiders march on the cake, and a census of
+  // pillagers at the stage fires `trigger/cake-taken`. The trial holds every
+  // body the census may count — the other landings' pillagers too — and none
+  // the census cannot.
+  const h = retryHold("wave/dock-landing", ["trigger/cake-taken"], RAID_BODIES);
+  assert.equal(h?.kind, "hold");
+  assert.deepEqual(h?.kind === "hold" && h.selects, ["type=minecraft:pillager"]);
+  assert.deepEqual(h?.kind === "hold" && h.triggers, ["trigger/cake-taken"]);
+});
+
+test("a fight whose trigger has no body to hold is red, never a skip", () => {
+  const h = retryHold("wave/beach-landing", ["trigger/cake-taken"], RAID_BODIES);
+  assert.equal(h?.kind, "unholdable");
+  assert.match(h?.kind === "unholdable" ? h.finding : "", /^wave\/beach-landing: die-retry: .*`trigger\/cake-taken`/);
+  assert.match(h?.kind === "unholdable" ? h.finding : "", /unproven in this world/);
+});
+
+test("the hold never takes a body already without its AI, and the release wakes only what it took", () => {
+  const hold = retryHoldCommands(["type=minecraft:pillager"]);
+  assert.deepEqual(hold, [
+    `/execute as @e[type=minecraft:pillager,tag=!${RETRY_HELD_TAG},nbt=!{NoAI:1b}] run tag @s add ${RETRY_HELD_TAG}`,
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run data merge entity @s {NoAI:1b}`,
+  ]);
+  assert.deepEqual(retryReleaseCommands(), [
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run data merge entity @s {NoAI:0b}`,
+    `/execute as @e[tag=${RETRY_HELD_TAG}] run tag @s remove ${RETRY_HELD_TAG}`,
+  ]);
+});
+
+test("the held count is read off the server's own reply, and an unread reply is not a zero", () => {
+  // A delve seals command feedback off: the count is stored and told back.
+  assert.equal(retryHeldCount(["[dw:retry-held 5]"]), 5);
+  assert.equal(retryHeldCount(["[dw:retry-held 0]"]), 0);
+  assert.equal(retryHeldCount(["Test passed, count: 5"]), undefined, "feedback is not the reply");
+  assert.equal(retryHeldCount([]), undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -720,20 +810,16 @@ test("a governing bonfire the path only rests at LATER is still unarmed now", ()
 // ---------------------------------------------------------------------------
 
 test("a die-retry stage that scripted no death reports UNBOUND, whatever else it says", () => {
-  // The exact state measured across every campaign and fixture in both repos on
-  // 2026-08-11: encounters exist, every one is excluded for want of a governing
-  // checkpoint, the coverage arithmetic runs over an emptied list and finds
-  // nothing wrong, and the stage reports a pass having proven nothing.
-  const b = dieRetryBinding(true, 1, new Set(), [], 1, 0, 0);
+  const b = dieRetryBinding(true, 1, new Set(), [], 0, 0, 0);
   assert.equal(b.unbound, true);
   assert.equal(b.deathsScripted, 0);
-  assert.match(b.reason ?? "", /fires NO\s+checkpoint before them/);
+  assert.match(b.reason ?? "", /took NO scripted death/);
 });
 
 test("a build with no mandatory encounter says THAT, not something vaguer", () => {
   const b = dieRetryBinding(true, 0, new Set(), [], 0, 0, 0);
   assert.equal(b.unbound, true);
-  assert.match(b.reason ?? "", /declares NO mandatory encounter/);
+  assert.match(b.reason ?? "", /fields NO mandatory encounter/);
 });
 
 test("a stage that did not run is distinguished from one that ran and found nothing", () => {
@@ -742,16 +828,12 @@ test("a stage that did not run is distinguished from one that ran and found noth
   assert.match(b.reason ?? "", /did not run/);
 });
 
-test("an unarmed governing checkpoint is the RUN's own gap, and is named as such", () => {
-  const b = dieRetryBinding(true, 2, new Set(), [], 0, 2, 0);
-  assert.match(b.reason ?? "", /never armed — the run's own gap/);
-});
-
-test("a stage whose every encounter could leave the world says so, and is unbound", () => {
-  const b = dieRetryBinding(true, 2, new Set(), [], 1, 0, 1);
+test("an encounter the stage declined is counted by its reason", () => {
+  const b = dieRetryBinding(true, 2, new Set(), [], 1, 1, 0);
   assert.equal(b.unbound, true);
-  assert.equal(b.skippedUnattended, 1);
-  assert.match(b.reason!, /1 because the fight's own bodies may fire a story trigger/);
+  assert.equal(b.skippedUnarmed, 1);
+  assert.equal(b.skippedUnholdable, 1);
+  assert.match(b.reason ?? "", /1 for a governing checkpoint never armed, 1 for a story trigger/);
 });
 
 test("a stage that took deaths is bound, and owes no reason", () => {

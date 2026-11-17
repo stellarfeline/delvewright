@@ -4105,62 +4105,96 @@ test("i18n v2: a translate-component name is read through its fallback", () => {
   assert.equal(displayNameOf({ customName: { translate: "x", fallback: "" } }), undefined);
 });
 
-test("a fight whose own bodies may fire a story trigger this world never performs takes no death", async () => {
-  // The festival town, reduced: the captain's raiders walk a lane to the stage,
-  // where a census of pillagers fires `trigger/cake-taken-pillager`. The
-  // mainline world keeps the cake; a die-retry death sent the bot to the
-  // checkpoint for ~40 s, a pillager reached the cake, and the journal judge
-  // then compared the run with a world it had left. The compiler now names that
-  // trigger on the kill step (`unattended`, format 13), and the stage takes no
-  // death there: advisory, named, and coverage silent about it.
-  //
-  // Control first, the same encounter without the field: both deaths taken.
-  {
-    const bot = new CombatFakeBot();
-    const executor = attach(bot);
-    executor.useCampaign("the-drowned-bell");
-    executor.useCombatPlan(combatPlan(), true);
-    await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
-    assert.equal(executor.deathTrials().length, 2, "the control takes both deaths");
-    assert.deepEqual([...executor.dieRetryUnattendedAdvisories()], []);
-  }
+/** A combat bot whose server answers the trial's held-body count with `held`. */
+function holdingBot(held: number): CombatFakeBot {
   const bot = new CombatFakeBot();
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    // The fake server speaks the stored count back, as `tellraw` would.
+    if (message.startsWith('/tellraw @s ["[dw:retry-held ",')) {
+      bot.emit("messagestr", `[dw:retry-held ${held}]`);
+    }
+  };
+  return bot;
+}
+
+const HOLD = "chat(/execute as @e[type=minecraft:pillager,tag=!dw_retry_held,nbt=!{NoAI:1b}] run tag @s add dw_retry_held)";
+const RELEASE = "chat(/execute as @e[tag=dw_retry_held] run data merge entity @s {NoAI:0b})";
+const RAID_ROWS = [
+  { select: "type=minecraft:pillager", of: "minecraft:pillager", reads: ["`state/raiders-at-the-cake` counts it"], waves: [KILL_STEP.wave] },
+];
+
+test("a fight whose own bodies may fire a story trigger this world never performs takes its deaths with them held", async () => {
+  // The festival town, reduced: the raiders walk a lane to the stage, where a
+  // census of pillagers fires `trigger/cake-taken`. A die-retry death sent the
+  // bot to the inn for ~40 s, a pillager reached the cake, and the run left the
+  // world it was judged against. The compiler names that trigger on the kill
+  // step (`unattended`, format 13); the trial now holds every body the census
+  // may count still from its first death to its end, and takes both deaths.
+  const bot = holdingBot(3);
   const executor = attach(bot);
+  executor.useStoryBodies(RAID_ROWS);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
-  const step: KillStep = { ...KILL_STEP, unattended: ["trigger/cake-taken-pillager"] };
+  const step: KillStep = { ...KILL_STEP, unattended: ["trigger/cake-taken"] };
   await within("executor.kill(step)", executor.kill(step));
 
-  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
-  assert.equal(bot.calls.filter((c) => c === SCRIPTED_DEATH).length, 0);
-  assert.deepEqual([...executor.dieRetryPreconditionFindings()], [], "nothing reds the stage");
-  assert.deepEqual([...executor.dieRetryPreconditionAdvisories()], [], "not a checkpoint gap");
-  const advisories = executor.dieRetryUnattendedAdvisories();
-  assert.equal(advisories.length, 1);
-  assert.match(advisories[0]!, /`trigger\/cake-taken-pillager`/);
-  assert.match(advisories[0]!, /No death was taken/);
-  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
+  assert.equal(executor.deathTrials().length, 2, "both deaths were scripted");
+  assert.ok(executor.deathTrials().every((t) => t.completed), "and both trials completed");
+  const deaths = bot.calls.flatMap((c, i) => (c === SCRIPTED_DEATH ? [i] : []));
+  const held = bot.calls.indexOf(HOLD);
+  const released = bot.calls.lastIndexOf(RELEASE);
+  assert.ok(held >= 0 && held < deaths[0]!, `held before the first death: ${bot.calls.join(" | ")}`);
+  assert.ok(released > deaths[1]!, "released after the last");
+  assert.deepEqual([...executor.dieRetryPreconditionFindings()], []);
+  assert.deepEqual([...executor.dieRetryUnholdableFindings()], []);
+  assert.deepEqual(executor.dieRetryHeldBodies(), [
+    { wave: KILL_STEP.wave, triggers: ["trigger/cake-taken"], held: 3 },
+  ]);
   assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared", "the fight itself still happened");
 });
 
-test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
+test("a fight whose trigger names no body to hold takes no death, and reds by name", async () => {
+  const bot = holdingBot(3);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  const step: KillStep = { ...KILL_STEP, unattended: ["trigger/cake-taken"] };
+  await within("executor.kill(step)", executor.kill(step));
+  assert.equal(executor.deathTrials().length, 0);
+  const red = executor.dieRetryUnholdableFindings();
+  assert.equal(red.length, 1);
+  assert.match(red[0]!, /`trigger\/cake-taken`/);
+  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
+});
+
+test("a hold that stands on no body ends the trial before its first death", async () => {
+  // The vacuous shape: a hold that binds nothing proves nothing about the
+  // world the trial stays in. The stage engaged, so its coverage reds.
+  const bot = holdingBot(0);
+  const executor = attach(bot);
+  executor.useStoryBodies(RAID_ROWS);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  const step: KillStep = { ...KILL_STEP, unattended: ["trigger/cake-taken"] };
+  await within("executor.kill(step)", executor.kill(step));
+  assert.equal(bot.calls.filter((c) => c === SCRIPTED_DEATH).length, 0, "no death was scripted");
+  assert.equal(executor.dieRetryEngagements().has(KILL_STEP.wave), true, "engaged, so coverage reds it");
+  const red = executor.dieRetryUnholdableFindings();
+  assert.equal(red.length, 1);
+  assert.match(red[0]!, /it held no body: the hold binds nothing/);
+});
+
+test("an encounter with NO governing checkpoint takes its deaths, the world spawn its seat", async () => {
   // With `fire_step < i`, souls-bonfire's encounter truthfully reports no
   // governing checkpoint: the only fire is armed by the very kill this encounter
-  // IS, so nothing is armed when a mid-fight death would land. A death here
-  // respawns at world spawn and the retry loop is a full restart of the delve.
-  //
-  // Three things must all hold, and the third is the one worth pinning: the death
-  // is NOT taken (it would measure the delve against world spawn), the gap is
-  // NAMED (an unproven loop must never be silent), and it lands in the ADVISORY
-  // channel — where the campaign puts its rest points is a content staging
-  // judgement the compiler's DW0379/DW0315 rules own, not this stage's.
+  // IS. A death here respawns at world spawn and the walk back starts there:
+  // the loop a player has, so the loop the stage proves.
   const bot = new CombatFakeBot();
   bot.seat(1);
   const executor = attach(bot);
-  // The fake server answers as `the-drowned-bell`, and the census channel is
-  // campaign-scoped: a mismatched id here made the probe silent, which the staged
-  // clear now correctly refuses to read as a cleared wave. The SHAPE under test is
-  // souls-bonfire's; the campaign id is the fake server's.
+  // The fake server answers as `the-drowned-bell`; the SHAPE is souls-bonfire's.
   executor.useCampaign("the-drowned-bell");
   const plan = combatPlan(1, false);
   executor.useCombatPlan(
@@ -4171,22 +4205,9 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   executor.beginStep(9);
   await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
 
-  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
-  assert.equal(
-    bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length,
-    0,
-  );
-  // Advisory, not a failure: nothing here reds the stage.
+  assert.equal(executor.deathTrials().length, 2, "both deaths were scripted");
   assert.deepEqual([...executor.dieRetryPreconditionFindings()], []);
-  const advisories = executor.dieRetryPreconditionAdvisories();
-  assert.equal(advisories.length, 1);
-  assert.match(advisories[0]!, /no governing checkpoint/);
-  assert.match(advisories[0]!, /die-retry cannot prove safe death here/);
-  // …and coverage stays silent about it, exactly as for the unarmed case: the
-  // advisory already says why the loop is unproven, and "never reached this
-  // encounter" would be plainly untrue.
-  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
-  // The fight itself still happened — only the scripted death was skipped.
+  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), false);
   assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
 });
 

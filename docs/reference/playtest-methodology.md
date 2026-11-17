@@ -84,6 +84,8 @@ reading and the clear. A die-retry stage that cannot finish reds on its own
 coverage and does not end the run: suppressing every measurement behind one fight
 is how a ladder learns least from a red.
 
+**Every encounter a world fields is died to in that world.** The stage's coverage has no exemption: an encounter it declined (a governing bonfire never rested at, or a story trigger it could not hold) is red by name in that world, and no other world's run is read in its place. With no checkpoint before the fight, the respawn is the world spawn and the walk back starts there. Where the fight's own bodies may fire a story trigger the world never performs (the kill step's `unattended`), a death would hand the run to that trigger's world, which its own branch run proves; the trial proves the other side of the moment, the party back first, holding still (`NoAI`, tag `dw_retry_held`) every body of each `story_bodies` row whose `waves` names the fight's wave, from its first death to its end, re-taken once a second, its held count read back and a zero refused.
+
 **A die-retry trial's verdict reads one server state.** Whether the wave re-engaged and whether the encounter's objective is complete are both read after the re-engage probe settles, from the same chat stream (`harness/src/executor/die-retry.ts`). A body staged away inside the settle can be the wave's last; the server completes the `kill` objective on the tick the live count reaches zero, and a census counts a body through its death animation, so the completion marker arrives ahead of any census that reads the wave empty. `stranded` is nothing standing and the objective still incomplete at that reading.
 
 **A walk off the path meets a re-seated wave before it starts.** The death loop's

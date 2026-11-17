@@ -1759,8 +1759,10 @@ pub fn seat_ticks(c: &Campaign, steps: &[Step]) -> Vec<Option<u32>> {
 /// of `unattended` ([`crate::compiler::plan::PathFiring::unattended`] at the
 /// fight's step), the triggers whose census may count a body `wave` seats
 /// ([`delvewright_dsl::CensusOf::may_count_wave`]), in `unattended`'s order. A
-/// death takes the party off the fight and leaves those bodies free; the
-/// die-retry stage takes none where this is not empty.
+/// death takes the party off the fight and leaves those bodies free; where
+/// this is not empty, the die-retry trial holds still every body of the
+/// [`story_bodies_json`] rows whose `waves` name `wave` — every census of these
+/// triggers among them.
 pub fn fight_may_fire(c: &Campaign, wave: &str, unattended: &BTreeSet<String>) -> Vec<String> {
     let content = &c.quests.content;
     let Some(w) = content.waves.iter().find(|w| w.id.as_str() == wave) else {
