@@ -671,7 +671,7 @@ export const methods = {
     const named = triggers.map((t) => `\`${t}\``).join(", ");
     if (refused !== undefined || held === undefined || held === 0) {
       await this.bracketed(retryReleaseCommands());
-      throw new Error(
+      const finding =
         `${wave}: the trial holds still every body a census may count among this fight's ` +
           `(${selects.join(" | ")}), because they may fire ${named} while the party is away — ` +
           (refused !== undefined
@@ -679,8 +679,9 @@ export const methods = {
             : held === undefined
               ? `and the server never said how many it held`
               : `and it held no body: the hold binds nothing, so the trial would prove nothing ` +
-                `about the world it is judged against`),
-      );
+                `about the world it is judged against`);
+      this.unholdableFindings.push(finding);
+      throw new Error(finding);
     }
     process.stderr.write(
       `[die-retry] ${wave}: the fight's bodies may fire ${named} while the party is away; ` +
@@ -714,7 +715,10 @@ export const methods = {
     );
     const failure = holding.refused ?? refused;
     if (failure !== undefined) {
-      throw new Error(`${wave}: the trial's hold was refused by the server — ${failure}`);
+      // Red whatever the trials found: the run may have left its world.
+      const finding = `${wave}: the trial's hold was refused by the server — ${failure}`;
+      this.unholdableFindings.push(finding);
+      throw new Error(finding);
     }
   },
 };

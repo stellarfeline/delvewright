@@ -4180,6 +4180,9 @@ test("a hold that stands on no body ends the trial before its first death", asyn
   await within("executor.kill(step)", executor.kill(step));
   assert.equal(bot.calls.filter((c) => c === SCRIPTED_DEATH).length, 0, "no death was scripted");
   assert.equal(executor.dieRetryEngagements().has(KILL_STEP.wave), true, "engaged, so coverage reds it");
+  const red = executor.dieRetryUnholdableFindings();
+  assert.equal(red.length, 1);
+  assert.match(red[0]!, /it held no body: the hold binds nothing/);
 });
 
 test("an encounter with NO governing checkpoint takes its deaths, the world spawn its seat", async () => {
