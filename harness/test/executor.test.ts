@@ -6936,3 +6936,25 @@ test("a shot holds the bow for a full draw counted in the server's game ticks, h
   assert.ok(d!.loosed !== undefined && d!.loosed - d!.drawn >= SHOT_DRAW_TICKS, `drawn at ${d!.drawn}, loosed at ${d!.loosed}`);
   assert.deepEqual(executor.shotsLoosed, [{ trigger: "trigger/t", arrows: 1 }]);
 });
+
+test("the census keeps where a wave's bodies last stood, through the empty census after they fall", async () => {
+  // A `dropped_by` collect searches around these positions: the gallery's hen,
+  // left alone through a die-retry trial, was struck 38.5 blocks from its
+  // anchor and its feather lay there.
+  const bot = new CombatFakeBot();
+  bot.seat(1, { distance: 40 });
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, false);
+  executor.useCombatPlan(plan, false);
+  const enc = plan.encounters[0]!;
+
+  await within("executor.census(enc)", executor.census(enc));
+  const stood = executor.waveLastStood.get(enc.wave);
+  assert.equal(stood?.length, 1, `one body read standing: ${JSON.stringify(stood)}`);
+  assert.ok(Math.abs(stood![0]![0] - 40) < 1, `read where it stood, 40 blocks out: ${JSON.stringify(stood)}`);
+
+  bot.seat(0);
+  await within("executor.census(enc)", executor.census(enc));
+  assert.deepEqual(executor.waveLastStood.get(enc.wave), stood, "the census after the fall keeps the last place it stood");
+});
