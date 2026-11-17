@@ -48,6 +48,7 @@ import {
   dieRetryFidelityGaps,
   dieRetryFindings,
   loadCombatPlanForCriticalPath,
+  fieldedEncounters,
 } from "./combat.ts";
 import {
   deathLoopBinding,
@@ -409,6 +410,21 @@ async function main(): Promise<number> {
   }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
+  // The encounters THIS world fields: the plan is the main path's, and a story
+  // world whose story takes a fight off its path carries no `kill` step for it.
+  // On the main path every plan entry is one of its own kills by construction,
+  // so an entry it does not carry is a broken build, never a skip.
+  const fielding = combatPlan
+    ? fieldedEncounters(combatPlan.encounters, criticalPath.steps)
+    : { fielded: [], unfielded: [] };
+  const fielded = fielding.fielded;
+  if (fielding.unfielded.length > 0 && driven === undefined) {
+    throw new Error(
+      `combat plan: the main path carries no kill step for ${fielding.unfielded
+        .map((e) => `${e.wave} (${e.objective})`)
+        .join(", ")} — the plan and the path it was laid out from disagree`,
+    );
+  }
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
   // From here a crash writes THIS report — with everything the run had already
   // established in it — rather than the placeholder.
@@ -464,6 +480,16 @@ async function main(): Promise<number> {
         `difficulty '${combatPlan.difficulty}'; die-retry ${dieRetry ? "ON" : "SKIPPED"}; ` +
         `the muster checks ${declaredFacts} declared fact(s) against the live bodies\n`,
     );
+    process.stderr.write(
+      `combat plan: this path fields ${fielded.length}/${combatPlan.encounters.length} ` +
+        `encounter(s): ${fielded.map((e) => e.wave).join(", ") || "none"}` +
+        (fielding.unfielded.length > 0
+          ? `; its story fields no kill step for ${fielding.unfielded
+              .map((e) => e.wave)
+              .join(", ")}`
+          : "") +
+        `\n`,
+    );
     if (combatPlan.encounters.length > 0 && declaredFacts === 0) {
       process.stderr.write(
         `combat plan: the muster is UNBOUND — ${combatPlan.encounters.length} encounter(s) and ` +
@@ -479,7 +505,7 @@ async function main(): Promise<number> {
     steps: criticalPath.steps,
     legs: waypoints?.legs,
     placementMs: placementTimeoutFromEnv(process.env),
-    dieRetryEncounters: dieRetry ? combatPlan!.encounters.length : 0,
+    dieRetryEncounters: dieRetry ? fielded.length : 0,
     lethalVolumes: deathLoop ? deathPlan!.volumes.length : 0,
     crushGates: crush ? deathPlan!.crushGates.length : 0,
   });
@@ -619,9 +645,7 @@ async function main(): Promise<number> {
       ...dieRetryFindings(trials),
       ...(dieRetry
         ? dieRetryCoverageFailures(
-            (combatPlan?.encounters ?? []).filter(
-              (e) => !executor.dieRetryPreconditionWaves().has(e.wave),
-            ),
+            fielded.filter((e) => !executor.dieRetryPreconditionWaves().has(e.wave)),
             executor.dieRetryEngagements(),
             trials,
           )
@@ -635,7 +659,7 @@ async function main(): Promise<number> {
     // combat floor gate examined zero enemies for nineteen rounds.
     const retryBinding = dieRetryBinding(
       dieRetry,
-      combatPlan?.encounters.length ?? 0,
+      fielded.length,
       executor.dieRetryEngagements(),
       trials,
       executor.dieRetryPreconditionAdvisories().length,
@@ -649,11 +673,11 @@ async function main(): Promise<number> {
       );
     }
     report.recordTrials(trials);
-    // One row per planned encounter: what the muster read off its live bodies,
+    // One row per encounter this world fields: what the muster read off its live bodies,
     // how far the step got, and who was credited with felling them. A wave the
     // run never reached says so rather than leaving a gap a reader fills in.
     const musters = executor.waveMusters();
-    const encounterReports: EncounterReport[] = (combatPlan?.encounters ?? []).map(
+    const encounterReports: EncounterReport[] = fielded.map(
       (enc): EncounterReport => ({
         encounter: enc.objective,
         wave: enc.wave,
