@@ -3629,7 +3629,7 @@ mod tests {
         }
         // The lookalikes that DO collide keep a collision box a body cannot
         // walk through: a full cube, or the jar's own floor height (a cactus
-        // at 15, an upward dripstone tip at 11).
+        // at 15, an upward dripstone tip at 11, a dry sea pickle at 6).
         for id in [
             "minecraft:azalea",
             "minecraft:big_dripleaf",
@@ -3640,7 +3640,7 @@ mod tests {
             "minecraft:sea_pickle",
         ] {
             assert!(
-                collision_top_16(id) >= delvewright_dsl::blockshape::THIN_HEIGHT_16,
+                !delvewright_dsl::blockshape::passes_body(id),
                 "{id} must keep collision"
             );
             assert!(!is_thin_decoration(id), "{id} is not walked through");

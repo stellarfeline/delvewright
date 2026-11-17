@@ -39,7 +39,7 @@
 //! |---|---|---|---|
 //! | [`Collision::Air`] | yes | no | — |
 //! | [`Collision::Thin`] (top < 8/16) | yes | no | — (the body rests on the block below) |
-//! | [`Collision::PartialFloor`] (8..16) | no | yes | the measured top |
+//! | [`Collision::PartialFloor`] (8..16, or a measured box under 8 — [`measured_thin_floor_16`]) | no | yes | the measured top |
 //! | [`Collision::FullCube`] | no | yes | 16 |
 //! | [`Collision::TallBarrier`] (fence, wall) | no | **no** | — |
 //! | [`Collision::OpensByHand`] | **yes** | no | — |
@@ -84,7 +84,12 @@
 //! boxes ([`measured_collision`], `crates/dsl/data/collision-tops-1.21.11.tsv`):
 //! a box that rests on the cell floor and tops out at 8..15 sixteenths is a
 //! [`Collision::PartialFloor`] at that height — an upward dripstone tip at 11, a
-//! chest at 14. Everything else is a [`Collision::FullCube`], which
+//! chest at 14 — and so is one that tops out under 8 ([`measured_thin_floor_16`]),
+//! its top rounded up to a whole sixteenth (a lily pad's 1.5 is 2): still a
+//! cell no body passes, as the full cube it was read as, but a floor at the
+//! game's height rather than a block higher, which admitted a landing the game
+//! refuses. A trapdoor and a block that hurts keep their classes. Everything else is a
+//! [`Collision::FullCube`], which
 //! **over-blocks**: it can only make a walk refuse a step vanilla admits, never
 //! admit one vanilla refuses. So a box this module does not route through is
 //! left a wall on purpose rather than guessed at, and the places that happens
@@ -789,36 +794,53 @@ pub fn is_no_collision_fixture(id: &str) -> bool {
 /// - **`dirt_path` / `farmland`**: 15/16 (the one-pixel dip you step down into).
 /// - **Empty**: [`is_no_collision_plant`] and [`is_no_collision_fixture`] → 0.
 pub fn collision_top_16(name: &str) -> u8 {
+    if let Some(top) = explicit_top_16(name) {
+        return top;
+    }
+    // Every block no rule above names: the pinned jar's own collision box, where
+    // it rests on the cell floor and tops out at a floor height (an upward
+    // dripstone tip at 11, a chest at 14, a bed at 9, soul sand at 14) — or
+    // under the thin line ([`measured_thin_floor_16`]: a lily pad at 1.5, a
+    // repeater at 2). A box that does not start at the floor, or one the table
+    // does not hold, stays the full-cube default, which over-blocks.
+    measured_partial_floor_16(name)
+        .or_else(|| measured_thin_floor_16(name))
+        .unwrap_or(FULL_HEIGHT_16)
+}
+
+/// The heights [`collision_top_16`]'s own rules name, ahead of the measured
+/// table; `None` for a block none names.
+fn explicit_top_16(name: &str) -> Option<u8> {
     let id = bare_id(name);
     if id.ends_with("_slab") {
-        return match state_value(name, "type") {
+        return Some(match state_value(name, "type") {
             Some("top") | Some("double") => FULL_HEIGHT_16,
             // `bottom` — and the default state, which omits the property.
             _ => 8,
-        };
+        });
     }
     if id == "snow" {
         let layers: u8 = state_value(name, "layers")
             .and_then(|v| v.parse().ok())
             .unwrap_or(1);
-        return layers.clamp(1, 8).saturating_sub(1) * 2;
+        return Some(layers.clamp(1, 8).saturating_sub(1) * 2);
     }
     if id == "pale_moss_carpet" {
         // The odd one out: a floor carpet only when `bottom=true` (1/16); its
         // wall-vine form (`bottom=false`, the default) has NO collision box.
-        return u8::from(state_value(name, "bottom") == Some("true"));
+        return Some(u8::from(state_value(name, "bottom") == Some("true")));
     }
     if id.ends_with("_carpet") || id == "moss_carpet" {
-        return 1;
+        return Some(1);
     }
     if id == "candle" || id.ends_with("_candle") {
-        return 6;
+        return Some(6);
     }
     if id == "flower_pot" || id.starts_with("potted_") {
-        return 6;
+        return Some(6);
     }
     if matches!(id, "dirt_path" | "farmland") {
-        return 15;
+        return Some(15);
     }
     // A lantern's collision is two stacked boxes, the cap's top at 9/16 standing
     // and 10/16 hanging (one sixteenth lower and higher). Measured standing on
@@ -826,25 +848,55 @@ pub fn collision_top_16(name: &str) -> u8 {
     // 0.5625. A full cube here made the step onto one a 1.5-block rise from a
     // bottom slab, where in game it is a jump a mob takes.
     if matches!(id, "lantern" | "soul_lantern") || id.ends_with("copper_lantern") {
-        return if state_value(name, "hanging") == Some("true") {
+        return Some(if state_value(name, "hanging") == Some("true") {
             10
         } else {
             9
-        };
+        });
     }
     if is_air(name)
         || is_passable_trap_trigger(name)
         || is_no_collision_plant(id)
         || is_no_collision_fixture(id)
     {
-        return 0;
+        return Some(0);
     }
-    // Every block no rule above names: the pinned jar's own collision box, where
-    // it rests on the cell floor and tops out at a floor height (an upward
-    // dripstone tip at 11, a chest at 14, a bed at 9, soul sand at 14). A box
-    // under the thin line, one that does not start at the floor, or one the
-    // table does not hold stays the full-cube default, which over-blocks.
-    measured_partial_floor_16(name).unwrap_or(FULL_HEIGHT_16)
+    None
+}
+
+/// **A measured box under the thin line that stays a floor**: one no rule of
+/// [`collision_top_16`] names, resting on its cell floor and topping out under
+/// [`THIN_HEIGHT_16`] — its top in whole sixteenths rounded up (a lily pad's
+/// 1.5 is 2, a repeater 2, a daylight detector 6, a turtle egg 7). It stays a
+/// cell a body cannot pass ([`Collision::PartialFloor`], as the full cube it was
+/// read as stood), so nothing walks or swims through it, and a body stands on
+/// it at its own top: a full cube there is a floor a whole block higher than
+/// the game's, and a jump proven onto a lily pad's phantom top overshoots the
+/// real one into its pond. Not a trapdoor (a door a hand opens) and not a block
+/// that hurts (a campfire stays the wall it was rather than a step through the
+/// fire). `None` for any other block.
+pub fn measured_thin_floor_16(name: &str) -> Option<u8> {
+    let id = bare_id(name);
+    if id.ends_with("_trapdoor") || hurts_body(name) || explicit_top_16(name).is_some() {
+        return None;
+    }
+    measured_floor_16(name).filter(|t| *t < THIN_HEIGHT_16)
+}
+
+/// The measured top of a block whose collision box rests on its cell floor
+/// and tops out under a full cube, in whole sixteenths rounded up (a lily
+/// pad's 1.5 is 2). `None` for any other box.
+fn measured_floor_16(name: &str) -> Option<u8> {
+    let (lo, hi) = measured_collision(name)?.span?;
+    if lo.whole() != Some(0) {
+        return None;
+    }
+    let den = i32::try_from(hi.den).ok()?.max(1);
+    let top = (hi.num + den - 1).div_euclid(den);
+    if !(1..i32::from(FULL_HEIGHT_16)).contains(&top) {
+        return None;
+    }
+    u8::try_from(top).ok()
 }
 
 /// The pinned jar's collision-box extent per blockstate, in sixteenths:
@@ -1822,7 +1874,7 @@ pub fn redstone_reader(name: &str) -> bool {
 /// of these blocks obstructs a 1.8-block-tall walker, and every one of them is
 /// under the 0.6-block auto-step.
 pub fn is_thin_decoration(name: &str) -> bool {
-    collision_top_16(name) < THIN_HEIGHT_16
+    collision_top_16(name) < THIN_HEIGHT_16 && measured_thin_floor_16(name).is_none()
 }
 
 /// Whether a block is a **partial-height floor**: it fills its cell for passage
@@ -1830,7 +1882,7 @@ pub fn is_thin_decoration(name: &str) -> bool {
 /// deep snow drift). Its height is [`collision_top_16`].
 pub fn is_partial_floor(name: &str) -> bool {
     let h = collision_top_16(name);
-    (THIN_HEIGHT_16..FULL_HEIGHT_16).contains(&h)
+    (THIN_HEIGHT_16..FULL_HEIGHT_16).contains(&h) || measured_thin_floor_16(name).is_some()
 }
 
 /// **What a block state does to a body.** The classification every walk in this
@@ -1923,6 +1975,9 @@ pub fn collision_class(name: &str) -> Collision {
         return Collision::Climbable;
     }
     let top = collision_top_16(name);
+    if let Some(h) = measured_thin_floor_16(name) {
+        return Collision::PartialFloor(h);
+    }
     if top < THIN_HEIGHT_16 {
         return Collision::Thin(top);
     }
@@ -2020,6 +2075,50 @@ pub fn hurts_body(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A measured box under the thin line is a floor at its own top, rounded
+    /// up, that a body still cannot pass: a lily pad stands a body 2/16 over
+    /// its water and a swimmer cannot pass under it, never a full cube a block
+    /// higher (the jump the festival town's pond route took onto that phantom
+    /// top overshot the real one). A trapdoor keeps the class a door has.
+    #[test]
+    fn a_thin_measured_box_is_a_floor_at_its_own_top() {
+        for (name, top) in [
+            ("minecraft:lily_pad", 2),
+            ("minecraft:repeater", 2),
+            ("minecraft:comparator", 2),
+            ("minecraft:turtle_egg", 7),
+            ("minecraft:daylight_detector", 6),
+        ] {
+            assert_eq!(collision_top_16(name), top, "{name}");
+            assert_eq!(
+                collision_class(name),
+                Collision::PartialFloor(top),
+                "{name}"
+            );
+            assert!(supports_body(name) && !passes_body(name), "{name}");
+            assert!(!is_thin_decoration(name), "{name}");
+        }
+        assert_eq!(
+            collision_class("minecraft:oak_trapdoor"),
+            Collision::OpensByHand
+        );
+        assert_eq!(
+            collision_class("minecraft:iron_trapdoor"),
+            Collision::FullCube,
+            "an iron trapdoor is what its box makes it, as before"
+        );
+        // A box that does not start at the floor keeps the full-cube default.
+        assert_eq!(
+            collision_top_16("minecraft:iron_chain[axis=x]"),
+            FULL_HEIGHT_16
+        );
+        // A block that hurts stays a wall to a walk, not a step through fire.
+        assert_eq!(
+            collision_top_16("minecraft:campfire[lit=true]"),
+            FULL_HEIGHT_16
+        );
+    }
 
     /// The table in the module header, asserted row by row. Every other test here
     /// is a measurement of one block; this one is the RULE, and it is what reds if
@@ -2477,8 +2576,14 @@ mod tests {
                 };
                 judged += 1;
                 let e = i32::from(collision_top_16(&state));
+                // A floor-based box's fraction is read rounded up, as the
+                // module reads it (a lily pad's 1.5 is 2).
                 let top = match extent.span {
                     None => Some(0),
+                    Some((lo, hi)) if lo.whole() == Some(0) && hi.den > 1 => {
+                        let den = hi.den as i32;
+                        Some((hi.num + den - 1).div_euclid(den))
+                    }
                     Some((_, hi)) => hi.whole(),
                 };
                 if Some(e) == top {
