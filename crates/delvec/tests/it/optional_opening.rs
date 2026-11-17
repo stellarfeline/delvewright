@@ -19,6 +19,10 @@ use crate::common;
 
 use std::path::{Path, PathBuf};
 
+use delvec::compiler::load::load_campaign_dir;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
 /// The fixture, with `finale_exit` deciding whether the MANDATORY finale also
@@ -169,14 +173,40 @@ fn an_optional_quests_opening_is_open_for_its_own_later_legs() {
 }
 
 /// The complement: a path that does not play the optional quest does not see
-/// what it opens. The finale's own walk through the same door, on the exported
-/// path (which plays the finale's closure alone), is refused.
+/// what it opens. The exported path plays the finale's closure alone, so the
+/// optional `open-gate` has no step there and the region model holds no
+/// opening for it; the finale's own walk through the same door is refused.
 #[test]
 fn an_optional_quests_opening_is_shut_on_a_path_that_does_not_play_it() {
-    let (code, log, _) = build(&fixture("mandatory-exit", true));
+    let dir = fixture("mandatory-exit", true);
+    let loaded = load_campaign_dir(&dir).expect("fixture loads");
+    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    // Binding: the exported path walks the finale to `obj/exit` and never
+    // plays the optional quest.
+    assert!(
+        plan.objective_steps.contains_key("obj/exit"),
+        "{:?}",
+        plan.objective_steps
+    );
+    assert!(
+        !plan.objective_steps.contains_key("obj/look"),
+        "{:?}",
+        plan.objective_steps
+    );
+    assert!(
+        plan.region_events.iter().all(|e| e.fills()),
+        "the optional `open-gate` is unforced on a path that does not play it, and an \
+         unforced opening is never credited: {:#?}",
+        plan.region_events
+    );
+    let (code, log, _) = build(&dir);
     assert_eq!(code, 3, "{log}");
     assert!(
-        log.contains("DW0311") && log.contains("obj/exit"),
+        (log.contains("DW0306") || log.contains("DW0311"))
+            && log.contains("obj/exit")
+            && log.contains("anchor/door"),
         "the finale's walk to `obj/exit` crosses a door only the optional quest opens: {log}"
     );
 }
