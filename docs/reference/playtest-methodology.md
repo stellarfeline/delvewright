@@ -253,22 +253,25 @@ proven route takes a declared jump (`world.jumps[]`, proven by `DW1041`) or a ho
 `jumps[]` in `validation/critical-path-waypoints.json`: the launch and landing
 cells, whether it is sprinted, and the run-up the proof measured. mineflayer-
 pathfinder 2.4.5 leaps gaps on its own (`allowParkour` defaults on), so the
-harness turns the move off for every hop (`configureLeg`, `harness/src/movement.ts`)
-and on for the one hop from a proven jump's launch to its landing (`parkourFor`),
-and the bot walks what the proof proved. A declared jump the parkour move cannot
-express — not along one axis, under two or over four cells forward (two without
-the sprint), a rise of more than one or of one at four, a drop of more than one —
-is refused by name before the walk (`parkourGap`, `harness/src/waypoints.ts`): a
-harness gap, not a route defect.
+harness turns the move off for every leg and every hop (`configureLeg`,
+`harness/src/movement.ts`). The hop from a proven jump's launch to its landing
+is driven by the executor (`driveJump`, `harness/src/executor/jump.ts`) as the
+proof flew it: crouched to the centre of the run-up's start, still, then
+standing, facing along the jump's axis, forward held (sprinting only when the
+jump is sprinted), jump pressed once on one of the last two ticks the body
+stands over the launch cell's column, released on landing. The feet must come
+down at the landing's height past the launch, or the walk fails naming where the
+body is. The parkour move is never used: it lands at most two cells forward with
+sprinting off, and with sprinting on it sprints a jump the proof flew walking.
 
 **The binding count.** Every walk whose leg carries a jump prints
-`[jump] <walk>: N jump(s) on the proven leg, M driven as a parkour hop`. `N > M`
-says a proven jump's ends did not survive to adjacent hops and the leap was left
-to the pathfinder, which it cannot make with the move off; a run on a campaign
-with a declared jump that prints no such line walked it with no proven leg at
-all, and the line's absence is the finding. The `gallery bot` job requires the
-gallery's broken plank to print `1 jump(s) on the proven leg, 1 driven as a
-parkour hop`.
+`[jump] <walk>: N jump(s) on the proven leg, M driven as a jump hop`, and each
+driven jump prints the tick it was pressed on and where it landed. `N > M` says
+a proven jump's ends did not survive to adjacent hops and the leap was left to
+the pathfinder, which never leaps; a run on a campaign with a declared jump that
+prints no such line walked it with no proven leg at all, and the line's absence
+is the finding. The `gallery bot` job requires the gallery's broken plank to
+print `1 jump(s) on the proven leg, 1 driven as a jump hop`.
 
 ## What the ladder asserts at a census
 

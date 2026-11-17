@@ -176,7 +176,7 @@ pub struct WorldContent {
     /// anchors a body stands at, one jump apart. The engine proves every one by
     /// flying the jump under a margin a body on cue makes (`DW1041`); the route
     /// takes a proven jump as a move between its two cells, the exported leg
-    /// carries it, and the bot drives it with its pathfinder's parkour move. A
+    /// carries it, and the bot drives it as the engine flew it. A
     /// gap nobody declares is judged only by where a body can be: the engine
     /// infers no intent from geometry. Absent or empty: no route jumps.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

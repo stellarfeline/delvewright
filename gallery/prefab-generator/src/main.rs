@@ -87,7 +87,7 @@ const FERRY_DECK_TOP_Y: i32 = 2;
 /// from the loft to the ferry crosses them by a sprint jump on the flat —
 /// declared `jump/the-broken-plank` from `anchor/jetty-near` to
 /// `anchor/jetty-far`, proven (`DW1041`), taken by the route and driven by the
-/// bot's parkour move. At the deck's height the hall's roof is four courses
+/// bot as the engine flew it. At the deck's height the hall's roof is four courses
 /// over the plank, so the jump's arc is whole; from the mezzanine's top it
 /// would meet the roof.
 const JETTY_PLANK: (i32, i32, i32, i32, i32) = (16, 17, FERRY_DECK_TOP_Y, 20, 20);
