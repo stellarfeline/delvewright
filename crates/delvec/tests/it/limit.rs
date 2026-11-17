@@ -866,3 +866,142 @@ fn the_compass_template_owns_a_limited_objectives_settlement() {
         );
     }
 }
+
+/// keep-trial with a limit on `obj/shrine`, gated on a census of the guards
+/// and nothing else, `from` as given: the town's goats, in small. `obj/door`
+/// carries a limit and no gate.
+fn census_gated(tag: &str, from: Value) -> PathBuf {
+    let dir = scratch(tag);
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |v| {
+        v["content"]["state"] = json!([{
+            "id": "state/guards-home", "scope": "party",
+            "counts": {"region": {"anchor": "anchor/keeper-stand", "extent": [3, 1, 3]},
+                       "of": {"wave": "wave/guards"}}
+        }]);
+        for q in v["content"]["quests"].as_array_mut().unwrap() {
+            for o in q["objectives"].as_array_mut().unwrap() {
+                if o["id"] == "obj/shrine" {
+                    o["limit"] = json!({"ticks": 72000, "from": from.clone()});
+                    o.as_object_mut().unwrap().remove("requires_flags");
+                    o["requires_state"] =
+                        json!([{"state": "state/guards-home", "op": "at-least", "value": 1}]);
+                }
+                if o["id"] == "obj/door" {
+                    o["limit"] = json!({"ticks": 72000});
+                }
+            }
+        }
+    });
+    dir
+}
+
+/// A keep-trial build's file as text.
+fn keep_trial_file(out: &BuildOutput, path: &str) -> String {
+    String::from_utf8(out.get(path).unwrap_or_else(|| panic!("no {path}")).clone()).unwrap()
+}
+
+/// **A clock settles its task whatever became of the bodies its gate counts**
+/// (spec-0133 §3 as amended). A census the gate reads drops for good when a
+/// body it counts dies, and a clock held to the gate would then never settle:
+/// the town's `obj/pen-the-goats` (`at-least 3` goats in the pen) with a goat
+/// dead, a soft-lock. Neither the expiry nor the born-expired driver reads the
+/// census; the completion still does. Red when either reads the objective's
+/// pending guard in place of its open guard.
+#[test]
+fn an_expiry_settles_whatever_its_census_reads() {
+    let census = "dw.s_guards_home";
+    let out = build(&census_gated("census-exp", json!("activation")));
+    let exp = keep_trial_file(
+        &out,
+        "datapack/data/keep-trial/function/expire_o_shrine.mcfunction",
+    );
+    assert!(
+        exp.contains("run function keep-trial:settle_expired_o_shrine"),
+        "{exp}"
+    );
+    assert!(!exp.contains(census), "the expiry reads the census:\n{exp}");
+    let tick = keep_trial_file(&out, "datapack/data/keep-trial/function/tick.mcfunction");
+    let complete = tick
+        .lines()
+        .find(|l| l.contains("run function keep-trial:complete_o_shrine"))
+        .unwrap_or_else(|| panic!("{tick}"));
+    assert!(
+        complete.contains(&format!("if score #party {census} matches 1..")),
+        "the completion still reads the census: {complete}"
+    );
+
+    let out = build(&census_gated("census-born", json!("quest-start")));
+    let tick = keep_trial_file(&out, "datapack/data/keep-trial/function/tick.mcfunction");
+    let born = tick
+        .lines()
+        .find(|l| l.starts_with("execute if score #lx_shrine dw.sys matches 1"))
+        .unwrap_or_else(|| panic!("no born-expired driver in\n{tick}"));
+    assert!(!born.contains(census), "{born}");
+    assert!(
+        born.ends_with("run function keep-trial:settle_expired_o_shrine"),
+        "{born}"
+    );
+}
+
+/// **The runtime half**: per limited objective with a gate, a third template,
+/// `limit_<obj>_expires_shut`, opens everything the expiry template opens,
+/// then shuts exactly one term of the gate — here the census, driven below
+/// its bound with the census tick held — runs the clock, and asserts the
+/// objective expired, not done, and its gate still shut at the wake. An
+/// objective whose limit has no gate owes none.
+#[test]
+fn a_gated_limit_owes_a_template_that_expires_with_its_gate_shut() {
+    let out = build(&census_gated("census-shut", json!("activation")));
+    let t = keep_trial_file(
+        &out,
+        "packtest-datapack/data/keep-trial/test/limit_o_shrine_expires_shut.mcfunction",
+    );
+    let wait = line_of(&t, "await delay 72001t");
+    let open = "scoreboard players set #party dw.s_guards_home 1";
+    let shut = "scoreboard players set #party dw.s_guards_home 0";
+    let opened = t
+        .lines()
+        .position(|l| l == open)
+        .unwrap_or_else(|| panic!("{t}"));
+    let shut_at = t
+        .lines()
+        .position(|l| l == shut)
+        .unwrap_or_else(|| panic!("{t}"));
+    assert!(
+        opened < shut_at && shut_at < wait,
+        "opened, then shut, before the clock:\n{t}"
+    );
+    assert!(
+        line_of(&t, "schedule clear keep-trial:census_tick") < wait,
+        "{t}"
+    );
+    assert!(
+        line_of(&t, "function keep-trial:activate_o_shrine") < wait,
+        "{t}"
+    );
+    for after in [
+        "assert score #party dw.x_shrine matches 1",
+        "assert score #lim_sd_shrine dw.sys matches 0",
+        "assert score #lim_sg_shrine dw.sys matches 0",
+    ] {
+        assert!(line_of(&t, after) > wait, "`{after}` after the wait:\n{t}");
+    }
+    let gate_read = line_of(&t, "run scoreboard players set #lim_sg_shrine dw.sys 1");
+    assert!(
+        t.lines()
+            .nth(gate_read)
+            .unwrap()
+            .contains("if score #party dw.s_guards_home matches 1.."),
+        "{t}"
+    );
+    assert!(
+        !out.contains_key(
+            "packtest-datapack/data/keep-trial/test/limit_o_door_expires_shut.mcfunction"
+        ),
+        "an ungated limit owes no shut-gate template"
+    );
+    assert!(
+        out.contains_key("packtest-datapack/data/keep-trial/test/limit_o_door_expires.mcfunction")
+    );
+}
