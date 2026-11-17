@@ -111,7 +111,9 @@ fn a_completion_that_seats_a_wave_is_driven_under_a_three_player_fork() {
         .expect("the objective made not-done");
     let drive = lines
         .iter()
-        .position(|l| *l == format!("execute as @a run function {NS}:complete_o_talk"))
+        .position(|l| {
+            *l == format!("execute as @a[tag=dw_t_psop_talk] run function {NS}:complete_o_talk")
+        })
         .expect("the completion driven under a fork over every player");
     assert!(open < drive, "{t}");
     // Two zombies, whatever the party: one seating.

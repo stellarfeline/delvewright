@@ -187,8 +187,14 @@ pub(super) fn emit_seat_once_packtests(
         ));
         t.insert(1, super::limit::alone(ns, &name, out));
         t.push(format!("function {ns}:setup"));
+        // The three players, by a tag this template sets: its own dummy and
+        // the two members it spawns.
+        let party = format!("dw_t_psop_{osafe}");
+        let (pin, _) = pin_dummy(&party);
+        t.push(pin);
         for m in &members {
             t.push(format!("dummy {m} spawn"));
+            t.push(format!("tag @a[name={m},limit=1] add {party}"));
         }
         // The bodies already standing are not this drive's.
         for wid in waves.keys() {
@@ -197,7 +203,7 @@ pub(super) fn emit_seat_once_packtests(
         t.push(super::super::quest::complete_latch_open(oid));
         // The dispatch's own shape: one fork over every player present.
         t.push(format!(
-            "execute as @a run function {ns}:complete_{}",
+            "execute as @a[tag={party}] run function {ns}:complete_{}",
             safe_obj_fn(oid)
         ));
         for (k, (wid, seated)) in waves.iter().enumerate() {
@@ -230,6 +236,7 @@ pub(super) fn emit_seat_once_packtests(
             ));
         }
         t.push(format!("tag @e[tag={before}] remove {before}"));
+        t.push(format!("tag @a[tag={party}] remove {party}"));
         for m in &members {
             t.push(format!("dummy {m} leave"));
         }

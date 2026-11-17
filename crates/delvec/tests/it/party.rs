@@ -199,9 +199,16 @@ fn completion_writes_the_party_holder_and_addresses_everyone() {
         &out,
         "datapack/data/keep-trial/function/complete_o_slay.mcfunction",
     );
-    assert!(
-        body.starts_with("scoreboard players set #party dw.o_slay 1"),
-        "the party score flips first: {body}"
+    let mut lines = body.lines();
+    assert_eq!(
+        lines.next(),
+        Some("execute if score #party dw.o_slay matches 1 run return 0"),
+        "a completion already run returns first: {body}"
+    );
+    assert_eq!(
+        lines.next(),
+        Some("scoreboard players set #party dw.o_slay 1"),
+        "then the party score flips, before any effect: {body}"
     );
     assert!(
         body.contains("tellraw @a ") && body.contains("playsound") && body.contains(" @a"),
