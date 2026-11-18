@@ -81,6 +81,19 @@ dw_server_log_shows_oom() {
   esac
 }
 
+# The line the vanilla watchdog logs as it halts a server whose tick ran past
+# `max-tick-time`; read so a halt is reported as what it is, not as whatever
+# probe it interrupted.
+DW_SERVER_WATCHDOG_MARKER='A single server tick took'
+
+# dw_server_log_shows_watchdog <text> — true when <text> holds the watchdog's halt line.
+dw_server_log_shows_watchdog() {
+  case "${1-}" in
+    *"$DW_SERVER_WATCHDOG_MARKER"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # dw_server_log_file_shows_oom <file> — the same question of a file, without
 # reading a growing log into a shell variable on every poll. A missing file is
 # not an OOM.

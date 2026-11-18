@@ -209,7 +209,9 @@ export const methods = {
         { text: "]" },
       ])}`,
     );
-    const deadline = Date.now() + SCORE_TRACK_TIMEOUT_MS;
+    // Counted on the server's clock as well as the wall's: a server whose tick
+    // stands still answers in the first tick after it (`server-deadline.ts`).
+    const deadline = this.serverDeadline(SCORE_TRACK_TIMEOUT_MS);
     for (;;) {
       const lines = this.chatSince(from).lines;
       const refused = lines.find((l) => isRejection(l));
@@ -220,8 +222,9 @@ export const methods = {
           return { riding: m[1] === "1", pos: [Number(m[2]), Number(m[3]), Number(m[4])] };
         }
       }
-      if (Date.now() > deadline) {
-        throw new Error(`ride read: no answer in ${SCORE_TRACK_TIMEOUT_MS}ms`);
+      if (this.deadlineOver(deadline)) {
+        this.requireBot();
+        throw new Error(`ride read: no answer in ${this.deadlineSpent(deadline)}`);
       }
       await delay(LEDGER_POLL_MS);
     }
@@ -326,9 +329,9 @@ export const methods = {
       if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
       await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
       bot.mount(body!);
-      const mountBy = Date.now() + MOUNT_GRACE_MS;
+      const mountBy = this.serverDeadline(MOUNT_GRACE_MS);
       reading = await this.readRide(tag);
-      while (!reading.riding && Date.now() < mountBy) {
+      while (!reading.riding && !this.deadlineOver(mountBy)) {
         await delay(250);
         reading = await this.readRide(tag);
       }
@@ -342,9 +345,10 @@ export const methods = {
     const trace: string[] = [];
     if (step.kind === "minecart") {
       const travel = step.medium.length / step.rate;
-      const by = Date.now() + travel * 1000 + MOUNT_GRACE_MS + 2000;
+      // The cart's travel is a span of the server's ticks: counted on its clock too.
+      const by = this.serverDeadline(travel * 1000 + MOUNT_GRACE_MS + 2000);
       const t0 = Date.now();
-      while (!arrivedAt(reading.pos, last) && Date.now() < by) {
+      while (!arrivedAt(reading.pos, last) && !this.deadlineOver(by)) {
         await delay(500);
         reading = await this.readRide(tag);
         trace.push(

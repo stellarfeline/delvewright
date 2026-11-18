@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { arrivedAt, drivePoints, holdLooksForced, resumeIndex, stretchTaken, vehicleTag } from "../src/executor/ride.ts";
 import { methods } from "../src/executor/ride.ts";
+import { methods as connection } from "../src/executor/connection.ts";
 import type { RideStep, Vec3Tuple } from "../src/critical-path.ts";
 
 test("the tag is the compiler's", () => {
@@ -46,6 +47,10 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[], aboardAt?: { v
     aboard: aboardAt as { vehicle: string; y: number; at: Vec3Tuple } | undefined,
     releaseSeatLooks: undefined as (() => void) | undefined,
     leaveSeat: methods.leaveSeat,
+    // The deadline primitive, real: with no world age in hand it is the wall clock.
+    serverDeadline: connection.serverDeadline,
+    deadlineOver: connection.deadlineOver,
+    deadlineSpent: connection.deadlineSpent,
     requireBot: () => ({
       inventory: { items: () => [{ name: "carrot_on_a_stick" }] },
       equip: async () => {},
