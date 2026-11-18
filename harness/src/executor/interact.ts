@@ -8,6 +8,14 @@ import type { Item } from "prismarine-item";
 import { delay, fmt } from "./connection.ts";
 import { EFFECT_SETTLE_MS } from "./objective.ts";
 import type { MineflayerExecutor } from "../executor.ts";
+import { INTERACTION_REACH, acquire, boxOf, type Hitbox } from "../crosshair.ts";
+
+/** Vanilla standing eye height, 1.21.11: where the pick ray starts. */
+const EYE_HEIGHT = 1.62;
+
+/** How far a tracked box's corner may sit from an exported tile's and still be
+ * that tile: the summon's `f` floats against the export's doubles. */
+const TILE_SLACK = 0.02;
 
 export const INTERACT_RANGE = 3;
 
@@ -24,6 +32,23 @@ export const methods = {
    */
   async interact(this: MineflayerExecutor, step: InteractStep): Promise<void> {
     const bot = this.requireBot();
+    if (step.area !== undefined && step.stand !== undefined) {
+      // Format 16: an area is used from the stance the build proved clicks it,
+      // the cell the route's leg ends at; the bot right-clicks a tile there.
+      const label = `interact ${step.anchor}`;
+      if (this.aboard === undefined) {
+        await this.walkTo(step.stand, 0, `${label} — to its stand cell`, step.sneak, {
+          objective: step.objective,
+          transport: step.transport,
+        });
+        await this.atStance();
+      }
+      await presentItem<Item>(bot, step, step.anchor);
+      await this.clickArea(step, label);
+      await this.requireObjective(step.objective, label);
+      await delay(EFFECT_SETTLE_MS);
+      return;
+    }
     if (this.aboard === undefined) {
       await this.walkTo(step.pos, INTERACT_RANGE, `interact ${step.anchor}`, step.sneak, {
         objective: step.objective,
@@ -50,6 +75,71 @@ export const methods = {
     }
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
     await delay(EFFECT_SETTLE_MS);
+  },
+
+  /**
+   * Right-click an area (format 16): find the tracked `interaction` boxes that
+   * are the area's tiles, prove from the bot's own eye that a ray reaches one
+   * of them before any block or other body (the tiles never occlude each
+   * other: every one is the one press), look at the point the build aimed at,
+   * and right-click that tile as a player does.
+   */
+  async clickArea(this: MineflayerExecutor, step: InteractStep, label: string): Promise<void> {
+    const bot = this.requireBot();
+    const area = step.area!;
+    const widest = Math.max(...area.tiles.map((t) => Math.max(t.max[0] - t.min[0], t.max[2] - t.min[2])));
+    const bodies = this.hitboxesNear(area.cell, INTERACTION_REACH + widest + 5);
+    const isTile = (h: Hitbox) => {
+      if (h.name !== "interaction") return false;
+      const b = boxOf(h);
+      return area.tiles.some(
+        (t) =>
+          Math.abs(b.min.x - t.min[0]) < TILE_SLACK &&
+          Math.abs(b.min.y - t.min[1]) < TILE_SLACK &&
+          Math.abs(b.min.z - t.min[2]) < TILE_SLACK &&
+          Math.abs(b.max.x - t.max[0]) < TILE_SLACK &&
+          Math.abs(b.max.y - t.max[1]) < TILE_SLACK &&
+          Math.abs(b.max.z - t.max[2]) < TILE_SLACK,
+      );
+    };
+    const tiles = bodies.filter(isTile);
+    if (tiles.length === 0) {
+      throw new Error(
+        `${label}: none of the area's ${area.tiles.length} click box(es) is tracked near ` +
+          `[${area.cell.join(", ")}] — the area has no body to right-click, so the use can never ` +
+          `land (bot at ${fmt(bot.entity.position)})`,
+      );
+    }
+    const others = bodies.filter((b) => !isTile(b));
+    const world = this.blockShapes();
+    const p = bot.entity.position;
+    const eye = { x: p.x, y: p.y + EYE_HEIGHT, z: p.z };
+    let hit: { tile: Hitbox; aim: { x: number; y: number; z: number } } | undefined;
+    for (const tile of tiles) {
+      const a = acquire(eye, tile, others, INTERACTION_REACH, world.shapes, world.names);
+      if (a.ok) {
+        hit = { tile, aim: a.aim };
+        break;
+      }
+    }
+    if (hit === undefined) {
+      throw new Error(
+        `${label}: from the stance [${(step.stand ?? []).join(", ")}] no ray reaches any of the ` +
+          `area's ${tiles.length} tracked click box(es) within ${INTERACTION_REACH} blocks before ` +
+          `a block or another body (bot at ${fmt(bot.entity.position)})`,
+      );
+    }
+    const target = bot.entities[hit.tile.id];
+    if (!target) {
+      throw new Error(`${label}: the area's click box #${hit.tile.id} is no longer tracked`);
+    }
+    const [ax, ay, az] = area.aim;
+    await bot.lookAt(p.offset(ax - p.x, ay - p.y, az - p.z), true);
+    process.stderr.write(
+      `[interact] ${label}: right-clicking the area at [${area.cell.join(", ")}] through its ` +
+        `click box at ${fmt(target.position)} from ${fmt(bot.entity.position)}\n`,
+    );
+    await bot.activateEntity(target);
   },
 
   /**
