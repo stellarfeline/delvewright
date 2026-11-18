@@ -542,8 +542,13 @@ pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> V
                 Objective::ReachAnchor { anchor, .. } | Objective::Collect { anchor, .. } => {
                     set.insert(anchor.as_str().to_string());
                 }
-                Objective::Interact { anchor, .. } => {
+                Objective::Interact { anchor, region, .. } => {
                     set.insert(anchor.as_str().to_string());
+                    // An area's box is centred on its own anchor, which the
+                    // solver owes the area as it owes the objective's.
+                    if let Some(z) = region {
+                        set.insert(z.anchor.as_str().to_string());
+                    }
                 }
                 // Wave spawn anchors are registered below via `wave_area`, driven
                 // by the `spawn-wave` effect (the true spawn site) rather than the

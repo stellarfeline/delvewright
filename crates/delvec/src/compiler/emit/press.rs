@@ -267,9 +267,38 @@ fn reconciled(p: &PressPlan) -> bool {
 }
 
 /// The summon of `p`'s click box with every rider's tag, or nothing for a
-/// block pressed on its own.
+/// block pressed on its own. An area's box is its tiles, summoned together by
+/// its own function ([`area_fns`]), so one command still stands them all.
 pub(super) fn box_summon(plan: &Plan, p: &PressPlan) -> Option<String> {
+    if p.area.is_some() {
+        return Some(format!(
+            "function {}:{}",
+            plan.namespace,
+            area_fn(&p.owner.safe())
+        ));
+    }
     p.box_summon(&box_tags(plan, p))
+}
+
+/// The name of the function that summons an area's tiles (`area_<owner>`).
+pub(super) fn area_fn(owner_safe: &str) -> String {
+    format!("area_{owner_safe}")
+}
+
+/// The `area_<owner>` functions: each area press's tiles
+/// ([`crate::compiler::clickbox::ClickBox::tiling`]) with every rider's tag,
+/// in [`Plan::presses`] order.
+pub(super) fn area_fns(plan: &Plan) -> Vec<(String, String)> {
+    plan.presses()
+        .iter()
+        .filter(|p| p.area.is_some())
+        .map(|p| {
+            (
+                area_fn(&p.owner.safe()),
+                lines(&p.tile_summons(&box_tags(plan, p))),
+            )
+        })
+        .collect()
 }
 
 /// The guarded summon of `p`'s box: never a second one over the same block.

@@ -1385,6 +1385,7 @@ pub(super) fn emit_functions(
     // --- The clickable body of each sealed shortcut door ---
     // Empty for a campaign with no shortcut → byte-identical output.
     fns.extend(pst_fns(plan));
+    fns.extend(super::press::area_fns(plan));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---

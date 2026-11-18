@@ -1210,6 +1210,15 @@ pub(super) fn prove_world(
                         }
                     })?;
                     crate::note!("{}", shots.line());
+                    // An area `interact` owes an uncovered top face and a
+                    // stance its use reaches it from (`DW1143`).
+                    let areas = crate::compiler::nav::check_areas(plan, world).map_err(|f| {
+                        BuildFailure::Diagnostic {
+                            code: f.code,
+                            message: f.message,
+                        }
+                    })?;
+                    crate::note!("{}", areas.line());
                 }
                 // spec-0134 §1: a census's bodies reach their box (`DW1089`).
                 {
@@ -1640,7 +1649,7 @@ fn prove_branch_world(
         campaign_spawn(plan),
         &cp.steps,
         &cp.transport_by_step,
-        plan.shot_stances.get(),
+        plan.act_stances.get(),
         &region_events,
         &ancestor,
     );

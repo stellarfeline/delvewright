@@ -37,6 +37,7 @@ pub use world::*;
 
 mod actor;
 mod ambush;
+mod area;
 pub mod census;
 mod checkpoint;
 mod counted;
@@ -75,6 +76,7 @@ mod wave;
 pub mod width;
 pub use actor::*;
 pub use ambush::*;
+pub use area::*;
 pub use checkpoint::*;
 pub use counted::*;
 pub use cutscene::*;
@@ -377,6 +379,14 @@ delvewright_dsl::dw_code! {
     /// `DW1089` (spec-0134 §1): a body of a census `of` a wave or an actor
     /// whose seat is not connected to the counted region at its footprint.
     pub const DW_CENSUS_UNREACHED: DwCode = DwCode::new("DW1089", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1143`: **an area `interact` nobody can use as declared** — a solid
+    /// block stands directly on a cell of the area's top face, or no
+    /// standable cell of the walk region, outside the area's columns, has its
+    /// eye within the entity reach of the top face along a clear line.
+    pub const DW_AREA_UNCLICKABLE: DwCode = DwCode::new("DW1143", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {

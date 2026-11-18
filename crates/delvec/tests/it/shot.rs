@@ -489,13 +489,13 @@ fn the_take_of_rides_and_links_fixes_a_shots_stance() {
     let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
     // The geometry alone: the relight pass over it would ask first.
     let world = delvec::compiler::light::geometry_world(&assembled);
-    assert!(plan.shot_stances.get().is_none(), "no proof has asked yet");
+    assert!(plan.act_stances.get().is_none(), "no proof has asked yet");
     let _ = delvec::compiler::nav::take_links(&plan, &world);
     assert!(
-        plan.shot_stances
+        plan.act_stances
             .get()
             .is_some_and(|m| m.contains_key("trigger/hit-the-mark")),
         "the take walked the shot's leg with its stance fixed: {:?}",
-        plan.shot_stances.get()
+        plan.act_stances.get()
     );
 }

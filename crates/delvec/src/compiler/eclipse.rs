@@ -265,6 +265,11 @@ pub(crate) struct Affordance {
     /// `minecraft:interaction`, which keeps a left-click and a right-click in
     /// two records of its own, not a contest.
     pub(crate) press: Option<usize>,
+    /// The box itself as `(min, max)` corners, for an affordance that is no
+    /// column at a cell centre: a tile of an area's click boxes
+    /// ([`crate::compiler::pressable::AreaBody`]), judged by the box it spans
+    /// as an assembly's hitbox is.
+    pub(crate) span: Option<([f64; 3], [f64; 3])>,
 }
 
 /// When an affordance's `minecraft:interaction` box exists.
@@ -338,6 +343,12 @@ impl Affordance {
     /// This affordance's box: its size, centred on its cell, rising from the
     /// cell's floor.
     fn boxed(&self) -> [Span; 3] {
+        if let Some((lo, hi)) = self.span {
+            return [0, 1, 2].map(|i| Span {
+                lo: lo[i],
+                hi: hi[i],
+            });
+        }
         body_box(self.pos, self.size.0, self.size.1)
     }
 
@@ -347,7 +358,7 @@ impl Affordance {
         // margin (spec-0117 §3a, `DW1013`): two such boxes contest only on one
         // cell, never across a shared face's centimetre. Only an assembly's
         // declared hitbox is judged by the box it spans.
-        self.size == AFFORDANCE_SIZE || self.kind != "assembly hitbox"
+        self.span.is_none() && (self.size == AFFORDANCE_SIZE || self.kind != "assembly hitbox")
     }
 }
 
@@ -504,6 +515,30 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     // the affordance — fitted to the block, standing in the states the press
     // table says.
     for (pi, p) in plan.presses().iter().enumerate() {
+        // An area: one affordance per tile, each the box it spans — a body
+        // inside the area is in front of every use over it (`DW0359`), and
+        // another affordance inside it is never reached (`DW0878`).
+        if let (Some(a), Owner::Interact { id, .. }) = (&p.area, &p.owner) {
+            for t in &a.tiles {
+                let (lo, hi) = t.aabb();
+                out.push(Affordance {
+                    size: (hi[0] - lo[0], hi[1] - lo[1]),
+                    kind: "interact area",
+                    id: id.clone(),
+                    anchor: p.anchor.clone(),
+                    pos: [
+                        ((lo[0] + hi[0]) / 2.0).floor() as i32,
+                        (lo[1] + crate::compiler::clickbox::CLICK_MARGIN).floor() as i32,
+                        ((lo[2] + hi[2]) / 2.0).floor() as i32,
+                    ],
+                    arming: Arming::Persistent,
+                    own_block: None,
+                    press: Some(pi),
+                    span: Some((lo, hi)),
+                });
+            }
+            continue;
+        }
         // A block pressed on its own is pressed at its outline; a body that
         // stands nearer the eye takes the click from it exactly as from a box.
         let size = match &p.click_box {
@@ -540,6 +575,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             arming,
             own_block: (p.click_box.is_none() && p.form == Form::Own).then(|| p.block.clone()),
             press: Some(pi),
+            span: None,
         });
     }
     // spec-0082 assemblies: a declared hitbox is a compiler-summoned
@@ -561,6 +597,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             arming: Arming::Persistent,
             own_block: None,
             press: None,
+            span: None,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -675,6 +712,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
                 arming: Arming::Persistent,
                 own_block: None,
                 press: None,
+                span: None,
             }),
     );
     for body in pressable_bodies(plan) {
@@ -728,8 +766,11 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
                 (0..3).all(|i| x[i].overlaps(y[i]))
             };
             let one_body = a.own_block.is_some() && a.own_block == b.own_block && a.pos == b.pos;
+            // Two tiles of one area are the one press.
             let one_box = match (a.press, b.press) {
-                (Some(i), Some(j)) => plan.presses()[i].shares_box_with(&plan.presses()[j]),
+                (Some(i), Some(j)) => {
+                    i == j || plan.presses()[i].shares_box_with(&plan.presses()[j])
+                }
                 _ => false,
             };
             if contest && !one_body && !one_box && can_share_a_moment(a, b, order) {
