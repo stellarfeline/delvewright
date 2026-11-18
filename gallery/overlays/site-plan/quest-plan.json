@@ -1,6 +1,29 @@
 {
   "campaign_id": "gallery",
   "content": {
+    "branch_points": [
+      {
+        "branches": [
+          {
+            "flags": [
+              "flag/roll-remembered"
+            ],
+            "id": "branch/roll-remembered",
+            "leads_to": "quest/far-hall"
+          },
+          {
+            "flags": [],
+            "id": "branch/roll-left",
+            "leads_to": "quest/far-hall"
+          }
+        ],
+        "forks_on": [
+          "flag/roll-remembered"
+        ],
+        "id": "branch-point/roll",
+        "opens_at": "quest/far-hall"
+      }
+    ],
     "finale": "quest/far-hall",
     "quests": [
       {
