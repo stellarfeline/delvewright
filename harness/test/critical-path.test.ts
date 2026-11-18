@@ -1667,10 +1667,10 @@ test("format 13: a kill step carries the triggers its fight's bodies may fire wh
   }
 });
 
-test("format 16: the constant moved, and a format-15 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 16);
+test("format 17: the constant moved, and a format-16 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 17);
   const raw = validRaw();
-  raw["format_version"] = 15;
+  raw["format_version"] = 16;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",

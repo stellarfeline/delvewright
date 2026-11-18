@@ -3261,7 +3261,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, `16`
+  version**; `format_version` is the **contract's own** version, `17`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. **An `interact`
   step over an area carries `stand` and `area`** (format 16): the stance the

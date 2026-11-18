@@ -127,9 +127,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   aimed at and the tiles a click may land on, each the one press. A
  *   format-15 bot would refuse the keys.
  *
+ * * `17` — a gathered `collect` step whose item a use on a body yields carries
+ *   `use: {item, on}`: the bot holds `item` and right-clicks a body of kind
+ *   `on` it acquires by the crosshair ray, instead of being handed the item. A
+ *   format-16 bot would refuse the key.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 16;
+export const CRITICAL_PATH_FORMAT_VERSION = 17;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
