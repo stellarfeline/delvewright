@@ -59,7 +59,7 @@ DELVE_OUTPUT="$DELVE_OUTPUT" EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/branch-ru
 
 Every objective with a `limit` is a world of its own (the run in which that one task lapses), and its path waits the lapse out: the bot walks to where it stands, does nothing, and passes on the expiry. That wait is real game time — the step's `wait_ticks`, at most the whole window — and the build's `limit binding` line states the sum over every expiry world before the run pays it.
 
-It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or skipped-with-reason, the result, and the build each run walked. A run that walked its branch and still exited non-zero (a run-level check, such as the sculk ear, failed it) is never a passed row. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for local iteration, and **a narrowed run is not a validated campaign** — the report says which branches it skipped, and the staging gate (`--branch-runs`) refuses a build until every planned world has passed on it.
+It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per branch, ran or skipped-with-reason, the result, and the build each run walked. A run that walked its branch and still exited non-zero (a run-level check, such as the sculk ear, failed it) is never a passed row. A world whose server stood still while the host was swapping is a HOST-OVERLOADED row, named UNPROVEN with the host's numbers: nothing about its path was judged, so run it again once the host has room. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for local iteration, and **a narrowed run is not a validated campaign** — the report says which branches it skipped, and the staging gate (`--branch-runs`) refuses a build until every planned world has passed on it.
 
 ## On a red
 

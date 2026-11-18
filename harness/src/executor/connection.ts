@@ -9,6 +9,7 @@ import type { PackPush } from "../resource-pack.ts";
 import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load-window.ts";
 import { serverAge } from "./death.ts";
 import { ServerView } from "../sound-heard.ts";
+import { ServerDeadline } from "../server-deadline.ts";
 import { answersTrigger } from "./trigger.ts";
 import { chunkKey } from "../shot-subjects.ts";
 import { WARDEN_DARKNESS_RANGE } from "../sculk.ts";
@@ -572,10 +573,31 @@ export const methods = {
   },
 
   /**
+   * A deadline of `ms` on a server answer, started now: over once `ms` has
+   * passed on the wall AND on the server's own clock (`server-deadline.ts`), so
+   * a server whose tick stands still holds the wait open rather than failing it.
+   */
+  serverDeadline(this: MineflayerExecutor, ms: number): ServerDeadline {
+    return new ServerDeadline(ms, performance.now(), serverAge(this.bot));
+  },
+
+  /** Whether `deadline` ({@link serverDeadline}) is over now. */
+  deadlineOver(this: MineflayerExecutor, deadline: ServerDeadline): boolean {
+    return deadline.over(performance.now(), serverAge(this.bot));
+  },
+
+  /** The span `deadline` ran, in words, for a failure that names it. */
+  deadlineSpent(this: MineflayerExecutor, deadline: ServerDeadline): string {
+    return deadline.spent(performance.now(), serverAge(this.bot));
+  },
+
+  /**
    * Poll `predicate` every `pollMs` until it holds (→ true) or `timeoutMs` elapses
-   * (→ false). Death-aware: throws the recorded {@link BotDeathError} the moment the
-   * bot dies, so a transport/footing wait never outlives a death. A pure timing helper
-   * — no game logic.
+   * on the wall and on the server's clock ({@link serverDeadline}) (→ false).
+   * Death-aware: throws the recorded {@link BotDeathError} the moment the bot dies,
+   * so a transport/footing wait never outlives a death; and a lost connection ends
+   * it the same way, since a server that is gone answers nothing. A pure timing
+   * helper — no game logic.
    */
   async waitFor(
     this: MineflayerExecutor,
@@ -583,11 +605,12 @@ export const methods = {
     timeoutMs: number,
     pollMs: number,
   ): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs;
+    const deadline = this.serverDeadline(timeoutMs);
     for (;;) {
       if (this.death) throw this.death;
       if (predicate()) return true;
-      if (Date.now() >= deadline) return false;
+      if (this.deadlineOver(deadline)) return false;
+      if (this.lostConnection !== undefined) this.requireBot();
       await delay(pollMs);
     }
   },

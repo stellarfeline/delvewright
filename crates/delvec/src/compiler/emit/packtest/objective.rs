@@ -88,6 +88,9 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
                 "scoreboard players set {party} {} 1",
                 quest_active_score(quest)
             ));
+            // spec-0140: the guard the probe reads carries the held term of
+            // the quest, so the template owns the map's mode too.
+            baseline.extend(super::super::mode::mode_drive(c, quest));
             for f in o.requires_flags() {
                 baseline.push(format!(
                     "scoreboard players set {party} {} 1",

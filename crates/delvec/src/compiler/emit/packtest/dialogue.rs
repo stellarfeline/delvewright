@@ -186,6 +186,19 @@ pub(super) fn emit_one_dialogue_mask_packtest(
             let os = obj_score(obj);
             satisfied.push(format!("scoreboard players set {p} {qa} 1"));
             satisfied.push(format!("scoreboard players set {p} {os} 0"));
+            // spec-0140: a quest a mode holds hides the option while the mode
+            // is on, so the map's mode is a term of the condition like any
+            // other: no mode satisfies it, the holding mode breaks it.
+            if let (Some((ms, hold)), Some((_, free))) = (
+                super::super::mode::mode_hold_term(c, qid),
+                super::super::mode::mode_drive_term(c, qid),
+            ) {
+                satisfied.push(format!("scoreboard players set {p} {ms} {free}"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {ms} {hold}")],
+                    vec![format!("scoreboard players set {p} {ms} {free}")],
+                ));
+            }
             // The objective-state axis is the objective's whole pending guard
             // (spec-0093 §6.3), and every term of it hides the option on its
             // own: the quest is not running, the objective is already done, a
