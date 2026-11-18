@@ -8,6 +8,7 @@ import { isRejection } from "../rejection.ts";
 import { delay } from "./connection.ts";
 import { LEDGER_POLL_MS, SCORE_TRACK_TIMEOUT_MS } from "./score.ts";
 import { NON_COLLIDING_ENTITY_TYPES } from "../movement.ts";
+import { nextLegWaypoints } from "../waypoints.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** Minecraft server ticks per second. */
@@ -299,6 +300,14 @@ export const methods = {
    * at the last medium cell; leave by the sneak input, assert the server
    * unseats the bot, and walk to `leave`.
    *
+   * `leadsTo` is the objective of the step the ride carries the party to.
+   * Its completion may come while the bot is still aboard — a reach that runs
+   * a course is reached when the race is over, at the finish the ride crosses
+   * (spec-0139 §4) — and what it does then (a crossing, a teleport) may unseat
+   * the rider. The bot knows it by the completion marker: a ride the server
+   * stops seating after that objective's marker arrived during the ride ends
+   * there, by the completion, and is not "unseated before the ride's end".
+   *
    * A ride that does not board goes on from aboard (spec-0135 §5): the server
    * must already seat the bot on the vehicle. A ride that stays ends aboard:
    * the bot is not unseated, and the next step's act is done from the seat.
@@ -310,7 +319,7 @@ export const methods = {
     this.releaseSeatLooks = undefined;
   },
 
-  async ride(this: MineflayerExecutor, step: RideStep): Promise<void> {
+  async ride(this: MineflayerExecutor, step: RideStep, leadsTo?: string): Promise<void> {
     const bot = this.requireBot();
     const tag = vehicleTag(step.vehicle);
     const seat = step.medium[0]!;
@@ -382,6 +391,11 @@ export const methods = {
       }
     }
     const start = reading.pos;
+    // The objective this ride carries the party to, completed during this
+    // step: the ride ended by that completion wherever the rider then is.
+    const endedByCompletion = (): boolean =>
+      leadsTo !== undefined && this.completedObjectives.get(leadsTo) === this.currentStep;
+    let lastSeated = start;
     let reported = 0;
     let ridY = start[1];
     // Where the server held a waited-for rider, reading by reading: said when
@@ -395,10 +409,12 @@ export const methods = {
       while (!arrivedAt(reading.pos, last) && !this.deadlineOver(by)) {
         await delay(500);
         reading = await this.readRide(tag);
+        if (reading.riding) lastSeated = reading.pos;
         trace.push(
           `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}` +
             (reading.riding ? "" : " unseated"),
         );
+        if (!reading.riding && endedByCompletion()) break;
       }
     } else {
       const vehicleY = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y;
@@ -438,6 +454,7 @@ export const methods = {
         if (end === points.length) await delay(700);
         reading = await this.readRide(tag);
         if (!reading.riding) break;
+        lastSeated = reading.pos;
         const last = points[end - 1]!.at;
         if (stretchTaken(reading.pos, last)) {
           i = end;
@@ -470,6 +487,21 @@ export const methods = {
       if (holds > 0) {
         process.stderr.write(`[ride] ${step.vehicle}: held ${holds} time(s), ${heldMs}ms in all, and taken\n`);
       }
+    }
+    if (!reading.riding && endedByCompletion()) {
+      const serverSeen = dist(start, lastSeated);
+      const why =
+        `ended by ${leadsTo}'s completion during the ride: last seated at ` +
+        `${JSON.stringify(lastSeated.map((v) => Number(v.toFixed(2))))}, the server then holds the bot at ` +
+        `${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}`;
+      record({ reported, serverSeen, seat: lastSeated, left: true, passed: true, why });
+      process.stderr.write(`[ride] ${step.vehicle} (${step.kind}): ${why}\n`);
+      // The leaving walk is not walked: its proven leg is consumed, so the
+      // next walk takes its own.
+      if (this.waypoints) {
+        this.legCursor = nextLegWaypoints(this.waypoints.legs, this.legCursor, step.leave).cursor;
+      }
+      return;
     }
     const serverSeen = dist(start, reading.pos);
     if (!reading.riding) {

@@ -74,7 +74,7 @@ export interface StepExecutor {
   /** Ride a vehicle on a leg its objective declares ridden (spec-0135 §6). Optional so
    * existing fakes keep compiling; a path carrying one against an executor
    * without it is a hard failure, never a silent skip. */
-  ride?(step: RideStep): Promise<void>;
+  ride?(step: RideStep, leadsTo?: string): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -248,7 +248,7 @@ export function validateStepOrder(steps: readonly Step[]): void {
   }
 }
 
-async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
+async function dispatch(executor: StepExecutor, step: Step, next?: Step): Promise<void> {
   switch (step.action) {
     case "select-class":
       return executor.selectClass(step);
@@ -320,7 +320,9 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
             `carries has no walk`,
         );
       }
-      return executor.ride(step);
+      // The step a ride carries the party to: its objective's completion may
+      // end the ride while the bot is aboard (spec-0139 §4).
+      return executor.ride(step, next !== undefined && "objective" in next ? next.objective : undefined);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -407,8 +409,8 @@ export async function runSequence(
         }
         const walked =
           pursuersOf(step).length > 0
-            ? () => executor.pursue!(i, step, () => dispatch(executor, step))
-            : () => dispatch(executor, step);
+            ? () => executor.pursue!(i, step, () => dispatch(executor, step, path.steps[i + 1]))
+            : () => dispatch(executor, step, path.steps[i + 1]);
         // spec-0134 §1: a census is placed at the act's stance, inside the act —
         // never before the walk to it, which a placed body would walk out of.
         if (censusOf(step).length > 0) {

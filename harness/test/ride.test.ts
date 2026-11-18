@@ -220,6 +220,38 @@ test("a cart is waited for, never driven", async () => {
   assert.equal(sent.filter((s) => s.name === "vehicle_move").length, 0);
 });
 
+// spec-0139 §4: a reach that runs a course is reached when the race is over,
+// at the finish the cart crosses; its crossing takes the rider off the cart
+// and puts it in the hall. The ride ended there, by that completion.
+test("a ride its objective's completion unseats ends by that completion", async () => {
+  const reads = (): { riding: boolean; pos: Vec3Tuple }[] => [
+    { riding: true, pos: [8.5, 67, 3.5] },
+    { riding: true, pos: [12.5, 67, 3.5] },
+    { riding: false, pos: [15.5, 67, 2.5] },
+  ];
+  const medium = Array.from({ length: 13 }, (_, i) => [8 + i, 67, 3] as Vec3Tuple);
+  const cart = { ...step, kind: "minecart" as const, rate: 10.4, medium };
+  delete (cart as { steeringItem?: string }).steeringItem;
+  const ended = mock(reads());
+  Object.assign(ended.self, { currentStep: 33, completedObjectives: new Map([["obj/ride-the-line", 33]]) });
+  await methods.ride.call(ended.self as never, cart, "obj/ride-the-line");
+  const r = ended.self.rides[0] as { passed: boolean; left: boolean; seat: Vec3Tuple; why: string };
+  assert.ok(r.passed && r.left, JSON.stringify(r));
+  assert.deepEqual(r.seat, [12.5, 67, 3.5], "the seat is the last the server held the rider at");
+  assert.match(r.why, /ended by obj\/ride-the-line's completion during the ride/);
+  assert.deepEqual(ended.walked, [step.board], "the leaving walk is not walked");
+  // The same unseat with that objective completed at an earlier step, or not
+  // at all, is the ride failing.
+  for (const done of [new Map([["obj/ride-the-line", 32]]), new Map<string, number>()]) {
+    const { self } = mock(reads());
+    Object.assign(self, { currentStep: 33, completedObjectives: done });
+    await assert.rejects(
+      () => methods.ride.call(self as never, cart, "obj/ride-the-line"),
+      /unseated the bot before the ride's end/,
+    );
+  }
+});
+
 // spec-0135 §5: an act done from the seat.
 const boatOut: RideStep = {
   action: "ride",
