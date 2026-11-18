@@ -2218,14 +2218,25 @@ fn race(checkpoints: &[&str], more: &str) -> String {
 
 const START_RACE: &str = r#"{ "type": "start-race", "race": "race/pig-race" }"#;
 
+/// The anchor of a race's last checkpoint, as [`race`] writes it.
+fn finish_of(race: &str) -> &'static str {
+    let at = race
+        .rfind(r#""anchor/"#)
+        .expect("a race names a checkpoint")
+        + 1;
+    let end = at + race[at..].find('"').unwrap();
+    Box::leak(race[at..end].to_string().into_boxed_str())
+}
+
 /// The bay a course is ridden over: the bridge across the pool, a pig, a
 /// carrot on a stick in the kit, and the exit's leg declared ridden and run
-/// as the race's course.
+/// as the race's course, reached at the race's finish (`DW1144`).
 fn course_bay(race: String) -> Bay {
     Bay {
         bridge: true,
         ride: Some("vehicle/race-pig"),
         carrot: true,
+        goal: Some(finish_of(&race)),
         gate: r#", "course": "race/pig-race""#,
         more: Box::leak(race.into_boxed_str()),
         ..Bay::default()
@@ -2494,6 +2505,33 @@ fn a_course_its_path_never_starts_is_dw1119() {
     let (code, msg) = course_build("course-ended", bay(), &ended).unwrap_err();
     assert_eq!(code, "DW1119", "{msg}");
     assert!(msg.contains("an `end-race` fires at step"), "{msg}");
+}
+
+/// `DW1144`: a reach that runs a course is reached at the course's finish.
+/// Reached at the exit, west of the finish at `cp-east`, it is refused at the
+/// plan, naming the finish's box and the anchor's cell; the same course
+/// reached at `cp-east` builds.
+#[test]
+fn a_course_whose_finish_does_not_hold_its_reach_is_dw1144() {
+    let off = Bay {
+        goal: Some("anchor/exit-west"),
+        ..course_bay(race(&["cp-bridge", "cp-east"], ""))
+    };
+    let (code, msg) = course_build("course-off-finish", off, START_RACE).unwrap_err();
+    assert_eq!(code, "DW1144", "{msg}");
+    assert!(
+        msg.contains("`obj/exit`")
+            && msg.contains("anchor/exit-west")
+            && msg.contains("checkpoint 2 at `anchor/cp-east`")
+            && msg.contains("move the last checkpoint of `race/pig-race` onto `anchor/exit-west`"),
+        "{msg}"
+    );
+    course_build(
+        "course-on-finish",
+        course_bay(race(&["cp-bridge", "cp-east"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
 }
 
 /// `DW1118`: a checkpoint whose box holds no cell a body stands in, and two

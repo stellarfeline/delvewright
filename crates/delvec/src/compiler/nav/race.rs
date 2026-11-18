@@ -35,6 +35,16 @@ delvewright_dsl::dw_code! {
     pub const DW_COURSE_NOT_STARTED: DwCode = DwCode::new("DW1119", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1144`: a `reach-anchor` that runs a course, whose anchor is not
+    /// inside the course's finish — the last checkpoint's box (spec-0139 §4).
+    /// Such a reach is completed by the race being over, wherever the party
+    /// stands, so the race ends at its finish; a route proven to the anchor
+    /// past it walks to a place the game never asks for. The message names
+    /// the objective, the anchor's cell, the race and the finish's box.
+    pub const DW_COURSE_FINISH_OFF_ANCHOR: DwCode = DwCode::new("DW1144", ExitTier::Build);
+}
+
 /// An inclusive box of cells.
 pub type CellBox = ([i32; 3], [i32; 3]);
 
@@ -103,12 +113,77 @@ impl World {
 /// (`DW0142`). The one resolution every reader of a checkpoint takes — the
 /// emitted selector, both routes and the proof.
 pub fn checkpoint_box(plan: &Plan, cp: &delvewright_dsl::Checkpoint) -> Option<CellBox> {
-    let c = cp.at.cell(plan.point_any(cp.at.anchor.as_str())?);
+    checkpoint_box_at(plan.point_any(cp.at.anchor.as_str())?, cp)
+}
+
+/// [`checkpoint_box`] from its anchor's cell, for a reader that holds the
+/// resolved anchors before the plan exists ([`check_course_finishes`]).
+fn checkpoint_box_at(anchor_cell: [i32; 3], cp: &delvewright_dsl::Checkpoint) -> Option<CellBox> {
+    let c = cp.at.cell(anchor_cell);
     let e = cp.extent.map(|v| v as i32);
     Some((
         [c[0] - e[0], c[1] - e[1], c[2] - e[2]],
         [c[0] + e[0], c[1] + e[1], c[2] + e[2]],
     ))
+}
+
+/// **A reach that runs a course is reached at its finish** (`DW1144`): the
+/// objective's anchor stands inside the last checkpoint's box, by the one
+/// rule a racer is inside a box by ([`cell_in_box`]). The race being over
+/// completes such a reach wherever the party stands, so the race's finish is
+/// where the reach is done; an anchor elsewhere is a place the route is proven
+/// to and the game never asks for. An anchor or a checkpoint that resolves
+/// nowhere is left to the rule that names it (`DW0142`).
+pub(crate) fn check_course_finishes(
+    campaign: &delvewright_dsl::Campaign,
+    point: &dyn Fn(&str) -> Option<[i32; 3]>,
+) -> Result<(), crate::compiler::plan::PlanError> {
+    let q = &campaign.quests.content;
+    for o in q.quests.iter().flat_map(|x| &x.objectives) {
+        let (delvewright_dsl::Objective::ReachAnchor { anchor, .. }, Some(race)) = (o, o.course())
+        else {
+            continue;
+        };
+        let Some(r) = q.races.iter().find(|r| &r.id == race) else {
+            continue;
+        };
+        let Some(last) = r.checkpoints.last() else {
+            continue;
+        };
+        let (Some(at), Some(cp_anchor)) = (point(anchor.as_str()), point(last.at.anchor.as_str()))
+        else {
+            continue;
+        };
+        let Some(finish) = checkpoint_box_at(cp_anchor, last) else {
+            continue;
+        };
+        if cell_in_box(at, &finish) {
+            continue;
+        }
+        return Err(crate::compiler::plan::PlanError::new(
+            DW_COURSE_FINISH_OFF_ANCHOR,
+            format!(
+                "objective `{}` is reached at `{}` (the cell {:?}) and runs the course of `{}`, \
+                 whose finish — checkpoint {} at `{}`, the box {:?}–{:?} — does not hold it. A \
+                 reach that runs a course is completed by the race being over, wherever the \
+                 party stands, so the party is done at the finish and never walks on to the \
+                 anchor. Put the finish where the reach is done: move the last checkpoint of \
+                 `{}` onto `{}`, or widen its `extent` until its box holds {:?}",
+                o.id(),
+                anchor,
+                at,
+                r.id,
+                r.checkpoints.len(),
+                last.at.display(),
+                finish.0,
+                finish.1,
+                r.id,
+                anchor,
+                at
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// A race's checkpoints as boxes, once round the course.
