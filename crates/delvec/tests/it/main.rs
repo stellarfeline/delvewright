@@ -188,6 +188,7 @@ mod optional_footing;
 mod optional_opening;
 mod packtest_batch;
 mod packtest_campaign;
+mod packtest_latch;
 mod packtest_own_gates;
 mod party;
 mod party_crossing;
