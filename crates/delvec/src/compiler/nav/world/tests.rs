@@ -16,11 +16,11 @@ fn floored_with_furniture(
     extra: &[[i32; 3]],
     region: Option<([i32; 3], [i32; 3])>,
 ) -> World {
-    floored(w, d, y, extra, region, Vec::new())
+    floored_holding(w, d, y, extra, region, Vec::new())
 }
 
 /// [`floored_with_furniture`] with `seals` as the gates it was built holding.
-fn floored(
+fn floored_holding(
     w: i32,
     d: i32,
     y: i32,
@@ -92,7 +92,7 @@ fn a_gate_seal_at_the_head_of_a_route_cell_is_blamed() {
         stand: None,
     };
     let feet = [3, 65, 3];
-    let w = floored(
+    let w = floored_holding(
         8,
         8,
         65,
