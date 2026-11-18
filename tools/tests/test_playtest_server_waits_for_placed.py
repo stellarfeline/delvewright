@@ -55,7 +55,8 @@ if args[:1] == ["exec"]:
         else:
             reply = "Test failed"
     elif cmd == "scoreboard objectives list":
-        reply = "There are 2 objective(s): [dw.sys], [dw.class]" if st["readings"] > st["unloaded_readings"] else "There are no objectives"
+        # A big campaign's list: past the 4097-byte rcon reply ceiling.
+        reply = "There are 400 objective(s): " + ", ".join("[dw.o%d]" % i for i in range(600)) if st["readings"] > st["unloaded_readings"] else "There are no objectives"
     elif cmd.startswith("execute if entity @e[tag=dw_npc]"):
         reply = "Test failed"
     elif cmd == "save-all flush":
@@ -132,6 +133,17 @@ def test_nothing_about_the_world_is_asked_before_the_server_says_placed(tmp_path
     replies = [c["reply"] for c in log[:first_placed]]
     assert any(r == "Test failed" for r in replies) and any("<--[HERE]" in r for r in replies), replies
     assert "placement: first reading after Done, at 0s: unanswered" in out.stdout, out.stdout
+
+
+def test_a_campaign_whose_objective_list_is_over_the_rcon_ceiling_is_served(tmp_path):
+    out, log = _serve(tmp_path)
+    assert "VERIFIED" in out.stdout, out.stdout + out.stderr
+    assert all(c["cmd"] != "scoreboard objectives list" for c in log), "the unbounded list was asked"
+
+
+def test_a_server_whose_pack_never_loaded_is_still_refused(tmp_path):
+    out, _ = _serve(tmp_path, unloaded_readings=10**6, placed_after=10**6, budget=2, poll=1)
+    assert "FAILED: the datapack did not report the world placed (#placed dw.sys matches 1) within the 2s budget; last reading: unanswered" in out.stdout, out.stdout
 
 
 def test_the_npcs_are_counted_in_the_save_where_at_e_sees_none(tmp_path):
