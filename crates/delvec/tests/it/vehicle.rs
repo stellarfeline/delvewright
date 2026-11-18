@@ -2220,6 +2220,11 @@ const START_RACE: &str = r#"{ "type": "start-race", "race": "race/pig-race" }"#;
 
 /// The anchor of a race's last checkpoint, as [`race`] writes it.
 fn finish_of(race: &str) -> &'static str {
+    // The checkpoints are written before the race's `missed`; what follows
+    // it (a racer, a board) names anchors of its own.
+    let race = &race[..race
+        .find(r#""missed""#)
+        .expect("a race says when one is missed")];
     let at = race
         .rfind(r#""anchor/"#)
         .expect("a race names a checkpoint")

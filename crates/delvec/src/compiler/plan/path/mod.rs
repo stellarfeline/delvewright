@@ -1873,6 +1873,13 @@ pub(super) fn build_critical_path(
         let Objective::ReachAnchor { anchor, radius, .. } = o else {
             return None;
         };
+        // spec-0139 §4: a reach that runs a course is completed by the race
+        // being over, not by a body in its volume, so nothing completes it
+        // out of turn and a ride through its finish (`DW1144`) is kept out
+        // of nothing.
+        if o.course().is_some() {
+            return None;
+        }
         let area = campaign
             .quest_plan
             .content
