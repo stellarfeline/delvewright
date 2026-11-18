@@ -33,6 +33,9 @@ use crate::compiler::plan::Plan;
 
 use super::DW_AREA_UNCLICKABLE;
 
+/// An area's box, as its inclusive corners.
+pub type AreaBox = ([i32; 3], [i32; 3]);
+
 /// Where an area `interact` is used from, as the build proved it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AreaClick {
@@ -149,7 +152,7 @@ pub fn area_click(
 
 /// The area `interact`s this build places, as `(objective id, region, the
 /// cell its anchor resolves to)`, in [`Plan::presses`] order.
-pub fn areas(plan: &Plan) -> Vec<(String, ([i32; 3], [i32; 3]), [i32; 3])> {
+pub fn areas(plan: &Plan) -> Vec<(String, AreaBox, [i32; 3])> {
     use crate::compiler::pressable::Owner;
     plan.presses()
         .iter()
@@ -197,7 +200,7 @@ pub fn fix_area_clicks<'p>(plan: &'p Plan, world: &World) -> &'p BTreeMap<String
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AreaBinding {
     /// `(objective id, region, its click)`, in [`Plan::presses`] order.
-    pub areas: Vec<(String, ([i32; 3], [i32; 3]), AreaClick)>,
+    pub areas: Vec<(String, AreaBox, AreaClick)>,
 }
 
 impl AreaBinding {
