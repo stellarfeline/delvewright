@@ -47,3 +47,13 @@ Reader: the content work that composes an errand out of vanilla acts — fishing
 - **`/summon` calls `finalizeSpawn` only without an NBT argument.** `SummonCommand.createEntity` takes a flag the three forms pass: `summon <entity>` and `summon <entity> <pos>` pass true, `summon <entity> <pos> <nbt>` passes false, and `finalizeSpawn` runs only when the flag is true.
 
 **[authored]** A cat summoned with no NBT has a random coat. A cat summoned with any NBT — and every body the engine summons carries NBT, its tags at least — is `minecraft:black` with a red collar unless the NBT names `variant` (and `CollarColor`). A cat whose coat the story means is given it by `variant` in its summon, or `minecraft:cat/variant` on the egg or stack it comes from.
+
+## 5. Which bodies a water bucket picks up
+
+**[cited]** Read from the same jar and mappings (§ The read site), by `javap -p -c` over every top-level class of the jar.
+
+- **The implementers.** Exactly two classes declare `implements Bucketable`: `axolotl.Axolotl` and `fish.AbstractFish`. The concrete subclasses of `AbstractFish` are `fish.Pufferfish` and `frog.Tadpole` directly, and `fish.Cod`, `fish.Salmon` and `fish.TropicalFish` through `fish.AbstractSchoolingFish`.
+- **The use.** `Axolotl.mobInteract`, `AbstractFish.mobInteract` and `Tadpole.mobInteract` each call `Bucketable.bucketMobPickup(player, hand, this)`, which compares the hand's item to `Items.WATER_BUCKET` and the body's `isAlive()` before it takes the body (§1).
+- **The yield.** `getBucketItemStack` returns a new stack of `Items.AXOLOTL_BUCKET` (`Axolotl`), `COD_BUCKET` (`Cod`), `SALMON_BUCKET` (`Salmon`), `PUFFERFISH_BUCKET` (`Pufferfish`), `TROPICAL_FISH_BUCKET` (`TropicalFish`) and `TADPOLE_BUCKET` (`Tadpole`).
+
+**[authored]** A player holding a water bucket who right-clicks a living axolotl, cod, salmon, pufferfish, tropical fish or tadpole is handed that kind's bucket: six uses, one tool, the engine's `bodies::BODY_USES`. Other vanilla uses that hand an item (a bucket on a cow, goat or mooshroom; a bowl on a mooshroom; shears) are not read here and are not in the table.
