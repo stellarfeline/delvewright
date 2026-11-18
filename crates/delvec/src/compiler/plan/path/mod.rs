@@ -695,9 +695,16 @@ fn choices_before(
 ///   A format change for `4`'s reason: a format-15 bot would refuse the keys,
 ///   and one that ignored them would look for one box at the anchor.
 ///
+/// * `17` — a gathered `collect` step whose item a use on a body yields
+///   carries `use: {item, on}` ([`crate::compiler::bodies::use_yielding`]):
+///   the harness holds `item` and right-clicks a body of kind `on` it acquires
+///   by the crosshair ray, instead of being handed the item. A format change
+///   for `4`'s reason: a format-16 bot would refuse the key, and one that
+///   ignored it would hand itself an item a player must earn by the act.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 16;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 17;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).

@@ -202,6 +202,147 @@ pub fn npc_hitbox_answer_tags(c: &Campaign, npc: &str) -> Vec<String> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// A box steps aside for the body's own use
+// ---------------------------------------------------------------------------
+
+/// **The uses a body of a kind takes from a held item, and what each puts in
+/// the hand**: `(yield, tool, kind)` — a player holding `tool` who right-clicks
+/// a living body of `kind` is handed `yield`. Vanilla 1.21.11, read from the
+/// pinned jar (`docs/reference/fishing-buckets-and-cat-coats.md` §5): every
+/// class that implements `Bucketable` (`Axolotl`, and `AbstractFish` with its
+/// subclasses `Cod`, `Salmon`, `TropicalFish`, `Pufferfish`, `Tadpole`) answers
+/// `mobInteract` with `Bucketable.bucketMobPickup`, which takes the body when
+/// the hand holds `Items.WATER_BUCKET`, and hands the class's
+/// `getBucketItemStack`. In item order, so the table reads as data.
+pub const BODY_USES: &[(&str, &str, &str)] = &[
+    (
+        "minecraft:axolotl_bucket",
+        "minecraft:water_bucket",
+        "minecraft:axolotl",
+    ),
+    (
+        "minecraft:cod_bucket",
+        "minecraft:water_bucket",
+        "minecraft:cod",
+    ),
+    (
+        "minecraft:pufferfish_bucket",
+        "minecraft:water_bucket",
+        "minecraft:pufferfish",
+    ),
+    (
+        "minecraft:salmon_bucket",
+        "minecraft:water_bucket",
+        "minecraft:salmon",
+    ),
+    (
+        "minecraft:tadpole_bucket",
+        "minecraft:water_bucket",
+        "minecraft:tadpole",
+    ),
+    (
+        "minecraft:tropical_fish_bucket",
+        "minecraft:water_bucket",
+        "minecraft:tropical_fish",
+    ),
+];
+
+/// **The use that yields `item`** ([`BODY_USES`]): `(tool, kind)` — the item a
+/// player holds and the kind of body they use it on — or `None` for an item no
+/// use on a body hands. The one lookup the answer box's window
+/// ([`owed_uses`]) and the critical path's act (`critical-path.json`'s `use`)
+/// both ask, so the act the bot performs is the act the box steps aside for.
+pub fn use_yielding(item: &str) -> Option<(&'static str, &'static str)> {
+    BODY_USES
+        .iter()
+        .find(|(y, _, _)| *y == item)
+        .map(|(_, tool, kind)| (*tool, *kind))
+}
+
+/// One **use a gathered `collect` is owed on an actor's body**: the objective
+/// whose item a use on the body yields ([`BODY_USES`]), and the actor that
+/// wears an answer box over a body of that kind.
+#[derive(Clone, Debug)]
+pub struct OwedUse<'c> {
+    /// The gathered collect.
+    pub objective: &'c str,
+    /// The actor whose box steps aside while the collect is open.
+    pub actor: &'c delvewright_dsl::Actor,
+    /// The item the use takes, in the hand.
+    pub tool: &'static str,
+    /// The kind the use is made on.
+    pub kind: &'static str,
+}
+
+/// **Every use a gathered `collect` is owed on a boxed body**: for each
+/// `collect` declaring `gathered` whose item a use on a body yields
+/// ([`BODY_USES`]), every actor that wears an answer box
+/// ([`actor_box_trigger_tags`] non-empty) over a body of that kind
+/// ([`BodyRef::worn_entity`]). An answer box encloses its body and the ray
+/// picks the first box it meets (`crosshair.rs`), so a box takes every
+/// right-click meant for the body under it — the use the collect is got by
+/// included. The quantifier is every body of the kind, wherever it stands: the
+/// collect is judged by possession, so a use on any body of the kind completes
+/// it, and each is its possible object. Objectives in declaration order, then
+/// actors in declaration order (ADR-0006).
+pub fn owed_uses(c: &Campaign) -> Vec<OwedUse<'_>> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            let delvewright_dsl::Objective::Collect {
+                item,
+                gathered: true,
+                ..
+            } = o
+            else {
+                continue;
+            };
+            if let Some((tool, kind)) = use_yielding(item) {
+                for a in &c.quests.content.actors {
+                    if BodyRef::Actor(a).worn_entity() == kind
+                        && !actor_box_trigger_tags(c, a.id.as_str()).is_empty()
+                    {
+                        out.push(OwedUse {
+                            objective: o.id().as_str(),
+                            actor: a,
+                            tool,
+                            kind,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The build line [`owed_uses`] prints, zeroes included: `G` gathered
+/// collects, `Y` of them got by a use on a body, `U` boxes that step aside.
+pub fn owed_use_line(c: &Campaign) -> String {
+    let gathered: Vec<&delvewright_dsl::Objective> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter(|o| o.collect_gathered())
+        .collect();
+    let by_use = gathered
+        .iter()
+        .filter(|o| match o {
+            delvewright_dsl::Objective::Collect { item, .. } => use_yielding(item).is_some(),
+            _ => false,
+        })
+        .count();
+    format!(
+        "body uses: {} gathered collect(s), {by_use} got by a use on a body; {} answer box(es) \
+         step aside while their collect is open",
+        gathered.len(),
+        owed_uses(c).len()
+    )
+}
+
 impl BodyAnswer<'_> {
     /// The answer lowered into the general verb: a repeatable press with no cell
     /// of its own — it rides its body's box — that puts the campaign's line on
