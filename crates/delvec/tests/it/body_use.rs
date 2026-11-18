@@ -13,7 +13,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
-use serde_json::{Value, json};
+use serde_json::json;
 
 const FN_DIR: &str = "datapack/data/hello-world/function";
 
@@ -141,7 +141,7 @@ fn a_box_over_a_body_a_gathered_use_is_owed_on_steps_aside_while_the_collect_is_
     let spawn = function(&out, "spawn_actor_pip").unwrap();
     let held = [
         "scoreboard players set #abody_aside dw.sys 0",
-        "execute if score #act_o_scoop dw.sys matches 1 unless score #party dw.o_o_scoop matches 1 \
+        "execute if score #act_scoop dw.sys matches 1 unless score #party dw.o_scoop matches 1 \
          run scoreboard players set #abody_aside dw.sys 1",
     ];
     for l in held {
@@ -166,7 +166,7 @@ fn a_box_over_a_body_a_gathered_use_is_owed_on_steps_aside_while_the_collect_is_
     );
     let order = |needle: &str| done.lines().position(|l| l.contains(needle)).unwrap();
     assert!(
-        order("dw.o_o_scoop 1") < order("set #abody_aside dw.sys 0"),
+        order("dw.o_scoop 1") < order("set #abody_aside dw.sys 0"),
         "the collect is done before the box asks whether it is open:\n{done}"
     );
 }
