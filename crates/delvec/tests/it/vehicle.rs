@@ -2309,8 +2309,9 @@ fn passes_box(
 /// medium passes a cell of every checkpoint in the order the race writes
 /// them, whatever the shorter way is; the race is emitted with its body, its
 /// start and its end; and the objective waits for the race to be over.
-/// Perturbation: the same two checkpoints written the other way round are
-/// passed the other way round.
+/// Perturbation: the same two checkpoints written the other way round — the
+/// east first, then the bridge, finishing at the east again — are passed the
+/// other way round.
 #[test]
 fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     let out = course_build(
@@ -2328,9 +2329,12 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     );
     assert!(a < b, "the bridge checkpoint is passed first: {medium:?}");
 
+    // Written east first, and finishing at the east again: a finish on the
+    // bridge cannot be reached inside (`DW1144`) without the reach's volume
+    // walling the one way across the pool, which the ride keeps out of.
     let back = course_build(
         "course-reversed",
-        course_bay(race(&["cp-east", "cp-bridge"], "")),
+        course_bay(race(&["cp-east", "cp-bridge", "cp-east"], "")),
         START_RACE,
     )
     .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
@@ -2339,8 +2343,8 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     let east = passes(medium, 14, 7).expect("the east checkpoint");
     let bridge = medium
         .iter()
-        .rposition(|c| (7..=11).contains(&cell(c)[0]) && cell(c)[2] == 7)
-        .expect("the bridge checkpoint, the finish");
+        .rposition(|c| cell(c)[0] == 9 && cell(c)[2] == 7)
+        .expect("the bridge checkpoint");
     assert!(
         east < bridge,
         "written the other way round, the east checkpoint is passed first and the ride comes \
