@@ -696,6 +696,9 @@ export class MineflayerExecutor implements StepExecutor {
   /** The body the server last named as hitting the bot, and when — the health drop
    * that follows the damage packet is that body's blow. */
   lastNamedHit: { readonly id: number; readonly at: number } | undefined;
+  /** Format 18: how much longer the step under way may wait for its objective's
+   * race to be over (`raceWaitTicks`), in ms; 0 for every other step. */
+  stepRaceWaitMs = 0;
   /** The damage-type registry this connection was sent (`damage-type.ts`). */
   readonly damageTypes = new DamageTypes();
   /** The damage type of the bot's last hit, as the server named it, and when. */

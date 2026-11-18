@@ -300,6 +300,31 @@ pub(super) struct CutsceneHolds<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// **How long after its own act an objective that runs a race's course may
+/// wait for that race to be over** (spec-0139 §3), in ticks: the race's
+/// `grace_ticks` — the race is over that long after its first finisher at the
+/// latest — or, for a race with no grace, the longest walk any of its listed
+/// racers is planned (a party's finish waits on them alone). `None` for an
+/// objective with no course, and for a race with neither, whose end is the
+/// party's own finish.
+pub(super) fn race_wait_ticks(
+    plan: &Plan,
+    objective: &str,
+    actor_moves: &[crate::compiler::nav::ActorMovePlan],
+) -> Option<u64> {
+    let (_, o) = plan::objective_quest(plan.campaign, objective)?;
+    let race = plan.campaign.quests.content.race(o.course()?.as_str())?;
+    if let Some(g) = race.grace_ticks {
+        return Some(u64::from(g));
+    }
+    actor_moves
+        .iter()
+        .filter(|m| race.racers.iter().any(|a| a.as_str() == m.actor))
+        .map(|m| m.ticks() as u64)
+        .max()
+        .filter(|t| *t > 0)
+}
+
 pub(super) fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
@@ -688,6 +713,15 @@ pub(super) fn critical_path_json(
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("census".to_string(), Value::Array(census));
+            }
+            // Format 18 (spec-0139 §3–§4): a step whose objective runs a
+            // race's course completes when that race is over, which is up to
+            // the race's grace after its first finisher — or, with no grace,
+            // when its slowest listed racer is in — whatever the party did.
+            if let Some(ticks) = s.objective().and_then(|o| race_wait_ticks(plan, o, actor_moves))
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("race_wait_ticks".to_string(), json!(ticks));
             }
             // Format 6: every step says which bodies it is walked beside —
             // empty included, because a step that cannot say is one the

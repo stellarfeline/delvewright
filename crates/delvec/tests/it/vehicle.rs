@@ -2687,3 +2687,40 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
         "the credit, which runs as actors too, never calls down the compass"
     );
 }
+
+/// Critical-path format 18: the step whose objective runs a course says how
+/// long its race may still run after its act — the race's grace — so the bot
+/// waits for the race's end by the export and not by its fixed completion
+/// wait; a course with no grace and no listed racer ends at the party's own
+/// finish and carries nothing. Red on an export with no `race_wait_ticks`.
+#[test]
+fn a_course_step_carries_how_long_its_race_may_still_run() {
+    let exit = |out: &BuildOutput| -> serde_json::Value {
+        let cp: serde_json::Value = serde_json::from_str(&text(out, "critical-path.json")).unwrap();
+        cp["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["objective"] == "obj/exit")
+            .cloned()
+            .expect("the exit's step")
+    };
+    let graced = course_build(
+        "course-wait",
+        course_bay(race(&["cp-bridge", "cp-east"], r#", "grace_ticks": 600"#)),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let step = exit(&graced);
+    assert_eq!(step["race_wait_ticks"], 600, "{step:#}");
+    let cp: serde_json::Value = serde_json::from_str(&text(&graced, "critical-path.json")).unwrap();
+    assert_eq!(cp["format_version"], 18);
+    let open = course_build(
+        "course-no-wait",
+        course_bay(race(&["cp-bridge", "cp-east"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let step = exit(&open);
+    assert!(step.get("race_wait_ticks").is_none(), "{step:#}");
+}
