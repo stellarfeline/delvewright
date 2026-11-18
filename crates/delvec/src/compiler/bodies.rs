@@ -251,7 +251,7 @@ pub const BODY_USES: &[(&str, &str, &str)] = &[
 /// One **use a gathered `collect` is owed on an actor's body**: the objective
 /// whose item a use on the body yields ([`BODY_USES`]), and the actor that
 /// wears an answer box over a body of that kind.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct OwedUse<'c> {
     /// The gathered collect.
     pub objective: &'c str,
