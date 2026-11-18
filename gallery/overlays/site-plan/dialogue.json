@@ -82,9 +82,42 @@
                   }
                 ],
                 "label": "Show me."
+              },
+              {
+                "label": "Who stood the muster?",
+                "next": "dlg/marshal-roll"
               }
             ],
             "text": "From up here the whole hall is one picture."
+          },
+          {
+            "id": "dlg/marshal-roll",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "flag": "flag/roll-remembered",
+                    "type": "set-flag"
+                  }
+                ],
+                "forbids_flags": [
+                  "flag/roll-remembered"
+                ],
+                "happening": {
+                  "subject": "npc/marshal",
+                  "text": "The party promise the Marshal to remember the roll.",
+                  "verb": "learns"
+                },
+                "label": "I'll remember the roll.",
+                "next": "dlg/marshal-root",
+                "tooltip": "Promise the Marshal to remember the names on the roll."
+              },
+              {
+                "label": "Back.",
+                "next": "dlg/marshal-root"
+              }
+            ],
+            "text": "Every name on the roll is carved in the loft's rail. Most of them never came back to read it."
           }
         ],
         "npc": "npc/marshal",
