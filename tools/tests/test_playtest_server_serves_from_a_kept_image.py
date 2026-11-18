@@ -462,8 +462,6 @@ if args[:1] == ["exec"]:
     cmd = args[-1]
     if cmd.startswith("execute if score #placed"):
         done("Test passed")
-    if cmd == "scoreboard objectives list":
-        done("There are 2 objective(s): [dw.sys], [dw.class]")
     done("Unknown or incomplete command")
 done()
 '''

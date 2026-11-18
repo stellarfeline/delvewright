@@ -329,8 +329,6 @@ if args[:1] == ["exec"]:
         done("Test passed" if m.group(1) in st["done"] else "Test failed")
     if cmd.startswith("execute if score #placed"):
         done("Test passed")
-    if cmd == "scoreboard objectives list":
-        done("There are 2 objective(s): [dw.sys], [dw.class]")
     if cmd == "save-off":
         st["saving"] = False
         done("Automatic saving is now disabled")
