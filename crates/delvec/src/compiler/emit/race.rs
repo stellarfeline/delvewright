@@ -217,10 +217,15 @@ pub(super) fn race_fns(plan: &Plan, guide: &super::guidance::Guide) -> Vec<(Stri
             format!("execute if score @s {nx} matches {n}.. run scoreboard players set @s {nx} 0"),
         ];
         // A compass that follows this race's course turns to the credited
-        // player's next checkpoint on the tick of the credit.
+        // player's next checkpoint on the tick of the credit: the credit marks
+        // the player, and the guidance tick, run as the marked players, re-aims
+        // it. Not a call from here: the body runs as every listed actor too,
+        // and a call down the compass from a fork over actors is a chain no
+        // declaration can state.
         if guide.follows_course(id) {
             pass.push(format!(
-                "execute if entity @s[type=minecraft:player] run function {ns}:compass_aim_followed"
+                "tag @s[type=minecraft:player] add {}",
+                super::guidance::REAIM_TAG
             ));
         }
         pass.push(format!(

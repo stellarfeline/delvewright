@@ -2648,11 +2648,25 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
     let pass = function(&out, "race_pig_race_pass");
     let reaim = pass
         .lines()
-        .position(|l| l == "execute if entity @s[type=minecraft:player] run function hello-world:compass_aim_followed")
-        .unwrap_or_else(|| panic!("a credit re-aims the compass: {pass}"));
+        .position(|l| l == "tag @s[type=minecraft:player] add dw_caim_next")
+        .unwrap_or_else(|| panic!("a credit marks the player for a re-aim: {pass}"));
     let fin = pass
         .lines()
         .position(|l| l.contains("race_pig_race_finish"))
         .unwrap();
-    assert!(reaim < fin, "re-aimed before the finish returns: {pass}");
+    assert!(reaim < fin, "marked before the finish returns: {pass}");
+    let tick = function(&out, "tick");
+    let aimed = tick
+        .lines()
+        .position(|l| l == "execute as @a[tag=dw_caim_next] run function hello-world:compass_aim_followed")
+        .unwrap_or_else(|| panic!("the tick re-aims a credited player: {tick}"));
+    let body = tick
+        .lines()
+        .position(|l| l.contains("run function hello-world:race_pig_race_body"))
+        .unwrap();
+    assert!(body < aimed, "after the race credits it, in the same tick: {tick}");
+    assert!(
+        !function(&out, "race_pig_race_pass").contains("compass_aim"),
+        "the credit, which runs as actors too, never calls down the compass"
+    );
 }

@@ -42,6 +42,10 @@ const SEEDED_TAG: &str = "dw_guide_seeded";
 const EPOCH: &str = "#epoch";
 /// The twenty-tick clock that re-aims a compass following a body or a wave.
 const CLOCK: &str = "#gclock";
+/// The tag a race's credit puts on the player it credits, whose compass
+/// follows that race's course: the tick re-aims every player carrying it and
+/// takes it off.
+pub(super) const REAIM_TAG: &str = "dw_caim_next";
 /// The engine compass's `custom_data`.
 pub(super) const COMPASS_DATA: &str = "{dw_compass:1b}";
 /// The journal's `custom_data`.
@@ -1129,6 +1133,14 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
             v.push(format!(
                 "execute if score {CLOCK} {GUIDE} matches 0 as @a[scores={{{ON_BODY}=1}}] run function {ns}:compass_aim_followed"
             ));
+        }
+        // spec-0139 §4: a player a race credited this tick turns to its next
+        // checkpoint now (`emit::race`).
+        if g.tracked().any(|w| matches!(w.target, Some(Target::Course { .. }))) {
+            v.push(format!(
+                "execute as @a[tag={REAIM_TAG}] run function {ns}:compass_aim_followed"
+            ));
+            v.push(format!("tag @a remove {REAIM_TAG}"));
         }
     }
     v
