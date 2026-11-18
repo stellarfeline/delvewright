@@ -7,8 +7,8 @@
 //! place the party can make that use from, and an area whose declared top face
 //! the world leaves open to it:
 //!
-//! * **a stance** — a standable cell of the walk region the party walks to on
-//!   cue (rooted at every placed anchor), outside the area's own columns, from whose eye a cell of the
+//! * **a stance** — a standable cell of the walk region a shot's stance is
+//!   chosen in (from where the party begins), outside the area's own columns, from whose eye a cell of the
 //!   area's top face is within the entity reach
 //!   ([`crate::compiler::crosshair::INTERACTION_REACH`]) along a line no solid
 //!   block stops ([`eye_point_sees`], the one sight rule a press is judged
@@ -167,15 +167,15 @@ pub fn areas(plan: &Plan) -> Vec<(String, AreaBox, [i32; 3])> {
         .collect()
 }
 
-/// The cells a stance is chosen among: the walk region rooted at every
-/// placed anchor ([`World::walk_region_rooted`]), the cells the party walks to
-/// on cue in whichever area it has been carried to — the relation a holder's
-/// stance is chosen in (`DW1037`). Empty for a campaign with no area.
+/// The cells a stance is chosen among: the one walk a shot's stance is
+/// chosen in ([`super::shot::act_stance_walk`]) — the stance is where the
+/// route proof's leg to the step ends and the bot acts from. Empty for a
+/// campaign with no area.
 pub(super) fn area_walk(plan: &Plan, world: &World) -> BTreeSet<[i32; 3]> {
     if areas(plan).is_empty() {
         return BTreeSet::new();
     }
-    world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+    super::shot::act_stance_walk(plan, world)
 }
 
 /// Every area's click over `world`, by objective id; an area with none is

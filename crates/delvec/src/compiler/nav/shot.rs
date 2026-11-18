@@ -220,12 +220,8 @@ pub fn check_shots(plan: &Plan, world: &World) -> Result<ShotBinding, Failure> {
     Ok(b)
 }
 
-/// The cells a stance is chosen among: the walk region from where the party
-/// begins ([`Plan::campaign_start`], [`World::walk_region`]), every cell of
-/// which a leg's walk reaches from the party's own ground — never a floor only
-/// an anchor of its own seats (a belfry's, beside its target), and never a
-/// ledge only a jump of the launch set lands on. A campaign with no start
-/// takes the walk region from its anchors. Empty for a campaign with no shot.
+/// The cells a shot's stance is chosen among ([`act_stance_walk`]). Empty for
+/// a campaign with no shot.
 fn stance_walk(
     plan: &Plan,
     world: &World,
@@ -234,6 +230,19 @@ fn stance_walk(
     if targets.is_empty() {
         return BTreeSet::new();
     }
+    act_stance_walk(plan, world)
+}
+
+/// **The cells an act's stance is chosen among** — a shot's, and an area
+/// `interact`'s (`nav::area`): the cell the route proof's leg to the step
+/// ends at and the bot acts from, so a cell a leg's walk reaches. The walk
+/// region from where the party begins ([`Plan::campaign_start`],
+/// [`World::walk_region`]), every cell of which a leg's walk reaches from the
+/// party's own ground — never a floor only an anchor of its own seats (a
+/// belfry's, beside its target), and never a ledge only a jump of the launch
+/// set lands on. A campaign with no start takes the walk region from its
+/// anchors. The one entry point for that question.
+pub(super) fn act_stance_walk(plan: &Plan, world: &World) -> BTreeSet<[i32; 3]> {
     match plan.campaign_start() {
         Some((_, pos)) => world.walk_region(&[pos]),
         None => world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan)),

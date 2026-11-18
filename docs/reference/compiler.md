@@ -4965,7 +4965,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   an effect running it fires, `plan::firing_of`); `vehicle_seat_<v>` (at setup
   for a vehicle seated `at-load`; for one seated `by-story`, at every step a
   `seat-vehicle` naming it fires, so the load world holds no such body,
-  spec-0135 §2); and the `trap_` and `loop_`
+  spec-0135 §2); `area_obj_<obj>` (an area `interact`'s tiles, at setup);
+  and the `trap_` and `loop_`
   functions (unforced) — every `summon`, `setblock` and `item replace block`
   line (under an `execute … run` prefix too), every `kill @e[tag=…]` and every
   unseen hand-off. **Each such line is written back from its row**
