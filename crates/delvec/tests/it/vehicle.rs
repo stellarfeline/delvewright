@@ -2623,7 +2623,7 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
         "the exit completes once the race is over, wherever the party stands: {}",
         done[0]
     );
-    let aim = function(&out, "compass_aim_course_o_exit");
+    let aim = function(&out, "compass_aim_course_exit");
     let lines: Vec<&str> = aim.lines().collect();
     assert!(
         lines[0].starts_with("execute unless score #ron_pig_race dw.sys matches 1 run return run function hello-world:compass_aim {"),
@@ -2653,7 +2653,7 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
     }
     assert!(
         function(&out, "compass_aim_followed")
-            .contains("run function hello-world:compass_aim_course_o_exit"),
+            .contains("run function hello-world:compass_aim_course_exit"),
         "the followed course objective aims through the course"
     );
     let pass = function(&out, "race_pig_race_pass");
