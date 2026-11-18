@@ -1694,8 +1694,7 @@ class Plot(Place):
             if tuple(u["cell"]) not in ground_cells:
                 problems.append(f"  {u['block']} at {tuple(u['cell'])}: the server drops it; it needs {u['needs']}")
         for rf in (rf for rf in answer["refused"] if rf["block"].split("[")[0] in own):
-            route = f" — {rf['route']}" if rf.get("route") else ""
-            problems.append(f"  {rf['block']}: the palette refuses it (DW0730){route}")
+            problems.append(f"  {rf['block']}: the palette refuses it, a code-injection vector (DW0731)")
         if problems:
             sys.exit("starter.py: the model writes blocks the engine refuses:\n" + "\n".join(problems))
         if m.skipped:

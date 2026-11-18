@@ -11,12 +11,10 @@ Why this exists
 
 The game datafixes every structure ``.nbt`` it loads against the ``DataVersion``
 the file declares, so a pre-pin template naming ``minecraft:chain`` loads
-``minecraft:iron_chain`` and is correct. Two checks in ``delvec prefab audit`` then
-disagreed about it: the spelling rule (``DW0734``) passed it as a warning because
-the fixer handles it, and the palette allowlist (``DW0730``) refused it in the
-next breath, because the allowlist is a list of names AT THE PIN and was being
-applied to a name written in an older vocabulary. The allowlist has to judge the
-id the game will actually load, which is what this table supplies.
+``minecraft:iron_chain`` and is correct. ``delvec prefab audit`` judges the id
+the game will actually load, which is what this table supplies: a pre-pin id it
+maps is a warning (``DW0734``), and a pre-pin id it does not reach is a dead id
+the audit refuses (``DW0733``).
 
 What is derived, and what is not
 --------------------------------
@@ -42,7 +40,7 @@ Two halves, and only one of them is a judgement call:
   nearest-name suggestion for ``chain`` is ``copper_chain``.
 
 A removal the recipe graph cannot pair is **reported and left out**. That is the
-honest state: the audit then still refuses the id under ``DW0730``, a reviewer
+honest state: the audit then still refuses the id under ``DW0733``, a reviewer
 sees a name the pin does not have, and nothing is invented. Incompleteness here
 costs a false red, never a false pass.
 
@@ -239,7 +237,7 @@ def main():
     for name, row in sorted(table.items()):
         print(f"  {name} -> {row['to']} (valid_through {row['valid_through']})")
     for u in undetermined:
-        print(f"  UNDETERMINED {u} — left out; the audit refuses the id (DW0730)")
+        print(f"  UNDETERMINED {u} — left out; the audit refuses the id (DW0733)")
     if steps == 0:
         sys.exit("binding count is zero: no version step was examined")
 

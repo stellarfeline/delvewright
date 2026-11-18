@@ -419,11 +419,8 @@ fn the_four_outcomes_are_distinguishable_in_the_report() {
 /// nothing, which is the exact confusion this field exists to end.
 #[test]
 fn a_report_whose_door_was_never_opened_says_unopened() {
-    let (report, _) = delvec::admit::audit::audit(
-        "fixture",
-        &delvec::admit::fixtures::clean_room(),
-        &delvec::admit::allowlist::Allowlist::default_building(),
-    );
+    let (report, _) =
+        delvec::admit::audit::audit("fixture", &delvec::admit::fixtures::clean_room());
     assert_eq!(report.contract.state, delvec::admit::spatial::UNOPENED);
     let v: serde_json::Value = serde_json::from_str(&report.to_json()).unwrap();
     assert_eq!(v["contract"]["state"], "unopened", "{v}");

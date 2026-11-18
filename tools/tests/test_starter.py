@@ -516,7 +516,7 @@ def test_a_void_the_fixed_ground_stands_in_is_surveyed_as_that_ground(monkeypatc
         solid = {(x, y, z) for x, y, z, b in request["blocks"] if b != "minecraft:structure_void"}
         stand = sorted([x, y, z] for (x, y, z) in {(x, y + 1, z) for x, y, z in solid} if (x, y, z) not in solid)
         return {"standable": stand, "reached": stand, "sealed": [], "joined": [], "unsupported": [],
-                "refused": [{"block": b, "route": None} for b in sorted({b for *_, b in request["blocks"]})
+                "refused": [{"block": b} for b in sorted({b for *_, b in request["blocks"]})
                             if b == "minecraft:podzol"],
                 "containers": [],
                 "malformed": [{"block": b, "why": "leaves out a property"}

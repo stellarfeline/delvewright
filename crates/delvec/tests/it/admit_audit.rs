@@ -1,7 +1,6 @@
 //! Audit fixtures (spec-0007 quality bar): a clean piece, a command-block piece,
-//! a disallowed-palette piece, and an NBT-bearing spawner.
+//! and an NBT-bearing spawner.
 
-use delvec::admit::allowlist::Allowlist;
 use delvec::admit::audit::{audit, audit_tile_set};
 use delvec::admit::fixtures;
 use delvec::admit::meta::{License, PrefabMeta};
@@ -38,7 +37,6 @@ fn a_clean_tile_set_passes_as_one_zone() {
         "zone.json",
         [tiles[0].1.size[0], tiles[0].1.size[1], depth * 2],
         &tiles,
-        &Allowlist::default_building(),
     );
 
     assert!(rep.is_pass(), "{:?}", rep.findings);
@@ -68,12 +66,7 @@ fn a_forbidden_block_in_a_later_tile_fails_the_zone_at_zone_coordinates() {
         tile(0, [0, 0, 0], clean),
         tile(1, [0, 0, depth], fixtures::command_block_piece()),
     ];
-    let (rep, _) = audit_tile_set(
-        "zone.json",
-        [16, 16, depth * 2],
-        &tiles,
-        &Allowlist::default_building(),
-    );
+    let (rep, _) = audit_tile_set("zone.json", [16, 16, depth * 2], &tiles);
 
     assert!(!rep.is_pass(), "a tile is not a unit of judgement");
     assert!(rep.forbidden >= 1);
@@ -116,7 +109,7 @@ fn carved_jigsaw_socket_passes_the_audit() {
         },
     );
     socket::carve(&mut s, &mut meta, &SocketDecl::new([3, 1, 0], "north")).unwrap();
-    let (rep, _) = audit("socketed", &s, &Allowlist::default_building());
+    let (rep, _) = audit("socketed", &s);
     assert!(
         rep.is_pass(),
         "carved socket should pass: {:?}",
@@ -128,10 +121,9 @@ fn carved_jigsaw_socket_passes_the_audit() {
 #[test]
 fn clean_piece_passes() {
     let s = fixtures::clean_room();
-    let (rep, diags) = audit("clean", &s, &Allowlist::default_building());
+    let (rep, diags) = audit("clean", &s);
     assert!(rep.is_pass(), "clean room should pass: {:?}", rep.findings);
     assert_eq!(rep.forbidden, 0);
-    assert_eq!(rep.not_allowlisted, 0);
     assert!(diags.is_empty());
     // palette is reported for reviewer visibility.
     assert!(rep.palette.iter().any(|b| b == "minecraft:stone_bricks"));
@@ -140,7 +132,7 @@ fn clean_piece_passes() {
 #[test]
 fn command_block_piece_is_hard_rejected() {
     let s = fixtures::command_block_piece();
-    let (rep, _) = audit("cb", &s, &Allowlist::default_building());
+    let (rep, _) = audit("cb", &s);
     assert!(!rep.is_pass());
     assert!(rep.forbidden >= 1, "command block must be forbidden");
     // both the block name and the embedded Command are DW0731.
@@ -152,37 +144,15 @@ fn command_block_piece_is_hard_rejected() {
 #[test]
 fn spawner_with_nbt_is_hard_rejected() {
     let s = fixtures::spawner_piece();
-    let (rep, _) = audit("sp", &s, &Allowlist::default_building());
+    let (rep, _) = audit("sp", &s);
     assert!(!rep.is_pass());
     assert!(rep.findings.iter().any(|f| f.code == "DW0731"));
 }
 
 #[test]
-fn disallowed_palette_block_fails_allowlist() {
-    let s = fixtures::disallowed_palette_piece();
-    let (rep, _) = audit("tnt", &s, &Allowlist::default_building());
-    assert!(!rep.is_pass());
-    assert_eq!(rep.forbidden, 0, "tnt is not a code-injection vector");
-    assert!(rep.not_allowlisted >= 1);
-    assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
-}
-
-#[test]
-fn allowlist_override_can_admit_a_surprising_block() {
-    let s = fixtures::disallowed_palette_piece();
-    let allow = Allowlist::from_file(r#"{ "allow": ["minecraft:air","minecraft:stone_bricks","minecraft:glowstone","minecraft:tnt"] }"#).unwrap();
-    let (rep, _) = audit("tnt", &s, &allow);
-    assert!(
-        rep.is_pass(),
-        "override should admit tnt: {:?}",
-        rep.findings
-    );
-}
-
-#[test]
 fn report_json_is_machine_readable() {
     let s = fixtures::command_block_piece();
-    let (rep, _) = audit("cb", &s, &Allowlist::default_building());
+    let (rep, _) = audit("cb", &s);
     let json = rep.to_json();
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(v["verdict"], "fail");
@@ -200,7 +170,7 @@ fn report_json_is_machine_readable() {
 #[test]
 fn a_block_the_pinned_version_does_not_have_fails_the_audit() {
     let s = fixtures::renamed_block_piece();
-    let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
+    let (rep, _) = audit("ropes", &s);
     assert!(!rep.is_pass());
     assert_eq!(rep.unknown_blocks, 1);
     assert_eq!(
@@ -226,7 +196,7 @@ fn the_rename_passes_the_audit() {
         delvec::admit::structure::PaletteEntry::simple("minecraft:iron_chain"),
         None,
     );
-    let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
+    let (rep, _) = audit("ropes", &s);
     assert_eq!(rep.unknown_blocks, 0);
     assert!(rep.is_pass(), "{:?}", rep.findings);
 }
@@ -238,23 +208,14 @@ fn the_rename_passes_the_audit() {
 /// `minecraft:chain`, loads fine); refusing it under `DW0733` was a measured
 /// false positive. The audit warns — loud enough to catch a typo no fixer will
 /// ever map — and passes.
-///
-/// The allowlist is the DEFAULT one on purpose. This test used to hand it a
-/// bespoke list containing `minecraft:chain`, "so the test isolates the
-/// DataVersion rule" — and that workaround was the whole defect in miniature:
-/// the default list does not contain `minecraft:chain` (it contains
-/// `minecraft:iron_chain`, which is the block the server holds), so the audit
-/// warned in one breath and refused the identical cell under `DW0730` in the
-/// next. Nothing here isolates that any more; the two rules have to agree.
 #[test]
 fn a_pre_pin_template_with_a_datafixable_id_warns_instead_of_failing() {
     let mut s = fixtures::renamed_block_piece();
     s.data_version = 2975; // hero-temple-ruin-arch's actual DataVersion
-    let (rep, _) = audit("arch", &s, &Allowlist::default_building());
+    let (rep, _) = audit("arch", &s);
     assert!(rep.is_pass(), "{:?}", rep.findings);
     assert_eq!(rep.unknown_blocks, 0);
     assert_eq!(rep.pre_pin_unknown, 1);
-    assert_eq!(rep.not_allowlisted, 0);
     let f = rep
         .findings
         .iter()
@@ -268,28 +229,24 @@ fn a_pre_pin_template_with_a_datafixable_id_warns_instead_of_failing() {
     assert!(f.message.contains("minecraft:iron_chain"), "{}", f.message);
 }
 
-/// `DW0730` over the id the game LOADS, in both directions.
-///
-/// The allowlist is a list of names at the pin, so a pre-pin palette must be
-/// resolved before it is judged — but resolving it must not become a way in.
-/// Both halves are asserted here, because a fix that only made the arch pass
-/// would be indistinguishable from widening the list.
+/// **Resolving a pre-pin id is not a way in.** A renamed id is admitted on
+/// the id the game loads; the same id at the pin is refused (`DW0733`), and a
+/// pre-pin id no derived rename reaches is a dead id, refused under `DW0733`
+/// rather than warned about — it loads as air.
 #[test]
-fn the_allowlist_judges_the_id_the_game_loads_and_still_refuses_a_dead_one() {
-    // 1. The renamed id resolves to an allowlisted block: admitted.
+fn a_dead_id_is_refused_and_a_renamed_one_admitted() {
+    // 1. The renamed id resolves to a block the pin holds: admitted.
     let mut arch = fixtures::renamed_block_piece();
     arch.data_version = 2975;
-    let (rep, _) = audit("arch", &arch, &Allowlist::default_building());
-    assert_eq!(rep.not_allowlisted, 0, "{:?}", rep.findings);
+    let (rep, _) = audit("arch", &arch);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
 
-    // 2. The SAME id at the pin resolves to nothing — no fixer runs — so it is
-    //    still refused, and by both rules.
+    // 2. The SAME id at the pin resolves to nothing — no fixer runs.
     let mut at_pin = fixtures::renamed_block_piece();
     at_pin.data_version = delvec::schem::blocks::PIN_DATA_VERSION;
-    let (rep, _) = audit("bell-tower", &at_pin, &Allowlist::default_building());
+    let (rep, _) = audit("bell-tower", &at_pin);
     assert!(!rep.is_pass());
-    assert_eq!(rep.unknown_blocks, 1);
-    assert_eq!(rep.not_allowlisted, 1, "{:?}", rep.findings);
+    assert_eq!(rep.unknown_blocks, 1, "{:?}", rep.findings);
 
     // 3. A pre-pin id nothing renames stays refused: resolution is not a pass.
     let mut typo = fixtures::clean_room();
@@ -299,27 +256,15 @@ fn the_allowlist_judges_the_id_the_game_loads_and_still_refuses_a_dead_one() {
         delvec::admit::structure::PaletteEntry::simple("minecraft:chian"),
         None,
     );
-    let (rep, _) = audit("typo", &typo, &Allowlist::default_building());
+    let (rep, _) = audit("typo", &typo);
     assert!(!rep.is_pass());
-    assert_eq!(rep.not_allowlisted, 1, "{:?}", rep.findings);
-
-    // 4. A pre-pin rename whose TARGET the allowlist does not permit is refused
-    //    on the target, and the diagnostic names both ids — otherwise the
-    //    reviewer is sent to look for a block the file does not contain.
-    let narrow = Allowlist::from_file(
-        r#"{ "allow": ["minecraft:air", "minecraft:stone_bricks", "minecraft:glowstone"] }"#,
-    )
-    .unwrap();
-    let (rep, _) = audit("arch", &arch, &narrow);
-    assert!(!rep.is_pass());
-    assert_eq!(rep.not_allowlisted, 1);
+    assert_eq!((rep.unknown_blocks, rep.pre_pin_unknown), (1, 0));
     let f = rep
         .findings
         .iter()
-        .find(|f| f.code == "DW0730")
-        .expect("DW0730 must fire");
-    assert!(f.message.contains("minecraft:iron_chain"), "{}", f.message);
-    assert!(f.message.contains("minecraft:chain"), "{}", f.message);
+        .find(|f| f.code == "DW0733")
+        .expect("DW0733 must fire");
+    assert!(f.message.contains("minecraft:chian"), "{}", f.message);
     assert!(f.message.contains("2975"), "{}", f.message);
 }
 
@@ -343,7 +288,7 @@ fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
         delvec::admit::structure::PaletteEntry::simple("minecraft:lantern"),
         None,
     );
-    let (rep, _) = audit("grate", &s, &Allowlist::default_building());
+    let (rep, _) = audit("grate", &s);
     assert!(!rep.is_pass());
     assert_eq!(rep.underspecified, 1, "the lantern must not be flagged");
     let f = rep
@@ -374,24 +319,15 @@ fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
         ),
         None,
     );
-    let (rep, _) = audit("grate", &s, &Allowlist::default_building());
+    let (rep, _) = audit("grate", &s);
     assert_eq!(rep.underspecified, 0);
     assert!(rep.is_pass(), "{:?}", rep.findings);
 }
 
-/// **A merchant's anvil and a trap's trapped chest are building material.**
-///
-/// Both were refused (`DW0730`) by omission, not by the list's rationale: the
-/// allowlist flags redstone *contraptions*, tnt and note blocks, and admits the
-/// trigger blocks a trap is built from (`_pressure_plate`, `_button`). A trapped
-/// chest is the visible trigger of the compiler's own `trapped-chest` trap, so a
-/// library that cannot carry one cannot build that trap at all; an anvil is
-/// job-site furniture a player uses, like the grindstone and smithing table
-/// already on the list, and its fall is the gravity gate's business. Every
-/// damage stage is judged, because a prefab that dresses a forge with a worn
-/// anvil is the same object.
+/// **A merchant's anvil and a trap's trapped chest are building material**,
+/// every damage stage of the anvil included.
 #[test]
-fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
+fn an_anvil_and_a_trapped_chest_pass_the_audit() {
     let admitted = [
         "minecraft:anvil",
         "minecraft:chipped_anvil",
@@ -406,29 +342,19 @@ fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
             None,
         );
     }
-    let (rep, _) = audit("forge", &s, &Allowlist::default_building());
+    let (rep, _) = audit("forge", &s);
     assert!(rep.is_pass(), "{:?}", rep.findings);
     for id in admitted {
         assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
     }
-    // The rationale still holds for what it names: a contraption part stays out.
-    let mut c = fixtures::clean_room();
-    c.set_cell(
-        [1, 1, 1],
-        delvec::admit::structure::PaletteEntry::simple("minecraft:dispenser"),
-        None,
-    );
-    let (rep, _) = audit("contraption", &c, &Allowlist::default_building());
-    assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
 }
 
 /// **The sculk family passes at rest** (spec-0100 §3.1, acceptance criterion
-/// 3): a piece carrying all six sculk blocks in their rest states is admitted
-/// with no `DW0730`, and the same piece with one state off rest is refused by
+/// 3): a piece carrying all six sculk blocks in their rest states is admitted,
+/// and the same piece with one state off rest is refused by
 /// the one rest rule — `can_summon=true` as `DW0998`, a sensor caught
 /// mid-click as `DW0999` — as is a cell whose block entity carries a pending
-/// vibration. Vacuous if the allowlist still named them: the rest piece would
-/// be `DW0730`; each id is asserted in the report's palette.
+/// vibration. Each id is asserted in the report's palette.
 #[test]
 fn the_sculk_family_passes_at_rest() {
     use delvec::admit::structure::PaletteEntry;
@@ -490,13 +416,8 @@ fn the_sculk_family_passes_at_rest() {
         ("sculk_sensor_phase", "inactive"),
         ("waterlogged", "false"),
     ];
-    let (rep, _) = audit(
-        "listening",
-        &piece(&rest_shrieker, &rest_sensor, None),
-        &Allowlist::default_building(),
-    );
+    let (rep, _) = audit("listening", &piece(&rest_shrieker, &rest_sensor, None));
     assert!(rep.is_pass(), "{:?}", rep.findings);
-    assert!(rep.findings.iter().all(|f| f.code != "DW0730"));
     for id in [
         "minecraft:sculk",
         "minecraft:sculk_vein",
@@ -513,11 +434,7 @@ fn the_sculk_family_passes_at_rest() {
         ("shrieking", "false"),
         ("waterlogged", "false"),
     ];
-    let (rep, _) = audit(
-        "listening",
-        &piece(&summoning, &rest_sensor, None),
-        &Allowlist::default_building(),
-    );
+    let (rep, _) = audit("listening", &piece(&summoning, &rest_sensor, None));
     assert!(!rep.is_pass());
     assert!(
         rep.findings.iter().any(|f| f.code == "DW0998"),
@@ -530,11 +447,7 @@ fn the_sculk_family_passes_at_rest() {
         ("sculk_sensor_phase", "active"),
         ("waterlogged", "false"),
     ];
-    let (rep, _) = audit(
-        "listening",
-        &piece(&rest_shrieker, &clicking, None),
-        &Allowlist::default_building(),
-    );
+    let (rep, _) = audit("listening", &piece(&rest_shrieker, &clicking, None));
     assert!(
         rep.findings
             .iter()
@@ -555,7 +468,6 @@ fn the_sculk_family_passes_at_rest() {
     let (rep, _) = audit(
         "listening",
         &piece(&rest_shrieker, &rest_sensor, Some(Nbt::Compound(be))),
-        &Allowlist::default_building(),
     );
     assert!(
         rep.findings
@@ -566,131 +478,45 @@ fn the_sculk_family_passes_at_rest() {
     );
 }
 
-/// **Terrain surface blocks of the `grass_block` class pass; farmland, a block
-/// that changes the world after the proofs judged it, is still shown.**
+/// **Terrain surface blocks pass**: a dirt path, mycelium and farmland.
 #[test]
-fn dirt_path_and_mycelium_pass_and_farmland_is_shown() {
+fn dirt_path_mycelium_and_farmland_pass() {
     use delvec::admit::structure::PaletteEntry;
-    let admitted = ["minecraft:dirt_path", "minecraft:mycelium"];
+    let admitted = [
+        "minecraft:dirt_path",
+        "minecraft:mycelium",
+        "minecraft:farmland",
+    ];
     let mut s = fixtures::clean_room();
-    s.set_cell([1, 1, 1], PaletteEntry::simple(admitted[0]), None);
-    s.set_cell([2, 1, 1], PaletteEntry::simple(admitted[1]), None);
-    let (rep, _) = audit("surface", &s, &Allowlist::default_building());
+    for (i, id) in admitted.iter().enumerate() {
+        s.set_cell([1 + i as i32, 1, 1], PaletteEntry::simple(*id), None);
+    }
+    let (rep, _) = audit("surface", &s);
     assert!(rep.is_pass(), "{:?}", rep.findings);
     for id in admitted {
         assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
     }
-    let mut c = fixtures::clean_room();
-    c.set_cell([1, 1, 1], PaletteEntry::simple("minecraft:farmland"), None);
-    let (rep, _) = audit("farm", &c, &Allowlist::default_building());
-    assert!(
-        rep.findings
-            .iter()
-            .any(|f| f.code == "DW0730" && f.message.contains("minecraft:farmland")),
-        "{:?}",
-        rep.findings
-    );
 }
 
-/// **A refusal names where the block is had instead, or says there is no such
-/// place.** Every block with a row in `ROUTES` is refused with that row's text
-/// in the message; a block with none is refused with the sentence that says so.
-/// The campaign that takes each route builds in `tests/it/remedy_reachability.rs`.
+/// **Every container kind a delve furnishes passes the audit**, enumerated
+/// from the container table (spec-0105 §2.1): no block id behind the kinds is
+/// on the code-injection forbid list, and a piece standing a brewing stand —
+/// which a `loot` fill reaches and the skill furnishes — passes, written with
+/// the bottle properties its multipart model is assembled from (DW0735
+/// otherwise).
 #[test]
-fn a_refused_block_names_its_route_or_says_it_has_none() {
-    use delvec::admit::allowlist::ROUTES;
-    use delvec::admit::structure::PaletteEntry;
-    let refusal = |id: &str| {
-        let mut s = fixtures::clean_room();
-        s.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
-        let (rep, _) = audit("route", &s, &Allowlist::default_building());
-        rep.findings
-            .iter()
-            .find(|f| f.code == "DW0730")
-            .unwrap_or_else(|| panic!("{id} was not refused: {:?}", rep.findings))
-            .message
-            .clone()
-    };
-    let mut routed = 0;
-    for (ids, route) in ROUTES {
-        for id in *ids {
-            routed += 1;
-            let m = refusal(id);
-            assert!(
-                m.contains(route),
-                "{id}: the route is not in the message: {m}"
-            );
-            assert!(!m.contains("no DSL surface"), "{id}: {m}");
-        }
-    }
-    assert!(routed > 0, "no routed block was examined");
-    let lever = refusal("minecraft:lever");
-    assert!(
-        lever.contains("`prop`") && lever.contains("minecraft:lever[face=floor,facing=north"),
-        "{lever}"
-    );
-    for id in ["minecraft:tnt", "minecraft:observer", "minecraft:farmland"] {
-        let m = refusal(id);
-        assert!(m.contains("no DSL surface stands in for it"), "{id}: {m}");
-    }
-}
-
-/// **Which container kinds the default allowlist admits**, enumerated from the
-/// container table (spec-0105 §2.1): every block id behind the twelve kinds is
-/// either admitted or shown, and the brewing stand — which a `loot` fill
-/// reaches and the skill furnishes — is admitted.
-#[test]
-fn the_container_kinds_the_allowlist_admits_are_the_ones_a_delve_furnishes() {
-    let allow = Allowlist::default_building();
-    let mut admitted: Vec<&str> = Vec::new();
-    let mut shown: Vec<&str> = Vec::new();
+fn every_container_kind_passes_the_audit() {
     let mut ids = 0;
     for k in delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11 {
         for id in k.blocks {
             ids += 1;
-            if allow.permits(id) {
-                admitted.push(id);
-            } else {
-                shown.push(id);
-            }
+            assert!(
+                !delvec::admit::audit::hard_forbidden_block(id),
+                "{id} is forbidden"
+            );
         }
     }
-    assert_eq!(admitted.len() + shown.len(), ids);
-    for id in [
-        "minecraft:chest",
-        "minecraft:trapped_chest",
-        "minecraft:barrel",
-        "minecraft:furnace",
-        "minecraft:smoker",
-        "minecraft:brewing_stand",
-        "minecraft:red_shulker_box",
-    ] {
-        assert!(admitted.contains(&id), "{id} is not admitted: {admitted:?}");
-    }
-    // The sixteen dyed shulker boxes are admitted through the `_shulker_box`
-    // suffix; the undyed one carries no underscore before it and is shown.
-    assert_eq!(
-        admitted
-            .iter()
-            .filter(|b| b.ends_with("_shulker_box"))
-            .count(),
-        16
-    );
-    shown.sort_unstable();
-    assert_eq!(
-        shown,
-        [
-            "minecraft:blast_furnace",
-            "minecraft:crafter",
-            "minecraft:dispenser",
-            "minecraft:dropper",
-            "minecraft:hopper",
-            "minecraft:shulker_box",
-        ],
-        "the redstone-family containers and the undyed shulker box stay shown"
-    );
-    // And a piece standing one passes the audit, written with the bottle
-    // properties its multipart model is assembled from (DW0735 otherwise).
+    assert!(ids >= 12, "container ids examined: {ids}");
     use delvec::admit::structure::PaletteEntry;
     let bottles = [
         ("has_bottle_0", "false"),
@@ -703,7 +529,7 @@ fn the_container_kinds_the_allowlist_admits_are_the_ones_a_delve_furnishes() {
         PaletteEntry::with_props("minecraft:brewing_stand", &bottles),
         None,
     );
-    let (rep, _) = audit("still-room", &s, &allow);
+    let (rep, _) = audit("still-room", &s);
     assert!(rep.is_pass(), "{:?}", rep.findings);
     assert!(rep.palette.iter().any(|b| b == "minecraft:brewing_stand"));
 }

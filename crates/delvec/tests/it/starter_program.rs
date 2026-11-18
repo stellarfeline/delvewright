@@ -386,7 +386,7 @@ def build(place):
         "soil": "minecraft:grass_block[snowy=false]",
         "bloom": "minecraft:poppy",
         "lantern": "minecraft:lantern[hanging=true,waterlogged=false]",
-        "candle": "minecraft:candle[candles=1,lit=false,waterlogged=false]",
+        "console": "minecraft:command_block[conditional=false,facing=north]",
     })
     m.hollow(3, 8, 1, 3, 10, 14, "boards")
     m.box(3, 8, 4, 4, 10, 14, "boards")
@@ -395,8 +395,8 @@ def build(place):
     m.set(5, 3, 12, "lantern")
     if EDIT == "lantern-in-air":
         m.set(12, 3, 4, "lantern")
-    if EDIT == "candle":
-        m.set(4, 1, 13, "candle")
+    if EDIT == "command-block":
+        m.set(4, 1, 13, "console")
     if EDIT == "no-such-block":
         m.set(4, 1, 13, "minecraft:tuff_bricks_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]")
     if EDIT == "no-such-property":
@@ -459,7 +459,7 @@ fn run_generator(root: &Path, campaign: &Path, edit: &str) -> Output {
 /// engine's survey, and `detail --check` passes with the parts bound. With
 /// the door left out, the house's floor is claimed out of walk — what the
 /// survey says — and the check refuses the walked part no flood reaches
-/// (`DW1074`). A lantern hung in air and a refused candle are refused by the
+/// (`DW1074`). A lantern hung in air and a command block are refused by the
 /// starter before it writes, naming the block.
 #[test]
 fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey() {
@@ -552,10 +552,12 @@ fn a_building_drawn_into_the_starter_s_model_is_claimed_from_the_engine_s_survey
         text(&run)
     );
 
-    let run = run_generator(&tmp, &campaign, "candle");
+    let run = run_generator(&tmp, &campaign, "command-block");
     assert!(!run.status.success());
     assert!(
-        text(&run).contains("minecraft:candle: the palette refuses it (DW0730)"),
+        text(&run).contains(
+            "minecraft:command_block: the palette refuses it, a code-injection vector (DW0731)"
+        ),
         "{}",
         text(&run)
     );
