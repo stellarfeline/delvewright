@@ -299,7 +299,6 @@ pub(super) struct CutsceneHolds<'a> {
     pub(super) en_route: &'a [Option<u32>],
 }
 
-#[allow(clippy::too_many_arguments)]
 /// **How long after its own act an objective that runs a race's course may
 /// wait for that race to be over** (spec-0139 §3), in ticks: the race's
 /// `grace_ticks` — the race is over that long after its first finisher at the
@@ -325,6 +324,7 @@ pub(super) fn race_wait_ticks(
         .filter(|t| *t > 0)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
