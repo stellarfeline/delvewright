@@ -1874,11 +1874,16 @@ pub(super) fn build_critical_path(
             return None;
         };
         // spec-0139 §4: a reach that runs a course is completed by the race
-        // being over, not by a body in its volume, so nothing completes it
-        // out of turn and a ride through its finish (`DW1144`) is kept out
-        // of nothing.
-        if o.course().is_some() {
-            return None;
+        // being over, at its finish (`DW1144`), not in its anchor's volume:
+        // the box a walk in front of it keeps out of is the finish's. The
+        // ride of its own leg crosses it (`nav::route::leg::ride_leg`).
+        if let Some(race) = o.course() {
+            let point = |a: &str| crate::compiler::plan::anchors::point_any_in(anchors, a);
+            let (lo, hi) = crate::compiler::nav::race::finish_box(campaign, &point, race)?;
+            return Some(crate::compiler::reach::KeepOut::objective(
+                obj,
+                crate::compiler::reach::ReachCompletion::Cube { lo, hi },
+            ));
         }
         let area = campaign
             .quest_plan
