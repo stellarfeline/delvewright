@@ -827,13 +827,8 @@ fn ride_leg(
     }) = carries.steps.get(end.src_step)
         // …unless the objective waits for its own rider (a `riders` census of
         // this vehicle in its gate): it completes under the rider and nowhere
-        // else, so the ride goes into its volume…
+        // else, so the ride goes into its volume.
         && !carries.aboard.contains(objective_id)
-        // …or it runs a race's course: the race being over completes it, at
-        // its finish, which holds its anchor (`DW1144`); the ride runs the
-        // course through the finish (spec-0139 §4), and every walk in front
-        // of the step keeps out of the finish (`plan::path`'s keep-out).
-        && !carries.courses.contains_key(objective_id)
     {
         st.keep_out.push((
             objective_id.clone(),

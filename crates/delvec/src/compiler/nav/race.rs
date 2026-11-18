@@ -127,27 +127,6 @@ fn checkpoint_box_at(anchor_cell: [i32; 3], cp: &delvewright_dsl::Checkpoint) ->
     ))
 }
 
-/// **A course's finish**: the box of race `race`'s last checkpoint, its
-/// anchor's cell read by `point`. `None` for a race that is not declared, has
-/// no checkpoint, or whose finish's anchor resolves nowhere. The one answer
-/// to where a reach that runs a course is completed — the refusal below and
-/// the keep-out a path holds walks out of (`plan::path`) both read it.
-pub(crate) fn finish_box(
-    campaign: &delvewright_dsl::Campaign,
-    point: &dyn Fn(&str) -> Option<[i32; 3]>,
-    race: &delvewright_dsl::RaceId,
-) -> Option<CellBox> {
-    let last = campaign
-        .quests
-        .content
-        .races
-        .iter()
-        .find(|r| &r.id == race)?
-        .checkpoints
-        .last()?;
-    checkpoint_box_at(point(last.at.anchor.as_str())?, last)
-}
-
 /// **A reach that runs a course is reached at its finish** (`DW1144`): the
 /// objective's anchor stands inside the last checkpoint's box, by the one
 /// rule a racer is inside a box by ([`cell_in_box`]). The race being over
@@ -171,8 +150,11 @@ pub(crate) fn check_course_finishes(
         let Some(last) = r.checkpoints.last() else {
             continue;
         };
-        let (Some(at), Some(finish)) = (point(anchor.as_str()), finish_box(campaign, point, race))
+        let (Some(at), Some(cp_anchor)) = (point(anchor.as_str()), point(last.at.anchor.as_str()))
         else {
+            continue;
+        };
+        let Some(finish) = checkpoint_box_at(cp_anchor, last) else {
             continue;
         };
         if cell_in_box(at, &finish) {

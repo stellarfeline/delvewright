@@ -194,6 +194,7 @@ fn anchors() -> serde_json::Value {
         "anchor/crate-two-alongside": { "pos": [12, 3, 6] },
         "anchor/cp-bridge": { "pos": [9, 4, 7] },
         "anchor/cp-east": { "pos": [14, 4, 7] },
+        "anchor/past-bridge": { "pos": [11, 4, 7] },
         "anchor/cp-high": { "pos": [9, 7, 4] }
     })
 }
@@ -2218,10 +2219,10 @@ fn race(checkpoints: &[&str], more: &str) -> String {
 
 const START_RACE: &str = r#"{ "type": "start-race", "race": "race/pig-race" }"#;
 
-/// The anchor of a race's last checkpoint, as [`race`] writes it.
+/// The anchor of a race's last checkpoint, as [`race`] writes it: the
+/// checkpoints come before its `missed`, and what follows (a racer, a board)
+/// names anchors of its own.
 fn finish_of(race: &str) -> &'static str {
-    // The checkpoints are written before the race's `missed`; what follows
-    // it (a racer, a board) names anchors of its own.
     let race = &race[..race
         .find(r#""missed""#)
         .expect("a race says when one is missed")];
@@ -2233,15 +2234,40 @@ fn finish_of(race: &str) -> &'static str {
     Box::leak(race[at..end].to_string().into_boxed_str())
 }
 
+/// Where a course that finishes at `finish` is reached (`DW1144`): two cells
+/// east of the finish's mark, along `z = 7`, inside the finish once it is
+/// widened two cells either way and clear of it by more than the reach's
+/// radius at its west end, so the ride is credited the finish short of the
+/// reach's volume. A checkpoint nobody can be in is its own reach.
+fn reached_at(finish: &str) -> &'static str {
+    match finish {
+        "anchor/cp-east" => "anchor/nook",
+        "anchor/cp-bridge" => "anchor/past-bridge",
+        other => Box::leak(other.to_string().into_boxed_str()),
+    }
+}
+
 /// The bay a course is ridden over: the bridge across the pool, a pig, a
 /// carrot on a stick in the kit, and the exit's leg declared ridden and run
-/// as the race's course, reached at the race's finish (`DW1144`).
+/// as the race's course — its finish widened two cells along the course
+/// (`extent [2, 1, 0]`) and the exit reached inside it (`DW1144`).
 fn course_bay(race: String) -> Bay {
+    let finish = finish_of(&race);
+    let narrow = format!(r#""{finish}" }}, "extent": [0, 1, 0]"#);
+    let at = race
+        .rfind(&narrow)
+        .expect("the finish is written by `race`");
+    let race = format!(
+        "{}{}{}",
+        &race[..at],
+        format!(r#""{finish}" }}, "extent": [2, 1, 0]"#),
+        &race[at + narrow.len()..]
+    );
     Bay {
         bridge: true,
         ride: Some("vehicle/race-pig"),
         carrot: true,
-        goal: Some(finish_of(&race)),
+        goal: Some(reached_at(finish)),
         gate: r#", "course": "race/pig-race""#,
         more: Box::leak(race.into_boxed_str()),
         ..Bay::default()
@@ -2265,9 +2291,19 @@ fn course_build(tag: &str, bay: Bay, talk: &str) -> Result<BuildOutput, (String,
 
 /// Where in a ride's medium the first cell of column `[x, z]` stands.
 fn passes(medium: &[serde_json::Value], x: i64, z: i64) -> Option<usize> {
+    passes_box(medium, x..=x, z)
+}
+
+/// Where in a ride's medium the first cell of a column `xs` × `z` stands:
+/// a cell of a checkpoint widened along the course (`course_bay`'s finish).
+fn passes_box(
+    medium: &[serde_json::Value],
+    xs: std::ops::RangeInclusive<i64>,
+    z: i64,
+) -> Option<usize> {
     medium.iter().position(|c| {
         let c = cell(c);
-        c[0] == x && c[2] == z
+        xs.contains(&c[0]) && c[2] == z
     })
 }
 
@@ -2290,7 +2326,7 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     let medium = r[0]["medium"].as_array().unwrap();
     let (a, b) = (
         passes(medium, 9, 7).expect("the bridge checkpoint"),
-        passes(medium, 14, 7).expect("the east checkpoint"),
+        passes_box(medium, 12..=16, 7).expect("the east checkpoint, the finish"),
     );
     assert!(a < b, "the bridge checkpoint is passed first: {medium:?}");
 
@@ -2305,8 +2341,8 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
     let east = passes(medium, 14, 7).expect("the east checkpoint");
     let bridge = medium
         .iter()
-        .rposition(|c| cell(c)[0] == 9 && cell(c)[2] == 7)
-        .expect("the bridge checkpoint");
+        .rposition(|c| (7..=11).contains(&cell(c)[0]) && cell(c)[2] == 7)
+        .expect("the bridge checkpoint, the finish");
     assert!(
         east < bridge,
         "written the other way round, the east checkpoint is passed first and the ride comes \
@@ -2422,7 +2458,7 @@ fn a_finish_places_its_racer_and_starts_the_grace() {
     let r = rides(&out);
     let medium = r[0]["medium"].as_array().unwrap();
     let first = passes(medium, 9, 7).unwrap();
-    let east = first + passes(&medium[first..], 14, 7).unwrap();
+    let east = first + passes_box(&medium[first..], 12..=16, 7).unwrap();
     assert!(
         passes(&medium[east..], 9, 7).is_some(),
         "the second lap comes back to the bridge: {medium:?}"

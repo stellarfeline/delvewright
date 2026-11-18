@@ -723,6 +723,16 @@
       "kind": "pov"
     },
     {
+      "area": "area/long-hall",
+      "id": "pov/leg26/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/long-hall",
+      "id": "pov/leg26/wp3",
+      "kind": "pov"
+    },
+    {
       "area": "area/hall",
       "id": "pov/leg27/wp0",
       "kind": "pov"
