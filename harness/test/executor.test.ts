@@ -1729,6 +1729,106 @@ test("a drop on a walk leg is restored to full, whoever dealt it", async () => {
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 1);
 });
 
+// --- a walk leg is walked fed -----------------------------------------------
+
+/**
+ * A walk bot whose server answers saturation the way vanilla does (hunger
+ * filled), and whose walk takes `hungerOnWay` hunger on the way.
+ */
+class FedWalkBot extends HealingWalkBot {
+  hungerOnWay = 0;
+  override chat(message: string): void {
+    super.chat(message);
+    if (/^\/effect give @s minecraft:saturation 1 19 true$/.test(message)) {
+      this.food = 20;
+      this.emit("health");
+    }
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+      this.entity.position = new FakeVec3(0.5, 64, 0.5);
+      if (this.hungerOnWay > 0) {
+        this.food -= this.hungerOnWay;
+        this.emit("health");
+        await delay(100);
+      }
+    },
+  };
+}
+
+const SATURATION = "chat(/effect give @s minecraft:saturation 1 19 true)";
+
+test("a walk leg starts fed: one saturation fills the hunger, named as staging, before the leg's business", async () => {
+  // The festival town's story world 2: the bot began starving eleven minutes
+  // in, and a starvation hurt landed on the lamp tower's jump across its well.
+  const bot = new FedWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.food = 0;
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 700);
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
+  assert.deepEqual(bot.calls.filter((c) => c === SATURATION), [SATURATION]);
+  assert.ok(
+    bot.calls.indexOf(SATURATION) < bot.calls.indexOf("chat(/trigger dw.i.unbar)"),
+    `fed BEFORE the leg's business: ${bot.calls.join(" | ")}`,
+  );
+  assert.equal(bot.food, 20);
+  const row = executor.stagedBodies().find((r) => /^fed for walk leg/.test(r.why));
+  assert.ok(row, "the feeding is named in the run artifact as staging");
+  assert.equal(row.kind, "player");
+  assert.equal(row.performed, true);
+  assert.match(row.why, /hunger 0 of 20/);
+});
+
+test("a walk leg that starts full is not fed", async () => {
+  const bot = new FedWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 700);
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
+  assert.deepEqual(bot.calls.filter((c) => c === SATURATION), []);
+});
+
+test("hunger fallen to the sprint floor on a walk leg is filled; off the leg it is left", async () => {
+  const bot = new FedWalkBot();
+  bot.carried = [{ name: "stone_sword", type: 1 }];
+  bot.food = 20;
+  bot.hungerOnWay = 14; // 20 → 6: a body that can no longer sprint
+  bot.entity.position = new FakeVec3(12.5, 64, 0.5);
+  const executor = attach(bot);
+  bot.emit("health");
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 1_200);
+  await within("executor.interact(interactStep(null))", executor.interact(interactStep(null)));
+  assert.deepEqual(bot.calls.filter((c) => c === SATURATION), [SATURATION]);
+  assert.equal(bot.food, 20);
+  assert.ok(
+    executor.stagedBodies().some((r) => r.why.startsWith("fed for walk leg 'interact anchor/gate")),
+    JSON.stringify(executor.stagedBodies()),
+  );
+
+  // Off the leg, the body keeps the hunger it has.
+  bot.food = 0;
+  bot.emit("health");
+  await delay(600);
+  assert.equal(bot.calls.filter((c) => c === SATURATION).length, 1);
+});
+
 // --- the walk into a lethal volume opens a closed gate, as a player would --------
 
 test("the walk in opens a closed gate in its way — once, and never an open one", async () => {
@@ -6759,7 +6859,7 @@ test("a click before the leg does not answer for it once the server says the sen
 
 // --- spec-0132 §5.2: a pursued step is walked with nothing staged, refunded or restored ---
 
-test("stageAway and holdFullHealth return without acting while a pursued step runs, and record the refusal", async () => {
+test("stageAway, holdFullHealth and holdFed return without acting while a pursued step runs, and record the refusal", async () => {
   const bot = new FakeBot();
   (bot as unknown as { entities: Record<number, unknown> }).entities = {
     12: { id: 12, name: "warden", uuid: "0-0-0-0-12", position: new FakeVec3(5, 64, 5) },
@@ -6774,15 +6874,18 @@ test("stageAway and holdFullHealth return without acting while a pursued step ru
   };
   await executor.stageAway(12, "it hit the bot (the server named it)", "warden");
   await executor.holdFullHealth("a drop to 8.0 on it");
+  (bot as unknown as { food: number }).food = 0;
+  await executor.holdFed("its start", true);
   executor.damageBy.set(12, 6);
   await executor.refundBlows("warden", 12);
   assert.deepEqual(sent, [], "no command reached the server");
   assert.equal(executor.stagedRemovals.length, 0, "nothing staged, nothing restored");
   assert.equal(executor.stagedIds.has(12), false);
-  assert.equal(pursued.refusals.length, 3);
+  assert.equal(pursued.refusals.length, 4);
   assert.match(pursued.refusals[0]!, /staging warden#12 away/);
   assert.match(pursued.refusals[1]!, /holding full health/);
-  assert.match(pursued.refusals[2]!, /refunding 6\.0 health warden#12 took/);
+  assert.match(pursued.refusals[2]!, /holding the bot fed/);
+  assert.match(pursued.refusals[3]!, /refunding 6\.0 health warden#12 took/);
 });
 
 // ---------------------------------------------------------------------------
