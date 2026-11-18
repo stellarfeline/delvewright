@@ -261,12 +261,22 @@ is driven by the executor (`driveJump`, `harness/src/executor/jump.ts`) as the
 proof flew it. A bot off the run-up (`onRunUp`: off the straight run of cells
 from the run-up's start to the launch — knocked off a one-wide plank, say) is
 walked to the start by the staged pathfinder walk first, and the drive refuses
-any body off the run-up at once rather than creep across the geometry. From
-the run-up: crouched along it to the centre of its start, still, then
-standing, facing along the jump's axis, forward held (sprinting only when the
-jump is sprinted), jump pressed once on one of the last two ticks the body
-stands over the launch cell's column, released on landing. The feet must come
-down at the landing's height past the launch, or the walk fails naming where the
+any body off the run-up rather than creep across the geometry, judging it on
+the first tick the body is on the floor (a walk ends when the pathfinder counts
+the body in the goal's cell, which it does while the body is still dropping
+into it). A body stands in a cell row when its feet lie above the floor of the
+block under the cell and at most half a block over the cell's own floor
+(`feetInCell`, the compiler's `feet_of`): on a lily pad or a carpet the feet
+are almost a block under the cell's floor. From the run-up: crouched along it
+to the centre of its start, still on the floor for four ticks, then standing,
+facing along the jump's axis, forward held (sprinting only when the jump is
+sprinted), jump pressed once on one of the last two ticks the body stands over
+the launch cell's column, released on landing. A body the client reports off
+the floor before the press with its feet unmoved is one the server moved (a
+hurt sets the body's motion, and mineflayer 4.37.1 then finds no floor under
+it for a tick); that run is not the proof's, so it is set back to the start,
+at most three times, and the landing line says how many. The feet must come
+down in the landing's row past the launch, or the walk fails naming where the
 body is. The parkour move is never used: it lands at most two cells forward with
 sprinting off, and with sprinting on it sprints a jump the proof flew walking.
 

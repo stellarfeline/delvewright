@@ -87,10 +87,14 @@ test("the drive refuses a start off the run-up at once, naming it", async () => 
   assert.equal(r.landed, false);
   assert.match(r.why, /is not on its run-up \[17, 69, 20\]\.\.\[16, 69, 20\]/);
   assert.ok(ticks <= 2, `the drive ran ${ticks} tick(s) before refusing`);
-  // The same refusal through the drive's own entry point.
+  // The same refusal through the drive's own entry point. The drive judges a
+  // body once it is on the floor; the refusal above left the sim's body with
+  // the one tick a body at rest with no fall in hand is off the ground, so it
+  // comes on the drive's second tick.
   await assert.rejects(
     () => {
       const p = driveJump(sim as unknown as JumpBot, PLANK);
+      sim.tick();
       sim.tick();
       return p;
     },
