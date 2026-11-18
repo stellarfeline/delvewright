@@ -7,7 +7,9 @@ import {
   EAT_COOLDOWN_MS,
   EAT_SAFE_RANGE,
   eatDecision,
+  FILL_SATURATION_AMPLIFIER,
   isSafeFood,
+  owesFood,
   pickFood,
   restoreAmplifier,
 } from "../sustain.ts";
@@ -120,6 +122,7 @@ export const methods = {
   onHealthUpdate(this: MineflayerExecutor): void {
     const bot = this.bot;
     if (!bot) return;
+    if (this.walkLegs > 0) void this.holdFed(`hunger fallen to ${bot.food} on it`, false);
     const previous = this.lastHealth;
     this.lastHealth = bot.health;
     if (previous === undefined || bot.health >= previous) return;
@@ -300,5 +303,56 @@ export const methods = {
       this.restoringHealth = undefined;
     });
     return this.restoringHealth;
+  },
+
+  /**
+   * **Hold the bot fed for the walk leg in progress** ({@link owesFood}): full
+   * at the leg's start, and filled again whenever its hunger falls to the
+   * sprint floor on the leg.
+   *
+   * Whether the bot keeps its hunger is not what a walk leg is for, and a
+   * hungry body walks a leg the compiler did not prove. Measured on the
+   * festival town's story world 2: the bot began starving eleven minutes in,
+   * took a point every 80 ticks from then on, and one of those hurts landed on
+   * the lamp tower's jump across its stair well; the body came down eight
+   * cells under the landing and the leg could not be walked again. A hurt is a
+   * motion packet, and a body in the first ticks of a jump keeps none of the
+   * speed it ran up. At the sprint floor a body cannot sprint, and the compiler
+   * proves sprinted jumps.
+   *
+   * One saturation effect that fills hunger in its first tick, read by the
+   * shared rejection rule and named in `staged_removals` as staging, like the
+   * health {@link holdFullHealth} holds. Off a leg, and on a pursued step
+   * (spec-0132 §5.2), the body keeps the hunger it has.
+   */
+  holdFed(this: MineflayerExecutor, when: string, atStart: boolean): Promise<void> {
+    if (!owesFood(this.bot?.food, PLAYER_MAX_FOOD, atStart)) return Promise.resolve();
+    if (this.pursuitRefuses(`holding the bot fed for walk leg '${this.walkLabel}' (${when})`)) {
+      return Promise.resolve();
+    }
+    if (this.restoringFood) return this.restoringFood;
+    const leg = this.walkLabel;
+    const run = async (): Promise<void> => {
+      const bot = this.bot;
+      if (!bot?.entity || this.death || !(bot.health > 0)) return;
+      const before = bot.food;
+      const refusal = await this.refusalOf(
+        `/effect give @s minecraft:saturation 1 ${FILL_SATURATION_AMPLIFIER} true`,
+      );
+      this.stagedRemovals.push({
+        kind: "player",
+        why: `fed for walk leg '${leg}' (${when}): hunger ${before} of ${PLAYER_MAX_FOOD}, filled with saturation`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      process.stderr.write(
+        `[staged] walk leg '${leg}' (${when}): hunger ${before} → ` +
+          `${refusal === undefined ? bot.food : `unchanged, refused — ${refusal}`}\n`,
+      );
+    };
+    this.restoringFood = run().finally(() => {
+      this.restoringFood = undefined;
+    });
+    return this.restoringFood;
   },
 };

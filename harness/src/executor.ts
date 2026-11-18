@@ -705,6 +705,8 @@ export class MineflayerExecutor implements StepExecutor {
   walkLabel = "";
   /** The full-health restoration in flight, so a burst of drops issues one. */
   restoringHealth: Promise<void> | undefined;
+  /** The hunger fill in flight, so a burst of hunger updates issues one. */
+  restoringFood: Promise<void> | undefined;
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
   lastEatAt = 0;
 

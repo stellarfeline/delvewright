@@ -138,3 +138,31 @@ export function restoreAmplifier(deficit: number): number {
   while (INSTANT_HEALTH_UNIT << amp < deficit) amp += 1;
   return amp;
 }
+
+/**
+ * The highest hunger at which a player cannot sprint (minecraft.wiki, *Hunger*:
+ * sprinting needs a hunger above 6). Cited, not measured here.
+ */
+export const SPRINT_FOOD_FLOOR = 6;
+
+/**
+ * The saturation amplifier that fills hunger from nothing in one tick: the
+ * effect gives `amplifier + 1` hunger (and twice that saturation) every tick
+ * it lasts (minecraft.wiki, *Saturation*), and vanilla discards hunger over
+ * 20. Cited, not measured here.
+ */
+export const FILL_SATURATION_AMPLIFIER = 19;
+
+/**
+ * Whether a walk leg owes the body food, held the way its health is held
+ * (`holdFed`): at the leg's start any hunger under `maxFood` is filled, and on
+ * the leg a hunger fallen to {@link SPRINT_FOOD_FLOOR} or under is. A starving
+ * body is hurt every 80 ticks, and every hurt is a motion packet that sets the
+ * client's velocity to the server's — a proven jump in its first air ticks
+ * comes down in its gap; and a body at the floor cannot sprint a jump the
+ * compiler proved sprinted. An unknown hunger owes nothing.
+ */
+export function owesFood(food: number | undefined, maxFood: number, atStart: boolean): boolean {
+  if (food === undefined || !Number.isFinite(food)) return false;
+  return atStart ? food < maxFood : food <= SPRINT_FOOD_FLOOR;
+}

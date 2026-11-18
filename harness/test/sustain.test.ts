@@ -8,6 +8,7 @@ import {
   isSafeFood,
   pickFood,
   INSTANT_HEALTH_UNIT,
+  owesFood,
   restoreAmplifier,
 } from "../src/sustain.ts";
 
@@ -127,4 +128,14 @@ test("one instant-health effect covers any deficit a walk leg starts with", () =
   for (let d = 0.5; d <= 20; d += 0.5) {
     assert.ok(INSTANT_HEALTH_UNIT << restoreAmplifier(d) >= d, `deficit ${d}`);
   }
+});
+
+test("a walk leg owes food: any deficit at its start, the sprint floor on it, nothing unknown", () => {
+  assert.equal(owesFood(19, 20, true), true, "a leg starts full");
+  assert.equal(owesFood(20, 20, true), false);
+  assert.equal(owesFood(7, 20, false), false, "at 7 a body still sprints");
+  assert.equal(owesFood(6, 20, false), true, "at 6 it cannot (vanilla's sprint floor)");
+  assert.equal(owesFood(0, 20, false), true, "a starving body is hurt every 80 ticks");
+  assert.equal(owesFood(undefined, 20, true), false);
+  assert.equal(owesFood(undefined, 20, false), false);
 });
