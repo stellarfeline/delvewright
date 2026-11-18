@@ -335,7 +335,13 @@ export const methods = {
         await delay(250);
         reading = await this.readRide(tag);
       }
-      if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
+      if (!reading.riding) {
+        const at = [body!.position.x, body!.position.y, body!.position.z].map((v) => v.toFixed(2)).join(", ");
+        failRide(
+          `the server did not seat the bot on the vehicle after the click — the body clicked was ` +
+            `${body!.name ?? body!.type} at [${at}], the seat's centre at ${JSON.stringify(centre)}`,
+        );
+      }
     }
     const start = reading.pos;
     let reported = 0;
