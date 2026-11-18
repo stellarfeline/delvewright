@@ -459,7 +459,7 @@ pub(in crate::compiler::nav) fn critical_positions(plan: &Plan) -> Vec<VisitedPo
         plan.campaign_start().map(|(_, pos)| pos),
         &plan.critical_path,
         &plan.critical_path_transport,
-        plan.shot_stances.get(),
+        plan.act_stances.get(),
     )
 }
 
@@ -590,12 +590,17 @@ pub(in crate::compiler::nav) fn positions_of(
         // A `trigger` step stands somewhere like an objective does: the party walks
         // to what it strikes, so the leg to it is a leg the proof owes — a shot
         // to the stance it is loosed from.
+        // An area `interact` is used from the stance the build proved clicks
+        // its area (`nav::area_click`), the cell exported as its `stand`.
         let loosed = match step {
             Step::Trigger {
                 on: "shot",
                 trigger_id,
                 ..
             } => shots.and_then(|m| m.get(trigger_id.as_str())).copied(),
+            Step::Interact { objective_id, .. } => {
+                shots.and_then(|m| m.get(objective_id.as_str())).copied()
+            }
             _ => None,
         };
         if let Some(pos) = loosed.or_else(|| step.pos()) {
@@ -701,8 +706,11 @@ pub fn with_links_taken<'a>(
     // One stance per shot, whichever plan of the lineage asks: the relinked
     // plan is this plan with carries spliced in, and its shots are loosed from
     // where this plan's are.
-    if let Some(m) = plan.shot_stances.get() {
-        let _ = relinked.shot_stances.set(m.clone());
+    if let Some(m) = plan.act_stances.get() {
+        let _ = relinked.act_stances.set(m.clone());
+    }
+    if let Some(m) = plan.area_clicks.get() {
+        let _ = relinked.area_clicks.set(m.clone());
     }
     // The relinked path is the proof's own decision: a second pass over it
     // must take nothing more, or the path and the proof disagree.
@@ -736,7 +744,7 @@ pub fn take_branch_links(
             start,
             &cp.steps,
             &cp.transport_by_step,
-            plan.shot_stances.get(),
+            plan.act_stances.get(),
         ),
         region_events,
         ancestor,
@@ -1179,7 +1187,7 @@ pub fn check_branch_path(
             start,
             &cp.steps,
             &cp.transport_by_step,
-            plan.shot_stances.get(),
+            plan.act_stances.get(),
         ),
         region_events,
         ancestor,

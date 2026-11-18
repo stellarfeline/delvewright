@@ -421,11 +421,36 @@ pub(super) fn critical_path_json(
                     }
                     v
                 }
-                Step::Interact { objective_id, anchor_id, pos, command, requires_item, block } => json!({
-                    "action": "interact", "objective": objective_id, "anchor": anchor_id,
-                    "pos": pos, "command": command, "requires_item": requires_item,
-                    "block": block
-                }),
+                Step::Interact { objective_id, anchor_id, pos, command, requires_item, block, .. } => {
+                    let mut v = json!({
+                        "action": "interact", "objective": objective_id, "anchor": anchor_id,
+                        "pos": pos, "command": command, "requires_item": requires_item,
+                        "block": block
+                    });
+                    // An area: the stance the build proved clicks it (where
+                    // the route's leg ends), the cell of its top face and the
+                    // point the bot aims at, and the tiles it may land on —
+                    // every one of them the one press.
+                    if let (Some(c), Some(p)) = (
+                        plan.area_clicks.get().and_then(|m| m.get(objective_id.as_str())),
+                        crate::compiler::pressable::press_of_objective(plan, objective_id),
+                    ) && let (Some(obj), Some(a)) = (v.as_object_mut(), &p.area)
+                    {
+                        obj.insert("stand".to_string(), json!(c.stance));
+                        obj.insert(
+                            "area".to_string(),
+                            json!({
+                                "cell": c.cell,
+                                "aim": c.aim,
+                                "tiles": a.tiles.iter().map(|t| {
+                                    let (lo, hi) = t.aabb();
+                                    json!({"min": lo, "max": hi})
+                                }).collect::<Vec<_>>(),
+                            }),
+                        );
+                    }
+                    v
+                }
                 // A path act that proves no objective: it passes on the trigger's
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
@@ -441,7 +466,7 @@ pub(super) fn critical_path_json(
                         // spec-0134 §2: a shot is loosed from the stance the
                         // build proved sees its target.
                         let shot = plan
-                            .shot_stances
+                            .act_stances
                             .get()
                             .and_then(|m| m.get(trigger_id.as_str()))
                             .copied();

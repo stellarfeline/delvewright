@@ -650,10 +650,24 @@ pub enum Objective {
         /// anchor from `setup_finish` to the end of the delve. A bell or a button
         /// is pressed on its own; any other block with an outline — a door, a
         /// lever, a chest, a campfire — is pressed through a click box fitted to
-        /// it, so it does not act before its step. Required (`DW1059`).
+        /// it, so it does not act before its step. Exactly one of `prop` and
+        /// [`Objective::Interact::region`] is the body (`DW1059`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[schemars(required)]
         prop: Option<Prop>,
+        /// **The area the use is taken over**, in place of a `prop`: an
+        /// anchor-centred box (`anchor ± extent`) — the region every box verb
+        /// takes, resolved through the one `Plan::zone_box`. A use anywhere on
+        /// it — the water of a pond, the soil of a field, the stones of a
+        /// hearth — answers as a press of the one-block form does: the same
+        /// `answers`, `requires_item`, `takes_item`, `announcement`, `compass`
+        /// and `highlight`. Nothing is placed: the engine stands invisible
+        /// click boxes over the box (a tiling the build derives), so the area
+        /// is boxed in every state and `release` has nothing to release
+        /// (`DW1051`). A use off the area does nothing. Exactly one of `prop`
+        /// and `region` is the body (`DW1059`); a region no party stance can
+        /// click, or whose top face a block covers, is `DW1143`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<crate::StealthZone>,
         /// **What the press answers outside its window** (spec-0117 §4):
         /// `not_yet` before the objective is pending, `done` after it completes
         /// (unless `release`), and with `requires_item` `missing_item` for a
@@ -1306,6 +1320,15 @@ impl Objective {
     pub fn prop(&self) -> Option<&Prop> {
         match self {
             Objective::Interact { prop, .. } => prop.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The `interact`'s area (its `region`), if it is pressed over one
+    /// instead of a block.
+    pub fn interact_region(&self) -> Option<&crate::StealthZone> {
+        match self {
+            Objective::Interact { region, .. } => region.as_ref(),
             _ => None,
         }
     }
