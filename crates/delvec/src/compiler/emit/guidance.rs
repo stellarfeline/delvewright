@@ -419,7 +419,10 @@ pub(super) fn guide(
             };
             // spec-0139 §4: an objective that runs a course points the
             // compass at each racer's next checkpoint while the race runs.
-            let target = match (target, o.course().and_then(|r| c.quests.content.race(r.as_str()))) {
+            let target = match (
+                target,
+                o.course().and_then(|r| c.quests.content.race(r.as_str())),
+            ) {
                 (Some(t), Some(race)) => Some(course_target(plan, race, Some(t))),
                 (t, _) => t,
             };
@@ -1173,21 +1176,21 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
         v.push(format!(
             "scoreboard players remove @a[scores={{{USE_LATCH}=1..}}] {USE_LATCH} 1"
         ));
-        if g.tracked()
-            .any(|w| {
-                matches!(
-                    w.target,
-                    Some(Target::Body(_) | Target::Wave { .. } | Target::Course { .. })
-                )
-            })
-        {
+        if g.tracked().any(|w| {
+            matches!(
+                w.target,
+                Some(Target::Body(_) | Target::Wave { .. } | Target::Course { .. })
+            )
+        }) {
             v.push(format!(
                 "execute if score {CLOCK} {GUIDE} matches 0 as @a[scores={{{ON_BODY}=1}}] run function {ns}:compass_aim_followed"
             ));
         }
         // spec-0139 §4: a player a race credited this tick turns to its next
         // checkpoint now (`emit::race`).
-        if g.tracked().any(|w| matches!(w.target, Some(Target::Course { .. }))) {
+        if g.tracked()
+            .any(|w| matches!(w.target, Some(Target::Course { .. })))
+        {
             v.push(format!(
                 "execute as @a[tag={REAIM_TAG}] run function {ns}:compass_aim_followed"
             ));
@@ -1630,17 +1633,15 @@ fn aim_call(
                 super::race::race_progress(race),
                 super::race::race_next(race),
             );
+            // The holder's two entries, created as the race's body creates
+            // them: a holder the race has not asked yet has passed nothing,
+            // and its first checkpoint is its next.
             let mut body = vec![
                 format!("execute unless score {on} dw.sys matches 1 run return run {then_call}"),
+                format!("scoreboard players add @s {done} 0"),
+                format!("scoreboard players add @s {next} 0"),
                 format!("execute if score @s {done} matches {total}.. run return run {then_call}"),
             ];
-            if let Some(c0) = centres.first() {
-                // Not yet asked by the race: its first checkpoint is its next.
-                body.push(format!(
-                    "execute unless score @s {next} matches 0.. run return run function {ns}:compass_aim {{x:{},y:{},z:{}}}",
-                    c0[0], c0[1], c0[2]
-                ));
-            }
             for (j, c) in centres.iter().enumerate() {
                 body.push(format!(
                     "execute if score @s {next} matches {j} run return run function {ns}:compass_aim {{x:{},y:{},z:{}}}",

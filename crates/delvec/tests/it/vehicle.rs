@@ -2629,12 +2629,22 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
         lines[0].starts_with("execute unless score #ron_pig_race dw.sys matches 1 run return run function hello-world:compass_aim {"),
         "before and after the race the compass aims at the exit: {aim}"
     );
+    assert_eq!(
+        &lines[1..3],
+        [
+            "scoreboard players add @s dw.rc.pig_race 0",
+            "scoreboard players add @s dw.rn.pig_race 0"
+        ],
+        "the holder's entries are made before they are read: {aim}"
+    );
     assert!(
-        lines[1].starts_with("execute if score @s dw.rc.pig_race matches 2.. run return run "),
+        lines[3].starts_with("execute if score @s dw.rc.pig_race matches 2.. run return run "),
         "a finished racer's compass aims at the exit: {aim}"
     );
     for (j, (x, z)) in [(9, 7), (14, 7)].into_iter().enumerate() {
-        let want = format!("execute if score @s dw.rn.pig_race matches {j} run return run function hello-world:compass_aim {{x:{x},");
+        let want = format!(
+            "execute if score @s dw.rn.pig_race matches {j} run return run function hello-world:compass_aim {{x:{x},"
+        );
         let l = lines
             .iter()
             .find(|l| l.starts_with(&want))
@@ -2642,7 +2652,8 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
         assert!(l.ends_with(&format!(",z:{z}}}")), "{l}");
     }
     assert!(
-        function(&out, "compass_aim_followed").contains("run function hello-world:compass_aim_course_o_exit"),
+        function(&out, "compass_aim_followed")
+            .contains("run function hello-world:compass_aim_course_o_exit"),
         "the followed course objective aims through the course"
     );
     let pass = function(&out, "race_pig_race_pass");
@@ -2658,13 +2669,18 @@ fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoin
     let tick = function(&out, "tick");
     let aimed = tick
         .lines()
-        .position(|l| l == "execute as @a[tag=dw_caim_next] run function hello-world:compass_aim_followed")
+        .position(|l| {
+            l == "execute as @a[tag=dw_caim_next] run function hello-world:compass_aim_followed"
+        })
         .unwrap_or_else(|| panic!("the tick re-aims a credited player: {tick}"));
     let body = tick
         .lines()
         .position(|l| l.contains("run function hello-world:race_pig_race_body"))
         .unwrap();
-    assert!(body < aimed, "after the race credits it, in the same tick: {tick}");
+    assert!(
+        body < aimed,
+        "after the race credits it, in the same tick: {tick}"
+    );
     assert!(
         !function(&out, "race_pig_race_pass").contains("compass_aim"),
         "the credit, which runs as actors too, never calls down the compass"
