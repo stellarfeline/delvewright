@@ -500,6 +500,7 @@ fn choices_before(
     area: &str,
     begun: &BTreeSet<String>,
     journal: &[crate::compiler::flow::JournalStep],
+    late: bool,
 ) -> Result<Vec<Step>, PlanError> {
     let Some(ctx) = &path.story else {
         return Ok(Vec::new());
@@ -507,7 +508,7 @@ fn choices_before(
     let due: Vec<&crate::compiler::flow::PathChoice> = ctx
         .choices
         .iter()
-        .filter(|(i, _)| *i == si)
+        .filter(|(i, c)| *i == si && c.late == late)
         .map(|(_, c)| c)
         .collect();
     if due.is_empty() {
@@ -1364,7 +1365,9 @@ pub(super) fn build_critical_path(
         // A story world's choices due here (`flow::StoryCtx::choices`): each
         // option taken as a `talk-to` with no objective, before the triggers
         // due here, whose gates a choice may be what opens.
-        for step in choices_before(campaign, anchors, npcs, path, si, area, &begun, &journal)? {
+        for step in choices_before(
+            campaign, anchors, npcs, path, si, area, &begun, &journal, false,
+        )? {
             if let Some(pos) = step.pos()
                 && !loops.is_empty()
             {
@@ -1396,6 +1399,24 @@ pub(super) fn build_critical_path(
         for m in mock::mocks_before(campaign, flow, path, si) {
             steps.push(m);
             loops.record();
+        }
+        // The late choices due here (`flow::PathChoice::late`): read by
+        // nothing in front of this step, so they are the last thing done in
+        // front of it, and every act due here is walked to from where it
+        // would be without them.
+        for step in choices_before(
+            campaign, anchors, npcs, path, si, area, &begun, &journal, true,
+        )? {
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                loops.before(&mut steps, &mut trigger_step, pos, area, entry, anchors);
+            }
+            steps.push(step.clone());
+            loops.record();
+            if let Some(pos) = step.pos() {
+                loops.stand(area, pos);
+            }
         }
         let Some(obj) = quest
             .objectives

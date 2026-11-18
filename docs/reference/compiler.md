@@ -3302,7 +3302,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   completing option's gate and every gate on the shortest way to it from an
   entry of the tree (`flow::Flow::step_reads`) — is paid in front of that
   step, and every other is taken in front of the **last** step, before the
-  first final scene fires, at which it can be taken. So its walk comes after
+  first final scene fires, at which it can be taken once the acts due in
+  front of that step are done, and it is exported after them: the last thing
+  done in front of the step (`flow::PathChoice::late`), so the cell every
+  trigger and deed due there is walked to and judged from is the one the path
+  stands at without the choice. So its walk comes after
   the beats in front of it (an armed arrival it would otherwise walk into, a
   door the mainline has not opened), and a choice whose flags are already held
   is not taken again. A choice can be taken where the option is

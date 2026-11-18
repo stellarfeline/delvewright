@@ -234,8 +234,13 @@ fn a_speaker_no_way_reaches_offers_nothing() {
 /// hello-world whose keeper is reached by an arrival armed from the start
 /// (`obj/arrive`, a reach at his stand), with a fork on an option of his
 /// lore that completes nothing: the trusted world owes that choice.
-fn arrival_fixture() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("story-choice-arrival");
+///
+/// With `latch`, the door at `obj/exit` also asks `flag/key`, which an
+/// `approach` trigger at the latch sets once the keeper has been heard
+/// (`flag/told`, from `obj/talk`): the trigger is performed in front of
+/// `obj/exit`, the step the late choice stands in front of too.
+fn arrival_fixture(tag: &str, latch: bool) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("story-choice-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::hello_world_dir(), &dir);
     edit(&dir.join("dialogue.json"), |v| {
@@ -261,6 +266,19 @@ fn arrival_fixture() -> PathBuf {
                 "happening": {"text": "the party completes obj/arrive", "verb": "arrives"}
             }),
         );
+        if latch {
+            objs[2]["requires_flags"] = json!(["flag/key"]);
+            let q = &mut v["content"]["quests"][0];
+            q["on_objective_complete"]["obj/talk"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"type": "set-flag", "flag": "flag/told"}));
+            v["content"]["triggers"] = json!([{
+                "id": "trigger/key", "at": "anchor/latch", "on": {"on": "approach", "range": 1},
+                "requires_flags": ["flag/told"], "forbids_flags": ["flag/key"],
+                "effects": [{"type": "set-flag", "flag": "flag/key"}]
+            }]);
+        }
     });
     edit(&dir.join("quest-plan.json"), |v| {
         v["content"]["branch_points"] = json!([{
@@ -282,7 +300,46 @@ fn arrival_fixture() -> PathBuf {
 /// arrival and the build proves every world's walk.
 #[test]
 fn a_choice_behind_an_armed_arrival_builds() {
-    let dir = arrival_fixture();
+    let (out, log) = build(&arrival_fixture("arrival", false));
+    // Binding: some world's exported path takes the keeper's choice, after
+    // the arrival.
+    let mut chose = 0;
+    for (name, steps) in world_paths(&out) {
+        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(pred);
+        if let Some(c) = at(&|s| s["action"] == "choose") {
+            let arrive = at(&|s| s["objective"] == "obj/arrive").expect("the arrival is walked");
+            assert!(arrive < c, "{name}: the choice comes after the arrival");
+            chose += 1;
+        }
+    }
+    assert!(chose > 0, "no world took the keeper's choice: {log}");
+}
+
+/// **A late choice is the last thing done in front of its step**: the latch
+/// trigger due in front of `obj/exit` is walked to from where the party
+/// stands without the choice, and the choice comes after it. Taken first, the
+/// keeper's choice moved the cell every act due there is judged from — the
+/// plain town's `trigger/spot-the-fox`, judged from a speaker 267 blocks off
+/// (`DW0863`).
+#[test]
+fn a_late_choice_comes_after_the_acts_due_in_front_of_its_step() {
+    let (out, log) = build(&arrival_fixture("latch", true));
+    let mut chose = 0;
+    for (name, steps) in world_paths(&out) {
+        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(pred);
+        let Some(c) = at(&|s| s["action"] == "choose") else {
+            continue;
+        };
+        let key = at(&|s| s["trigger"] == "trigger/key").expect("the latch is pressed");
+        let exit = at(&|s| s["objective"] == "obj/exit").expect("the door is walked");
+        assert!(key < c && c < exit, "{name}: {steps:?}");
+        chose += 1;
+    }
+    assert!(chose > 0, "no world took the keeper's choice: {log}");
+}
+
+/// Build `dir`; the output directory and the log, refused unless exit 0.
+fn build(dir: &Path) -> (PathBuf, String) {
     let out = dir.with_extension("out");
     let _ = std::fs::remove_dir_all(&out);
     let o = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
@@ -302,9 +359,12 @@ fn a_choice_behind_an_armed_arrival_builds() {
         String::from_utf8_lossy(&o.stderr)
     );
     assert_eq!(o.status.code(), Some(0), "{log}");
-    // Binding: some world's exported path takes the keeper's choice, after
-    // the arrival.
-    let mut chose = 0;
+    (out, log)
+}
+
+/// Every exported world path under `out`, by file name, as its steps.
+fn world_paths(out: &Path) -> Vec<(String, Vec<Value>)> {
+    let mut paths = Vec::new();
     for f in std::fs::read_dir(out.join("validation")).unwrap() {
         let f = f.unwrap().path();
         let name = f.file_name().unwrap().to_string_lossy().to_string();
@@ -312,13 +372,8 @@ fn a_choice_behind_an_armed_arrival_builds() {
             continue;
         }
         let path: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
-        let steps = path["steps"].as_array().unwrap();
-        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(pred);
-        if let Some(c) = at(&|s| s["action"] == "choose") {
-            let arrive = at(&|s| s["objective"] == "obj/arrive").expect("the arrival is walked");
-            assert!(arrive < c, "{name}: the choice comes after the arrival");
-            chose += 1;
-        }
+        paths.push((name, path["steps"].as_array().unwrap().clone()));
     }
-    assert!(chose > 0, "no world took the keeper's choice");
+    paths.sort_by(|a, b| a.0.cmp(&b.0));
+    paths
 }

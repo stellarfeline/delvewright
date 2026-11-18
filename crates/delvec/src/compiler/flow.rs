@@ -434,6 +434,13 @@ pub struct PathChoice {
     pub n: usize,
     /// The flags the option sets.
     pub sets: Vec<String>,
+    /// Taken as late as the world's reading allows, read by nothing in front
+    /// of its step ([`Flow::story_debts`]): the last thing done there, after
+    /// the triggers and the mocked deeds due in front of the same step, so
+    /// the walk to them starts where it would without the choice. `false` for
+    /// a choice a read pays, which comes first, before the acts its flag may
+    /// open.
+    pub late: bool,
 }
 
 /// The evolving state of one playthrough replay: which flags are set, which

@@ -794,6 +794,7 @@ impl<'a> Flow<'a> {
                         npc: t.npc.clone(),
                         n: o.n,
                         sets: o.sets.clone(),
+                        late: false,
                     }));
                 }
             }
@@ -910,6 +911,7 @@ impl<'a> Flow<'a> {
                 npc,
                 n: alt.n,
                 sets: opt.sets.clone(),
+                late: false,
             });
         }
         owed
@@ -1043,13 +1045,6 @@ impl<'a> Flow<'a> {
                 }
             }
             self.debt_saturate(&mut o);
-            if o.st.scene_at.is_empty() {
-                for c in &owed {
-                    if self.choice_takeable(c, sel, &o.st, &step.quest) {
-                        last_takeable.insert((c.npc.clone(), c.n), i);
-                    }
-                }
-            }
             for flag in self.step_reads(step) {
                 if o.st.flags.contains(&flag) {
                     continue;
@@ -1088,6 +1083,15 @@ impl<'a> Flow<'a> {
                     }
                 }
             }
+            // Takeable here once every act due in front of this step is done:
+            // a late choice is the last thing done in front of it.
+            if o.st.scene_at.is_empty() {
+                for c in &owed {
+                    if self.choice_takeable(c, sel, &o.st, &step.quest) {
+                        last_takeable.insert((c.npc.clone(), c.n), i);
+                    }
+                }
+            }
             let paid = &o.paid;
             self.advance_with(&mut o.st, step, i + 1, &mut complete_at, &|g| {
                 self.debt_credit(g, paid)
@@ -1100,7 +1104,7 @@ impl<'a> Flow<'a> {
                 continue;
             }
             if let Some(&i) = last_takeable.get(&(c.npc.clone(), c.n)) {
-                out.choices.push((i, c));
+                out.choices.push((i, PathChoice { late: true, ..c }));
                 continue;
             }
             out.unpaid.push(format!(
