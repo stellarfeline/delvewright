@@ -5045,6 +5045,16 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/long-hall-near-rim",
+        pos: [7, 2, LONG_HALL_BASIN_Z.0 - 1],
+        facing: None,
+        trigger_block: None,
+        note: "the air over the basin's near rim, at its middle: the centre of the area a salmon \
+               is laid anywhere on (an `interact` over a `region`), `± [2, 0, 0]` the rim's \
+               whole top face",
+        role: None,
+    },
+    Anchor {
         name: "anchor/long-hall-far-bank",
         pos: [9, 1, LONG_HALL_BASIN_Z.1 + 3],
         facing: None,

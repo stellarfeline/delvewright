@@ -122,9 +122,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   item, nothing stands at `pos` to open, and the bot is handed the item by
  *   command there. A format-14 bot would refuse the key.
  *
+ * * `16` — an `interact` step over an area carries `stand`, the stance the
+ *   build proved clicks it, and `area`: the cell of its top face, the point
+ *   aimed at and the tiles a click may land on, each the one press. A
+ *   format-15 bot would refuse the keys.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 15;
+export const CRITICAL_PATH_FORMAT_VERSION = 16;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -476,7 +481,30 @@ export interface InteractStep extends PresentationMarkers, Pursued {
   readonly block?: string;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
+  /**
+   * Where the party stands to use an area (format 16): the stance the build
+   * proved clicks it, and where the route's leg ends. Present exactly with
+   * {@link InteractStep.area}.
+   */
+  readonly stand?: Vec3Tuple;
+  /** The area the use is taken over (format 16), when the interact has one. */
+  readonly area?: InteractArea;
 }
+
+/**
+ * An `interact` pressed over an area (format 16): the cell of its top face the
+ * build proved a click reaches from `stand`, the point aimed at, and every tile
+ * of the area's click boxes — each the one press, so a click on any of them is
+ * the act, and none occludes another.
+ */
+export interface InteractArea {
+  readonly cell: Vec3Tuple;
+  readonly aim: Vec3Like3;
+  readonly tiles: readonly { readonly min: Vec3Like3; readonly max: Vec3Like3 }[];
+}
+
+/** A point in world space as the export writes it: `[x, y, z]`, fractional. */
+export type Vec3Like3 = readonly [number, number, number];
 
 /**
  * Rest at bonfire `bonfire` (spec-0016 §1). A path EXPORT step: it
@@ -935,6 +963,50 @@ function requireVec3(
     return entry;
   });
   return [coords[0]!, coords[1]!, coords[2]!];
+}
+
+/**
+ * An `interact` step's area (format 16): `stand` and `area` together or
+ * neither — a click over an area is made from the stance the build proved, and
+ * a stance with no area to click is nothing to act on.
+ */
+function parseInteractArea(
+  obj: Record<string, unknown>,
+  pointer: string,
+): { stand: Vec3Tuple; area: InteractArea } | Record<string, never> {
+  const hasStand = obj["stand"] !== undefined;
+  const raw = obj["area"];
+  if (!hasStand && raw === undefined) return {};
+  if (!hasStand || raw === undefined) {
+    fail(
+      `${pointer}/${hasStand ? "area" : "stand"}`,
+      "an interact over an area names both the stance it is used from (`stand`) and the area " +
+        "(`area`)",
+    );
+  }
+  const stand = requireVec3(obj, "stand", pointer);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    fail(`${pointer}/area`, `must be an object, got ${describe(raw)}`);
+  }
+  const a = raw as Record<string, unknown>;
+  const at = `${pointer}/area`;
+  rejectUnknownKeys(a, ["cell", "aim", "tiles"], at);
+  const cell = requireVec3(a, "cell", at);
+  const aim = requireVec3(a, "aim", at);
+  const tiles = a["tiles"];
+  if (!Array.isArray(tiles) || tiles.length === 0) {
+    fail(`${at}/tiles`, `must be a non-empty array, got ${describe(tiles)}`);
+  }
+  const parsed = tiles.map((t, i) => {
+    const tp = `${at}/tiles/${i}`;
+    if (typeof t !== "object" || t === null || Array.isArray(t)) {
+      fail(tp, `must be an object, got ${describe(t)}`);
+    }
+    const o = t as Record<string, unknown>;
+    rejectUnknownKeys(o, ["min", "max"], tp);
+    return { min: requireVec3(o, "min", tp), max: requireVec3(o, "max", tp) };
+  });
+  return { stand, area: { cell, aim, tiles: parsed } };
 }
 
 /**
@@ -1526,6 +1598,8 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "cutscene_seconds",
           "en_route_cutscene_seconds",
           "keep_out",
+          "stand",
+          "area",
         ],
         pointer,
       );
@@ -1538,6 +1612,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         fail(`${pointer}/block`, `must be a block id or null, got ${describe(block)}`);
       }
       const pressed = typeof block === "string" ? { block } : {};
+      const area = parseInteractArea(obj, pointer);
       return {
         action: "interact",
         objective: requireObjectiveId(obj, pointer),
@@ -1546,6 +1621,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         command: requireString(obj, "command", pointer),
         requiresItem: ri,
         ...pressed,
+        ...area,
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };

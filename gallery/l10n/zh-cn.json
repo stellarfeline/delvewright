@@ -149,6 +149,11 @@
     "obj.long-hall.catch-the-hen.title": "捉住跑掉的母鸡",
     "obj.long-hall.fish-off-the-slip.hint": "水池里有鲑鱼游动；到系船的码头上抛竿。",
     "obj.long-hall.fish-off-the-slip.title": "在码头上钓起两条鲑鱼",
+    "obj.long-hall.lay-the-toll.answers.done": "你那条鲑鱼已经躺在池沿上了。",
+    "obj.long-hall.lay-the-toll.answers.missing_item": "池沿要收一条鲑鱼作过路钱，可你手里没有。",
+    "obj.long-hall.lay-the-toll.answers.not_yet": "池沿这会儿还不向你讨什么。",
+    "obj.long-hall.lay-the-toll.hint": "划船之前得先交过路钱：在水池近处的池沿上随便哪儿放下一条鲑鱼。",
+    "obj.long-hall.lay-the-toll.title": "在池沿上放一条鲑鱼",
     "obj.long-hall.open-the-crate.hint": "水池那头的角落里漂着一只木箱；不用下船，从里面把渔获取出来。",
     "obj.long-hall.open-the-crate.item_name": "咸鳕鱼",
     "obj.long-hall.open-the-crate.title": "从漂着的木箱里取出渔获",
@@ -266,7 +271,7 @@
     "world.outro": "厅中每一只展柜都已读过。",
     "world.title": "陈列厅"
   },
-  "dsl_version": "0.88.0",
+  "dsl_version": "0.89.0",
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {

@@ -19,6 +19,20 @@ The client's crosshair takes an entity only when its box is strictly nearer the 
 
 `ClickBox::sized` builds an assembly's declared hitbox: each face within `CLICK_MARGIN` of a block-grid plane is pushed out to `CLICK_MARGIN` past it (e.g. 1.5 × 2.5 on a cell floor → `{width:1.5f,height:2.51f}` at `Y-0.01`).
 
+## An area
+
+`ClickBox::tiling(lo, hi)` builds the body of an `interact` declared over a `region` instead of a `prop`: the click boxes that together enclose every cell of the inclusive box. An `interaction` is square in plan, so the box is cut along its longer horizontal side into squares as wide as its shorter side, the last set flush with the far end (it may overlap the one before it; every tile is the one press, so an overlap is no contest), each the box's full height, every face `CLICK_MARGIN` past the grid plane the box ends on (a 7 × 1 × 3 box: three `{width:3.02f,height:1.02f}` tiles, the last overlapping the second). Each wears `dw_fixture`, then `dw_area`, then the press's tags.
+
+What a player's click meets [cited — the pinned client, `client.jar` sha256 `1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd` (`versions.toml [minecraft].client_jar_sha256`), read with `javap -p -c` under the `client_mappings` piston-meta publishes for 1.21.11, sha1 `031a68bebf55d824f66d6573d8c752f0e1bf232a`]: `GameRenderer.pick(float)` hands the pick to `LocalPlayer.pick(Entity, double, double, float)`, which casts the block ray as `Entity.pick(range, partialTick, false)`; with `stopOnFluid` false that ray's `ClipContext` is built with `ClipContext.Block.OUTLINE` and `ClipContext.Fluid.NONE`. The ray **passes through water, lava and every fluid** and stops at the first block outline; the entity ray (`ProjectileUtil.getEntityHitResult`) then keeps an entity only when it is strictly nearer than that block hit. So:
+
+- **over water** a click meets the bed under the water, or the first outlined block in it;
+- **over a solid floor** a click meets the floor block's top face;
+- **from inside a box** (the eye in it) the entity is taken whatever is aimed at.
+
+[authored] Every block, fluid and outline inside the box lies strictly inside a tile, so a ray that reaches anything in the area crosses a tile first and the use lands on the area; a ray that reaches nothing in it lands on whatever is there. An area therefore names the space a use is taken in: the water layer of a pond, the air over a field or a rim (the tile's floor `CLICK_MARGIN` under the floor's top face encloses it). An area whose box a standing eye could be in takes that player's every click, so the box is kept below eye height of where the party stands — the area proof's stance is outside the area's columns (`DW1143`).
+
+`check` judges a tile (`dw_area`) against the grid, as an assembly hitbox: every face at least `MIN_PROTRUSION` off it; the binding line counts them as area tiles.
+
 Not built by the rule: an NPC's dialogue hitbox and an actor's answer box (borne by a body that stands in air and moves) and a recovery stake's marker (summoned at a runtime position, `~ ~ ~`).
 
 ## Diagnostics

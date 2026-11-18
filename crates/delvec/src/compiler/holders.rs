@@ -1520,6 +1520,19 @@ pub fn final_walk(
     (walk_world(plan, world, owned), relight)
 }
 
+/// **The cells a hand-act's stance is chosen among**: where the critical
+/// path's leg to the step ends and the bot acts — a holder `collect`'s take
+/// (spec-0111 §5.2) and an area `interact`'s click (`nav::area`). A cell the
+/// party walks to on cue in whichever area it has been carried to, so the
+/// walk relation rooted at every placed anchor, not the reach graph
+/// (spec-0113 §4.5). The one entry point for that question.
+pub fn stance_walk(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+) -> std::collections::BTreeSet<[i32; 3]> {
+    world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+}
+
 /// The stance pass over `world` for the holders `owned`, from the cells the
 /// party can walk to, and `world` ending each holder `collect`'s leg at the
 /// stance that pass chose. Private: every reader takes it through
@@ -1529,7 +1542,7 @@ fn walk_world(plan: &Plan, world: crate::compiler::nav::World, owned: &[OwnedHol
     // item (spec-0111 §5.2): a cell the party walks to on cue, so the walk
     // relation, not the reach graph (spec-0113 §4.5).
     let reachable = if owned.iter().any(|o| o.is_filled()) {
-        world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+        stance_walk(plan, &world)
     } else {
         std::collections::BTreeSet::new()
     };

@@ -1072,7 +1072,8 @@ crate::dw_code! {
 
 crate::dw_code! {
     /// (spec-0117) **A press target that is not a real block**: an interaction
-    /// point with no `prop` where one is required, a `prop` whose blockstate
+    /// point with no `prop` where one is required (an `interact` may name a
+    /// `region` instead, and names one or the other, never both), a `prop` whose blockstate
     /// the pinned game gives no outline (or an outline that leaves its cell), a
     /// door named by its upper half, or a trigger anchored at a gate **region**
     /// (many cells; anchor it at the door's cell, where the gate's block is its
@@ -1227,6 +1228,10 @@ pub struct PressSite<'c> {
     pub path: String,
     /// The block, if declared.
     pub prop: Option<&'c Prop>,
+    /// The area an `interact` is pressed over instead of a block (its
+    /// `region`), if declared: boxed in every state, as a block the game
+    /// reports no press of is.
+    pub area: Option<&'c crate::StealthZone>,
     /// Whether a `prop` is owed here (`DW1059` (a)).
     pub prop_owed: bool,
     /// The declared answers, if any.
@@ -1250,8 +1255,13 @@ pub struct PressSite<'c> {
 }
 
 impl PressSite<'_> {
-    /// The form its block is pressed in, when it names one.
+    /// The form its block is pressed in, when it names one. An area (no
+    /// block, one declared `region`) is boxed in every state, so it is
+    /// pressed as a block the game reports no press of is.
     pub fn form(&self) -> Option<PressForm> {
+        if self.prop.is_none() && self.area.is_some() {
+            return Some(PressForm::Unobservable);
+        }
         let prop = self.prop?;
         if self.struck {
             return outline_in_cell(&prop.block).then_some(PressForm::Unobservable);
@@ -1412,6 +1422,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             let crate::Objective::Interact {
                 id,
                 prop,
+                region,
                 answers,
                 release,
                 requires_item,
@@ -1425,6 +1436,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
                 id: id.as_str().to_string(),
                 path: format!("/content/quests/{qi}/objectives/{oi}"),
                 prop: prop.as_ref(),
+                area: region.as_ref(),
                 prop_owed: true,
                 answers: answers.as_ref(),
                 release: *release,
@@ -1473,6 +1485,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             id: t.id.as_str().to_string(),
             path: format!("/content/triggers/{ti}"),
             prop: t.prop.as_ref(),
+            area: None,
             prop_owed: at_point && !gate_answer,
             answers: t.answers.as_ref(),
             release: t.release,
@@ -1500,6 +1513,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             id: sc.id.as_str().to_string(),
             path: format!("/content/shortcuts/{si}"),
             prop: sc.prop.as_ref(),
+            area: None,
             prop_owed: true,
             answers: sc.answers.as_ref(),
             release: sc.release,
@@ -1525,6 +1539,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
                 id: anchor.as_str().to_string(),
                 path: path.to_string(),
                 prop: prop.as_ref(),
+                area: None,
                 prop_owed: true,
                 answers: answers.as_ref(),
                 release: false,
@@ -1546,6 +1561,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             id: sh.id.as_str().to_string(),
             path: format!("/content/shops/{hi}"),
             prop: sh.prop.as_ref(),
+            area: None,
             prop_owed: true,
             answers: None,
             release: false,
@@ -1564,6 +1580,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             id: t.id.as_str().to_string(),
             path: format!("/content/traps/{ti}/disarm"),
             prop: d.prop.as_ref(),
+            area: None,
             prop_owed: true,
             answers: d.answers.as_ref(),
             release: d.release,
@@ -1582,6 +1599,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             id: g.id.as_str().to_string(),
             path: format!("/content/timed_gates/{gi}/disarm"),
             prop: d.prop.as_ref(),
+            area: None,
             prop_owed: true,
             answers: d.answers.as_ref(),
             release: d.release,
@@ -1614,6 +1632,9 @@ pub struct PressBinding {
     pub boxed_unobservable: usize,
     /// Boxed because the press is a strike.
     pub boxed_struck: usize,
+    /// Pressed over an area (an `interact`'s `region`): boxed in every state,
+    /// no block of their own.
+    pub areas: usize,
     /// Riding a body (a `strike-npc`, a `strike-assembly`, a strike at an
     /// NPC's stand) or a gate's own answer: no prop of their own.
     pub riding: usize,
@@ -1639,7 +1660,7 @@ impl PressBinding {
         format!(
             "press bodies (DW1059): {} interaction point(s) — {} pressed on their own ({} bell, \
              {} button, {} lever), {} boxed ({} acting on their own, {} unobservable, {} \
-             struck), {} riding a body or a gate, {} refused",
+             struck), {} over an area, {} riding a body or a gate, {} refused",
             self.pressables,
             self.own_bell + self.own_button + self.own_lever,
             self.own_bell,
@@ -1649,6 +1670,7 @@ impl PressBinding {
             self.boxed_acts,
             self.boxed_unobservable,
             self.boxed_struck,
+            self.areas,
             self.riding,
             self.refused_target
         )
@@ -1709,6 +1731,24 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
         // --- DW1059: the body is a real block ---
         let mut target_ok = true;
         match site.prop {
+            Some(_) if site.area.is_some() => {
+                target_ok = false;
+                d.push(Diagnostic::error(
+                    PRESS_TARGET_UNREAL,
+                    "quests",
+                    format!("{}/region", site.path),
+                    format!(
+                        "{} `{}` names both a `prop` and a `region`: the press would have two \
+                         bodies, a block the party sees and an area around it, and which one a \
+                         use lands on is not something the player can tell. Prescription: keep \
+                         `prop` when the thing pressed is one block, or `region` when a use \
+                         anywhere over an area counts — never both",
+                        site.kind.word(),
+                        site.id
+                    ),
+                ));
+            }
+            None if site.area.is_some() => b.areas += 1,
             None if site.prop_owed => {
                 target_ok = false;
                 let (path, remedy) = match ambush_ids.get(&site.id) {
@@ -1723,7 +1763,14 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                         format!(
                             "declare `\"prop\": {{\"block\": \"<the block the party presses>\"}}` — \
                              a bell or a button is pressed as itself; a door, a lever, a chest, a \
-                             campfire or any other block gets an invisible box fitted to it{}",
+                             campfire or any other block gets an invisible box fitted to it{}{}",
+                            if site.kind == PressKind::Interact {
+                                "; or, where a use anywhere over an area counts (a pond, a \
+                                 field, a hearth), declare `\"region\": {\"anchor\": …, \
+                                 \"extent\": [x, y, z]}` instead"
+                            } else {
+                                ""
+                            },
                             if site.kind == PressKind::Strike {
                                 "; a strike is always boxed, because the game reports no \
                                  left-click on a block"
@@ -1864,6 +1911,21 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                      release"
                         .to_string(),
                 );
+            } else if site.area.is_some() && site.prop.is_none() {
+                refused_here += 1;
+                d.push(Diagnostic::error(
+                    PRESS_SILENT,
+                    "quests",
+                    format!("{}/release", site.path),
+                    format!(
+                        "{} `{}` releases its area at settlement, and an area is no block: \
+                         nothing the game would answer stands under its boxes, so a released \
+                         area would answer no use and no line could be written for it. \
+                         Prescription: drop `release` and write `answers.done`",
+                        site.kind.word(),
+                        site.id
+                    ),
+                ));
             } else if site.form() == Some(PressForm::Unobservable) && !site.struck {
                 refused_here += 1;
                 d.push(Diagnostic::error(

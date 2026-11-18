@@ -83,6 +83,10 @@ delvewright_dsl::dw_code! {
     pub const DW_CLICK_BOX_FLUSH: DwCode = DwCode::new("DW1013", ExitTier::Build);
 }
 
+/// The class tag every tile of an area's click boxes wears ([`ClickBox::tiling`]),
+/// first after the fixture class: what [`check`] judges such a box by.
+pub const AREA_TAG: &str = "dw_area";
+
 /// How far a click box protrudes past each grid plane its asked-for face lies
 /// near, in blocks. Written into the datapack in hundredths ([`CLICK_MARGIN_CENTI`]).
 pub const CLICK_MARGIN: f64 = 0.01;
@@ -316,6 +320,53 @@ impl ClickBox {
         }
     }
 
+    /// **The tiling of an area** (an `interact`'s `region`): the click boxes
+    /// that together enclose every cell of the inclusive box `lo..=hi`, each
+    /// face [`CLICK_MARGIN`] past the grid plane the box ends on. An
+    /// `interaction` is square in plan, so the box is cut along its longer
+    /// horizontal side into squares as wide as its shorter side, the last one
+    /// set flush with the far end (it may overlap the one before it: every
+    /// tile is the one press, so an overlap is no contest). Each tile is the
+    /// box's full height. Deterministic: in order along the longer side.
+    ///
+    /// **Why the box, whatever is in it.** The client's pick passes through a
+    /// fluid (`ClipContext.Fluid.NONE`) and stops at the first block outline;
+    /// it takes an entity strictly nearer than that block. Every block, fluid
+    /// and outline inside the box lies strictly inside a tile, so a ray that
+    /// reaches anything in the area — the pond's floor through its water, the
+    /// soil of a field, the side of a raised bed — has crossed a tile first
+    /// (`docs/reference/delvec/compiler/clickbox.md`, *An area*).
+    pub fn tiling(lo: [i32; 3], hi: [i32; 3]) -> Vec<Self> {
+        let (lo, hi) = (
+            [lo[0].min(hi[0]), lo[1].min(hi[1]), lo[2].min(hi[2])],
+            [lo[0].max(hi[0]), lo[1].max(hi[1]), lo[2].max(hi[2])],
+        );
+        let span = |a: usize| i64::from(hi[a]) - i64::from(lo[a]) + 1;
+        let (long, short) = if span(0) >= span(2) { (0, 2) } else { (2, 0) };
+        let side = span(short);
+        let length = span(long);
+        let m = Dec::centi(CLICK_MARGIN_CENTI);
+        let width = Dec::int(side) + m + m;
+        let height = Dec::int(span(1)) + m + m;
+        let floor = Dec::int(i64::from(lo[1])) - m;
+        let short_centre = Dec::int(i64::from(lo[short])) + Dec::int(side).half();
+        let mut offsets: Vec<i64> = (0..length / side).map(|k| k * side).collect();
+        if length % side != 0 {
+            offsets.push(length - side);
+        }
+        offsets
+            .into_iter()
+            .map(|off| {
+                let long_centre = Dec::int(i64::from(lo[long]) + off) + Dec::int(side).half();
+                let mut pos = [floor; 3];
+                pos[long] = long_centre;
+                pos[short] = short_centre;
+                pos[1] = floor;
+                ClickBox { pos, width, height }
+            })
+            .collect()
+    }
+
     /// The position as the three coordinate tokens a `summon` carries.
     pub fn xyz(&self) -> String {
         format!(
@@ -422,6 +473,8 @@ pub struct ClickBoxBinding {
     pub two_cell: usize,
     /// Assembly hitboxes (`dw_asm`), judged against the block grid.
     pub assembly: usize,
+    /// Tiles of an area's boxes ([`AREA_TAG`]), judged against the block grid.
+    pub area: usize,
 }
 
 impl ClickBoxBinding {
@@ -459,14 +512,15 @@ impl ClickBoxBinding {
             .join(", ");
         format!(
             "DW1013 binding: {} of {} interaction summon(s) placed at a cell and judged against \
-             its block ({families}); {} fitted to a two-cell body; {} assembly hitbox(es) judged \
-             against the grid; {} borne by a body ({bearers}), {} at a runtime position — every \
-             judged box encloses its block's outline by at least {MIN_PROTRUSION} and lies within \
-             its cells by at most {CLICK_MARGIN}",
+             its block ({families}); {} fitted to a two-cell body; {} assembly hitbox(es) and {} \
+             area tile(s) judged against the grid; {} borne by a body ({bearers}), {} at a runtime \
+             position — every judged box encloses its block's outline by at least \
+             {MIN_PROTRUSION} and lies within its cells by at most {CLICK_MARGIN}",
             self.judged(),
             self.summons,
             self.two_cell,
             self.assembly,
+            self.area,
             self.borne,
             self.runtime
         )
@@ -488,6 +542,7 @@ impl ClickBoxBinding {
             "runtime": self.runtime,
             "two_cell": self.two_cell,
             "assembly": self.assembly,
+            "area": self.area,
             "margin": CLICK_MARGIN,
             "min_protrusion": MIN_PROTRUSION,
         })
@@ -678,6 +733,23 @@ pub fn check(
                 .find(|t| *t != FIXTURE_TAG)
                 .map(|t| family(t))
                 .unwrap_or_else(|| "untagged".to_string());
+            if fam == AREA_TAG {
+                if let Some((axis, which, v)) = flush_face(&s) {
+                    return Err(Failure::new(
+                        DW_CLICK_BOX_FLUSH,
+                        format!(
+                            "`{name}` places a tile of an area's click boxes whose {which} face \
+                             lies on the block grid ({axis} = {v}). A block the area holds on \
+                             that plane shares the face and wins the click. The emitter must \
+                             build the tiles through `compiler::clickbox::ClickBox::tiling`. \
+                             Command: `{}`.",
+                            line.trim()
+                        ),
+                    ));
+                }
+                b.area += 1;
+                continue;
+            }
             if fam == "dw_asm" {
                 if let Some((axis, which, v)) = flush_face(&s) {
                     return Err(Failure::new(
@@ -905,6 +977,77 @@ mod tests {
         assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
         assert!(e.message.contains("south face"), "{}", e.message);
         assert!(e.message.contains("sixteenth 12"), "{}", e.message);
+    }
+
+    /// An area's tiling: squares as wide as the shorter side along the longer,
+    /// the last set flush with the far end, every face one margin past the
+    /// grid, and together the whole box.
+    #[test]
+    fn an_area_is_tiled_in_squares_one_margin_past_its_box() {
+        let tiles = ClickBox::tiling([10, 64, 20], [16, 64, 22]);
+        let shown: Vec<(String, String)> = tiles.iter().map(|t| (t.xyz(), t.size_nbt())).collect();
+        assert_eq!(
+            shown,
+            vec![
+                (
+                    "11.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+                (
+                    "14.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+                (
+                    "15.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+            ]
+        );
+        // The longer side along z, and a square box: one tile each way.
+        let along_z = ClickBox::tiling([0, 0, 0], [1, 2, 4]);
+        assert_eq!(along_z.len(), 3);
+        assert_eq!(along_z[2].xyz(), "1.0 -0.01 4.0");
+        assert_eq!(ClickBox::tiling([3, 5, 3], [7, 5, 7]).len(), 1);
+        // Corners given either way round are the one box.
+        assert_eq!(
+            ClickBox::tiling([16, 64, 22], [10, 64, 20]),
+            ClickBox::tiling([10, 64, 20], [16, 64, 22])
+        );
+        // Every cell of the box lies strictly inside some tile, every face of
+        // every tile off the grid.
+        for x in 10..=16 {
+            for z in 20..=22 {
+                assert!(
+                    tiles.iter().any(|t| {
+                        let (lo, hi) = t.aabb();
+                        let c = [f64::from(x), 64.0, f64::from(z)];
+                        (0..3).all(|a| lo[a] < c[a] && c[a] + 1.0 < hi[a])
+                    }),
+                    "cell {x} 64 {z} uncovered"
+                );
+            }
+        }
+        let lines: Vec<String> = tiles
+            .iter()
+            .map(|t| {
+                t.summon("response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_area\",\"dw_i_x\"]")
+            })
+            .collect();
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let b = check(&tree(&refs), &BTreeMap::new()).expect("the tiling is off the grid");
+        assert_eq!((b.area, b.judged(), b.summons), (3, 0, 3));
+    }
+
+    /// A tile built flush with the grid — no margin past the box — is refused,
+    /// naming its face: a block on that plane would win the click.
+    #[test]
+    fn an_area_tile_flush_with_the_grid_is_refused() {
+        let out = tree(&[
+            "summon minecraft:interaction 11.5 64.0 21.5 {width:3.02f,height:1.02f,response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_area\",\"dw_i_x\"]}",
+        ]);
+        let e = check(&out, &BTreeMap::new()).expect_err("a floor on the grid");
+        assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
+        assert!(e.message.contains("floor face"), "{}", e.message);
     }
 
     /// A box over a cell `setup_finish` leaves as air has nothing under it.

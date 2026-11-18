@@ -104,6 +104,11 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/lay-the-toll",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/row-the-basin",
         "quest": "quest/long-hall"
       },
@@ -409,6 +414,6 @@
       }
     ]
   },
-  "dsl_version": "0.88.0",
+  "dsl_version": "0.89.0",
   "stage": "layout-graph"
 }

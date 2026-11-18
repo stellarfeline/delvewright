@@ -129,6 +129,11 @@ pub enum Step {
         /// `prop` when it is a lever or a button, which the bot right-clicks
         /// instead of chatting `command`. `None` = the hitbox and the chat.
         block: Option<String>,
+        /// **The area the use is taken over** (an `interact`'s `region`), as
+        /// its inclusive corners: the act is done from anywhere within the
+        /// entity reach of it, and its click is the one `nav::area_click`
+        /// proves. `None` for a press of one block.
+        area: Option<([i32; 3], [i32; 3])>,
     },
     /// Perform an environment trigger the path depends on: do to its target
     /// what a player does — strike it, use it, walk within `range` of it, or
@@ -347,6 +352,25 @@ impl Step {
         match self {
             Step::Reach { completion, .. } => completion.contains_cell(cell),
             Step::TalkTo { pos, .. } => within(*pos, INTERACTION_REACH),
+            // An area is used from where a standing eye is within the entity
+            // reach of its box.
+            Step::Interact {
+                area: Some((lo, hi)),
+                ..
+            } => {
+                let eye = [
+                    f64::from(cell[0]) + 0.5,
+                    f64::from(cell[1]) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
+                    f64::from(cell[2]) + 0.5,
+                ];
+                let d2: f64 = (0..3)
+                    .map(|i| {
+                        let (a, b) = (f64::from(lo[i]), f64::from(hi[i]) + 1.0);
+                        (a - eye[i]).max(eye[i] - b).max(0.0).powi(2)
+                    })
+                    .sum();
+                d2 <= INTERACTION_REACH * INTERACTION_REACH
+            }
             Step::Interact { pos, block, .. } => within(
                 *pos,
                 if block.is_some() {
@@ -664,9 +688,16 @@ fn choices_before(
 ///   reason: a format-14 bot would refuse the key, and one that ignored it
 ///   would open a chest that is not there.
 ///
+/// * `16` — an `interact` step over an area (its `region`) carries `stand`,
+///   the stance the build proved clicks the area, and `area`: the cell of its
+///   top face and the point aimed at, and the tiles a click may land on, each
+///   the one press. The harness walks to `stand` and right-clicks the tile.
+///   A format change for `4`'s reason: a format-15 bot would refuse the keys,
+///   and one that ignored them would look for one box at the anchor.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 15;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 16;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1733,9 +1764,13 @@ pub(super) fn build_critical_path(
                     id,
                     anchor,
                     requires_item,
+                    region,
                     ..
                 } => {
                     let pos = point_of(anchors, area, anchor.as_str())?;
+                    let region = region
+                        .as_ref()
+                        .and_then(|z| crate::compiler::plan::zone_box_in(anchors, z));
                     steps.push(Step::Interact {
                         objective_id: id.as_str().to_string(),
                         anchor_id: anchor.as_str().to_string(),
@@ -1747,6 +1782,7 @@ pub(super) fn build_critical_path(
                         block: delvewright_dsl::press_site(campaign, id.as_str())
                             .filter(|s| s.open_unboxed())
                             .and_then(|s| s.prop.map(|p| p.block.clone())),
+                        area: region,
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
