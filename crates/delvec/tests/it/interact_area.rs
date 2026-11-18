@@ -1,7 +1,7 @@
 //! An `interact` pressed over an area (`region`) instead of one block.
 //!
-//! On hello-world, an interact over the floor layer by the latch, three cells
-//! along x on the spawn side of the door wall:
+//! On hello-world (the room seated at y 64), an interact over the air on the
+//! floor by the latch, three cells along x on the spawn side of the door wall:
 //!
 //! * the green: it builds; nothing is placed; its body is three tiles of
 //!   `ClickBox::tiling` summoned by `area_obj_sweep` at setup, each wearing the
@@ -9,8 +9,7 @@
 //!   advancement is the box's `player_interacted_with_entity`; the exported
 //!   step carries the stance the build proved and the tiles; the press ledger
 //!   names the area;
-//! * the perturbation: one more cell of extent each way moves the emitted
-//!   tiles;
+//! * the perturbation: no extent along x is one tile, not three;
 //! * the reds: a region that reaches the door wall has a block on its top face
 //!   (`DW1143`); `prop` and `region` both (`DW1059`); `release` on an area
 //!   (`DW1051`); a region over the keeper's own cell encloses his body
@@ -126,7 +125,7 @@ fn an_area_interact_is_tiled_placed_nowhere_and_clicked_from_its_stance() {
         let x = 1.5 + i as f64;
         assert!(
             line.starts_with(&format!(
-                "summon minecraft:interaction {x:.1} 0.99 5.5 {{width:1.02f,height:1.02f,"
+                "summon minecraft:interaction {x:.1} 64.99 5.5 {{width:1.02f,height:1.02f,"
             )),
             "{line}"
         );
@@ -146,7 +145,7 @@ fn an_area_interact_is_tiled_placed_nowhere_and_clicked_from_its_stance() {
     );
     for l in setup.lines() {
         assert!(
-            !["setblock 1 1 5 ", "setblock 2 1 5 ", "setblock 3 1 5 "]
+            !["setblock 1 65 5 ", "setblock 2 65 5 ", "setblock 3 65 5 "]
                 .iter()
                 .any(|p| l.starts_with(p)),
             "an area places no block: {l}"
@@ -183,7 +182,7 @@ fn an_area_interact_is_tiled_placed_nowhere_and_clicked_from_its_stance() {
         .map(|v| v.as_i64().unwrap())
         .collect();
     assert!(
-        cell[1] == 1 && cell[2] == 5 && (1..=3).contains(&cell[0]),
+        cell[1] == 65 && cell[2] == 5 && (1..=3).contains(&cell[0]),
         "{step}"
     );
     assert_eq!(step["area"]["tiles"].as_array().unwrap().len(), 3, "{step}");
@@ -202,18 +201,18 @@ fn an_area_interact_is_tiled_placed_nowhere_and_clicked_from_its_stance() {
         .clone();
     assert_eq!(
         row["area"]["region"],
-        json!([[1, 1, 5], [3, 1, 5]]),
+        json!([[1, 65, 5], [3, 65, 5]]),
         "{row}"
     );
     assert_eq!(row["form"], "boxed: unobservable", "{row}");
 }
 
-/// The extent is what the tiles are cut from: one cell more each way along x
-/// is five tiles, the outer two at x 0.5 and 4.5.
+/// The extent is what the tiles are cut from: none along x is the one tile
+/// over the latch's own cell (two more each way reaches the west wall, a lid).
 #[test]
 fn the_extent_moves_the_tiles() {
     let (code, log, out) = build(&fixture("wider", |o| {
-        o["region"]["extent"] = json!([2, 0, 0]);
+        o["region"]["extent"] = json!([0, 0, 0]);
     }));
     assert_eq!(code, 0, "{log}");
     let tiles = emitted(&out, "/function/area_obj_sweep.mcfunction").expect("the area's function");
@@ -221,7 +220,7 @@ fn the_extent_moves_the_tiles() {
         .lines()
         .map(|l| l.split(' ').nth(2).unwrap())
         .collect();
-    assert_eq!(xs, ["0.5", "1.5", "2.5", "3.5", "4.5"], "{tiles}");
+    assert_eq!(xs, ["2.5"], "{tiles}");
 }
 
 /// The region reaches the door wall at z 6: the wall stands on its top face
