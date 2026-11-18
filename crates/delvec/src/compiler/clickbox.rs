@@ -979,6 +979,77 @@ mod tests {
         assert!(e.message.contains("sixteenth 12"), "{}", e.message);
     }
 
+    /// An area's tiling: squares as wide as the shorter side along the longer,
+    /// the last set flush with the far end, every face one margin past the
+    /// grid, and together the whole box.
+    #[test]
+    fn an_area_is_tiled_in_squares_one_margin_past_its_box() {
+        let tiles = ClickBox::tiling([10, 64, 20], [16, 64, 22]);
+        let shown: Vec<(String, String)> = tiles.iter().map(|t| (t.xyz(), t.size_nbt())).collect();
+        assert_eq!(
+            shown,
+            vec![
+                (
+                    "11.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+                (
+                    "14.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+                (
+                    "15.5 63.99 21.5".to_string(),
+                    "width:3.02f,height:1.02f".to_string()
+                ),
+            ]
+        );
+        // The longer side along z, and a square box: one tile each way.
+        let along_z = ClickBox::tiling([0, 0, 0], [1, 2, 4]);
+        assert_eq!(along_z.len(), 3);
+        assert_eq!(along_z[2].xyz(), "1.0 -0.01 4.0");
+        assert_eq!(ClickBox::tiling([3, 5, 3], [7, 5, 7]).len(), 1);
+        // Corners given either way round are the one box.
+        assert_eq!(
+            ClickBox::tiling([16, 64, 22], [10, 64, 20]),
+            ClickBox::tiling([10, 64, 20], [16, 64, 22])
+        );
+        // Every cell of the box lies strictly inside some tile, every face of
+        // every tile off the grid.
+        for x in 10..=16 {
+            for z in 20..=22 {
+                assert!(
+                    tiles.iter().any(|t| {
+                        let (lo, hi) = t.aabb();
+                        let c = [f64::from(x), 64.0, f64::from(z)];
+                        (0..3).all(|a| lo[a] < c[a] && c[a] + 1.0 < hi[a])
+                    }),
+                    "cell {x} 64 {z} uncovered"
+                );
+            }
+        }
+        let lines: Vec<String> = tiles
+            .iter()
+            .map(|t| {
+                t.summon("response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_area\",\"dw_i_x\"]")
+            })
+            .collect();
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let b = check(&tree(&refs), &BTreeMap::new()).expect("the tiling is off the grid");
+        assert_eq!((b.area, b.judged(), b.summons), (3, 0, 3));
+    }
+
+    /// A tile built flush with the grid — no margin past the box — is refused,
+    /// naming its face: a block on that plane would win the click.
+    #[test]
+    fn an_area_tile_flush_with_the_grid_is_refused() {
+        let out = tree(&[
+            "summon minecraft:interaction 11.5 64.0 21.5 {width:3.02f,height:1.02f,response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_area\",\"dw_i_x\"]}",
+        ]);
+        let e = check(&out, &BTreeMap::new()).expect_err("a floor on the grid");
+        assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
+        assert!(e.message.contains("floor face"), "{}", e.message);
+    }
+
     /// A box over a cell `setup_finish` leaves as air has nothing under it.
     #[test]
     fn a_box_over_air_is_refused() {

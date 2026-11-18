@@ -281,3 +281,90 @@ pub fn check_areas(plan: &Plan, world: &World) -> Result<AreaBinding, Failure> {
     }
     Ok(b)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::floored;
+
+    /// A 9 x 9 floor at y=65 (ceiling at 67), with a pond cut 3 x 3 into it:
+    /// its cells at y=64 hold no block (the water a pick passes), its bed at 63.
+    fn pond() -> (World, ([i32; 3], [i32; 3])) {
+        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for x in 0..9 {
+            for z in 0..9 {
+                let pond = (3..=5).contains(&x) && (3..=5).contains(&z);
+                solid.insert(if pond { [x, 63, z] } else { [x, 64, z] });
+                solid.insert([x, 67, z]);
+            }
+        }
+        (World::from_solid_cells(solid), ([3, 64, 3], [5, 64, 5]))
+    }
+
+    #[test]
+    fn a_pond_is_used_from_its_bank_at_the_cell_nearest_the_eye() {
+        let (w, region) = pond();
+        let walk = w.walk_region(&[[0, 65, 0]]);
+        let c = area_click(&w, &walk, region, [4, 64, 4]).expect("the bank reaches the water");
+        assert!(
+            !in_columns(c.stance, region),
+            "{c:?}: a stance is never in the pond"
+        );
+        assert!(walk.contains(&c.stance));
+        assert!(top_cells(region).contains(&c.cell));
+        let e = eye(&w, c.stance);
+        assert!(eye_point_within(e, &BodyBox::block(c.cell), 3.0), "{c:?}");
+        // The bank cell beside the pond's middle row is as near the anchor as
+        // any; the least in cell order of those is taken, and its nearest top
+        // cell is the pond's own edge in front of it.
+        assert_eq!(c.stance, [2, 65, 4]);
+        assert_eq!(c.cell, [3, 64, 4]);
+        assert_eq!(c.aim, [3.5, 65.0, 4.5]);
+        assert!(covered(&w, region).is_empty());
+    }
+
+    #[test]
+    fn an_area_out_of_every_stance_reach_has_no_click() {
+        let (w, _) = pond();
+        let walk = w.walk_region(&[[0, 65, 0]]);
+        let far = ([30, 64, 30], [32, 64, 32]);
+        assert_eq!(area_click(&w, &walk, far, [31, 64, 31]), None);
+    }
+
+    #[test]
+    fn a_wall_between_the_bank_and_the_pond_takes_every_click() {
+        // A ring of wall two high round the pond, its top over every eye.
+        let (w, region) = pond();
+        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for x in 0..9 {
+            for z in 0..9 {
+                for y in 63..=67 {
+                    if w.solid_at([x, y, z]) {
+                        solid.insert([x, y, z]);
+                    }
+                }
+                let ring = (2..=6).contains(&x)
+                    && (2..=6).contains(&z)
+                    && !((3..=5).contains(&x) && (3..=5).contains(&z));
+                if ring {
+                    for y in 65..=66 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let walled = World::from_solid_cells(solid);
+        let walk = walled.walk_region(&[[0, 65, 0]]);
+        assert_eq!(area_click(&walled, &walk, region, [4, 64, 4]), None);
+    }
+
+    #[test]
+    fn a_block_on_the_top_face_covers_the_cell_under_it() {
+        let w = floored(9, 9, 65, &[[4, 66, 4]]);
+        // The floor-level layer, a block standing on its middle cell.
+        assert_eq!(covered(&w, ([3, 65, 3], [5, 65, 5])), vec![[4, 65, 4]]);
+        // The ceiling at 67 lies on the top face of the layer under it.
+        assert_eq!(covered(&w, ([3, 66, 3], [5, 66, 5])).len(), 9);
+        assert!(covered(&w, ([0, 65, 0], [2, 65, 2])).is_empty());
+    }
+}

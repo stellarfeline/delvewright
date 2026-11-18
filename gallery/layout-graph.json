@@ -104,6 +104,11 @@
       },
       {
         "node": "node/long-hall",
+        "objective": "obj/lay-the-toll",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
         "objective": "obj/row-the-basin",
         "quest": "quest/long-hall"
       },
