@@ -347,6 +347,22 @@ export const methods = {
       if (!entity || entity.id !== bot.entity?.id) return;
       this.onBotDamaged(source?.id);
     });
+    // A hit's damage TYPE, which names a hit no entity dealt (starvation, a
+    // fall, fire): the configuration phase's damage-type registry, and the
+    // index each `damage_event` on the bot carries — read before mineflayer's
+    // own listener turns the packet into `entityHurt`.
+    const typeClient = (bot as unknown as {
+      _client?: {
+        on?: (e: string, f: (p: unknown) => void) => void;
+        prependListener?: (e: string, f: (p: unknown) => void) => void;
+      };
+    })._client;
+    typeClient?.on?.("registry_data", (packet: unknown) => this.damageTypes.observe(packet));
+    typeClient?.prependListener?.("damage_event", (packet: unknown) => {
+      const p = packet as { entityId?: unknown; sourceTypeId?: unknown };
+      if (p.entityId !== bot.entity?.id) return;
+      this.lastBotDamageType = { type: this.damageTypes.name(p.sourceTypeId), at: Date.now() };
+    });
     // FALLBACK: `sourceCauseId` is 0 when the server names no responsible entity (and
     // the lookup misses if that entity is not tracked client-side), so a hit can arrive
     // with no source. A health DROP with no fresh attribution is then blamed on the

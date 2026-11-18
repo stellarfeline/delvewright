@@ -12,6 +12,7 @@ import {
   restoreAmplifier,
 } from "../sustain.ts";
 import { isWaveMob } from "./wave.ts";
+import { STARVE } from "../damage-type.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** How long (ms) after a drink before another is considered, so the health the
@@ -78,6 +79,13 @@ export const methods = {
    * named none — see {@link attributeBotDamage} for what happens then.
    */
   onBotDamaged(this: MineflayerExecutor, sourceId: number | undefined): void {
+    const type = this.hitDamageType();
+    // Starvation is the bot's own body: nothing dealt it, and a player would
+    // have eaten. Hunger is held full as health is, by one staged effect.
+    if (sourceId === undefined && type === STARVE) {
+      void this.holdFullHunger("a starvation hit");
+      return;
+    }
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(sourceId, candidates);
     if (attacker === undefined) return;
@@ -94,7 +102,8 @@ export const methods = {
     // and nowhere near good enough to act on.
     if (!named) {
       process.stderr.write(
-        `[staged] the bot was hit with no source the server named; the nearest body is ` +
+        `[staged] the bot was hit with no source the server named (damage type ` +
+          `${type ?? "not named"}); the nearest body is ` +
           `${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and so is left ` +
           `standing\n`,
       );
@@ -131,6 +140,10 @@ export const methods = {
       this.damageBy.set(hit.id, (this.damageBy.get(hit.id) ?? 0) + (previous - bot.health));
     }
     if (Date.now() - this.lastAttributionAt < HEALTH_ATTRIBUTION_GRACE_MS) return;
+    // A drop the server named a type for — starvation among them — is that
+    // hit's, and is no body's blow.
+    const type = this.hitDamageType();
+    if (type === STARVE) return;
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
     if (attacker === undefined) return;
@@ -139,7 +152,8 @@ export const methods = {
     // body on this evidence would be the harness answering a lethal volume by
     // deleting whoever was standing nearby.
     process.stderr.write(
-      `[staged] the bot lost ${(previous - bot.health).toFixed(1)} health with no named source; ` +
+      `[staged] the bot lost ${(previous - bot.health).toFixed(1)} health with no named source ` +
+        `(damage type ${type ?? "not named"}); ` +
         `the nearest body is ${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and ` +
         `so is left standing\n`,
     );
@@ -237,6 +251,55 @@ export const methods = {
     let best: number | undefined;
     for (const c of candidates) if (best === undefined || c.distance < best) best = c.distance;
     return best;
+  },
+
+  /**
+   * The damage type of the hit being handled: the type the server named in the
+   * `damage_event` that arrived with it, or `undefined` when it named none the
+   * registry holds, or the last one is not this hit's.
+   */
+  hitDamageType(this: MineflayerExecutor): string | undefined {
+    const last = this.lastBotDamageType;
+    if (last === undefined || Date.now() - last.at >= HEALTH_ATTRIBUTION_GRACE_MS) return undefined;
+    return last.type;
+  },
+
+  /**
+   * **Hold the bot's hunger full** once it starves: vanilla deals a body whose
+   * hunger is empty a hit every 80 ticks (to half health on easy), with no
+   * entity behind it. A player eats; the bot walks a delve for an hour and
+   * never does. One saturation effect that covers the whole hunger bar, read by
+   * the shared rejection rule and named in `staged_removals` as staging, like
+   * {@link holdFullHealth}. Nothing a delve's own hazards do is touched by it.
+   */
+  holdFullHunger(this: MineflayerExecutor, when: string): Promise<void> {
+    if (this.pursuitRefuses(`holding full hunger (${when})`)) return Promise.resolve();
+    if (this.restoringHunger) return this.restoringHunger;
+    const run = async (): Promise<void> => {
+      const bot = this.bot;
+      if (!bot?.entity || this.death || !(bot.health > 0)) return;
+      const before = bot.food;
+      if (before >= PLAYER_MAX_FOOD) return;
+      // Saturation restores amplifier + 1 hunger a tick: one tick fills the bar.
+      const amp = PLAYER_MAX_FOOD - 1;
+      const refusal = await this.refusalOf(`/effect give @s minecraft:saturation 1 ${amp} true`);
+      this.stagedRemovals.push({
+        kind: "player",
+        why:
+          `full hunger (${when}): hunger ${before} of ${PLAYER_MAX_FOOD}, restored with ` +
+          `saturation ${amp + 1}`,
+        performed: refusal === undefined,
+        detail: refusal,
+      });
+      process.stderr.write(
+        `[staged] hunger (${when}): ${before} → ` +
+          `${refusal === undefined ? "full" : `unchanged, refused — ${refusal}`}\n`,
+      );
+    };
+    this.restoringHunger = run().finally(() => {
+      this.restoringHunger = undefined;
+    });
+    return this.restoringHunger;
   },
 
   /**
