@@ -3298,7 +3298,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   selection chose it or because a flag a later step reads comes from it
   (`flow::Flow::story_debts`). A choice the selection owes is placed by the
   entry deeds' rule, as late as the world's reading allows: one a step reads —
-  its flag, or a flag whose payer's gate needs it — is paid in front of that
+  its flag, or a flag whose payer's gate needs it; a `talk-to` reads its
+  completing option's gate and every gate on the shortest way to it from an
+  entry of the tree (`flow::Flow::step_reads`) — is paid in front of that
   step, and every other is taken in front of the **last** step, before the
   first final scene fires, at which it can be taken. So its walk comes after
   the beats in front of it (an armed arrival it would otherwise walk into, a

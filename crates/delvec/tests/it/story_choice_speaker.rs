@@ -167,6 +167,40 @@ fn a_choice_is_never_taken_from_behind_a_shut_way() {
     assert!(choices.is_empty(), "{choices:?}");
 }
 
+/// **A gate on the way to a completing option is a read** of the step that
+/// takes it. The keeper's completing option moves behind his lore, and the
+/// option that opens the lore asks `flag/trusted`, the flag the hermit's
+/// choice sets: the trusted world must take the choice in front of
+/// `obj/talk`. Read by the completing option's own gate alone, the walk saw
+/// no read there and took the choice last, and the replay refused the path at
+/// `obj/talk` (the town's `obj/hear-magnhild`, behind Magnhild's founder
+/// question, `DW0204`).
+#[test]
+fn a_gate_on_the_way_to_the_completing_option_is_paid_in_front_of_the_step() {
+    let dir = fixture("way", None, None);
+    edit(&dir.join("dialogue.json"), |v| {
+        let keeper = &mut v["content"]["dialogues"][0]["nodes"];
+        let open = keeper[0]["options"].as_array_mut().unwrap().remove(1);
+        keeper[0]["options"][0]["requires_flags"] = json!(["flag/trusted"]);
+        keeper[1]["options"].as_array_mut().unwrap().push(open);
+    });
+    let c = parse(&dir);
+    let (path, choices) = trusted_choices(&c);
+    assert_eq!(path, ["obj/talk", "obj/exit"], "{path:?}");
+    assert_eq!(
+        choices,
+        [("npc/hermit".to_string(), "obj/talk".to_string())],
+        "the lore's gate is read at `obj/talk`, so the choice is paid in front of it"
+    );
+    let flow = Flow::new(&c);
+    let r = branch::realize(&c)
+        .into_iter()
+        .find(|r| r.branch.id == "branch/trusted")
+        .expect("the trusted branch is enumerated");
+    let pt = flow.story_playthrough(r.world.expect("a story world realizes it"));
+    assert!(flow.replay(&pt).is_ok(), "the trusted world's path replays");
+}
+
 /// A speaker no way ever reaches offers nothing: the solve does not credit
 /// the hermit's flag, so no story world's path takes his choice — before, the
 /// worlds whose selection took it walked from the spawn to a den that never

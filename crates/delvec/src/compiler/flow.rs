@@ -1753,9 +1753,11 @@ impl<'a> Flow<'a> {
     }
 
     /// **The flags taking `step` reads**: its objective's `requires_flags`,
-    /// and for a `talk-to` the taken option's own `requires` — the reads a path
+    /// and for a `talk-to` the taken option's own `requires` and those of the
+    /// options on the way to it ([`Self::way_to_option`]) — the reads a path
     /// owes an act for when nothing on it sets them ([`Self::trigger_debts`],
-    /// [`Self::story_debts`]).
+    /// [`Self::story_debts`]). A node a gated option leads to is a gate on the
+    /// completing option as much as its own `requires` is.
     fn step_reads(&self, step: &PathStep) -> Vec<String> {
         let mut reads: Vec<String> = self
             .objective(&step.objective)
@@ -1772,8 +1774,60 @@ impl<'a> Flow<'a> {
             && let Some(o) = t.options.iter().find(|o| o.n == n)
         {
             reads.extend(o.requires.iter().cloned());
+            for f in self.way_to_option(t, o.node) {
+                if !reads.contains(&f) {
+                    reads.push(f);
+                }
+            }
         }
         reads
+    }
+
+    /// The `requires` of the options on the shortest way from an entry of
+    /// `t` (its own root, or a `cast` ledger root) to node `node`, in way
+    /// order — the gates a body passes to reach the node. Empty for an entry
+    /// node, and for a node no way reaches (the replay names that one).
+    fn way_to_option(&self, t: &TreeModel, node: usize) -> Vec<String> {
+        let mut prev: BTreeMap<usize, Option<usize>> = BTreeMap::new();
+        let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+        let entries = std::iter::once(t.root.as_str()).chain(
+            self.cast_roots
+                .get(t.npc.as_str())
+                .into_iter()
+                .flatten()
+                .map(|r| r.root.as_str()),
+        );
+        for e in entries {
+            if let Some(&i) = t.index.get(e)
+                && prev.insert(i, None).is_none()
+            {
+                queue.push_back(i);
+            }
+        }
+        while let Some(ni) = queue.pop_front() {
+            if ni == node {
+                break;
+            }
+            for (k, o) in t.options.iter().enumerate().filter(|(_, o)| o.node == ni) {
+                if let Some(nx) = o.next.as_ref().and_then(|x| t.index.get(x)).copied()
+                    && !prev.contains_key(&nx)
+                {
+                    prev.insert(nx, Some(k));
+                    queue.push_back(nx);
+                }
+            }
+        }
+        let mut gates: Vec<String> = Vec::new();
+        let mut at = node;
+        while let Some(Some(k)) = prev.get(&at) {
+            let o = &t.options[*k];
+            for f in o.requires.iter().rev() {
+                gates.push(f.clone());
+            }
+            at = o.node;
+        }
+        gates.reverse();
+        gates
     }
 
     /// Replay `p`'s step sequence through the flag/objective/quest state machine.
