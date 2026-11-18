@@ -4,7 +4,7 @@
     {
       "doc": "quests.json",
       "op": "add",
-      "path": "/content/quests/3/objectives/7/requires_flags",
+      "path": "/content/quests/3/objectives/9/requires_flags",
       "value": [
         "flag/muster-cleared"
       ]
