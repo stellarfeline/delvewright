@@ -55,16 +55,14 @@ pub enum PrefabCommand {
         #[arg(long)]
         pool: Option<String>,
     },
-    /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
+    /// Mechanical NBT palette audit (CI gate): code-injection forbid, block
+    /// existence and shape, over every block of the pinned registry.
     Audit {
         /// Input structure `.nbt`; the `.json` manifest of a zone that ships as
         /// a tile set, which audits every tile and returns ONE zone verdict; or
         /// a prefab LIBRARY DIRECTORY, which sweeps every document in it for a
         /// declared waterline its own bytes do not bear out (`DW0887`).
         nbt: PathBuf,
-        /// A JSON allowlist override (replaces the built-in default).
-        #[arg(long)]
-        allowlist: Option<PathBuf>,
         /// Write the machine-readable report here instead of stdout.
         #[arg(short = 'o', long)]
         report: Option<PathBuf>,

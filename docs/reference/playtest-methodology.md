@@ -150,10 +150,19 @@ volume and a crush gate still kill.
 A hit no entity dealt is named by its damage type: the bot reads the
 configuration phase's `minecraft:damage_type` registry and each `damage_event`'s
 `sourceTypeId` (`harness/src/damage-type.ts`), and prints the type beside every
-hit it cannot attribute. A `minecraft:starve` hit — vanilla's every 80 ticks on
-an empty hunger bar — is the bot's own body, which a player would have fed: it is
-answered by one saturation effect that fills the bar, named in
-`staged_removals`, and no body near the bot is guessed at.
+hit it cannot attribute. A `minecraft:starve` hit is the bot's own body: no body
+near the bot is guessed at, and the feeding is the walk-leg rule's below.
+On a walk leg the bot is also held fed: its hunger is filled on entry to every
+walk that starts under 20, and again whenever it falls to 6 or under while the
+walk is in progress, by one `saturation` effect of amplifier 19, named in
+`staged_removals` (`holdFed`, `owesFood` in `harness/src/sustain.ts`). A body at 6
+or under cannot sprint, and the compiler proves sprinted jumps; a starving body is
+hurt every 80 ticks, and a hurt resets the client's velocity to the server's, so
+one landing in the first two air ticks of a jump across a gap drops the body into
+it (the sim bot over the lamp-tower stair-foot fixture: a velocity reset on air
+tick 1 or 2 comes down in the gap, on ticks 3 to 14 lands). Both vanilla facts
+are cited from minecraft.wiki (*Hunger*, *Saturation*), not measured against the
+pinned jar. Off a walk, and on a pursued step, the body keeps the hunger it has.
 A scripted death waits until the respawned bot has sent `player_loaded`, which
 ends the server's client-load window (at most 60 ticks, counted on the server's
 clock, for a bot that cannot be asked), and is taken at the fight: a stage that recovers from an

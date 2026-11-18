@@ -17,8 +17,9 @@
 //!   proof's own answer for a `walk`;
 //! - which blocks the pinned server drops: [`delvewright_dsl::support`], the
 //!   `canSurvive` table `DW1002` judges the shipped world by;
-//! - which blocks the admission audit refuses (`DW0730`):
-//!   [`Allowlist::default_building`], the list `delvec detail` audits with;
+//! - which blocks the admission audit refuses: the code-injection forbid
+//!   list (`DW0731`), [`audit::hard_forbidden_block`], which `delvec detail`
+//!   audits with — every other block of the pin is admitted;
 //! - which blocks the holder census counts as containers (`DW1018`,
 //!   `DW1024`): [`delvewright_dsl::blocks::container_kind`];
 //! - which written states are no state of the pinned game, or leave a
@@ -32,7 +33,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::admit::allowlist::{self, Allowlist};
+use crate::admit::audit;
 use crate::grammar::block::BlockState;
 use crate::grammar::contract;
 use crate::grammar::geom::Box3;
@@ -76,13 +77,11 @@ pub struct Unsupported {
     pub needs: String,
 }
 
-/// A block the admission audit refuses (`DW0730`).
+/// A block the admission audit refuses: a code-injection vector (`DW0731`).
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Refused {
     /// The block id.
     pub block: String,
-    /// The DSL surface the block is had through instead, if there is one.
-    pub route: Option<&'static str>,
 }
 
 /// A written state the pinned registry refuses, or one that leaves a
@@ -335,14 +334,10 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
         .map(|s| base_id(s).to_string())
         .filter(|id| id != "minecraft:air")
         .collect();
-    let allow = Allowlist::default_building();
     let refused = ids
         .iter()
-        .filter(|id| !allow.permits(id))
-        .map(|id| Refused {
-            block: id.clone(),
-            route: allowlist::route_for(id),
-        })
+        .filter(|id| audit::hard_forbidden_block(id))
+        .map(|id| Refused { block: id.clone() })
         .collect();
     let containers = ids
         .iter()
@@ -367,18 +362,17 @@ pub fn survey(req: &Request) -> Result<Answer, String> {
 pub struct Blocks {
     /// Every block of the pin the admission audit admits.
     pub admitted: Vec<String>,
-    /// Every block of the pin it refuses (`DW0730`), with the surface it is
-    /// had through instead where one exists.
+    /// Every block of the pin it refuses: the code-injection forbid list
+    /// (`DW0731`).
     pub refused: Vec<Refused>,
     /// Every block the holder census counts as a container (`DW1018`,
     /// `DW1024`).
     pub containers: Vec<String>,
 }
 
-/// [`Blocks`], read off the pinned registry, the default allowlist and the
-/// container table.
+/// [`Blocks`], read off the pinned registry, the code-injection forbid list
+/// and the container table.
 pub fn blocks() -> Blocks {
-    let allow = Allowlist::default_building();
     let mut admitted = Vec::new();
     let mut refused = Vec::new();
     let mut containers = Vec::new();
@@ -388,13 +382,12 @@ pub fn blocks() -> Blocks {
         if id == "minecraft:air" {
             continue;
         }
-        if allow.permits(id) {
-            admitted.push(id.to_string());
-        } else {
+        if audit::hard_forbidden_block(id) {
             refused.push(Refused {
                 block: id.to_string(),
-                route: allowlist::route_for(id),
             });
+        } else {
+            admitted.push(id.to_string());
         }
         if delvewright_dsl::blocks::container_kind(id).is_some() {
             containers.push(id.to_string());
@@ -665,7 +658,8 @@ mod tests {
     }
 
     /// A lantern hung under air is dropped; one under stone is kept. A fence
-    /// top is no floor. A candle is refused and a barrel is a container.
+    /// top is no floor. A candle is admitted, a command block refused, and a
+    /// barrel is a container.
     #[test]
     fn support_admission_and_containers_are_the_engines() {
         let size = [3, 5, 3];
@@ -702,7 +696,10 @@ mod tests {
             keep: None,
             from: vec![],
             spaces: BTreeMap::new(),
-            palette: vec!["minecraft:candle[candles=1,lit=false,waterlogged=false]".to_string()],
+            palette: vec![
+                "minecraft:candle[candles=1,lit=false,waterlogged=false]".to_string(),
+                "minecraft:command_block[conditional=false,facing=north]".to_string(),
+            ],
         };
         let a = survey(&req).unwrap();
         assert_eq!(
@@ -710,18 +707,38 @@ mod tests {
             vec![[0, 3, 0]]
         );
         assert!(!a.standable.contains(&[1, 2, 1]), "a fence top is no floor");
-        assert!(a.refused.iter().any(|r| r.block == "minecraft:candle"));
+        assert_eq!(
+            a.refused,
+            vec![Refused {
+                block: "minecraft:command_block".to_string()
+            }]
+        );
         assert_eq!(a.containers, vec!["minecraft:barrel".to_string()]);
     }
 
     #[test]
     fn the_block_lists_partition_the_pin() {
         let b = blocks();
-        assert!(b.admitted.iter().any(|id| id == "minecraft:stone_bricks"));
-        assert!(
+        for id in [
+            "minecraft:stone_bricks",
+            "minecraft:blast_furnace",
+            "minecraft:dragon_egg",
+            "minecraft:spawner",
+        ] {
+            assert!(b.admitted.iter().any(|a| a == id), "{id} is refused");
+        }
+        assert_eq!(
             b.refused
                 .iter()
-                .any(|r| r.block == "minecraft:blast_furnace")
+                .map(|r| r.block.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "minecraft:chain_command_block",
+                "minecraft:command_block",
+                "minecraft:repeating_command_block",
+                "minecraft:structure_block",
+            ],
+            "the forbid list, and nothing else"
         );
         assert!(b.containers.iter().any(|id| id == "minecraft:smoker"));
         let n = delvewright_dsl::blocks::BlockRegistry::v1_21_11()

@@ -68,7 +68,8 @@ pub enum GrammarCommand {
     /// (`grammar::survey`): where a body stands, what it reaches from the
     /// ways in, which air is sealed, which declared spaces a walk joins,
     /// which blocks the pinned server drops (`DW1002`), which the admission
-    /// audit refuses (`DW0730`) and which the holder census counts as
+    /// audit refuses (the code-injection forbid list, `DW0731`) and which the
+    /// holder census counts as
     /// containers. Reads the request JSON from `--file`, prints the answer
     /// JSON on stdout; writes nothing.
     Survey {
@@ -77,8 +78,8 @@ pub enum GrammarCommand {
         file: PathBuf,
     },
     /// The pinned registry's blocks as a place author plans with them: every
-    /// block the admission audit admits, every block it refuses (`DW0730`)
-    /// with the surface it is had through instead, and every block the holder
+    /// block the admission audit admits, every block it refuses (the
+    /// code-injection forbid list, `DW0731`), and every block the holder
     /// census counts as a container (`DW1018`, `DW1024`). JSON on stdout.
     Blocks,
     /// List every program in the rule library, with its knobs.

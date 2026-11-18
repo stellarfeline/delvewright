@@ -15,13 +15,10 @@
 //! stubs. Those pieces are re-exported at the pinned content SHA, so what the
 //! sweep protects now is that no eighth arrives.
 //!
-//! The allowlist had the same gap and a worse consequence: nothing ran it over
-//! the library either, so the tool disagreeing with ITSELF about one block went
-//! unmeasured. `DW0734` passed `hero-temple-ruin-arch.nbt`'s `minecraft:chain`
-//! as a datafixable warning while `DW0730` refused the identical cell as
-//! not-allowlisted, because the allowlist is a list of names at the pin and was
-//! being asked about a name written in a 1.18.2 vocabulary. Judging the id the
-//! game will actually load is the fix, and this file is where it is held.
+//! A pre-pin piece is judged on the id the game will actually load:
+//! `hero-temple-ruin-arch.nbt`'s `minecraft:chain` is a datafixable warning
+//! (`DW0734`), and a pre-pin id no derived rename reaches is a dead id
+//! (`DW0733`).
 //!
 //! So these are the sweeps, bound to `cargo test` (the required `rust` job)
 //! rather than to a doc line. Each states its binding count: a run that examined
@@ -32,10 +29,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use delvec::admit::allowlist::Allowlist;
 use delvec::admit::spatial::{self, Door};
 use delvec::admit::structure::Structure;
-use delvec::schem::blocks::{BlockRegistry, StateJudgement};
+use delvec::schem::blocks::{BlockRegistry, LoadedId, StateJudgement};
 use delvec::schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
 
 use crate::common;
@@ -199,25 +195,14 @@ fn every_shipped_prefab_written_at_the_pin_states_every_property() {
     );
 }
 
-/// **Every palette entry in the shipped library is judged by the allowlist over
-/// the id the game will actually load.**
-///
-/// The allowlist is a list of names at the pin, and four of the library's
-/// pieces are pre-pin third-party assets whose palettes are written in an older
-/// vocabulary the game renames on load. Judged as written, one of them was
-/// refused by the allowlist in the same run in which the spelling rule passed
-/// it as a datafixable warning — one tool, two verdicts, on one block. That
-/// contradiction had never been measured over the library because no test ran
-/// the allowlist over the library at all: `delvec prefab audit` binds at the
-/// moment a piece enters it, which is one moment per piece, forever.
-///
-/// So this is the allowlist's own sweep, bound to `cargo test`. It states its
-/// binding count, and it is deliberately the DEFAULT allowlist: a bespoke list
-/// written to fit the corpus would be the check answering itself.
+/// **Every palette id in the shipped library is one the game loads**: held
+/// by the pin, or renamed onto a block it holds by the derived rename table
+/// from the piece's own `DataVersion`. An id neither reaches is a dead id the
+/// audit refuses (`DW0733`), so the sweep states the renames it resolved and
+/// its binding count.
 #[test]
-fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
+fn every_shipped_prefab_id_is_one_the_game_loads() {
     let registry = BlockRegistry::v1_21_11();
-    let allow = Allowlist::default_building();
     let library = library();
     let mut entries = 0usize;
     let mut renamed = 0usize;
@@ -226,19 +211,16 @@ fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
     for (file, s) in &library {
         for entry in &s.palette {
             entries += 1;
-            let judged = allow.judge_entry(entry, registry, s.data_version);
-            if let Some(written) = judged.renamed_from {
-                renamed += 1;
-                println!(
-                    "  {file} (DataVersion {}): {written} loads as {}",
-                    s.data_version, judged.judged
-                );
-            }
-            if !judged.permitted {
-                bad.push(format!(
-                    "{file}: {} (written {})",
-                    judged.judged, entry.name
-                ));
+            match registry.loaded_id_at(&entry.name, s.data_version) {
+                LoadedId::AsWritten => {}
+                LoadedId::Renamed { to, .. } => {
+                    renamed += 1;
+                    println!(
+                        "  {file} (DataVersion {}): {} loads as {to}",
+                        s.data_version, entry.name
+                    );
+                }
+                LoadedId::Unresolved => bad.push(format!("{file}: {}", entry.name)),
             }
         }
     }
@@ -249,15 +231,14 @@ fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
         library.len()
     );
     println!(
-        "DW0730 sweep: {} prefab(s), {entries} palette entr(ies) examined; {renamed} resolved \
+        "loaded-id sweep: {} prefab(s), {entries} palette entr(ies) examined; {renamed} resolved \
          through a datafix rename",
         library.len()
     );
     assert!(
         bad.is_empty(),
-        "{} of {entries} palette entr(ies), over {} shipped prefab(s), name a block the palette \
-         allowlist does not permit — judged as the pinned game will hold it, not as the bytes \
-         spell it:\n  {}",
+        "{} of {entries} palette entr(ies), over {} shipped prefab(s), name an id the pin does \
+         not hold and no derived rename reaches:\n  {}",
         bad.len(),
         library.len(),
         bad.join("\n  ")

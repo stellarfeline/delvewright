@@ -519,14 +519,15 @@ export const methods = {
     // A range of exactly 0 is a block goal: a link's stand cell, which the bot
     // must be IN to be carried (spec-0083 §4). Every other range keeps its floor.
     const r = range === 0 ? 0 : Math.max(1, Math.floor(range));
-    // Every walk leg starts at full health and is held there (see
-    // `holdFullHealth`): whether the bot survives the walk is not what a walk
-    // leg is for.
+    // Every walk leg starts at full health and fed, and is held there (see
+    // `holdFullHealth`, `holdFed`): whether the bot survives the walk, or
+    // keeps its hunger, is not what a walk leg is for.
     this.walkLegs += 1;
     const outerLabel = this.walkLabel;
     this.walkLabel = label;
     try {
       await this.holdFullHealth("its start");
+      await this.holdFed("its start", true);
       await this.refreshStagedExclusion();
       const watch = !this.controlTaken();
       try {

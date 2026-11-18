@@ -1,15 +1,17 @@
 //! The mechanical **NBT palette audit** — the CI gate for community prefabs
 //! (spec-0007 community contract).
 //!
-//! Two independent checks over a converted `.nbt`:
+//! The block checks over a converted `.nbt`:
 //!
 //! 1. **Hard-forbid** (`DW0731`, always an error): the code-injection vectors the
 //!    task/spec name — **command blocks**, **structure blocks**, and
 //!    **NBT-bearing spawners**, plus any block entity carrying an embedded
 //!    `Command`. The recursive `Command` / spawn-NBT scan is the **exact** one the
 //!    `delvec schem` conversion strip uses (reused from that crate, no drift).
-//! 2. **Palette allowlist** (`DW0730`, an error): every palette block name must be
-//!    in the (configurable) allowlist, so a reviewer sees any surprising block.
+//! 2. **The block exists** (`DW0733`, `DW0734`) and **writes its shape**
+//!    (`DW0735`): judged against the pinned registry. Every block of the pin
+//!    outside the hard-forbid list is admitted: no list of building blocks
+//!    stands between a creator and a vanilla block.
 //!
 //! ### Jigsaw is deliberately NOT hard-forbidden here (flagged policy)
 //!
@@ -18,9 +20,9 @@
 //! audit runs on **library prefabs**, whose jigsaw blocks are the legitimate
 //! sockets the compiler's solver mates — and a jigsaw block entity cannot carry a
 //! `Command`, so it is not an injection vector. Jigsaw is therefore treated as a
-//! normal allowlisted block here; only command/structure blocks and NBT-bearing
-//! spawners hard-fail. Bare `spawner`/`vault` blocks (no spawn NBT) are caught by
-//! the allowlist (`DW0730`), not the hard-forbid, matching "NBT-bearing spawners".
+//! normal block here; only command/structure blocks and NBT-bearing spawners
+//! hard-fail. A bare `spawner`/`vault` block (no spawn NBT) is a block like any
+//! other, matching "NBT-bearing spawners".
 //!
 //! The audit is pure and deterministic. It emits a machine-readable
 //! [`AuditReport`] (stdout JSON) plus per-finding [`Diagnostic`]s (stderr).
@@ -34,14 +36,24 @@ use crate::schem::split::TilePart;
 use serde::Serialize;
 
 /// Block **names** (namespace-stripped) that hard-fail the admission audit: the
-/// command blocks and the structure block. (Jigsaw is a legitimate socket; bare
-/// spawners are caught by the allowlist — see the module docs.)
+/// command blocks and the structure block. (Jigsaw is a legitimate socket; a
+/// bare spawner carries no spawn NBT — see the module docs.)
 const HARD_FORBID_BLOCKS: &[&str] = &[
     "command_block",
     "chain_command_block",
     "repeating_command_block",
     "structure_block",
 ];
+
+/// **Whether the admission audit hard-forbids a block** (`DW0731`), by id,
+/// with or without its namespace and state: the one answer to "which blocks
+/// may a piece not carry", which every block of the pin outside this list is
+/// not asked.
+#[must_use]
+pub fn hard_forbidden_block(id: &str) -> bool {
+    let base = id.split('[').next().unwrap_or(id);
+    HARD_FORBID_BLOCKS.contains(&strip_ns(base))
+}
 
 /// Block-**entity** ids that hard-fail regardless of payload (command/structure
 /// blocks). Spawner-family block entities fail only when they carry spawn NBT,
@@ -53,8 +65,7 @@ const HARD_FORBID_BE: &[&str] = &[
     "structure_block",
 ];
 
-use crate::admit::allowlist::{Allowlist, route_for};
-use crate::admit::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
+use crate::admit::diag::{DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
 use crate::admit::structure::Structure;
 
 /// One machine-readable audit finding (mirrors a [`Diagnostic`] in JSON form).
@@ -80,8 +91,6 @@ pub struct AuditReport {
     pub palette: Vec<String>,
     /// Count of hard-forbidden hits.
     pub forbidden: usize,
-    /// Count of not-allowlisted palette blocks.
-    pub not_allowlisted: usize,
     /// Count of palette block states the pinned Minecraft version does not
     /// have **in a template that claims the pin** (no datafix will run, so
     /// they load as air).
@@ -109,7 +118,7 @@ pub struct AuditReport {
     pub fluid_at_edge: usize,
     /// **What the entity judge examined** (spec-0111 §3.1): the template's
     /// entities, how many are item holders, and how many were refused —
-    /// `DW0730` for a kind the entity list does not name, `DW1036` for an
+    /// `DW0730` for a kind that is not an item holder, `DW1036` for an
     /// owned key on a holder. Always present, a zero included.
     pub entities: crate::admit::entities::EntityBinding,
     pub findings: Vec<Finding>,
@@ -342,8 +351,8 @@ fn to_finding(d: &Diagnostic) -> Finding {
 /// assembled zone. Both settling rules read a cell's neighbours, and a seam
 /// between two tiles is packaging rather than geometry. Everything holding a
 /// `Structure` gets both halves by calling this.
-pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec<Diagnostic>) {
-    let (mut report, mut diags) = audit_palette(asset, s, allow);
+pub fn audit(asset: &str, s: &Structure) -> (AuditReport, Vec<Diagnostic>) {
+    let (mut report, mut diags) = audit_palette(asset, s);
     fold_in(
         &mut report,
         &mut diags,
@@ -371,19 +380,17 @@ fn fold_in(
 }
 
 /// The palette half: every rule that judges one block state at a time.
-fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec<Diagnostic>) {
+fn audit_palette(asset: &str, s: &Structure) -> (AuditReport, Vec<Diagnostic>) {
     let mut diags: Vec<Diagnostic> = Vec::new();
     let mut forbidden = 0usize;
-    let mut not_allowlisted = 0usize;
     let mut unknown_blocks = 0usize;
     let mut pre_pin_unknown = 0usize;
     let mut underspecified = 0usize;
     let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
 
-    // --- Palette allowlist: report each offending palette entry once, at the
-    // first cell that uses it (deterministic: blocks are in file order). ---
-    let mut allow_reported = vec![false; s.palette.len()];
-    // --- Hard-forbid: block-level (command/structure/spawner blocks). ---
+    // Each palette-level finding is reported once per palette entry, at the
+    // first cell that uses it (deterministic: blocks are in file order).
+    // --- Hard-forbid: block-level (command/structure blocks). ---
     let mut forbid_block_reported = vec![false; s.palette.len()];
     // --- Spelling: a palette entry the pinned game does not have. ---
     let mut unknown_reported = vec![false; s.palette.len()];
@@ -397,7 +404,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         let local = strip_ns(&entry.name);
 
         // 1. hard-forbidden block name.
-        if HARD_FORBID_BLOCKS.contains(&local) && !forbid_block_reported[b.state as usize] {
+        if hard_forbidden_block(local) && !forbid_block_reported[b.state as usize] {
             forbid_block_reported[b.state as usize] = true;
             forbidden += 1;
             diags.push(
@@ -406,7 +413,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                     format!(
                         "forbidden block `{}` — a code-injection vector (command/structure/jigsaw \
                          block). Remove it from the prefab; this is hard-forbidden with no \
-                         allowlist path (ADR-0003 vanilla-first)",
+                         exemption (ADR-0003 vanilla-first)",
                         entry.name
                     ),
                 )
@@ -426,7 +433,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                     format!(
                         "forbidden block entity: {reason} — a code-injection vector (NBT-bearing \
                          spawner or embedded `Command`). Strip it from the prefab; hard-forbidden \
-                         with no allowlist path"
+                         with no exemption"
                     ),
                 )
                 .at(b.pos),
@@ -434,13 +441,8 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         }
 
         // 3. the block has to EXIST — judged against the pin AND the file's
-        //    own DataVersion. An allowlist answers "should this block be
-        //    here"; it cannot answer "is this a block at all", and the two
-        //    questions fail in opposite directions — an allowlist is a curated
-        //    list of names, so a name the game dropped stays in it forever and
-        //    permits itself. `minecraft:chain`, renamed `iron_chain` in 1.21.11,
-        //    was in this crate's own default allowlist and is in a shipped
-        //    prefab; a structure template loads it as AIR, so the piece admits
+        //    own DataVersion. `minecraft:chain`, renamed `iron_chain` in
+        //    1.21.11, is in a shipped prefab; a structure template loads it as AIR, so the piece admits
         //    clean, ships, and is quietly missing whatever the block was for.
         //    But the game DATAFIXES every structure it loads against the
         //    file's DataVersion: the same `minecraft:chain` in a template that
@@ -466,12 +468,34 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                         .at(b.pos),
                     );
                 }
+                // A pre-pin id the pin lacks and no derived rename reaches is a
+                // dead id: nothing says what the game loads, so it is judged
+                // as written, which refuses it — the direction that stays
+                // sound, since an id no fixer maps loads as air.
+                StateJudgement::PrePin(e)
+                    if registry.loaded_id_at(&entry.name, s.data_version)
+                        == LoadedId::Unresolved =>
+                {
+                    unknown_reported[b.state as usize] = true;
+                    unknown_blocks += 1;
+                    diags.push(
+                        Diagnostic::error(
+                            DW_UNKNOWN_BLOCK,
+                            format!(
+                                "{e} — the template's DataVersion {} pre-dates the pin, but no \
+                                 rename in the derived table reaches `{}`, so nothing says what \
+                                 the game loads there and a dead id loads as air",
+                                s.data_version, entry.name
+                            ),
+                        )
+                        .at(b.pos),
+                    );
+                }
                 StateJudgement::PrePin(e) => {
                     unknown_reported[b.state as usize] = true;
                     pre_pin_unknown += 1;
                     // WHICH id the fixer produces is derived, not left to the
-                    // reader: the same resolution the allowlist judges on, said
-                    // out loud, so the warning names the block that will be
+                    // reader, so the warning names the block that will be
                     // there rather than only the one that will not.
                     let resolution = match registry.loaded_id_at(&entry.name, s.data_version) {
                         LoadedId::Renamed { to, valid_through } => format!(
@@ -547,57 +571,11 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                 }
             }
         }
-
-        // 4. palette allowlist — over the id a 1.21.11 SERVER will hold, not
-        //    the id the bytes spell. The allowlist is a list of names at the
-        //    pin, and a pre-pin template's palette is written in an older
-        //    vocabulary that the game renames on load. Judging it as written
-        //    made this tool contradict itself inside one run: rule 3 above
-        //    passes `minecraft:chain` at DataVersion 2975 as a warning, because
-        //    the fixer migrates it, and this rule refused the same cell as
-        //    not-allowlisted. The resolution belongs to the registry
-        //    (`loaded_id_at`), the permission to the list, and the composition
-        //    is `judge_entry` so no caller can do only half of it.
-        let judged = allow.judge_entry(entry, registry, s.data_version);
-        if !judged.permitted && !allow_reported[b.state as usize] {
-            allow_reported[b.state as usize] = true;
-            not_allowlisted += 1;
-            let via = match judged.renamed_from {
-                Some(written) => format!(
-                    " (written `{written}`, which this template's DataVersion {} \
-                     datafixes to `{}`)",
-                    s.data_version, judged.judged
-                ),
-                None => String::new(),
-            };
-            diags.push(
-                Diagnostic::error(
-                    DW_ALLOWLIST,
-                    format!(
-                        "block `{}`{via} is not in the palette allowlist — {}. If the prefab \
-                         genuinely needs the block as geometry, propose adding it to the \
-                         allowlist under review. Do NOT bypass the allowlist to admit the asset",
-                        judged.judged,
-                        match route_for(judged.judged) {
-                            Some(route) => format!(
-                                "the DSL has a surface for it, so take the block out of the \
-                                 prefab and {route}"
-                            ),
-                            None => "no DSL surface stands in for it, so swap it for an \
-                                     allowlisted block"
-                                .to_string(),
-                        }
-                    ),
-                )
-                .at(b.pos),
-            );
-        }
     }
 
     // --- Entities (spec-0111 §3.1): item holders saying what they look like,
     // and nothing else. ---
-    let (entities, entity_diags) = crate::admit::entities::judge(&s.entities, allow);
-    not_allowlisted += entities.not_allowlisted;
+    let (entities, entity_diags) = crate::admit::entities::judge(&s.entities);
     diags.extend(entity_diags);
 
     let verdict = if diags.iter().any(|d| d.is_error()) {
@@ -612,7 +590,6 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         block_count: s.blocks.len(),
         palette: s.block_names().into_iter().collect(),
         forbidden,
-        not_allowlisted,
         unknown_blocks,
         pre_pin_unknown,
         underspecified,
@@ -646,24 +623,22 @@ pub fn audit_tile_set(
     asset: &str,
     zone_size: [i32; 3],
     tiles: &[(TilePart, Structure)],
-    allow: &Allowlist,
 ) -> (AuditReport, Vec<Diagnostic>) {
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     let mut audits: Vec<TileAudit> = Vec::with_capacity(tiles.len());
     let mut palette: BTreeSet<String> = BTreeSet::new();
-    let (mut block_count, mut forbidden, mut not_allowlisted, mut unknown_blocks) = (0, 0, 0, 0);
+    let (mut block_count, mut forbidden, mut unknown_blocks) = (0, 0, 0);
     let (mut pre_pin_unknown, mut underspecified) = (0, 0);
     let mut entities = crate::admit::entities::EntityBinding::default();
 
     for (part, structure) in tiles {
-        let (rep, diags) = audit_palette(&part.file, structure, allow);
+        let (rep, diags) = audit_palette(&part.file, structure);
         entities.examined += rep.entities.examined;
         entities.holders += rep.entities.holders;
-        entities.not_allowlisted += rep.entities.not_allowlisted;
+        entities.not_holders += rep.entities.not_holders;
         entities.owned_keys += rep.entities.owned_keys;
         block_count += rep.block_count;
         forbidden += rep.forbidden;
-        not_allowlisted += rep.not_allowlisted;
         unknown_blocks += rep.unknown_blocks;
         pre_pin_unknown += rep.pre_pin_unknown;
         underspecified += rep.underspecified;
@@ -706,7 +681,6 @@ pub fn audit_tile_set(
         block_count,
         palette: palette.into_iter().collect(),
         forbidden,
-        not_allowlisted,
         unknown_blocks,
         pre_pin_unknown,
         underspecified,

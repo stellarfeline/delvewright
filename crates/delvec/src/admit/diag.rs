@@ -5,7 +5,7 @@
 //!
 //! | Code | Meaning |
 //! | --- | --- |
-//! | `DW0730` | audit: a palette block, or a template entity's kind, is not in the allowlist. |
+//! | `DW0730` | audit: a template entity's kind is not an item holder (spec-0111). |
 //! | `DW0731` | audit: a hard-forbidden code-injection vector (command/structure block, NBT-bearing spawner, or embedded `Command`). |
 //! | `DW0732` | input error (unreadable/unparseable `.nbt` or metadata/JSON). |
 //! | `DW0733` | audit: a palette block state does not exist in the pinned Minecraft version, in a template claiming the pin's `DataVersion` (or later) — no datafix runs, the block loads as air. |
@@ -30,7 +30,8 @@
 use serde::Serialize;
 
 delvewright_dsl::dw_code! {
-    pub const DW_ALLOWLIST: &str = "DW0730";
+    /// (spec-0111 §3.1) A template entity is not an item holder.
+    pub const DW_NOT_HOLDER: &str = "DW0730";
 }
 delvewright_dsl::dw_code! {
     pub const DW_FORBIDDEN: &str = "DW0731";

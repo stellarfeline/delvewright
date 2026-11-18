@@ -700,8 +700,6 @@ export class MineflayerExecutor implements StepExecutor {
   readonly damageTypes = new DamageTypes();
   /** The damage type of the bot's last hit, as the server named it, and when. */
   lastBotDamageType: { readonly type: string | undefined; readonly at: number } | undefined;
-  /** The full-hunger restoration in flight, so a burst of hits issues one. */
-  restoringHunger: Promise<void> | undefined;
   /** Client id → health the bot lost to that body's named blows, not yet refunded. */
   readonly damageBy = new Map<number, number>();
   /** Last observed bot health, for the health-drop attribution fallback. */
@@ -712,6 +710,8 @@ export class MineflayerExecutor implements StepExecutor {
   walkLabel = "";
   /** The full-health restoration in flight, so a burst of drops issues one. */
   restoringHealth: Promise<void> | undefined;
+  /** The hunger fill in flight, so a burst of hunger updates issues one. */
+  restoringFood: Promise<void> | undefined;
   /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
   lastEatAt = 0;
 

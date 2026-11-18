@@ -622,10 +622,7 @@ def render(
     refused = blocks.get("refused", [])
     w(f"## The blocks you may write ({len(blocks.get('admitted', []))} admitted, {len(refused)} refused)")
     w("")
-    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game except the {len(refused)} its `refused` list names, which `detail --check` refuses (`DW0730`) and your generator refuses by name before it writes." + (f" {sum(1 for r in refused if r.get('route'))} of them are had another way:" if any(r.get("route") for r in refused) else ""))
-    for r in refused:
-        if r.get("route"):
-            w(f"- `{r['block']}` is had another way: {r['route']}")
+    w(f"`{blocks_file}` is `delvec grammar blocks`, saved: every block of the pinned game the palette admits, every one it refuses, and every one the holder census counts as a container. The palette admits every block of the game except the {len(refused)} its `refused` list names — the code-injection vectors, which `detail --check` refuses (`DW0731`) and your generator refuses by name before it writes.")
     containers = blocks.get("containers", [])
     w("")
     w(f"**Containers** ({len(containers)}): " + ", ".join(f"`{c.removeprefix('minecraft:')}`" for c in containers) + ". Each one you build is a holder the census counts: one no loot, collect or device claims is scenery, and scenery is allowed only where the campaign declares its decoration notice (`DW1018`); a place may not mix scenery containers with ones that matter (`DW1024`).")

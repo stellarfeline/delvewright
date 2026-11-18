@@ -82,14 +82,11 @@ const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 /// pin does not have -> the id it becomes, with the greatest `DataVersion` at
 /// which the old id still existed.
 ///
-/// A fourth table because there is a fourth question, and the repo was answering
-/// it twice with two different answers. The registry says *whether the pin has
-/// this id*; it cannot say *what the pin will hold instead* — and a check that
-/// judges a pre-pin template's id AS WRITTEN is judging a name in the wrong
-/// vocabulary. `delvec prefab audit` did exactly that: the spelling rule passed
-/// `minecraft:chain` in a DataVersion-2975 template because the fixer migrates
-/// it, and the palette allowlist refused the same cell in the next breath
-/// because `minecraft:chain` is not a name at the pin.
+/// A fourth table because there is a fourth question. The registry says
+/// *whether the pin has this id*; it cannot say *what the pin will hold
+/// instead* — and a check that judges a pre-pin template's id AS WRITTEN is
+/// judging a name in the wrong vocabulary: `minecraft:chain` in a
+/// DataVersion-2975 template is `minecraft:iron_chain` once the fixer has run.
 ///
 /// Derived from Mojang's own published data by
 /// `tools/maintenance/extract-block-renames.py` (see `crates/delvec/data/PROVENANCE.md`):
@@ -272,7 +269,7 @@ pub struct BlockRename {
 }
 
 /// Where a written block id ends up once the game has datafixed a file that
-/// declares `data_version` — the question an allowlist, a palette screen or a
+/// declares `data_version` — the question a palette screen or a
 /// render surface has to ask before it judges a NAME.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadedId<'a> {

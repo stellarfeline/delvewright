@@ -448,10 +448,7 @@ fn library_with_a_sign(dir: &Path) -> PathBuf {
     // verbatim; it is judged by the one entity rule before the bytes land,
     // as every emitter's is (spec-0111 §3.1).
     let written = delvec::admit::structure::Structure::read(&gz).expect("the copy reads back");
-    let (_, refused) = delvec::admit::entities::judge(
-        &written.entities,
-        &delvec::admit::allowlist::Allowlist::default(),
-    );
+    let (_, refused) = delvec::admit::entities::judge(&written.entities);
     assert!(refused.is_empty(), "the copy's entities: {refused:?}");
     std::fs::write(&path, gz).unwrap();
     lib

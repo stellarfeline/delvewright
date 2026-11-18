@@ -2,9 +2,9 @@
 //! holder — `minecraft:item_frame`, `minecraft:glow_item_frame`,
 //! `minecraft:armor_stand` — saying what it looks like, and nothing else.
 //!
-//! Two refusals, one per question. An entity whose kind the allowlist's
-//! entity list does not name is `DW0730`, the same refusal a block outside
-//! the block list gets. A holder carrying a key outside its kind's scene
+//! Two refusals, one per question. An entity whose kind is not one of the
+//! item holders of [`delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11`] is
+//! `DW0730`. A holder carrying a key outside its kind's scene
 //! properties is `DW1036`: the item, the lock flags, the drop chance, the slot
 //! locks, the tags and the identity are the engine's, which summons every
 //! holder itself with the NBT it writes in full (spec-0111 §4.1), so a piece
@@ -17,8 +17,7 @@
 
 use serde::Serialize;
 
-use crate::admit::allowlist::Allowlist;
-use crate::admit::diag::{DW_ALLOWLIST, DW_HOLDER_OWNED, Diagnostic};
+use crate::admit::diag::{DW_HOLDER_OWNED, DW_NOT_HOLDER, Diagnostic};
 use crate::schem::nbt::Nbt;
 
 /// What the entity judge examined, for the audit report.
@@ -28,8 +27,8 @@ pub struct EntityBinding {
     pub examined: usize,
     /// Of those, holders of an admitted kind.
     pub holders: usize,
-    /// Entities of a kind the entity list does not name (`DW0730`).
-    pub not_allowlisted: usize,
+    /// Entities of a kind that is not an item holder (`DW0730`).
+    pub not_holders: usize,
     /// Owned keys found on holders (`DW1036`).
     pub owned_keys: usize,
 }
@@ -66,12 +65,12 @@ pub fn entity_cell(entity: &Nbt) -> Option<[i32; 3]> {
     Some([f(&l[0])?, f(&l[1])?, f(&l[2])?])
 }
 
-/// **Judge a template's `entities` list** against `allow` and the holder
-/// table: `DW0730` for a kind the list does not name, `DW1036` for every key a
+/// **Judge a template's `entities` list** against the holder table: `DW0730`
+/// for a kind that is not an item holder, `DW1036` for every key a
 /// holder carries outside its kind's scene properties, each at the entity's
 /// cell.
 #[must_use]
-pub fn judge(entities: &[Nbt], allow: &Allowlist) -> (EntityBinding, Vec<Diagnostic>) {
+pub fn judge(entities: &[Nbt]) -> (EntityBinding, Vec<Diagnostic>) {
     let mut b = EntityBinding::default();
     let mut diags = Vec::new();
     for e in entities {
@@ -82,34 +81,32 @@ pub fn judge(entities: &[Nbt], allow: &Allowlist) -> (EntityBinding, Vec<Diagnos
             None => d,
         };
         let Some(id) = entity_id(e) else {
-            b.not_allowlisted += 1;
+            b.not_holders += 1;
             diags.push(at(Diagnostic::error(
-                DW_ALLOWLIST,
+                DW_NOT_HOLDER,
                 "a template entity names no entity type (`nbt.id`), so nothing can say what the \
                  game would load there. A piece carries item holders and nothing else: an item \
                  frame, a glow item frame or an armour stand, each saying what it looks like",
             )));
             continue;
         };
-        if !allow.permits_entity(id) {
-            b.not_allowlisted += 1;
+        let Some(kind) = delvewright_dsl::holders::entity_holder(id) else {
+            b.not_holders += 1;
             diags.push(at(Diagnostic::error(
-                DW_ALLOWLIST,
+                DW_NOT_HOLDER,
                 format!(
-                    "entity `{id}` is not in the allowlist's entity list ({}). A piece carries the \
-                     furniture a fill stocks — an item holder — and every other body in a delve \
-                     is summoned by the datapack from a declaration (an `actor`, an NPC, a \
-                     wave), never shipped in a template. Remove it from the piece, or declare it \
-                     in the campaign",
-                    allow.entity_list()
+                    "entity `{id}` is not an item holder ({}). A piece carries the furniture a \
+                     fill stocks — an item holder — and every other body in a delve is summoned \
+                     by the datapack from a declaration (an `actor`, an NPC, a wave), never \
+                     shipped in a template. Remove it from the piece, or declare it in the \
+                     campaign",
+                    delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11
+                        .iter()
+                        .map(|k| format!("`{}`", k.id))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             )));
-            continue;
-        }
-        let Some(kind) = delvewright_dsl::holders::entity_holder(id) else {
-            // A kind the owner's override admits that is not a holder: the
-            // list is the owner's, and judging its keys is the holder table's
-            // business only.
             continue;
         };
         b.holders += 1;
@@ -175,13 +172,10 @@ mod tests {
 
     #[test]
     fn a_holder_saying_what_it_looks_like_passes() {
-        let (b, d) = judge(
-            &[
-                entity("minecraft:item_frame", &[("Facing", Nbt::Byte(2))]),
-                entity("minecraft:armor_stand", &[("ShowArms", Nbt::Byte(1))]),
-            ],
-            &Allowlist::default(),
-        );
+        let (b, d) = judge(&[
+            entity("minecraft:item_frame", &[("Facing", Nbt::Byte(2))]),
+            entity("minecraft:armor_stand", &[("ShowArms", Nbt::Byte(1))]),
+        ]);
         assert!(d.is_empty(), "{d:?}");
         assert_eq!((b.examined, b.holders), (2, 2));
     }
@@ -189,10 +183,7 @@ mod tests {
     #[test]
     fn a_holder_carrying_an_item_is_dw1036_naming_the_key() {
         let item = Nbt::Compound(BTreeMap::new());
-        let (b, d) = judge(
-            &[entity("minecraft:glow_item_frame", &[("Item", item)])],
-            &Allowlist::default(),
-        );
+        let (b, d) = judge(&[entity("minecraft:glow_item_frame", &[("Item", item)])]);
         assert_eq!(b.owned_keys, 1);
         assert_eq!(d[0].code, "DW1036");
         assert!(d[0].message.contains("`Item`"), "{}", d[0].message);
@@ -202,8 +193,8 @@ mod tests {
 
     #[test]
     fn any_other_kind_is_dw0730() {
-        let (b, d) = judge(&[entity("minecraft:pig", &[])], &Allowlist::default());
-        assert_eq!(b.not_allowlisted, 1);
+        let (b, d) = judge(&[entity("minecraft:pig", &[])]);
+        assert_eq!(b.not_holders, 1);
         assert_eq!(d[0].code, "DW0730");
         assert!(d[0].message.contains("minecraft:pig"), "{}", d[0].message);
     }

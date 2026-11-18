@@ -3,9 +3,9 @@
 //! library-grade prefab, and gates community contributions.
 //!
 //! Modules:
-//! - [`audit`] — the mechanical NBT palette audit (CI gate: allowlist + forbid).
+//! - [`audit`] — the mechanical NBT palette audit (CI gate: code-injection forbid,
+//!   block existence, shape).
 //! - [`cli`] — the command line as a type, so the set of commands is readable.
-//! - [`allowlist`] — the configurable block allowlist.
 //! - [`structure`] — an editable structure `.nbt` (read / inspect / mutate / write).
 //! - [`socket`] — jigsaw socket carving.
 //! - [`jigsaw`] — foreign worldgen jigsaw resolution (import-time neutralization).
@@ -17,7 +17,6 @@
 //! Determinism (ADR-0006): no wall-clock, no unseeded RNG, no hash-order iteration
 //! — all maps are `BTreeMap`/sorted, structure bytes are gzip-framed with mtime 0.
 
-pub mod allowlist;
 pub mod audit;
 pub mod catalog;
 pub mod cli;

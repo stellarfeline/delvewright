@@ -724,7 +724,8 @@ bytes, so it is the one step a tiled zone does not have.
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
 (`DW0733`), block states that omit a property carrying the block's shape
-(`DW0735`), and the palette allowlist (`DW0730`). A grammar prefab passes it by
+(`DW0735`), and template entities that are not item holders (`DW0730`). A
+grammar prefab passes it by
 construction for both block checks — the export refuses an unknown state and an
 under-specified shape alike — but a *hand-built* or ingested piece does not, so
 `audit` is where those classes are caught for everything else.

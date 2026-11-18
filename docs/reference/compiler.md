@@ -3046,22 +3046,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   base the schema declares, compares the command's verdict with `analyze` and,
   for a seatable pool, with the build's exposure check, and perturbs toward the
   disagreement shapes.
-- **`delvec prefab audit`'s `DW0730` names where a refused block is had instead.**
-  The refusal of a block the DSL has a first-class surface for says to take it out
-  of the prefab and use that surface: `minecraft:lever` is a trigger's or an
-  `interact` objective's `prop`; `note_block` and `jukebox` are a `play-sound`
-  effect; `piston` and `sticky_piston` are a `set-block` or `fill-region` effect;
-  `spawner` and `trial_spawner` are a `waves[]` entry fired by `spawn-wave`;
-  `dispenser` is a `traps[]` `volley` payload. Every other refused block says
-  that no DSL surface stands in for it. The table is `ROUTES` in
-  `crates/delvec/src/admit/allowlist.rs`; `tests/it/remedy_reachability.rs` and
-  `tests/it/v06_trap_payloads.rs` build each route.
-- **The default palette allowlist admits every potted plant the pin holds.**
-  `Allowlist::default_building` adds each registry id beginning
-  `minecraft:potted_` to its exact set, read from the pinned registry, so a
-  piece's flower pot holding a flower passes `DW0730` as the empty
-  `flower_pot` and the bare flowers do. A `from_file` override replaces the
-  default whole, this family included.
+- **`delvec prefab audit` admits every block of the pinned registry outside the
+  code-injection forbid list.** There is no list of building blocks: a dragon
+  egg, a conduit, a lever, a note block, a piston, a bare spawner or a
+  dispenser is a block like any other. What the audit refuses of a block is a
+  code-injection vector (`DW0731`: the command blocks, the structure block, an
+  NBT-bearing spawner, an embedded `Command`), a state the pin does not have
+  (`DW0733`, a pre-pin id no derived rename reaches included), an omitted shape
+  property (`DW0735`) and a sculk block not at rest (`DW0998`/`DW0999`).
+  `delvec grammar blocks` and `delvec grammar survey` list the forbid list as
+  `refused` (`admit::audit::hard_forbidden_block`).
 - **`delvec prefab planes <asset> [--write]`** measures a piece's own `walk_y`
   and, where it authors water, its own `waterline_y`, and declares them. Both are
   measurements of the bytes and every generator writes them by reading them back
@@ -6877,7 +6871,7 @@ zero-context author: it states **what** is wrong (with the offending name/coord/
 count/limit interpolated), **where** to fix it (the campaign stage/field, the
 prefab/tileset, or — for an invariant breach — "compiler bug, escalate"), and
 **how** to fix it; where a tempting wrong fix exists (weaken a threshold, reroll
-the `seed` against ADR-0006, widen a socket seam, bypass the allowlist) the
+the `seed` against ADR-0006, widen a socket seam) the
 message names it with an explicit "do NOT". Each row summarizes its code's
 *meaning*; the emitted message additionally carries the prescription. Gold
 standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
