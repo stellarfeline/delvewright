@@ -16,6 +16,18 @@ fn floored_with_furniture(
     extra: &[[i32; 3]],
     region: Option<([i32; 3], [i32; 3])>,
 ) -> World {
+    floored(w, d, y, extra, region, Vec::new())
+}
+
+/// [`floored_with_furniture`] with `seals` as the gates it was built holding.
+fn floored(
+    w: i32,
+    d: i32,
+    y: i32,
+    extra: &[[i32; 3]],
+    region: Option<([i32; 3], [i32; 3])>,
+    seals: Vec<crate::compiler::assembled::GateSeal>,
+) -> World {
     let mut solid = BTreeSet::new();
     for x in 0..w {
         for z in 0..d {
@@ -51,13 +63,52 @@ fn floored_with_furniture(
             furniture_regions: region
                 .map(|r| vec![("anchor/table".to_string(), r)])
                 .unwrap_or_default(),
-            world_load_seals: Vec::new(),
+            world_load_seals: seals,
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
             unbounded_fall: false,
             declared_jumps: Vec::new(),
         },
     )
+}
+
+/// **A gate seal is blamed where the body meets it, not only where the feet
+/// stand** (`DW0317`). A walk down a ladder through a hole in a floor stands
+/// its feet below the hole while its head is in it; the town's cellar way was
+/// refused with no gate named, the counterfactual route's feet cells all
+/// clear of the cover in the hole. The seal one cell over a route cell is
+/// named; one two cells over, clear of a player's height, is not.
+#[test]
+fn a_gate_seal_at_the_head_of_a_route_cell_is_blamed() {
+    let seal = |anchor: &str, at: [i32; 3]| crate::compiler::assembled::GateSeal {
+        area: "area/a".to_string(),
+        anchor: anchor.to_string(),
+        region: (at, at),
+        cells: 1,
+        blocked: 1,
+        foreign: 0,
+        open_footprints: Vec::new(),
+        hiding: Vec::new(),
+        stand: None,
+    };
+    let feet = [3, 65, 3];
+    let w = floored(
+        8,
+        8,
+        65,
+        &[],
+        None,
+        vec![
+            seal("anchor/hole", [3, 66, 3]),
+            seal("anchor/over", [3, 67, 3]),
+        ],
+    );
+    let named: Vec<&str> = w
+        .gate_seals_over(&[feet])
+        .iter()
+        .map(|s| s.anchor.as_str())
+        .collect();
+    assert_eq!(named, ["anchor/hole"]);
 }
 
 /// **A body may not be proven to stand ON furniture** (spec-0065 §4.1, §9.3).
