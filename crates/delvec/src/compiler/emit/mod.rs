@@ -801,6 +801,7 @@ fn emit_all(
     let body_answers = {
         let (binding, verdict) = crate::compiler::bodies::check(plan, &world);
         crate::note!("{}", binding.line());
+        crate::note!("{}", crate::compiler::bodies::owed_use_line(plan.campaign));
         verdict.map_err(|e| BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,

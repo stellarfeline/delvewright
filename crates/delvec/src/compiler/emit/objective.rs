@@ -156,8 +156,15 @@ fn activation_lines(
                 return cmds;
             }
             // v0.81: a gathered item comes from an act of the world (a line,
-            // a bucket); the engine places nothing for it.
+            // a bucket); the engine places nothing for it. Where the act is a
+            // use on a boxed body, the box steps aside so the use is the
+            // body's own (`bodies::owed_uses`).
             if o.collect_gathered() {
+                cmds.extend(
+                    owed_actors(plan, id.as_str())
+                        .into_iter()
+                        .filter_map(|a| super::actor::actor_answer_box_kill(plan.campaign, a)),
+                );
                 return cmds;
             }
             // spec-0111 §3.4: an adopted holder ENTITY — a frame or a stand
@@ -224,10 +231,25 @@ fn activation_lines(
     cmds
 }
 
+/// The actors whose answer box steps aside while gathered collect `oid` is
+/// open ([`crate::compiler::bodies::owed_uses`]), each once, in declaration
+/// order.
+fn owed_actors<'p>(plan: &'p Plan, oid: &str) -> Vec<&'p delvewright_dsl::Actor> {
+    let mut out: Vec<&delvewright_dsl::Actor> = Vec::new();
+    for u in crate::compiler::bodies::owed_uses(plan.campaign) {
+        if u.objective == oid && !out.iter().any(|a| a.id == u.actor.id) {
+            out.push(u.actor);
+        }
+    }
+    out
+}
+
 /// The commands run when an objective COMPLETES for the pressable it is: an
 /// `interact`'s click box returns over its settled block, or a retained box
-/// goes when the block is released. `collect`, `talk-to`, `kill` and
-/// `reach-anchor` place no pressable and contribute nothing.
+/// goes when the block is released; a gathered `collect` owed a use on a
+/// boxed body stands the box again over a body that still stands.
+/// `talk-to`, `kill`, `reach-anchor` and every other `collect` place no
+/// pressable and contribute nothing.
 pub(super) fn completion_cleanup(plan: &Plan, o: &Objective) -> Vec<String> {
     completion_lines(plan, o)
 }
@@ -238,6 +260,10 @@ pub(super) fn completion_cleanup(plan: &Plan, o: &Objective) -> Vec<String> {
 fn completion_lines(plan: &Plan, o: &Objective) -> Vec<String> {
     match o {
         Objective::Interact { id, .. } => super::press::interact_completion(plan, id.as_str()),
+        Objective::Collect { id, .. } if o.collect_gathered() => owed_actors(plan, id.as_str())
+            .into_iter()
+            .flat_map(|a| super::actor::actor_answer_box_stand(plan.campaign, a))
+            .collect(),
         Objective::ReachAnchor { .. }
         | Objective::Collect { .. }
         | Objective::TalkTo { .. }

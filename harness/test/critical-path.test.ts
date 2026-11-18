@@ -1403,6 +1403,27 @@ test("a gathered collect carries `gathered`; any value but true is refused", () 
   );
 });
 
+test("a gathered collect carries its act as `use`; a use on a step not gathered is refused", () => {
+  const raw = withCollect(undefined);
+  const at = (raw["steps"] as Record<string, unknown>[])[2]!;
+  at["gathered"] = true;
+  at["use"] = { item: "minecraft:water_bucket", on: "minecraft:axolotl" };
+  const step = parseCriticalPath(raw).steps[2];
+  if (step?.action !== "collect") throw new Error("not a collect");
+  assert.deepEqual(step.use, { item: "minecraft:water_bucket", on: "minecraft:axolotl" });
+  const loose = withCollect(undefined);
+  (loose["steps"] as Record<string, unknown>[])[2]!["use"] = { item: "minecraft:water_bucket", on: "minecraft:axolotl" };
+  assert.throws(
+    () => parseCriticalPath(loose),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/2/use",
+  );
+  const extra = withCollect(undefined);
+  const e = (extra["steps"] as Record<string, unknown>[])[2]!;
+  e["gathered"] = true;
+  e["use"] = { item: "minecraft:water_bucket", on: "minecraft:axolotl", with: "both hands" };
+  assert.throws(() => parseCriticalPath(extra), (err: unknown) => err instanceof CriticalPathParseError);
+});
+
 // --- spec-0108 §6.5: an act no step kind drives, performed by mock ----------------
 
 const candle = {
@@ -1646,10 +1667,10 @@ test("format 13: a kill step carries the triggers its fight's bodies may fire wh
   }
 });
 
-test("format 16: the constant moved, and a format-15 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 16);
+test("format 17: the constant moved, and a format-16 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 17);
   const raw = validRaw();
-  raw["format_version"] = 15;
+  raw["format_version"] = 16;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
