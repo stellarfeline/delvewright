@@ -386,12 +386,10 @@ not third-party reconstructions.
   the old id still existed. **1 rename**, from **3** ids that ever left the
   block registry across the 43 releases up to the pin.
   **Why it exists**: the registry answers *does the pin have this id*, and every
-  check that judges a NAME — the palette allowlist, a palette screen, a render
-  surface — needs the different question *what will the pin HOLD*. Judging a
-  pre-pin template's palette as written made `delvec prefab audit` contradict
-  itself inside one run: `DW0734` passed `minecraft:chain` at DataVersion 2975
-  because the fixer migrates it, and `DW0730` refused the identical cell in the
-  next breath because `minecraft:chain` is not a name at the pin.
+  check that judges a NAME — the admission audit, a palette screen, a render
+  surface — needs the different question *what will the pin HOLD*:
+  `minecraft:chain` at DataVersion 2975 is `minecraft:iron_chain` once the
+  fixer has run.
   **What is derived and what is not.** Which ids disappeared, and when, is fully
   derived from the `block` array of each release's own `registries/data.min.json`
   — so `valid_through` is a *lower bound* on the renaming schema, because the fix
@@ -410,7 +408,7 @@ not third-party reconstructions.
   refuses the id and a reviewer sees a name the pin does not have. Inventing the
   pairing is the invented vanilla data the section below refuses.
   Consumed by `delvewright_dsl::blocks::BlockRegistry::loaded_id_at`, and through
-  it by `delvec prefab audit`'s allowlist (`DW0730`) and pre-pin warning
+  it by `delvec prefab audit`'s dead-id refusal (`DW0733`) and pre-pin warning
   (`DW0734`).
   **Reproduce it**: `python3 tools/maintenance/extract-block-renames.py
   crates/dsl/data/block-renames-1.21.11.json`. The script reads the same mcmeta

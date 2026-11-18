@@ -1550,8 +1550,7 @@ pub fn holder_entities(expansion: &Expansion) -> Result<Vec<HolderEntity>, Expor
     // The one judge every door asks: what this writer authored passes it, or
     // the writer is refused.
     let compounds: Vec<Nbt> = out.iter().map(|e| e.entity_at(e.cell)).collect();
-    let (_, refused) =
-        crate::admit::entities::judge(&compounds, &crate::admit::allowlist::Allowlist::default());
+    let (_, refused) = crate::admit::entities::judge(&compounds);
     if !refused.is_empty() {
         return Err(ExportError::Entities {
             reasons: refused.into_iter().map(|d| d.message).collect(),
@@ -1780,10 +1779,7 @@ mod tests {
             ])
         );
         // The judge passes what the writer authored.
-        let (b, refused) = crate::admit::entities::judge(
-            &s.entities,
-            &crate::admit::allowlist::Allowlist::default(),
-        );
+        let (b, refused) = crate::admit::entities::judge(&s.entities);
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(b.holders, 1);
         // Perturbation: the pose moves the bytes; the same program reproduces them.

@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::admit::allowlist::Allowlist;
 use crate::admit::audit::{self, audit};
 use crate::admit::catalog::CatalogCard;
 use crate::admit::cli::{CatalogCmd, PrefabArgs, PrefabCommand};
@@ -37,11 +36,7 @@ pub fn run(args: PrefabArgs, prefabs_dir: &Path, json: bool) -> ExitCode {
     match args.command {
         PrefabCommand::Seating { horizon } => run_seating(&horizon, prefabs_dir, json),
         PrefabCommand::Anchors { pool } => run_anchors(pool.as_deref(), prefabs_dir, json),
-        PrefabCommand::Audit {
-            nbt,
-            allowlist,
-            report,
-        } => run_audit(&nbt, allowlist.as_deref(), report.as_deref(), json),
+        PrefabCommand::Audit { nbt, report } => run_audit(&nbt, report.as_deref(), json),
         PrefabCommand::Socket {
             nbt,
             pos,
@@ -729,7 +724,7 @@ fn claims_door(
     (verdict, diags)
 }
 
-fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: bool) -> ExitCode {
+fn run_audit(nbt: &Path, report: Option<&Path>, json: bool) -> ExitCode {
     // **A whole library sweeps rather than audits one file.** `DW0887` is a
     // property of a prefab document and its `.nbt` read together, so it binds
     // wherever those two are opened and in no other way — and the place they
@@ -739,17 +734,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     if nbt.is_dir() {
         return run_library_audit(nbt, report, json);
     }
-    let allow = match allowlist {
-        Some(p) => match std::fs::read_to_string(p)
-            .map_err(|e| e.to_string())
-            .and_then(|t| Allowlist::from_file(&t))
-        {
-            Ok(a) => a,
-            Err(e) => return input_err(&format!("allowlist {}: {e}", p.display()), json),
-        },
-        None => Allowlist::default_building(),
-    };
-
     // A tile-set manifest audits the whole zone. Handing this command one tile
     // of a set would audit a fragment and print `"verdict": "pass"` over it,
     // which is the failure mode this command exists to prevent one layer up.
@@ -768,7 +752,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
                 Err(e) => return input_err(&e, json),
             };
             let asset = nbt.display().to_string();
-            let (rep, diags) = audit::audit_tile_set(&asset, set.size, &tiles, &allow);
+            let (rep, diags) = audit::audit_tile_set(&asset, set.size, &tiles);
             // The contract a manifest declares is zone-relative — its boxes and its
             // anchors are stated in the coordinates of the assembled building, not
             // of any tile — so the checker's two arguments exist at zone scale
@@ -816,7 +800,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
                 Ok(s) => s,
                 Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
             };
-            let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
+            let (rep, diags) = audit(&nbt.display().to_string(), &structure);
             let meta_path = nbt.with_extension("json");
             let grid = crate::admit::spatial::grid(&structure);
             let holders = crate::admit::spatial::template_holders(&[([0, 0, 0], &structure)]);

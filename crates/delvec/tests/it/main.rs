@@ -192,6 +192,7 @@ mod packtest_batch;
 mod packtest_campaign;
 mod packtest_latch;
 mod packtest_own_gates;
+mod palette_open;
 mod party;
 mod party_crossing;
 mod party_teleport;

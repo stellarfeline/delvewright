@@ -30,7 +30,6 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use delvec::admit::allowlist::Allowlist;
 use delvec::admit::audit;
 use delvec::admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
 use delvec::admit::meta as admit_meta;
@@ -748,11 +747,10 @@ fn prepare(
     // the piece ships and judged by the one entity judge: a holder kind saying
     // what it looks like passes, anything else is refused with nothing written.
     {
-        let allow = delvec::admit::allowlist::Allowlist::default();
         let mut examined = 0usize;
         let mut holders = 0usize;
         for (_, t) in &tiles {
-            let (b, refused) = delvec::admit::entities::judge(&t.entities, &allow);
+            let (b, refused) = delvec::admit::entities::judge(&t.entities);
             examined += b.examined;
             holders += b.holders;
             if let Some(d) = refused.first() {
@@ -827,20 +825,19 @@ fn prepare(
     }
 
     // ---- 7. the admission audit ----
-    let allow = Allowlist::default_building();
     let (audit_report, audit_diags) = if tiles.len() == 1 {
-        audit::audit(&id, &tiles[0].1, &allow)
+        audit::audit(&id, &tiles[0].1)
     } else {
-        audit::audit_tile_set(&id, meta.size(), &tiles, &allow)
+        audit::audit_tile_set(&id, meta.size(), &tiles)
     };
     for d in &audit_diags {
         d.print(json);
     }
     if audit_report.verdict != "pass" && !look {
         eprintln!(
-            "error: `{place}`: `{id}` fails the admission audit ({} forbidden, {} not \
-             allowlisted, {} unknown block(s)); nothing was written.",
-            audit_report.forbidden, audit_report.not_allowlisted, audit_report.unknown_blocks
+            "error: `{place}`: `{id}` fails the admission audit ({} forbidden, {} unknown \
+             block(s), {} entit(ies) not an item holder); nothing was written.",
+            audit_report.forbidden, audit_report.unknown_blocks, audit_report.entities.not_holders
         );
         return Err(1);
     }

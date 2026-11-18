@@ -206,7 +206,7 @@ def engine_refused(rig: Rig) -> set[str]:
 
 
 def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
-    """Which blocks are refused (`DW0730`) and which are containers is read from
+    """Which blocks are refused (`DW0731`) and which are containers is read from
     `delvec grammar blocks`, saved beside the handout, never typed."""
     out = rig.run()
     assert out.returncode == 0, out.stderr
@@ -219,17 +219,13 @@ def test_the_blocks_a_place_may_write_are_the_engine_s_lists(rig: Rig):
     assert refused_reachable_from(text) == engine_refused(rig)
     assert f"## The blocks you may write ({len(blocks['admitted'])} admitted, {len(blocks['refused'])} refused)" in text
     # The refused list itself is the saved `blocks.json` (and the generator
-    # refuses each by name before it writes); the handout states its count and
-    # names every refused block that is had another way, with that way.
+    # refuses each by name before it writes); the handout states its count.
     assert f"except the {len(blocks['refused'])} its `refused` list names" in text
-    for r in blocks["refused"]:
-        if r.get("route"):
-            assert f"- `{r['block']}` is had another way: {r['route']}" in text
     assert f"**Containers** ({len(blocks['containers'])}): " in text
     assert "`smoker`" in text and "`blast_furnace`" in text
     assert f"refused blocks {len(blocks['refused'])}; containers {len(blocks['containers'])}" in out.stderr
     # Moved: the engine refuses one more block, and the handout says so.
-    blocks["refused"].append({"block": "minecraft:stone_bricks", "route": None})
+    blocks["refused"].append({"block": "minecraft:stone_bricks"})
     (rig.bin / "blocks.json").write_text(json.dumps(blocks), encoding="utf-8")
     out = rig.run(place="node/yard")
     assert out.returncode == 0, out.stderr
