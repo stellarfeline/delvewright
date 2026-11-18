@@ -4840,15 +4840,15 @@
         "checkpoints": [
           {
             "at": {
-              "anchor": "anchor/long-hall-cart",
+              "anchor": "anchor/long-hall-line-end",
               "offset": [
+                -1,
                 0,
-                0,
-                5
+                0
               ]
             },
             "extent": [
-              0,
+              2,
               1,
               0
             ]
