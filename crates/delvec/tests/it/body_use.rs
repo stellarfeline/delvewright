@@ -207,3 +207,29 @@ fn every_bucketable_kind_is_the_object_of_its_own_bucket() {
         assert_eq!(uses[0].kind, *kind);
     }
 }
+
+/// The activation is driven on a server: its template stands the body and its
+/// box, runs the collect activation, and asserts the box is gone.
+#[test]
+fn the_activation_template_reads_the_box_standing_then_gone() {
+    let c = campaign(&raw("minecraft:axolotl", "minecraft:axolotl_bucket"));
+    let out = build(&c);
+    let path = "packtest-datapack/data/hello-world/test/obj_activate_scoop.mcfunction";
+    let t =
+        String::from_utf8(out.get(path).unwrap_or_else(|| panic!("no {path}")).clone()).unwrap();
+    let at = |needle: &str| {
+        t.lines()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("{needle}\n---\n{t}"))
+    };
+    let spawn = at("function hello-world:spawn_actor_pip");
+    let stood = at("assert score #fx1_scoop dw.sys matches 1");
+    let act = at("function hello-world:activate_o_scoop");
+    let gone = at("assert score #fx1_scoop dw.sys matches 0");
+    assert!(spawn < stood && stood < act && act < gone, "{t}");
+    assert!(
+        t.lines()
+            .any(|l| l.starts_with("execute if score #fx0_scoop_0 dw.sys matches 0 run kill")),
+        "a body the template stood is removed again:\n{t}"
+    );
+}

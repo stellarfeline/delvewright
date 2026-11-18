@@ -215,6 +215,10 @@ enum ActivationFixture {
     /// The objective's click box removed (spec-0117 §5.1): an `interact` whose
     /// block acts on its own opens its window by taking its box away.
     Removal { tag: String },
+    /// Answer boxes stepped aside (`bodies::owed_uses`): a gathered `collect`
+    /// owed a use on boxed bodies takes each box away, so the use is the
+    /// body's own. One `dw_abody_<actor>` tag per actor.
+    BoxesAside { tags: Vec<String> },
     /// The objective's stack in a holder entity's slot (spec-0111 §3.4): the
     /// collect path fills the frame or stand the piece carries.
     EntitySlot {
@@ -225,6 +229,23 @@ enum ActivationFixture {
 }
 
 fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
+    let killed: Vec<&str> = cmds
+        .iter()
+        .filter_map(|c| {
+            c.strip_prefix("kill @e[tag=")
+                .and_then(|r| r.strip_suffix(']'))
+        })
+        .collect();
+    if !killed.is_empty()
+        && killed.len() == cmds.len()
+        && killed
+            .iter()
+            .all(|t| t.starts_with(crate::compiler::bodies::ANSWER_BOX_TAG))
+    {
+        return Some(ActivationFixture::BoxesAside {
+            tags: killed.iter().map(|t| (*t).to_string()).collect(),
+        });
+    }
     if let [one] = cmds
         && let Some(tag) = one
             .strip_prefix("kill @e[tag=")
@@ -375,6 +396,63 @@ pub(super) fn emit_objective_activation_packtests(
                         && let Some(summon) = super::super::press::box_summon_once(plan, p)
                     {
                         b.push(summon);
+                    }
+                }
+                ActivationFixture::BoxesAside { tags } => {
+                    // Each body stands with its box before the window opens —
+                    // spawned here when it was not standing, and only then
+                    // removed again; its box stood by its own unheld summon, so
+                    // the read before is a fact whatever latch an earlier
+                    // template left — and none wears one once it has.
+                    let summons: Vec<Option<String>> = tags
+                        .iter()
+                        .map(|tag| {
+                            let actor = &tag[crate::compiler::bodies::ANSWER_BOX_TAG.len()..];
+                            plan.campaign
+                                .quests
+                                .content
+                                .actors
+                                .iter()
+                                .find(|a| plan::safe_local(a.id.as_str()) == actor)
+                                .and_then(|a| {
+                                    super::super::actor::actor_answer_box_summon(plan.campaign, a)
+                                })
+                        })
+                        .collect();
+                    for (i, tag) in tags.iter().enumerate() {
+                        let actor = &tag[crate::compiler::bodies::ANSWER_BOX_TAG.len()..];
+                        b.push(format!(
+                            "execute store result score #fx0_{safe}_{i} dw.sys if entity \
+                             @e[tag=dw_pup_{actor}]"
+                        ));
+                        b.push(format!("function {ns}:spawn_actor_{actor}"));
+                        b.extend(summons[i].clone());
+                        b.push(format!(
+                            "execute store result score #fx1_{safe} dw.sys if entity @e[tag={tag}]"
+                        ));
+                        b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
+                    }
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    for tag in tags {
+                        b.push(format!(
+                            "execute store result score #fx1_{safe} dw.sys if entity @e[tag={tag}]"
+                        ));
+                        b.push(format!("assert score #fx1_{safe} dw.sys matches 0"));
+                    }
+                    for (i, tag) in tags.iter().enumerate() {
+                        let actor = &tag[crate::compiler::bodies::ANSWER_BOX_TAG.len()..];
+                        b.push(format!(
+                            "execute if score #fx0_{safe}_{i} dw.sys matches 0 run kill \
+                             @e[tag=dw_actor_{actor}]"
+                        ));
+                        if let Some(rest) = summons[i]
+                            .as_deref()
+                            .and_then(|l| l.strip_prefix("execute "))
+                        {
+                            b.push(format!(
+                                "execute if score #fx0_{safe}_{i} dw.sys matches 1.. {rest}"
+                            ));
+                        }
                     }
                 }
                 ActivationFixture::ContainerSlot { pos, slot, item } => {
