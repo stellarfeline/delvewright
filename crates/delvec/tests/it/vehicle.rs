@@ -194,7 +194,7 @@ fn anchors() -> serde_json::Value {
         "anchor/crate-two-alongside": { "pos": [12, 3, 6] },
         "anchor/cp-bridge": { "pos": [9, 4, 7] },
         "anchor/cp-east": { "pos": [14, 4, 7] },
-        "anchor/past-bridge": { "pos": [11, 4, 7] },
+        "anchor/bridge-west": { "pos": [7, 4, 7] },
         "anchor/cp-high": { "pos": [9, 7, 4] }
     })
 }
@@ -2235,14 +2235,16 @@ fn finish_of(race: &str) -> &'static str {
 }
 
 /// Where a course that finishes at `finish` is reached (`DW1144`): two cells
-/// east of the finish's mark, along `z = 7`, inside the finish once it is
-/// widened two cells either way and clear of it by more than the reach's
-/// radius at its west end, so the ride is credited the finish short of the
-/// reach's volume. A checkpoint nobody can be in is its own reach.
+/// along `z = 7` from the finish's mark, on the far side of it from where the
+/// ride comes in (east of the east checkpoint, the nook; west of the bridge,
+/// which a course that ends there reaches from the east), inside the finish
+/// once it is widened two cells either way, so the ride is credited the
+/// finish short of the reach's volume. A checkpoint nobody can be in is its
+/// own reach.
 fn reached_at(finish: &str) -> &'static str {
     match finish {
         "anchor/cp-east" => "anchor/nook",
-        "anchor/cp-bridge" => "anchor/past-bridge",
+        "anchor/cp-bridge" => "anchor/bridge-west",
         other => Box::leak(other.to_string().into_boxed_str()),
     }
 }
@@ -2257,12 +2259,8 @@ fn course_bay(race: String) -> Bay {
     let at = race
         .rfind(&narrow)
         .expect("the finish is written by `race`");
-    let race = format!(
-        "{}{}{}",
-        &race[..at],
-        format!(r#""{finish}" }}, "extent": [2, 1, 0]"#),
-        &race[at + narrow.len()..]
-    );
+    let wide = format!(r#""{finish}" }}, "extent": [2, 1, 0]"#);
+    let race = [&race[..at], wide.as_str(), &race[at + narrow.len()..]].concat();
     Bay {
         bridge: true,
         ride: Some("vehicle/race-pig"),
