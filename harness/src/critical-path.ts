@@ -132,9 +132,14 @@ import type { GateTerm } from "./death-loop.ts";
  *   `on` it acquires by the crosshair ray, instead of being handed the item. A
  *   format-16 bot would refuse the key.
  *
+ * * `18` — a step whose objective runs a race's course may carry
+ *   `race_wait_ticks` (spec-0139 §3–§4): how long after its act the race may
+ *   still run; the completion wait is that much longer. A format-17 bot would
+ *   refuse the key.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 17;
+export const CRITICAL_PATH_FORMAT_VERSION = 18;
 
 /**
  * One census a step is gated on (spec-0134 §1): the datum, its scoreboard
@@ -260,6 +265,13 @@ export interface PresentationMarkers {
   readonly sneak?: boolean;
   readonly cutsceneSeconds?: number;
   readonly enRouteCutsceneSeconds?: number;
+  /**
+   * Format 18 (spec-0139 §3–§4): the step's objective runs a race's course and
+   * completes when the race is over — up to this many ticks after the step's
+   * own act (the race's grace, or its slowest listed racer's walk). The bot's
+   * completion wait for the step is that much longer.
+   */
+  readonly raceWaitTicks?: number;
   /**
    * The volumes this step's walks keep out of (`keep_out`): every `reach`
    * objective the compiler reads as armed while the step is performed and not
@@ -1157,6 +1169,7 @@ function presentationFields(
     sneak?: boolean;
     cutsceneSeconds?: number;
     enRouteCutsceneSeconds?: number;
+    raceWaitTicks?: number;
     keepOut?: readonly KeepOut[];
   } = {};
   const sneak = obj["sneak"];
@@ -1185,6 +1198,13 @@ function presentationFields(
       );
     }
     out.enRouteCutsceneSeconds = enRoute;
+  }
+  const raceWait = obj["race_wait_ticks"];
+  if (raceWait !== undefined) {
+    if (typeof raceWait !== "number" || !Number.isInteger(raceWait) || raceWait <= 0) {
+      fail(`${pointer}/race_wait_ticks`, `must be a positive integer, got ${describe(raceWait)}`);
+    }
+    out.raceWaitTicks = raceWait;
   }
   const keepOut = obj["keep_out"];
   if (keepOut !== undefined) {
@@ -1451,7 +1471,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "talk-to": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "race_wait_ticks", "keep_out"],
         pointer,
       );
       return {
@@ -1499,7 +1519,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "completed_on_landing",
           "sneak",
           "cutscene_seconds",
-          "en_route_cutscene_seconds",
+          "en_route_cutscene_seconds", "race_wait_ticks",
           "keep_out",
         ],
         pointer,
@@ -1533,7 +1553,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "seat_ticks", "unattended", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
+        ["action", "objective", "wave", "pos", "tag", "count", "seat_ticks", "unattended", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "race_wait_ticks", "keep_out"],
         pointer,
       );
       const seat = obj["seat_ticks"];
@@ -1583,7 +1603,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "transport",
           "sneak",
           "cutscene_seconds",
-          "en_route_cutscene_seconds",
+          "en_route_cutscene_seconds", "race_wait_ticks",
           "keep_out",
         ],
         pointer,
@@ -1629,7 +1649,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "transport",
           "sneak",
           "cutscene_seconds",
-          "en_route_cutscene_seconds",
+          "en_route_cutscene_seconds", "race_wait_ticks",
           "keep_out",
           "stand",
           "area",

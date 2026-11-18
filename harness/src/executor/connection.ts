@@ -2,6 +2,7 @@
 
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
+import { componentText, lodestoneTarget, nbtPlain } from "../heard.ts";
 import type { StageName } from "../report.ts";
 import { respawnReseats } from "../combat.ts";
 import { createHarnessBot, type HarnessBot } from "../client-loaded.ts";
@@ -346,6 +347,51 @@ export const methods = {
     bot.on("entityHurt", (entity: Entity, source?: Entity) => {
       if (!entity || entity.id !== bot.entity?.id) return;
       this.onBotDamaged(source?.id);
+    });
+    // A hit's damage TYPE, which names a hit no entity dealt (starvation, a
+    // fall, fire): the configuration phase's damage-type registry, and the
+    // index each `damage_event` on the bot carries — read before mineflayer's
+    // own listener turns the packet into `entityHurt`.
+    const typeClient = (bot as unknown as {
+      _client?: {
+        on?: (e: string, f: (p: unknown) => void) => void;
+        prependListener?: (e: string, f: (p: unknown) => void) => void;
+      };
+    })._client;
+    typeClient?.on?.("registry_data", (packet: unknown) => this.damageTypes.observe(packet));
+    // What the bot is shown (`heard.ts`), written into the log when it
+    // changes: the action-bar line — a race's credit, a missed checkpoint —
+    // and where the engine's compass points.
+    {
+      let lastBar = "";
+      typeClient?.on?.("action_bar", (packet: unknown) => {
+        const text = componentText(nbtPlain((packet as { text?: unknown })?.text));
+        if (text === lastBar) return;
+        lastBar = text;
+        process.stderr.write(`[shown] action bar during step ${this.currentStep}: ${text}\n`);
+      });
+      let lastAim = "";
+      // The inventory window exists once the bot has logged in, not when it is
+      // created: hooked at the first spawn, once.
+      bot.once("spawn", () => {
+      const inv = (bot as unknown as {
+        inventory?: { on?: (e: string, f: (slot: number, old: unknown, item: unknown) => void) => void };
+      }).inventory;
+      inv?.on?.("updateSlot", (_slot: number, _old: unknown, item: unknown) => {
+        const it = item as { name?: string; components?: unknown } | null;
+        if (it?.name !== "compass") return;
+        const at = lodestoneTarget(it.components);
+        const aim = at ? JSON.stringify(at) : "nothing (spinning)";
+        if (aim === lastAim) return;
+        lastAim = aim;
+        process.stderr.write(`[shown] compass aims at ${aim} during step ${this.currentStep}\n`);
+      });
+      });
+    }
+    typeClient?.prependListener?.("damage_event", (packet: unknown) => {
+      const p = packet as { entityId?: unknown; sourceTypeId?: unknown };
+      if (p.entityId !== bot.entity?.id) return;
+      this.lastBotDamageType = { type: this.damageTypes.name(p.sourceTypeId), at: Date.now() };
     });
     // FALLBACK: `sourceCauseId` is 0 when the server names no responsible entity (and
     // the lookup misses if that entity is not tracked client-side), so a hit can arrive

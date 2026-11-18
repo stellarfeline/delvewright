@@ -171,7 +171,7 @@ fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
     ];
     let transports = vec![Some([2, 67, 16]), None];
     let got: Vec<([i32; 3], bool, usize)> =
-        positions_of(Some([2, 67, 2]), &steps, &transports, None)
+        positions_of(Some([2, 67, 2]), &steps, &transports, None, false)
             .iter()
             .map(|p| (p.pos, p.transport_before, p.src_step))
             .collect();
@@ -182,6 +182,60 @@ fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
             ([2, 67, 16], false, 0),
             ([2, 67, 16], true, 0),
             ([2, 67, 41], false, 1),
+        ]
+    );
+}
+
+/// A step whose completion puts the party down somewhere — a party
+/// `teleport`, a crossing — is a carry into its landing, and the leg on from
+/// the landing to the next position is a leg the proofs walk (or ride). Red
+/// on an enumeration that marked the next position itself as carried into:
+/// the way from the landing was then neither proven nor exported, and a
+/// course ridden from the start line the story teleports the party to was
+/// walked by the bot with no ride.
+#[test]
+fn the_leg_on_from_a_landing_is_walked_from_the_landing() {
+    let steps = vec![
+        Step::TalkTo {
+            objective_id: Some("obj/dare".into()),
+            npc_id: "npc/baker".into(),
+            pos: [2, 67, 4],
+            command: "/trigger dw.dlg_baker set 1".into(),
+            sets: Vec::new(),
+        },
+        Step::Reach {
+            objective_id: "obj/line".into(),
+            anchor_id: "anchor/line".into(),
+            pos: [40, 67, 4],
+            radius: 1,
+            completion: crate::compiler::reach::reach_completion([40, 67, 4], 1),
+        },
+    ];
+    let transports = vec![Some([30, 67, 4]), None];
+    let got = |landings: bool| -> Vec<([i32; 3], bool, usize)> {
+        positions_of(Some([2, 67, 2]), &steps, &transports, None, landings)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect()
+    };
+    assert_eq!(
+        got(true),
+        vec![
+            ([2, 67, 2], false, 0),
+            ([2, 67, 4], false, 0),
+            ([30, 67, 4], true, 0),
+            ([40, 67, 4], false, 1),
+        ],
+        "the walk proof walks the leg on from the landing"
+    );
+    // The proofs that ask where a respawned or carried body owes a walk read
+    // the carry as reaching the next position, as before.
+    assert_eq!(
+        got(false),
+        vec![
+            ([2, 67, 2], false, 0),
+            ([2, 67, 4], false, 0),
+            ([40, 67, 4], true, 1),
         ]
     );
 }
@@ -240,7 +294,7 @@ fn an_act_from_the_seat_and_a_ride_on_from_aboard_are_carries() {
     ];
     let transports = vec![None; 4];
     let got: Vec<([i32; 3], bool, bool, usize)> =
-        positions_of(Some([1, 67, 2]), &steps, &transports, None)
+        positions_of(Some([1, 67, 2]), &steps, &transports, None, false)
             .iter()
             .map(|p| (p.pos, p.transport_before, p.by_loop, p.src_step))
             .collect();
@@ -307,7 +361,7 @@ fn every_lapse_after_an_act_from_the_seat_is_a_carry_at_the_seat() {
     ];
     let transports = vec![None; 5];
     let got: Vec<([i32; 3], bool, usize)> =
-        positions_of(Some([1, 67, 2]), &steps, &transports, None)
+        positions_of(Some([1, 67, 2]), &steps, &transports, None, false)
             .iter()
             .map(|p| (p.pos, p.transport_before, p.src_step))
             .collect();
@@ -1192,7 +1246,7 @@ fn a_shot_steps_leg_ends_at_its_stance() {
     let transports = vec![None];
     let stances = BTreeMap::from([("trigger/belfry-shot".to_string(), [2, 67, 30])]);
     let at = |shots| {
-        positions_of(Some([2, 67, 2]), &steps, &transports, shots)
+        positions_of(Some([2, 67, 2]), &steps, &transports, shots, false)
             .iter()
             .map(|p| p.pos)
             .collect::<Vec<_>>()

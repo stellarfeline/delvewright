@@ -14,6 +14,7 @@ import {
   restoreAmplifier,
 } from "../sustain.ts";
 import { isWaveMob } from "./wave.ts";
+import { STARVE } from "../damage-type.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** How long (ms) after a drink before another is considered, so the health the
@@ -80,6 +81,15 @@ export const methods = {
    * named none — see {@link attributeBotDamage} for what happens then.
    */
   onBotDamaged(this: MineflayerExecutor, sourceId: number | undefined): void {
+    const type = this.hitDamageType();
+    // Starvation is the bot's own body: nothing dealt it, so no body near the
+    // bot is guessed at. Feeding is `holdFed`'s, on the walk legs it holds.
+    if (sourceId === undefined && type === STARVE) {
+      process.stderr.write(
+        `[staged] the bot was hit by ${STARVE}, which no body dealt (hunger ${this.bot?.food ?? "?"})\n`,
+      );
+      return;
+    }
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(sourceId, candidates);
     if (attacker === undefined) return;
@@ -96,7 +106,8 @@ export const methods = {
     // and nowhere near good enough to act on.
     if (!named) {
       process.stderr.write(
-        `[staged] the bot was hit with no source the server named; the nearest body is ` +
+        `[staged] the bot was hit with no source the server named (damage type ` +
+          `${type ?? "not named"}); the nearest body is ` +
           `${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and so is left ` +
           `standing\n`,
       );
@@ -134,6 +145,10 @@ export const methods = {
       this.damageBy.set(hit.id, (this.damageBy.get(hit.id) ?? 0) + (previous - bot.health));
     }
     if (Date.now() - this.lastAttributionAt < HEALTH_ATTRIBUTION_GRACE_MS) return;
+    // A drop the server named a type for — starvation among them — is that
+    // hit's, and is no body's blow.
+    const type = this.hitDamageType();
+    if (type === STARVE) return;
     const { candidates, byId } = this.visibleHostiles();
     const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
     if (attacker === undefined) return;
@@ -142,7 +157,8 @@ export const methods = {
     // body on this evidence would be the harness answering a lethal volume by
     // deleting whoever was standing nearby.
     process.stderr.write(
-      `[staged] the bot lost ${(previous - bot.health).toFixed(1)} health with no named source; ` +
+      `[staged] the bot lost ${(previous - bot.health).toFixed(1)} health with no named source ` +
+        `(damage type ${type ?? "not named"}); ` +
         `the nearest body is ${byId.get(attacker)?.name ?? "?"}#${attacker}, which is a guess and ` +
         `so is left standing\n`,
     );
@@ -240,6 +256,17 @@ export const methods = {
     let best: number | undefined;
     for (const c of candidates) if (best === undefined || c.distance < best) best = c.distance;
     return best;
+  },
+
+  /**
+   * The damage type of the hit being handled: the type the server named in the
+   * `damage_event` that arrived with it, or `undefined` when it named none the
+   * registry holds, or the last one is not this hit's.
+   */
+  hitDamageType(this: MineflayerExecutor): string | undefined {
+    const last = this.lastBotDamageType;
+    if (last === undefined || Date.now() - last.at >= HEALTH_ATTRIBUTION_GRACE_MS) return undefined;
+    return last.type;
   },
 
   /**

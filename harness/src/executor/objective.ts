@@ -54,6 +54,12 @@ export function completionWindowMs(endingTailTicks: number | undefined): number 
  */
 export const OBJECTIVE_TIMEOUT_MS = 30_000;
 
+/** The completion wait of a step whose objective may wait `raceWaitMs` for a
+ * race to be over (format 18): the ordinary wait beyond it. */
+export function objectiveWait(raceWaitMs: number): number {
+  return OBJECTIVE_TIMEOUT_MS + Math.max(0, raceWaitMs);
+}
+
 /**
  * Settle (ms) after an objective's marker before the next step runs, so effects the
  * objective fires (open a gate, give an item, move an NPC) have landed. The marker
@@ -123,16 +129,19 @@ export const methods = {
       );
       return;
     }
+    // Format 18: an objective that runs a race's course completes when the
+    // race is over, which the export bounds (`raceWaitTicks`).
+    const within = objectiveWait(this.stepRaceWaitMs);
     const arrived = await this.waitFor(
       () => this.completedObjectives.has(objectiveId),
-      OBJECTIVE_TIMEOUT_MS,
+      within,
       SCORE_POLL_MS,
     );
     if (arrived) return;
     const seen = [...this.completedObjectives.keys()];
     throw new Error(
       `${label}: objective ${objectiveId} did not complete within ` +
-        `${OBJECTIVE_TIMEOUT_MS}ms — no \`${markerLine(this.campaignId ?? "?", objectiveId)}\` ` +
+        `${within}ms — no \`${markerLine(this.campaignId ?? "?", objectiveId)}\` ` +
         `marker arrived; bot at ${fmt(this.requireBot().entity.position)}; objectives ` +
         `completed so far: ${seen.join(", ") || "none"}${swallowedTriggerVerdict(this.trigger)}`,
     );

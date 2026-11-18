@@ -1181,6 +1181,21 @@ pub(super) fn emit_functions(
                     // `crate::compiler::reach::check_reach_completion` proves the party can
                     // get inside it. v0.2 keeps the sphere, so hello-world /
                     // keep-crawl stay byte-identical.
+                    //
+                    // spec-0139 §4, as amended: a reach that declares a course
+                    // is reached by that race being over — its anchor is where
+                    // the course ends, and a racer reaches it by finishing — so
+                    // the race's end completes it wherever the party stands. A
+                    // party still on the course when the grace runs out is not
+                    // owed a ride to the line before the story goes on.
+                    if o.course().is_some() {
+                        tick.push(format!(
+                            "execute as @a{} run function {ns}:complete_{}",
+                            pending_guard(plan, o, &qa),
+                            safe_obj_fn(id.as_str())
+                        ));
+                        continue;
+                    }
                     tick.push(format!(
                         "execute as @a{} if entity @s[{}] run function {ns}:complete_{}",
                         pending_guard(plan, o, &qa),
@@ -1398,7 +1413,7 @@ pub(super) fn emit_functions(
     fns.extend(emit_pulse_functions(plan, pulses));
     fns.extend(emit_vehicle_functions(plan));
     fns.extend(board_fns(plan));
-    fns.extend(race_fns(plan));
+    fns.extend(race_fns(plan, guide));
     fns.extend(mode_fns(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));

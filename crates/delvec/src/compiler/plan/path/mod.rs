@@ -702,9 +702,18 @@ fn choices_before(
 ///   for `4`'s reason: a format-16 bot would refuse the key, and one that
 ///   ignored it would hand itself an item a player must earn by the act.
 ///
+/// * `18` — a step whose objective runs a race's course carries
+///   `race_wait_ticks` (spec-0139 §3–§4, `emit::manifest::race_wait_ticks`):
+///   how long after its act the objective may wait for the race to be over —
+///   the race's grace, or the longest walk of a listed racer. The harness
+///   waits that long beyond its ordinary completion wait. A format change for
+///   `4`'s reason: a format-17 bot would refuse the key, and one that ignored
+///   it would give a race that ends by its grace a fixed wait no longer than
+///   the grace.
+///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 17;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 18;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).

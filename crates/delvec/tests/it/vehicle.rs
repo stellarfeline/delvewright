@@ -2593,3 +2593,134 @@ fn a_walk_along_a_race_passes_every_checkpoint() {
         "a walk that follows no course goes one block east and no further: {straight:?}"
     );
 }
+
+/// The owner's ruled race end, and the compass on a course. A `reach-anchor`
+/// that declares a course is reached by the race being over: its completion
+/// line asks no volume, so a party still on the course when the grace runs
+/// out goes on with the story. The compass of the objective that runs the
+/// course aims at the holder's next checkpoint while the race runs and it is
+/// short of the finish, at the objective's own cell otherwise, and a credit
+/// re-aims it. Red on the emission before: the completion stood inside the
+/// exit's box, and the compass aimed at the exit for the whole race.
+#[test]
+fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoint() {
+    // Titled, so the exit is announced and the compass follows it.
+    let bay = Bay {
+        gate: r#", "course": "race/pig-race", "title": "Ride the race""#,
+        ..course_bay(race(&["cp-bridge", "cp-east"], ""))
+    };
+    let out =
+        course_build("course-compass", bay, START_RACE).unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let tick = function(&out, "tick");
+    let done: Vec<&str> = tick
+        .lines()
+        .filter(|l| l.contains("run function hello-world:complete_o_exit"))
+        .collect();
+    assert_eq!(done.len(), 1, "{done:#?}");
+    assert!(
+        done[0].contains("#rfin_pig_race dw.sys matches 1")
+            && !done[0].contains("dx=")
+            && !done[0].contains("distance="),
+        "the exit completes once the race is over, wherever the party stands: {}",
+        done[0]
+    );
+    let aim = function(&out, "compass_aim_course_exit");
+    let lines: Vec<&str> = aim.lines().collect();
+    assert!(
+        lines[0].starts_with("execute unless score #ron_pig_race dw.sys matches 1 run return run function hello-world:compass_aim {"),
+        "before and after the race the compass aims at the exit: {aim}"
+    );
+    assert_eq!(
+        &lines[1..3],
+        [
+            "scoreboard players add @s dw.rc.pig_race 0",
+            "scoreboard players add @s dw.rn.pig_race 0"
+        ],
+        "the holder's entries are made before they are read: {aim}"
+    );
+    assert!(
+        lines[3].starts_with("execute if score @s dw.rc.pig_race matches 2.. run return run "),
+        "a finished racer's compass aims at the exit: {aim}"
+    );
+    for (j, (x, z)) in [(9, 7), (14, 7)].into_iter().enumerate() {
+        let want = format!(
+            "execute if score @s dw.rn.pig_race matches {j} run return run function hello-world:compass_aim {{x:{x},"
+        );
+        let l = lines
+            .iter()
+            .find(|l| l.starts_with(&want))
+            .unwrap_or_else(|| panic!("no aim at checkpoint {j}: {aim}"));
+        assert!(l.ends_with(&format!(",z:{z}}}")), "{l}");
+    }
+    assert!(
+        function(&out, "compass_aim_followed")
+            .contains("run function hello-world:compass_aim_course_exit"),
+        "the followed course objective aims through the course"
+    );
+    let pass = function(&out, "race_pig_race_pass");
+    let reaim = pass
+        .lines()
+        .position(|l| l == "tag @s[type=minecraft:player] add dw_caim_next")
+        .unwrap_or_else(|| panic!("a credit marks the player for a re-aim: {pass}"));
+    let fin = pass
+        .lines()
+        .position(|l| l.contains("race_pig_race_finish"))
+        .unwrap();
+    assert!(reaim < fin, "marked before the finish returns: {pass}");
+    let tick = function(&out, "tick");
+    let aimed = tick
+        .lines()
+        .position(|l| {
+            l == "execute as @a[tag=dw_caim_next] run function hello-world:compass_aim_followed"
+        })
+        .unwrap_or_else(|| panic!("the tick re-aims a credited player: {tick}"));
+    let body = tick
+        .lines()
+        .position(|l| l.contains("run function hello-world:race_pig_race_body"))
+        .unwrap();
+    assert!(
+        body < aimed,
+        "after the race credits it, in the same tick: {tick}"
+    );
+    assert!(
+        !function(&out, "race_pig_race_pass").contains("compass_aim"),
+        "the credit, which runs as actors too, never calls down the compass"
+    );
+}
+
+/// Critical-path format 18: the step whose objective runs a course says how
+/// long its race may still run after its act — the race's grace — so the bot
+/// waits for the race's end by the export and not by its fixed completion
+/// wait; a course with no grace and no listed racer ends at the party's own
+/// finish and carries nothing. Red on an export with no `race_wait_ticks`.
+#[test]
+fn a_course_step_carries_how_long_its_race_may_still_run() {
+    let exit = |out: &BuildOutput| -> serde_json::Value {
+        let cp: serde_json::Value = serde_json::from_str(&text(out, "critical-path.json")).unwrap();
+        cp["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["objective"] == "obj/exit")
+            .cloned()
+            .expect("the exit's step")
+    };
+    let graced = course_build(
+        "course-wait",
+        course_bay(race(&["cp-bridge", "cp-east"], r#", "grace_ticks": 600"#)),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let step = exit(&graced);
+    assert_eq!(step["race_wait_ticks"], 600, "{step:#}");
+    let cp: serde_json::Value = serde_json::from_str(&text(&graced, "critical-path.json")).unwrap();
+    assert_eq!(cp["format_version"], 18);
+    let open = course_build(
+        "course-no-wait",
+        course_bay(race(&["cp-bridge", "cp-east"], "")),
+        START_RACE,
+    )
+    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let step = exit(&open);
+    assert!(step.get("race_wait_ticks").is_none(), "{step:#}");
+}

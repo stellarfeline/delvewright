@@ -460,7 +460,39 @@ pub(in crate::compiler::nav) fn critical_positions(plan: &Plan) -> Vec<VisitedPo
         &plan.critical_path,
         &plan.critical_path_transport,
         plan.act_stances.get(),
+        false,
     )
+}
+
+/// [`critical_positions`] as the walk proof and the exported route read
+/// them: with every landing ([`walked_positions_of`]).
+pub(in crate::compiler::nav) fn walked_critical_positions(plan: &Plan) -> Vec<VisitedPos> {
+    walked_positions_of(
+        plan.campaign_start().map(|(_, pos)| pos),
+        &plan.critical_path,
+        &plan.critical_path_transport,
+        plan.act_stances.get(),
+    )
+}
+
+/// [`positions_of`] **with the landing of every carry a step's completion
+/// makes** (a party `teleport`, a crossing): the move into the landing is a
+/// carry, and the leg on from it to the next position is a leg the walk proof
+/// walks — or rides, when the next objective declares a ride — and the route
+/// export exports. The walk proof (`DW0311`, the links and rides it takes) and
+/// the exported route read this enumeration; the proofs that ask where a
+/// respawned or carried body owes a walk read [`positions_of`], in which the
+/// way from such a step to the next position is the carry's. With the landing
+/// left out of the walk proof, a course ridden from the start line the story
+/// teleports the party to was neither proven nor exported, and the bot walked
+/// it with no ride.
+pub(in crate::compiler::nav) fn walked_positions_of(
+    start: Option<[i32; 3]>,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+    shots: Option<&BTreeMap<String, [i32; 3]>>,
+) -> Vec<VisitedPos> {
+    positions_of(start, steps, transports, shots, true)
 }
 
 /// [`critical_positions`] over an arbitrary exported step list — the shared core,
@@ -487,6 +519,7 @@ pub(in crate::compiler::nav) fn positions_of(
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
     shots: Option<&BTreeMap<String, [i32; 3]>>,
+    landings: bool,
 ) -> Vec<VisitedPos> {
     let mut out = Vec::new();
     if let Some(pos) = start {
@@ -614,11 +647,24 @@ pub(in crate::compiler::nav) fn positions_of(
             });
             transport_pending = false;
         }
-        // A transport marker on step `i` teleports the player when that step's
-        // objective completes — i.e. before the *next* visited position is reached,
-        // so the move INTO that next position is a ride, not a walk to validate.
-        if transports.get(i).and_then(|t| *t).is_some() {
+        // A transport marker on step `i` puts the party down at its landing when
+        // that step's objective completes. With `landings`, the move INTO the
+        // landing is the carry and the leg on from it is walked
+        // ([`walked_positions_of`]); without, the move into the next position
+        // is the carry.
+        let landing = transports.get(i).copied().flatten();
+        if !landings && landing.is_some() {
             transport_pending = true;
+        }
+        if let Some(to) = landing.filter(|_| landings) {
+            out.push(VisitedPos {
+                pos: to,
+                transport_before: true,
+                talk_to: false,
+                src_step: i,
+                by_link: false,
+                by_loop: false,
+            });
         }
     }
     out
@@ -656,7 +702,7 @@ pub fn check_critical_path_bound(
     crate::compiler::nav::shot::fix_stances(plan, world);
     let (b, r) = route_with_links(
         world,
-        &critical_positions(plan),
+        &walked_critical_positions(plan),
         &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
         &Carries::of_plan(plan),
@@ -676,7 +722,7 @@ pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::L
     crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
-        &critical_positions(plan),
+        &walked_critical_positions(plan),
         &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
         &Carries::of_plan(plan),
@@ -740,7 +786,7 @@ pub fn take_branch_links(
     crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
-        &positions_of(
+        &walked_positions_of(
             start,
             &cp.steps,
             &cp.transport_by_step,
@@ -1183,7 +1229,7 @@ pub fn check_branch_path(
     crate::compiler::nav::shot::fix_stances(plan, world);
     route_with_links(
         world,
-        &positions_of(
+        &walked_positions_of(
             start,
             &cp.steps,
             &cp.transport_by_step,
@@ -1224,7 +1270,7 @@ pub fn branch_path_routes(
 ) -> Vec<LegRoute> {
     route_walked_legs(
         world,
-        &positions_of(start, steps, transports, shots),
+        &positions_of(start, steps, transports, shots, false),
         region_events,
         ancestor,
     )

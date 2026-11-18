@@ -42,6 +42,10 @@ const SEEDED_TAG: &str = "dw_guide_seeded";
 const EPOCH: &str = "#epoch";
 /// The twenty-tick clock that re-aims a compass following a body or a wave.
 const CLOCK: &str = "#gclock";
+/// The tag a race's credit puts on the player it credits, whose compass
+/// follows that race's course: the tick re-aims every player carrying it and
+/// takes it off.
+pub(super) const REAIM_TAG: &str = "dw_caim_next";
 /// The engine compass's `custom_data`.
 pub(super) const COMPASS_DATA: &str = "{dw_compass:1b}";
 /// The journal's `custom_data`.
@@ -118,6 +122,43 @@ pub(super) enum Target {
         tag: String,
         anchor: Option<[i32; 3]>,
     },
+    /// An objective that declares a race its `course` (spec-0139 §4): while
+    /// the race runs and the player holding the compass is short of the
+    /// finish, the centre of that player's next checkpoint, read live from
+    /// its own count; otherwise `then`, the target the objective's kind
+    /// gives.
+    Course {
+        /// The race id.
+        race: String,
+        /// The checkpoints a racer is credited before it has finished.
+        total: u32,
+        /// Each checkpoint's centre, in course order (once round the lap).
+        centres: Vec<[i32; 3]>,
+        /// The aim before the race runs, once the player has finished, and
+        /// once it is over.
+        then: Box<Option<Target>>,
+    },
+}
+
+/// The checkpoint centres the compass of an objective running race `r`
+/// aims at, in course order: each box's middle cell.
+fn course_target(plan: &Plan, race: &delvewright_dsl::Race, then: Option<Target>) -> Target {
+    let centres = super::race::race_boxes(plan, race)
+        .iter()
+        .map(|(lo, hi)| {
+            [
+                (lo[0] + hi[0]).div_euclid(2),
+                (lo[1] + hi[1]).div_euclid(2),
+                (lo[2] + hi[2]).div_euclid(2),
+            ]
+        })
+        .collect();
+    Target::Course {
+        race: race.id.as_str().to_string(),
+        total: race.total(),
+        centres,
+        then: Box::new(then),
+    }
 }
 
 /// The tag a wave's nearest living body carries for the length of one aim.
@@ -222,6 +263,15 @@ impl Guide {
     /// Whether any guidance machinery is emitted at all.
     pub fn any(&self) -> bool {
         self.compass || self.journal || !self.highlights.is_empty()
+    }
+
+    /// Whether the compass follows an objective that runs race `race`: a
+    /// credit then re-aims the credited player's compass at once.
+    pub fn follows_course(&self, race: &str) -> bool {
+        self.compass
+            && self
+                .tracked()
+                .any(|w| matches!(&w.target, Some(Target::Course { race: r, .. }) if r == race))
     }
 
     /// The highlight declared on objective `oid`, if any.
@@ -366,6 +416,15 @@ pub(super) fn guide(
                 }
             } else {
                 None
+            };
+            // spec-0139 §4: an objective that runs a course points the
+            // compass at each racer's next checkpoint while the race runs.
+            let target = match (
+                target,
+                o.course().and_then(|r| c.quests.content.race(r.as_str())),
+            ) {
+                (Some(t), Some(race)) => Some(course_target(plan, race, Some(t))),
+                (t, _) => t,
             };
             g.watched.push(Watched {
                 quest: qi,
@@ -1117,12 +1176,25 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
         v.push(format!(
             "scoreboard players remove @a[scores={{{USE_LATCH}=1..}}] {USE_LATCH} 1"
         ));
-        if g.tracked()
-            .any(|w| matches!(w.target, Some(Target::Body(_)) | Some(Target::Wave { .. })))
-        {
+        if g.tracked().any(|w| {
+            matches!(
+                w.target,
+                Some(Target::Body(_) | Target::Wave { .. } | Target::Course { .. })
+            )
+        }) {
             v.push(format!(
                 "execute if score {CLOCK} {GUIDE} matches 0 as @a[scores={{{ON_BODY}=1}}] run function {ns}:compass_aim_followed"
             ));
+        }
+        // spec-0139 §4: a player a race credited this tick turns to its next
+        // checkpoint now (`emit::race`).
+        if g.tracked()
+            .any(|w| matches!(w.target, Some(Target::Course { .. })))
+        {
+            v.push(format!(
+                "execute as @a[tag={REAIM_TAG}] run function {ns}:compass_aim_followed"
+            ));
+            v.push(format!("tag @a remove {REAIM_TAG}"));
         }
     }
     v
@@ -1503,6 +1575,87 @@ pub(super) fn functions(
     fns
 }
 
+/// **The command that aims the compass of the player it runs as at
+/// `target`**, unconditionally — pushing the function a target read live
+/// needs into `fns` — for the objective whose `safe_local` is `safe`.
+fn aim_call(
+    ns: &str,
+    safe: &str,
+    target: Option<&Target>,
+    fns: &mut Vec<(String, String)>,
+) -> String {
+    match target {
+        Some(Target::Cell(p)) => format!(
+            "function {ns}:compass_aim {{x:{},y:{},z:{}}}",
+            p[0], p[1], p[2]
+        ),
+        Some(Target::Body(tag)) => {
+            let sel = body_selector(tag, true).replace(']', ",limit=1]");
+            fns.push((
+                format!("compass_aim_body_{safe}"),
+                lines(&[
+                    format!(
+                        "execute store result storage {ns}:guide aim.x int 1 run data get entity {sel} Pos[0]"
+                    ),
+                    format!(
+                        "execute store result storage {ns}:guide aim.y int 1 run data get entity {sel} Pos[1]"
+                    ),
+                    format!(
+                        "execute store result storage {ns}:guide aim.z int 1 run data get entity {sel} Pos[2]"
+                    ),
+                    format!(
+                        "execute if entity {sel} run function {ns}:compass_aim with storage {ns}:guide aim"
+                    ),
+                    format!("execute unless entity {sel} run function {ns}:compass_spin"),
+                ]),
+            ));
+            format!("function {ns}:compass_aim_body_{safe}")
+        }
+        Some(Target::Wave { tag, anchor }) => {
+            fns.push((
+                format!("compass_aim_wave_{safe}"),
+                lines(&wave_aim_lines(ns, tag, *anchor)),
+            ));
+            format!("function {ns}:compass_aim_wave_{safe}")
+        }
+        // spec-0139 §4: the player's next checkpoint, from its own count,
+        // while the race runs and it is short of the finish; the kind's own
+        // target otherwise.
+        Some(Target::Course {
+            race,
+            total,
+            centres,
+            then,
+        }) => {
+            let then_call = aim_call(ns, safe, then.as_ref().as_ref(), fns);
+            let (on, done, next) = (
+                super::race::race_running(race),
+                super::race::race_progress(race),
+                super::race::race_next(race),
+            );
+            // The holder's two entries, created as the race's body creates
+            // them: a holder the race has not asked yet has passed nothing,
+            // and its first checkpoint is its next.
+            let mut body = vec![
+                format!("execute unless score {on} dw.sys matches 1 run return run {then_call}"),
+                format!("scoreboard players add @s {done} 0"),
+                format!("scoreboard players add @s {next} 0"),
+                format!("execute if score @s {done} matches {total}.. run return run {then_call}"),
+            ];
+            for (j, c) in centres.iter().enumerate() {
+                body.push(format!(
+                    "execute if score @s {next} matches {j} run return run function {ns}:compass_aim {{x:{},y:{},z:{}}}",
+                    c[0], c[1], c[2]
+                ));
+            }
+            body.push(then_call);
+            fns.push((format!("compass_aim_course_{safe}"), lines(&body)));
+            format!("function {ns}:compass_aim_course_{safe}")
+        }
+        None => format!("function {ns}:compass_spin"),
+    }
+}
+
 fn compass_functions(
     g: &Guide,
     plan: &Plan,
@@ -1635,56 +1788,19 @@ fn compass_functions(
     ];
     for w in &tracked {
         let k = w.ordinal.expect("tracked");
-        match &w.target {
-            Some(Target::Cell(p)) => aim.push(format!(
-                "execute if score @s {TRACK} matches {k} run function {ns}:compass_aim {{x:{},y:{},z:{}}}",
-                p[0], p[1], p[2]
-            )),
-            Some(Target::Body(tag)) => {
-                aim.push(format!(
-                    "execute if score @s {TRACK} matches {k} run scoreboard players set @s {ON_BODY} 1"
-                ));
-                aim.push(format!(
-                    "execute if score @s {TRACK} matches {k} run function {ns}:compass_aim_body_{}",
-                    w.safe
-                ));
-                let sel = body_selector(tag, true).replace(']', ",limit=1]");
-                fns.push((
-                    format!("compass_aim_body_{}", w.safe),
-                    lines(&[
-                        format!(
-                            "execute store result storage {ns}:guide aim.x int 1 run data get entity {sel} Pos[0]"
-                        ),
-                        format!(
-                            "execute store result storage {ns}:guide aim.y int 1 run data get entity {sel} Pos[1]"
-                        ),
-                        format!(
-                            "execute store result storage {ns}:guide aim.z int 1 run data get entity {sel} Pos[2]"
-                        ),
-                        format!(
-                            "execute if entity {sel} run function {ns}:compass_aim with storage {ns}:guide aim"
-                        ),
-                        format!("execute unless entity {sel} run function {ns}:compass_spin"),
-                    ]),
-                ));
-            }
-            Some(Target::Wave { tag, anchor }) => {
-                aim.push(format!(
-                    "execute if score @s {TRACK} matches {k} run scoreboard players set @s {ON_BODY} 1"
-                ));
-                aim.push(format!(
-                    "execute if score @s {TRACK} matches {k} run function {ns}:compass_aim_wave_{}",
-                    w.safe
-                ));
-                fns.push((
-                    format!("compass_aim_wave_{}", w.safe),
-                    lines(&wave_aim_lines(ns, tag, *anchor)),
-                ));
-            }
-            None => aim.push(format!(
-                "execute if score @s {TRACK} matches {k} run function {ns}:compass_spin"
-            )),
+        // A target read live is re-aimed on the twenty-tick clock.
+        if matches!(
+            w.target,
+            Some(Target::Body(_) | Target::Wave { .. } | Target::Course { .. })
+        ) {
+            aim.push(format!(
+                "execute if score @s {TRACK} matches {k} run scoreboard players set @s {ON_BODY} 1"
+            ));
         }
+        let call = aim_call(ns, &w.safe, w.target.as_ref(), &mut fns);
+        aim.push(format!(
+            "execute if score @s {TRACK} matches {k} run {call}"
+        ));
     }
     fns.push(("compass_aim_followed".to_string(), lines(&aim)));
 

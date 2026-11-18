@@ -80,6 +80,7 @@ function stepWaitsMs(step: Step): number {
     enRouteCutsceneSeconds?: number;
     windowTicks?: number;
     waitTicks?: number;
+    raceWaitTicks?: number;
     endingTailTicks?: number;
     times?: number;
     medium?: readonly Vec3Tuple[];
@@ -90,6 +91,7 @@ function stepWaitsMs(step: Step): number {
   ms += (s.enRouteCutsceneSeconds ?? 0) * 1000;
   ms += (s.windowTicks ?? 0) * TICK_MS;
   ms += (s.waitTicks ?? 0) * TICK_MS;
+  ms += (s.raceWaitTicks ?? 0) * TICK_MS;
   ms += (s.endingTailTicks ?? 0) * TICK_MS;
   if (step.action === "kill") ms += KILL_TIMEOUT_MS;
   if (step.action === "loop") ms += (s.times ?? 1) * OBJECTIVE_TIMEOUT_MS;

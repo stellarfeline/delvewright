@@ -1667,10 +1667,10 @@ test("format 13: a kill step carries the triggers its fight's bodies may fire wh
   }
 });
 
-test("format 17: the constant moved, and a format-16 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 17);
+test("format 18: the constant moved, and a format-17 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 18);
   const raw = validRaw();
-  raw["format_version"] = 16;
+  raw["format_version"] = 17;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
@@ -1782,4 +1782,29 @@ test("format 14: a story body that states no read is refused", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError && err.pointer === "/story_bodies/bodies/0/reads",
   );
+});
+
+// Format 18 (spec-0139 §3–§4): a step whose objective runs a race's course
+// says how long the race may still run after its act.
+test("a reach that runs a course carries how long its race may still run", () => {
+  const line = {
+    action: "reach",
+    objective: "obj/line",
+    anchor: "anchor/line",
+    pos: [8, 65, 24],
+    radius: 2,
+    completion: { kind: "cube", lo: [6, 63, 22], hi: [10, 67, 26] },
+    race_wait_ticks: 600,
+  };
+  const step = parseCriticalPath(withStep(line)).steps[2];
+  assert.equal(step?.action === "reach" && step.raceWaitTicks, 600);
+  const plain = parseCriticalPath(withStep({ ...line, race_wait_ticks: undefined })).steps[2];
+  assert.equal(plain?.action === "reach" && "raceWaitTicks" in plain, false);
+  for (const bad of [0, -5, 1.5, "600"]) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...line, race_wait_ticks: bad })),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/race_wait_ticks",
+      JSON.stringify(bad),
+    );
+  }
 });
