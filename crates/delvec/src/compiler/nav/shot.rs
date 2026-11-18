@@ -249,7 +249,8 @@ fn distance(cell: [i32; 3], target: [i32; 3]) -> f64 {
         .sqrt()
 }
 
-/// **Every shot's stance, fixed once per plan** (spec-0134 §2): the first
+/// **Every shot's stance, fixed once per plan** (spec-0134 §2), and every
+/// area `interact`'s ([`super::fix_area_clicks`]): the first
 /// proof over a world that asks — the route proof's legs, the relight pass's
 /// required cells, the shot proof — chooses each `shot` trigger's
 /// [`shot_stance`] over that world's [`stance_walk`], and every later reader
@@ -259,15 +260,22 @@ pub fn fix_stances<'p>(
     plan: &'p Plan,
     world: &World,
 ) -> &'p std::collections::BTreeMap<String, [i32; 3]> {
-    plan.shot_stances.get_or_init(|| {
+    plan.act_stances.get_or_init(|| {
         let targets = plan.shot_targets();
         let walk = stance_walk(plan, world, &targets);
-        targets
+        let mut m: std::collections::BTreeMap<String, [i32; 3]> = targets
             .iter()
             .filter_map(|(id, cell, _)| {
                 shot_stance(world, &walk, *cell).map(|s| (id.clone(), s.cell))
             })
-            .collect()
+            .collect();
+        // An area `interact` is used from its own stance (`nav::area`).
+        m.extend(
+            super::fix_area_clicks(plan, world)
+                .iter()
+                .map(|(id, c)| (id.clone(), c.stance)),
+        );
+        m
     })
 }
 

@@ -634,7 +634,7 @@ impl Ledger {
 }
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`,
-/// a shortcut gate's `seal_arm_`, a holder's `holder_<id>` and an `at-load` vehicle's `vehicle_seat_<v>` at setup; `activate_<obj>` at the step
+/// a shortcut gate's `seal_arm_`, an area `interact`'s `area_obj_<id>`, a holder's `holder_<id>` and an `at-load` vehicle's `vehicle_seat_<v>` at setup; `activate_<obj>` at the step
 /// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
@@ -748,6 +748,12 @@ fn firings_of(
         return Some(vec![Firing::Unforced(format!(
             "the answer box of gate `{safe}`, armed when a beat seals it"
         ))]);
+    }
+    if name.starts_with("area_obj_") {
+        // An area `interact`'s tiles (`emit::press::area_fns`): its box stands
+        // in every state, so it is summoned once at world init, its one call
+        // site `setup_finish` (`emit::press::press_setup`).
+        return Some(vec![Firing::Setup]);
     }
     if name.starts_with("holder_") {
         // An item holder's body (spec-0111 §4.1): summoned at world init, its

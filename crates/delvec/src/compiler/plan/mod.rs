@@ -382,11 +382,18 @@ pub struct Plan<'a> {
     /// ([`crate::compiler::nav::World::rest_seat`]); a proof with a world in
     /// hand reads [`crate::compiler::nav::World::rest_seat_of`].
     pub seats: std::sync::OnceLock<Vec<Option<[i32; 3]>>>,
-    /// **Each `shot` trigger's stance** (spec-0134 §2), by trigger id: the
-    /// cell `nav::shot_stance` proved sees the target, fixed from the build's
-    /// final world for the emitter, which holds no world, and exported on the
-    /// trigger's step as `stand`.
-    pub shot_stances: std::sync::OnceLock<BTreeMap<String, [i32; 3]>>,
+    /// **Each act's stance**, by the id of what is acted on: a `shot`
+    /// trigger's (spec-0134 §2), the cell `nav::shot_stance` proved sees the
+    /// target, and an area `interact`'s, the cell `nav::area_click` proved
+    /// clicks its area — fixed once from the build's final world
+    /// ([`crate::compiler::nav::fix_stances`]) for the emitter, which holds
+    /// no world, exported on the step as `stand`, and where the route proof's
+    /// leg to the step ends.
+    pub act_stances: std::sync::OnceLock<BTreeMap<String, [i32; 3]>>,
+    /// **Each area `interact`'s click**, by objective id: its stance, the cell
+    /// of the area's top face it aims at and the aim point, fixed with
+    /// [`Self::act_stances`] — what the export hands the bot to click.
+    pub area_clicks: std::sync::OnceLock<BTreeMap<String, crate::compiler::nav::AreaClick>>,
     /// **Each party carry's seats**, by its `to` cell: one safe standing cell
     /// per member, the mark's own first, fixed from the build's final world
     /// ([`crate::compiler::nav::fix_party_seats`]) for the emitter, which holds
@@ -1445,7 +1452,8 @@ impl<'a> Plan<'a> {
             declared_rides: BTreeMap::new(),
             declared_courses: BTreeMap::new(),
             rides_aboard: BTreeSet::new(),
-            shot_stances: std::sync::OnceLock::new(),
+            act_stances: std::sync::OnceLock::new(),
+            area_clicks: std::sync::OnceLock::new(),
             party_seats: std::sync::OnceLock::new(),
         };
         plan.vehicles = crate::compiler::nav::vehicle::vehicle_plans(campaign, &plan.anchors);

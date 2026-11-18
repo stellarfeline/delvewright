@@ -434,6 +434,10 @@ pub(super) fn has_head(w: &Watched, o: &Objective) -> bool {
     o.title().is_some_and(|t| !t.trim().is_empty()) || w.record.is_some()
 }
 
+/// How far under an area's box its highlight looks, column by column, for
+/// the block a use over a column of water or air is seen against.
+const AREA_FLOOR_DEPTH: i32 = 8;
+
 fn highlight_acts(
     plan: &Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
@@ -453,6 +457,39 @@ fn highlight_acts(
     // A pressable's block: its cells and the state each draws, and the lit set
     // its highlight is tested against (spec-0117 §3b).
     let press_body = |p: &crate::compiler::pressable::PressPlan, within: u8| -> HlBody {
+        // An area glows as what a use over it is seen against: every block
+        // with an outline inside its box, and in a column that holds none
+        // (water, air) the first such block under it — a pond's floor seen
+        // through its water.
+        if let Some(a) = &p.area {
+            let (lo, hi) = a.region;
+            let outlined =
+                |c: [i32; 3]| block_at(c).filter(|b| delvewright_dsl::blockshape::has_outline(b));
+            let mut cells = Vec::new();
+            for x in lo[0]..=hi[0] {
+                for z in lo[2]..=hi[2] {
+                    let inside: Vec<_> = (lo[1]..=hi[1])
+                        .filter_map(|y| outlined([x, y, z]).map(|b| ([x, y, z], b)))
+                        .collect();
+                    if inside.is_empty() {
+                        if let Some(under) = (lo[1] - AREA_FLOOR_DEPTH..lo[1])
+                            .rev()
+                            .find_map(|y| outlined([x, y, z]).map(|b| ([x, y, z], b)))
+                        {
+                            cells.push(under);
+                        }
+                    } else {
+                        cells.extend(inside);
+                    }
+                }
+            }
+            return HlBody::Blocks {
+                cells,
+                at: p.cell,
+                staged: false,
+                lit: Some(lit_set(plan, world, p, within)),
+            };
+        }
         let mut cells = vec![(p.cell, p.block.clone())];
         if crate::compiler::pressable::is_door(&p.block) {
             cells.push((
@@ -647,8 +684,19 @@ pub(super) fn lit_set(
 ) -> Vec<([i32; 3], [i32; 3])> {
     use crate::compiler::pressable::Owner;
     let r = i32::from(within);
-    let target =
-        crate::compiler::framing::CellBox::spanning(p.cell, *p.cells().last().unwrap_or(&p.cell));
+    // An area is seen when any of its box is: the whole region is the target,
+    // and the lit set is searched around all of it.
+    let (search_lo, search_hi) = match &p.area {
+        Some(a) => a.region,
+        None => (p.cell, p.cell),
+    };
+    let target = match &p.area {
+        Some(a) => crate::compiler::framing::CellBox::spanning(a.region.0, a.region.1),
+        None => crate::compiler::framing::CellBox::spanning(
+            p.cell,
+            *p.cells().last().unwrap_or(&p.cell),
+        ),
+    };
     // The side the press is made from, where the press has one.
     let side: Option<(usize, i32, i32)> = match &p.owner {
         Owner::Shortcut { id } => plan
@@ -685,20 +733,23 @@ pub(super) fn lit_set(
         Some((axis, _, bound)) => c[axis] < bound,
         None => true,
     };
-    let centre = [
-        f64::from(p.cell[0]) + 0.5,
-        f64::from(p.cell[1]) + 0.5,
-        f64::from(p.cell[2]) + 0.5,
-    ];
+    // From a cell's centre to the nearest cell centre of the target (the
+    // press's own cell, or any cell of an area).
+    let gap = |c: [i32; 3]| {
+        (0..3)
+            .map(|i| {
+                let v = c[i].clamp(search_lo[i], search_hi[i]);
+                f64::from(c[i] - v).powi(2)
+            })
+            .sum::<f64>()
+            .sqrt()
+    };
     let mut cells: Vec<[i32; 3]> = Vec::new();
-    for x in p.cell[0] - r..=p.cell[0] + r {
-        for y in p.cell[1] - r..=p.cell[1] + r {
-            for z in p.cell[2] - r..=p.cell[2] + r {
+    for x in search_lo[0] - r..=search_hi[0] + r {
+        for y in search_lo[1] - r..=search_hi[1] + r {
+            for z in search_lo[2] - r..=search_hi[2] + r {
                 let c = [x, y, z];
-                let d = ((f64::from(x) + 0.5 - centre[0]).powi(2)
-                    + (f64::from(y) + 0.5 - centre[1]).powi(2)
-                    + (f64::from(z) + 0.5 - centre[2]).powi(2))
-                .sqrt();
+                let d = gap(c);
                 if d > f64::from(within) || !on_side(c) || !world.is_standable(c) {
                     continue;
                 }

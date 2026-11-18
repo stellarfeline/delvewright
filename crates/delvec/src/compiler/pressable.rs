@@ -245,6 +245,70 @@ pub struct PressPlan {
     pub highlight: Option<Highlight>,
     /// The fitted click box, when the block is boxed in some state.
     pub click_box: Option<crate::compiler::clickbox::ClickBox>,
+    /// **The area the press is taken over**, for an `interact` declared with a
+    /// `region` instead of a `prop`: no block is placed (`places_block` is
+    /// false, `block` is empty), the press is boxed in every state, and its
+    /// box is the tiling of the area ([`AreaBody`]).
+    pub area: Option<AreaBody>,
+}
+
+/// **An `interact` pressed over an area** (its `region`): the inclusive box
+/// a use is taken over, resolved through the one [`Plan::zone_box`], and the
+/// click boxes that enclose it ([`crate::compiler::clickbox::ClickBox::tiling`]
+/// — the engine's derivation, never authored).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AreaBody {
+    /// The box's inclusive corners.
+    pub region: ([i32; 3], [i32; 3]),
+    /// The tiles, in tiling order.
+    pub tiles: Vec<crate::compiler::clickbox::ClickBox>,
+}
+
+impl AreaBody {
+    /// The area over the inclusive box `region`.
+    pub fn over(region: ([i32; 3], [i32; 3])) -> Self {
+        AreaBody {
+            region,
+            tiles: crate::compiler::clickbox::ClickBox::tiling(region.0, region.1),
+        }
+    }
+
+    /// The cells of the box's top face, in cell order: the surface a use
+    /// from above meets first.
+    pub fn top_cells(&self) -> Vec<[i32; 3]> {
+        let (lo, hi) = self.region;
+        let mut v = Vec::new();
+        for x in lo[0]..=hi[0] {
+            for z in lo[2]..=hi[2] {
+                v.push([x, hi[1], z]);
+            }
+        }
+        v
+    }
+
+    /// The cell a press on the area is placed at for what needs one point —
+    /// the refusal cue, the ledger: the centre column of the top face.
+    pub fn centre_top(&self) -> [i32; 3] {
+        let (lo, hi) = self.region;
+        [
+            (lo[0] + hi[0]).div_euclid(2),
+            hi[1],
+            (lo[2] + hi[2]).div_euclid(2),
+        ]
+    }
+
+    /// The whole box as the grid's `(min, max)` corners, in blocks.
+    pub fn aabb(&self) -> ([f64; 3], [f64; 3]) {
+        let (lo, hi) = self.region;
+        (
+            lo.map(f64::from),
+            [
+                f64::from(hi[0]) + 1.0,
+                f64::from(hi[1]) + 1.0,
+                f64::from(hi[2]) + 1.0,
+            ],
+        )
+    }
 }
 
 impl PressPlan {
@@ -293,7 +357,7 @@ impl PressPlan {
     /// `strike`, and a block the game reports no press of. Such a box is
     /// summoned once and never moved by any event of its owner.
     pub fn boxed_always(&self) -> bool {
-        self.click_box.is_some()
+        (self.click_box.is_some() || self.area.is_some())
             && [State::Shut, State::Open, State::Settled]
                 .into_iter()
                 .all(|s| self.boxed_in(s))
@@ -355,6 +419,30 @@ impl PressPlan {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// The `summon`s of an area's tiles ([`AreaBody`]) carrying `tags`, under
+    /// the fixture class and the area class
+    /// ([`crate::compiler::clickbox::AREA_TAG`]); empty for a press that is
+    /// no area.
+    pub fn tile_summons(&self, tags: &[String]) -> Vec<String> {
+        let Some(a) = &self.area else {
+            return Vec::new();
+        };
+        let list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        a.tiles
+            .iter()
+            .map(|b| {
+                b.summon(&format!(
+                    "response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"{}\",{list}]",
+                    crate::compiler::clickbox::AREA_TAG
+                ))
+            })
+            .collect()
     }
 
     /// The box's `summon` carrying `tags` (the owner's tag first, then every
@@ -552,11 +640,49 @@ pub fn derive(plan: &Plan) -> Vec<PressPlan> {
                     anchor,
                     requires_item,
                     highlight,
+                    region,
                     ..
                 } = o
                 else {
                     continue;
                 };
+                // An area: no block, boxed in every state, its box the
+                // tiling of the region. `prop` and `region` both, or a region
+                // that resolves to no placed anchor, places nothing here
+                // (`DW1059` at validation, `DW0360` for the anchor).
+                if let Some(zone) = region {
+                    if site.prop.is_some() {
+                        continue;
+                    }
+                    let Some(r) = plan.zone_box(zone) else {
+                        continue;
+                    };
+                    let body = AreaBody::over(r);
+                    out.push(PressPlan {
+                        owner: Owner::Interact {
+                            quest: qi,
+                            objective: oi,
+                            id: site.id.clone(),
+                        },
+                        kind: site.kind,
+                        tag: format!("dw_i_{}", safe_local(&site.id)),
+                        anchor: anchor.as_str().to_string(),
+                        cell: body.centre_top(),
+                        block: String::new(),
+                        form: Form::Unobservable,
+                        retained: false,
+                        release: site.release,
+                        places_block: false,
+                        shut: site.shut,
+                        settled: site.settled,
+                        requires_item: requires_item.clone(),
+                        answers: site.answers.cloned(),
+                        highlight: *highlight,
+                        click_box: None,
+                        area: Some(body),
+                    });
+                    continue;
+                }
                 let cell = plan
                     .quest_area(q.id.as_str())
                     .and_then(|a| plan.point(a, anchor.as_str()))
@@ -793,6 +919,7 @@ pub fn derive(plan: &Plan) -> Vec<PressPlan> {
             answers: site.answers.cloned(),
             highlight: seat.highlight,
             click_box,
+            area: None,
         });
     }
     out
@@ -1226,6 +1353,15 @@ impl PressLedger {
                     },
                     "answers": p.declared().iter().map(|(s, _)| s.field()).collect::<Vec<_>>(),
                 });
+                if let Some(a) = &p.area {
+                    row["area"] = serde_json::json!({
+                        "region": [a.region.0, a.region.1],
+                        "tiles": a.tiles.iter().map(|b| serde_json::json!({
+                            "at": b.xyz(),
+                            "nbt": b.size_nbt(),
+                        })).collect::<Vec<_>>(),
+                    });
+                }
                 if let Some(b) = &p.click_box {
                     row["box"] = serde_json::json!({
                         "at": b.xyz(),

@@ -965,6 +965,20 @@ fn seat_target(world: &World, step: &Step) -> Option<(BodyBox, f64)> {
             Some((BodyBox::block(*pos), BLOCK_INTERACTION_REACH))
         }
         Step::Interact {
+            area: Some((lo, hi)),
+            ..
+        } => Some((
+            BodyBox {
+                lo: lo.map(f64::from),
+                hi: [
+                    f64::from(hi[0]) + 1.0,
+                    f64::from(hi[1]) + 1.0,
+                    f64::from(hi[2]) + 1.0,
+                ],
+            },
+            INTERACTION_REACH,
+        )),
+        Step::Interact {
             pos,
             block: Some(_),
             ..

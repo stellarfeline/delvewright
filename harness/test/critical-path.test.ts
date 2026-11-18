@@ -305,6 +305,54 @@ test("accepts a null interact requires_item", () => {
   assert.deepEqual((path.steps[2] as { requiresItem: unknown }).requiresItem, null);
 });
 
+test("format 16: an interact over an area carries its stand and its area", () => {
+  const raw = validRaw();
+  raw["version"] = "0.3.0";
+  const area = {
+    cell: [4, 64, 6],
+    aim: [4.5, 65.0, 6.5],
+    tiles: [{ min: [2.99, 63.99, 4.99], max: [6.01, 65.01, 8.01] }],
+  };
+  (raw["steps"] as unknown[]).splice(2, 0, {
+    action: "interact",
+    objective: "obj/pour",
+    anchor: "anchor/pond",
+    pos: [5, 64, 6],
+    command: "/trigger dw.i_pour set 1",
+    requires_item: "minecraft:axolotl_bucket",
+    stand: [2, 65, 6],
+    area,
+  });
+  const path = parseCriticalPath(raw);
+  const step = path.steps[2] as { stand?: unknown; area?: unknown };
+  assert.deepEqual(step.stand, [2, 65, 6]);
+  assert.deepEqual(step.area, area);
+});
+
+test("format 16: an interact names its stand and its area together or neither", () => {
+  for (const drop of ["stand", "area"] as const) {
+    const raw = validRaw();
+    raw["version"] = "0.3.0";
+    const step: Record<string, unknown> = {
+      action: "interact",
+      objective: "obj/pour",
+      anchor: "anchor/pond",
+      pos: [5, 64, 6],
+      command: "/trigger dw.i_pour set 1",
+      requires_item: null,
+      stand: [2, 65, 6],
+      area: { cell: [4, 64, 6], aim: [4.5, 65, 6.5], tiles: [{ min: [3, 64, 5], max: [6, 65, 8] }] },
+    };
+    delete step[drop];
+    (raw["steps"] as unknown[]).splice(2, 0, step);
+    const other = drop === "stand" ? "stand" : "area";
+    assert.throws(
+      () => parseCriticalPath(raw),
+      (err: unknown) => err instanceof CriticalPathParseError && err.pointer === `/steps/2/${other}`,
+    );
+  }
+});
+
 test("rejects a pos that is not a 3-tuple, pointing at /steps/i/pos", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[1]!["pos"] = [8, 65];
@@ -1619,10 +1667,10 @@ test("format 13: a kill step carries the triggers its fight's bodies may fire wh
   }
 });
 
-test("format 15: the constant moved, and a format-14 artifact is refused", () => {
-  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 15);
+test("format 16: the constant moved, and a format-15 artifact is refused", () => {
+  assert.equal(CRITICAL_PATH_FORMAT_VERSION, 16);
   const raw = validRaw();
-  raw["format_version"] = 14;
+  raw["format_version"] = 15;
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/format_version",
