@@ -1385,6 +1385,10 @@ impl<'a> Plan<'a> {
         // step is `DW1119`.
         check_courses_started(campaign, &path_firing)
             .map_err(|e| e.with_warnings(warnings.clone()))?;
+        // spec-0139 §4: a reach that runs a course is reached at its finish
+        // (`DW1144`).
+        crate::compiler::nav::race::check_course_finishes(campaign, &|a| point_any_in(&anchors, a))
+            .map_err(|e| e.with_warnings(warnings.clone()))?;
         // spec-0140 §5: a step that performs an objective the mode then on
         // holds is `DW1124`.
         walk_modes(campaign, &path_firing).map_err(|e| e.with_warnings(warnings.clone()))?;

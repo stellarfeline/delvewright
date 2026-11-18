@@ -4,7 +4,7 @@
     {
       "doc": "quests.json",
       "op": "replace",
-      "path": "/content/quests/3/objectives/5/ride",
+      "path": "/content/quests/3/objectives/8/ride",
       "value": "vehicle/yard-jenny"
     }
   ],

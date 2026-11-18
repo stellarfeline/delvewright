@@ -7,6 +7,8 @@ import { CENSUS_SETTLE_MS } from "./census.ts";
 import { isRejection } from "../rejection.ts";
 import { delay } from "./connection.ts";
 import { LEDGER_POLL_MS, SCORE_TRACK_TIMEOUT_MS } from "./score.ts";
+import { NON_COLLIDING_ENTITY_TYPES } from "../movement.ts";
+import { nextLegWaypoints } from "../waypoints.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** Minecraft server ticks per second. */
@@ -105,6 +107,41 @@ export interface RideReading {
 export function vehicleTag(vehicle: string): string {
   const local = vehicle.includes("/") ? vehicle.slice(vehicle.indexOf("/") + 1) : vehicle;
   return `dw_vehicle_${local.replace(/[-/.]/g, "_")}`;
+}
+
+/** A body the boarding click may be aimed at: what a body of `vehicle` could be. */
+interface Boardable {
+  readonly name?: string;
+  readonly type?: string;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+/**
+ * The body a boarding click is aimed at: of the bodies within
+ * {@link VEHICLE_NEAR} of the seat's centre on every axis, the one nearest
+ * that centre. A player, a dropped item and a body nothing can sit on — a
+ * click box, a display, a marker ({@link NON_COLLIDING_ENTITY_TYPES}) — is
+ * never a vehicle, whatever stands nearest the bot: an `interact` over an
+ * area stands its click boxes over a rim the boarding cell lies beside, and a
+ * click on one of them seats nobody.
+ */
+export function boardedBody<E extends Boardable>(bodies: Iterable<E>, centre: Vec3Tuple): E | null {
+  let best: E | null = null;
+  let bestD = Infinity;
+  for (const e of bodies) {
+    if (e.type === "player" || e.name === "item") continue;
+    if (e.name !== undefined && NON_COLLIDING_ENTITY_TYPES.includes(e.name)) continue;
+    const dx = e.position.x - centre[0];
+    const dy = e.position.y - centre[1];
+    const dz = e.position.z - centre[2];
+    if (Math.abs(dx) > VEHICLE_NEAR || Math.abs(dy) > VEHICLE_NEAR || Math.abs(dz) > VEHICLE_NEAR) continue;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < bestD) {
+      best = e;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** The centre of a medium cell, as a ridden body's reported position. */
@@ -263,6 +300,14 @@ export const methods = {
    * at the last medium cell; leave by the sneak input, assert the server
    * unseats the bot, and walk to `leave`.
    *
+   * `leadsTo` is the objective of the step the ride carries the party to.
+   * Its completion may come while the bot is still aboard — a reach that runs
+   * a course is reached when the race is over, at the finish the ride crosses
+   * (spec-0139 §4) — and what it does then (a crossing, a teleport) may unseat
+   * the rider. The bot knows it by the completion marker: a ride the server
+   * stops seating after that objective's marker arrived during the ride ends
+   * there, by the completion, and is not "unseated before the ride's end".
+   *
    * A ride that does not board goes on from aboard (spec-0135 §5): the server
    * must already seat the bot on the vehicle. A ride that stays ends aboard:
    * the bot is not unseated, and the next step's act is done from the seat.
@@ -274,7 +319,7 @@ export const methods = {
     this.releaseSeatLooks = undefined;
   },
 
-  async ride(this: MineflayerExecutor, step: RideStep): Promise<void> {
+  async ride(this: MineflayerExecutor, step: RideStep, leadsTo?: string): Promise<void> {
     const bot = this.requireBot();
     const tag = vehicleTag(step.vehicle);
     const seat = step.medium[0]!;
@@ -295,6 +340,7 @@ export const methods = {
     const wasAboard = this.aboard;
     this.leaveSeat();
     let reading: RideReading;
+    let clicked: Entity | undefined;
     if (!step.boards) {
       if (wasAboard?.vehicle !== step.vehicle) {
         failRide(
@@ -318,16 +364,17 @@ export const methods = {
         await bot.equip(item!, "hand");
       }
       const centre = cellCentre(seat, seat[1]);
-      const body: Entity | null = bot.nearestEntity(
-        (e) =>
-          e.type !== "player" &&
-          e.name !== "item" &&
-          Math.abs(e.position.x - centre[0]) <= VEHICLE_NEAR &&
-          Math.abs(e.position.z - centre[2]) <= VEHICLE_NEAR &&
-          Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
+      const body: Entity | null = boardedBody(
+        Object.values((bot as unknown as { entities?: Record<string, Entity> }).entities ?? {}),
+        centre,
       );
       if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
       await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
+      clicked = body!;
+      process.stderr.write(
+        `[ride] ${step.vehicle}: clicking ${body!.name ?? body!.type} at ` +
+          `[${[body!.position.x, body!.position.y, body!.position.z].map((v) => v.toFixed(2)).join(", ")}]\n`,
+      );
       bot.mount(body!);
       const mountBy = this.serverDeadline(MOUNT_GRACE_MS);
       reading = await this.readRide(tag);
@@ -335,9 +382,20 @@ export const methods = {
         await delay(250);
         reading = await this.readRide(tag);
       }
-      if (!reading.riding) failRide("the server did not seat the bot on the vehicle after the click");
+      if (!reading.riding) {
+        const at = [body!.position.x, body!.position.y, body!.position.z].map((v) => v.toFixed(2)).join(", ");
+        failRide(
+          `the server did not seat the bot on the vehicle after the click — the body clicked was ` +
+            `${body!.name ?? body!.type} at [${at}], the seat's centre at ${JSON.stringify(centre)}`,
+        );
+      }
     }
     const start = reading.pos;
+    // The objective this ride carries the party to, completed during this
+    // step: the ride ended by that completion wherever the rider then is.
+    const endedByCompletion = (): boolean =>
+      leadsTo !== undefined && this.completedObjectives.get(leadsTo) === this.currentStep;
+    let lastSeated = start;
     let reported = 0;
     let ridY = start[1];
     // Where the server held a waited-for rider, reading by reading: said when
@@ -351,9 +409,12 @@ export const methods = {
       while (!arrivedAt(reading.pos, last) && !this.deadlineOver(by)) {
         await delay(500);
         reading = await this.readRide(tag);
+        if (reading.riding) lastSeated = reading.pos;
         trace.push(
-          `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}`,
+          `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}` +
+            (reading.riding ? "" : " unseated"),
         );
+        if (!reading.riding && endedByCompletion()) break;
       }
     } else {
       const vehicleY = (bot as unknown as { vehicle?: Entity | null }).vehicle?.position?.y;
@@ -393,6 +454,7 @@ export const methods = {
         if (end === points.length) await delay(700);
         reading = await this.readRide(tag);
         if (!reading.riding) break;
+        lastSeated = reading.pos;
         const last = points[end - 1]!.at;
         if (stretchTaken(reading.pos, last)) {
           i = end;
@@ -426,9 +488,35 @@ export const methods = {
         process.stderr.write(`[ride] ${step.vehicle}: held ${holds} time(s), ${heldMs}ms in all, and taken\n`);
       }
     }
+    if (!reading.riding && endedByCompletion()) {
+      const serverSeen = dist(start, lastSeated);
+      const why =
+        `ended by ${leadsTo}'s completion during the ride: last seated at ` +
+        `${JSON.stringify(lastSeated.map((v) => Number(v.toFixed(2))))}, the server then holds the bot at ` +
+        `${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}`;
+      record({ reported, serverSeen, seat: lastSeated, left: true, passed: true, why });
+      process.stderr.write(`[ride] ${step.vehicle} (${step.kind}): ${why}\n`);
+      // The leaving walk is not walked: its proven leg is consumed, so the
+      // next walk takes its own.
+      if (this.waypoints) {
+        this.legCursor = nextLegWaypoints(this.waypoints.legs, this.legCursor, step.leave).cursor;
+      }
+      return;
+    }
     const serverSeen = dist(start, reading.pos);
     if (!reading.riding) {
-      failRide("the server unseated the bot before the ride's end", { reported, serverSeen, seat: reading.pos });
+      const held = trace.length > 0 ? `; the server's readings: ${trace.join(", ")}` : "";
+      const body =
+        clicked === undefined
+          ? ""
+          : `; the client sees the body it boarded (${clicked.name ?? clicked.type}) at ` +
+            `[${[clicked.position.x, clicked.position.y, clicked.position.z].map((v) => v.toFixed(2)).join(", ")}]` +
+            (clicked.isValid === false ? ", removed" : "");
+      failRide(`the server unseated the bot before the ride's end, last held at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}${held}${body}`, {
+        reported,
+        serverSeen,
+        seat: reading.pos,
+      });
     }
     if (!arrivedAt(reading.pos, last)) {
       failRide(

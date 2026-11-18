@@ -1,0 +1,27 @@
+{
+  "code": "DW1144",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/races/5/checkpoints/0",
+      "value": {
+        "at": {
+          "anchor": "anchor/long-hall-cart",
+          "offset": [
+            0,
+            0,
+            5
+          ]
+        },
+        "extent": [
+          0,
+          1,
+          0
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the cart line's finish put five cells down the twelve-cell line, short of the line's end where its objective is reached. A reach that runs a course is completed by the race being over, wherever the party stands, so the race would end mid-line and the objective's crossing would take the rider off the moving cart, while the proof rode on to an anchor the game never asks for. Refused at the plan, naming the objective, its anchor's cell and the finish's box. It declares no unit."
+}

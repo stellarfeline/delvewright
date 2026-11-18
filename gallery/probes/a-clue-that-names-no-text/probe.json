@@ -4,12 +4,12 @@
     {
       "doc": "quests.json",
       "op": "remove",
-      "path": "/content/quests/3/objectives/7/clues/0"
+      "path": "/content/quests/3/objectives/8/clues/0"
     },
     {
       "doc": "quests.json",
       "op": "add",
-      "path": "/content/quests/3/objectives/7/clues/0",
+      "path": "/content/quests/3/objectives/8/clues/0",
       "value": {
         "by": "record",
         "objective": "obj/ask-the-groom"
