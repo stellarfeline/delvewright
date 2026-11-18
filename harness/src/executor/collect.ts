@@ -308,7 +308,7 @@ export const methods = {
         await bot.lookAt(entity.position.offset(verdict.aim.x - entity.position.x, verdict.aim.y - entity.position.y, verdict.aim.z - entity.position.z), true);
         process.stderr.write(
           `[collect] ${step.item}: performed — ${use.item} used on the ${use.on} #${target.id} ` +
-            `at [${fmt(entity.position)}]\n`,
+            `at ${fmt(entity.position)}\n`,
         );
         await bot.activateEntity(entity);
         done = true;
