@@ -2,7 +2,8 @@
 
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
-import type { CollectHolder, CollectStep, Vec3Tuple } from "../critical-path.ts";
+import type { CollectHolder, CollectStep, GatheredUse, Vec3Tuple } from "../critical-path.ts";
+import { INTERACTION_REACH, acquireFromStances, occlusionFailure } from "../crosshair.ts";
 import { BotDeathError } from "../death.ts";
 import { WAVE_ENGAGE_NEAR } from "../wave.ts";
 import { delay, fmt } from "./connection.ts";
@@ -234,11 +235,86 @@ export const methods = {
       transport: step.transport,
     });
     await this.atStance();
+    if (step.use !== undefined) {
+      await this.useOnBody(step, step.use);
+      return;
+    }
     const command = `/give @s ${step.item} ${step.count}`;
-    process.stderr.write(`[collect] ${step.item}: gathered — handed over by \`${command}\`\n`);
+    process.stderr.write(
+      `[collect] ${step.item}: gathered — handed over by \`${command}\`; handed, not performed\n`,
+    );
     const refused = await this.refusalOf(command);
     if (refused !== undefined) {
       throw new Error(`collect ${step.item}: handing the gathered item over was refused — ${refused}`);
+    }
+    await this.requireObjective(step.objective, `collect ${step.item}`);
+  },
+
+  /**
+   * Perform a gathered item's act where it is a use on a body (format 17): hold
+   * the use's item, put the crosshair on a body of its kind near the step's
+   * place the way a player does — the first box the ray meets, from a stance
+   * the step allows (`crosshair.ts`) — and right-click it. A box standing over
+   * the body takes the ray first, and the step fails naming both. The proof is
+   * the objective's own marker, as for every collect.
+   */
+  async useOnBody(this: MineflayerExecutor, step: CollectStep, use: GatheredUse): Promise<void> {
+    const bot = this.requireBot();
+    const bare = (id: string) => id.replace(/^minecraft:/, "");
+    const what = `${step.objective}: ${use.item} on a ${use.on}`;
+    for (let n = 0; n < step.count; n += 1) {
+      const tool = bot.inventory.items().find((i) => i.name === bare(use.item));
+      if (!tool) {
+        throw new Error(`${what}: the party holds no ${use.item}, so the act cannot be performed`);
+      }
+      await bot.equip(tool, "hand");
+      const bodies = this.hitboxesNear(step.pos, INTERACTION_REACH + 5);
+      const kind = bodies
+        .filter((b) => b.name === bare(use.on))
+        .sort(
+          (a, b) =>
+            Math.hypot(a.position.x - step.pos[0] - 0.5, a.position.y - step.pos[1], a.position.z - step.pos[2] - 0.5) -
+            Math.hypot(b.position.x - step.pos[0] - 0.5, b.position.y - step.pos[1], b.position.z - step.pos[2] - 0.5),
+        );
+      if (kind.length === 0) {
+        throw new Error(`${what}: no ${use.on} tracked within ${INTERACTION_REACH + 5} blocks of [${step.pos.join(", ")}]`);
+      }
+      const world = this.blockShapes();
+      const stances = this.stancesAround(step.pos, 2, bodies);
+      let done = false;
+      let last: string | undefined;
+      for (const target of kind) {
+        const others = bodies.filter((b) => b.id !== target.id);
+        const verdict = acquireFromStances(stances, target, others, INTERACTION_REACH, world.shapes, world.names);
+        if (!verdict.ok) {
+          last = occlusionFailure(what, target, verdict.blockers, verdict.triedStances, verdict.blocks);
+          continue;
+        }
+        const here = bot.entity.position;
+        const eye = verdict.eye;
+        if (Math.hypot(eye.x - here.x, eye.y - 1.62 - here.y, eye.z - here.z) > 0.5) {
+          await this.walkTo(
+            [Math.floor(eye.x), Math.round(eye.y - 1.62), Math.floor(eye.z)],
+            0,
+            `the stance ${what} is acquired from`,
+            step.sneak,
+          );
+        }
+        const entity = bot.entities[target.id];
+        if (!entity) {
+          last = `${what}: the ${use.on} #${target.id} left the client's tracking before the use`;
+          continue;
+        }
+        await bot.lookAt(entity.position.offset(verdict.aim.x - entity.position.x, verdict.aim.y - entity.position.y, verdict.aim.z - entity.position.z), true);
+        process.stderr.write(
+          `[collect] ${step.item}: performed — ${use.item} used on the ${use.on} #${target.id} ` +
+            `at [${fmt(entity.position)}]\n`,
+        );
+        await bot.activateEntity(entity);
+        done = true;
+        break;
+      }
+      if (!done) throw new Error(last ?? `${what}: no ${use.on} could be acquired`);
     }
     await this.requireObjective(step.objective, `collect ${step.item}`);
   },

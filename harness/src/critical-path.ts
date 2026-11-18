@@ -447,14 +447,29 @@ export interface CollectStep extends PresentationMarkers, Pursued {
   readonly droppedBy?: string;
   /**
    * The world supplies the item (DSL v0.81): a fish off a line, a creature in
-   * a bucket. Nothing stands at `pos` to open; the bot stands there and is
-   * handed the item by command, in place of the vanilla act a player performs.
+   * a bucket. Nothing stands at `pos` to open. With {@link CollectStep.use} the
+   * bot performs the act; without it, it is handed the item by command and the
+   * run says the act was handed, not performed.
    */
   readonly gathered?: boolean;
+  /**
+   * The act a gathered item is got by, where it is a use on a body (format
+   * 17): hold `item` and right-click a body of kind `on` near `pos`, acquired
+   * the way a player's crosshair acquires it.
+   */
+  readonly use?: GatheredUse;
   /** The holder entity the item is taken from (spec-0111, format 5). */
   readonly holder?: CollectHolder;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
+}
+
+/** A use on a body that yields a gathered item (format 17): the held item and the kind. */
+export interface GatheredUse {
+  /** The item held in the hand, `minecraft:` id. */
+  readonly item: string;
+  /** The kind of body it is used on, `minecraft:` id. */
+  readonly on: string;
 }
 
 /** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
@@ -845,6 +860,13 @@ export class CriticalPathParseError extends Error {
     super(`critical-path${pointer} ${detail}`);
     this.pointer = pointer;
   }
+}
+
+/** A collect step's `use` (format 17): exactly `item` and `on`, both strings. */
+function parseGatheredUse(value: unknown, pointer: string): GatheredUse {
+  if (!isRecord(value)) fail(pointer, `must be an object, got ${describe(value)}`);
+  rejectUnknownKeys(value, ["item", "on"], pointer);
+  return { item: requireString(value, "item", pointer), on: requireString(value, "on", pointer) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1479,6 +1501,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
           "pos",
           "dropped_by",
           "gathered",
+          "use",
           "holder",
           "transport",
           "sneak",
@@ -1496,6 +1519,10 @@ function parseStepBody(value: unknown, pointer: string): Step {
       if (gathered !== undefined && gathered !== true) {
         fail(`${pointer}/gathered`, `must be true when present, got ${describe(gathered)}`);
       }
+      const use = obj["use"] === undefined ? undefined : parseGatheredUse(obj["use"], `${pointer}/use`);
+      if (use !== undefined && gathered !== true) {
+        fail(`${pointer}/use`, "is the act a gathered item is got by, and the step is not `gathered`");
+      }
       const holder = obj["holder"] === undefined ? undefined : parseHolder(obj["holder"], `${pointer}/holder`);
       return {
         action: "collect",
@@ -1505,6 +1532,7 @@ function parseStepBody(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         ...(droppedBy === undefined ? {} : { droppedBy }),
         ...(gathered === undefined ? {} : { gathered: true }),
+        ...(use === undefined ? {} : { use }),
         ...(holder === undefined ? {} : { holder }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),

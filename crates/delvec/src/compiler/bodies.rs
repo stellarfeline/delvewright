@@ -248,6 +248,18 @@ pub const BODY_USES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// **The use that yields `item`** ([`BODY_USES`]): `(tool, kind)` — the item a
+/// player holds and the kind of body they use it on — or `None` for an item no
+/// use on a body hands. The one lookup the answer box's window
+/// ([`owed_uses`]) and the critical path's act (`critical-path.json`'s `use`)
+/// both ask, so the act the bot performs is the act the box steps aside for.
+pub fn use_yielding(item: &str) -> Option<(&'static str, &'static str)> {
+    BODY_USES
+        .iter()
+        .find(|(y, _, _)| *y == item)
+        .map(|(_, tool, kind)| (*tool, *kind))
+}
+
 /// One **use a gathered `collect` is owed on an actor's body**: the objective
 /// whose item a use on the body yields ([`BODY_USES`]), and the actor that
 /// wears an answer box over a body of that kind.
@@ -286,9 +298,9 @@ pub fn owed_uses(c: &Campaign) -> Vec<OwedUse<'_>> {
             else {
                 continue;
             };
-            for (_, tool, kind) in BODY_USES.iter().filter(|(y, _, _)| *y == item.as_str()) {
+            if let Some((tool, kind)) = use_yielding(item) {
                 for a in &c.quests.content.actors {
-                    if BodyRef::Actor(a).worn_entity() == *kind
+                    if BodyRef::Actor(a).worn_entity() == kind
                         && !actor_box_trigger_tags(c, a.id.as_str()).is_empty()
                     {
                         out.push(OwedUse {
@@ -319,9 +331,7 @@ pub fn owed_use_line(c: &Campaign) -> String {
     let by_use = gathered
         .iter()
         .filter(|o| match o {
-            delvewright_dsl::Objective::Collect { item, .. } => {
-                BODY_USES.iter().any(|(y, _, _)| *y == item.as_str())
-            }
+            delvewright_dsl::Objective::Collect { item, .. } => use_yielding(item).is_some(),
             _ => false,
         })
         .count();

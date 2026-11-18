@@ -1054,9 +1054,18 @@ async function main(): Promise<number> {
     // that is not what it declares, a broken retry loop or a broken death loop.
     const red = report.redStages();
     if (red.length > 0) throw new Error(redRunMessage(red));
+    // A gathered item with no act the path states is handed over by command:
+    // the run says so, every time, beside the acts it performed.
+    const gathered = criticalPath.steps.filter((s) => s.action === "collect" && s.gathered === true);
+    const handed = gathered.filter((s) => s.action === "collect" && s.use === undefined).length;
+    process.stderr.write(
+      `[collect] gathered acts: ${gathered.length - handed} performed; handed, not performed: ` +
+        `${handed} of ${gathered.length}\n`,
+    );
     process.stderr.write(
       `${driven === undefined ? "critical path" : `branch ${driven.id}`} ` +
         `'${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
+        `${handed > 0 ? `, handed, not performed: ${handed} of ${gathered.length} gathered act(s)` : ""}` +
         `${trials.length > 0 ? `, ${trials.length} scripted death(s) survived` : ""}` +
         `${report.findings().length > 0 ? `, ${report.findings().length} advisory finding(s)` : ""})\n`,
     );

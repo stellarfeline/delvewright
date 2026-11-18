@@ -418,6 +418,13 @@ pub(super) fn critical_path_json(
                         && let Some(obj) = v.as_object_mut()
                     {
                         obj.insert("gathered".to_string(), json!(true));
+                        // Format 17: the act, where it is a use on a body
+                        // (`bodies::use_yielding`) — the item held and the kind
+                        // used — so the bot performs it instead of being handed
+                        // the item.
+                        if let Some((tool, kind)) = crate::compiler::bodies::use_yielding(item) {
+                            obj.insert("use".to_string(), json!({ "item": tool, "on": kind }));
+                        }
                     }
                     v
                 }

@@ -5229,6 +5229,101 @@ test("a gathered collect walks to its place and is handed the item by command, o
   assert.deepEqual(acts, ["goto", "chat(/give @s minecraft:cod 5)"]);
 });
 
+// --- a gathered collect by a use on a body (format 17) --------------------------
+
+/**
+ * A fake server with an axolotl beside the step's place, picked up only by a
+ * right-click on THAT body while the bot holds a water bucket — the vanilla
+ * use. Optionally an answer box encloses it, as the old emission stood one.
+ */
+class ScoopFakeBot extends GatherFakeBot {
+  held: string | undefined;
+  constructor(boxed: boolean) {
+    super();
+    this.carried = [{ name: "water_bucket", type: 1 }];
+    this.entity.position = new FakeVec3(10.5, 64, 0.5);
+    this.entities[90] = {
+      id: 90,
+      name: "axolotl",
+      width: 0.75,
+      height: 0.42,
+      position: new FakeVec3(11.5, 64, 0.5),
+    };
+    if (boxed) {
+      this.entities[91] = {
+        id: 91,
+        name: "interaction",
+        width: 1,
+        height: 2,
+        position: new FakeVec3(11.5, 64, 0.5),
+      };
+    }
+  }
+  override async equip(item: { name: string }, destination: string): Promise<void> {
+    await super.equip(item, destination);
+    this.held = item.name;
+  }
+  async lookAt(): Promise<void> {
+    this.calls.push("lookAt");
+  }
+  async activateEntity(e: { id: number }): Promise<void> {
+    this.calls.push(`activateEntity(${e.id})`);
+    if (e.id === 90 && this.held === "water_bucket") {
+      this.emit("messagestr", "[dw:complete hello-world obj/scoop]");
+    }
+  }
+}
+
+const SCOOP_STEP: CollectStep = {
+  action: "collect",
+  objective: "obj/scoop",
+  item: "minecraft:axolotl_bucket",
+  count: 1,
+  gathered: true,
+  use: { item: "minecraft:water_bucket", on: "minecraft:axolotl" },
+  pos: [10, 64, 0],
+  sneak: false,
+} as unknown as CollectStep;
+
+test("a gathered collect by a use holds the item and right-clicks the body, handed nothing", async () => {
+  const bot = new ScoopFakeBot(false);
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  await within("executor.collect(SCOOP_STEP)", executor.collect(SCOOP_STEP));
+  const acts = bot.calls.filter((c) => !c.startsWith("chat(/tellraw"));
+  assert.deepEqual(acts, ["goto", "equip(water_bucket,hand)", "lookAt", "activateEntity(90)"]);
+});
+
+test("a box standing over the body takes the ray, and the use fails naming both", async () => {
+  // The old emission: an answer box encloses the axolotl. A player's ray meets
+  // the box first; the bot's does too, and the step fails instead of handing
+  // the bucket over.
+  const bot = new ScoopFakeBot(true);
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  await assert.rejects(
+    () => executor.collect(SCOOP_STEP),
+    (err: unknown) =>
+      err instanceof Error && /axolotl/.test(err.message) && /interaction/.test(err.message),
+  );
+  assert.ok(!bot.calls.some((c) => c.startsWith("activateEntity")), JSON.stringify(bot.calls));
+  assert.ok(!bot.calls.some((c) => c.startsWith("chat(/give")), JSON.stringify(bot.calls));
+});
+
+test("a use whose item the party does not hold cannot be performed", async () => {
+  const bot = new ScoopFakeBot(false);
+  bot.carried = [];
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  await assert.rejects(
+    () => executor.collect(SCOOP_STEP),
+    (err: unknown) => err instanceof Error && /holds no minecraft:water_bucket/.test(err.message),
+  );
+});
+
 // --- trigger steps: the bot does to the target what a player does ---------------
 
 import type { LoopStep, TriggerStep } from "../src/critical-path.ts";

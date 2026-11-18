@@ -233,3 +233,30 @@ fn the_activation_template_reads_the_box_standing_then_gone() {
         "a body the template stood is removed again:\n{t}"
     );
 }
+
+/// The critical path states the act a gathered item is got by, where it is a
+/// use on a body — the same lookup the box steps aside for — and states none
+/// for an item no use yields.
+#[test]
+fn the_critical_path_carries_the_use_a_gathered_item_is_got_by() {
+    let step_of = |item: &str| {
+        let out = build(&campaign(&raw("minecraft:axolotl", item)));
+        let cp: serde_json::Value =
+            serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
+        cp["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["objective"] == "obj/scoop")
+            .cloned()
+            .expect("the collect is on the path")
+    };
+    let scoop = step_of("minecraft:axolotl_bucket");
+    assert_eq!(scoop["gathered"], json!(true));
+    assert_eq!(
+        scoop["use"],
+        json!({ "item": "minecraft:water_bucket", "on": "minecraft:axolotl" })
+    );
+    assert!(step_of("minecraft:cod_bucket")["use"].is_object());
+    assert!(step_of("minecraft:feather")["use"].is_null());
+}
