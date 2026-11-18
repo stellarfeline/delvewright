@@ -279,7 +279,7 @@ fn a_choice_behind_an_armed_arrival_builds() {
         }
         let path: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
         let steps = path["steps"].as_array().unwrap();
-        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(|s| pred(s));
+        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(pred);
         if let Some(c) = at(&|s| s["action"] == "choose") {
             let arrive = at(&|s| s["objective"] == "obj/arrive").expect("the arrival is walked");
             assert!(arrive < c, "{name}: the choice comes after the arrival");
