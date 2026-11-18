@@ -1072,7 +1072,8 @@ crate::dw_code! {
 
 crate::dw_code! {
     /// (spec-0117) **A press target that is not a real block**: an interaction
-    /// point with no `prop` where one is required, a `prop` whose blockstate
+    /// point with no `prop` where one is required (an `interact` may name a
+    /// `region` instead, and names one or the other, never both), a `prop` whose blockstate
     /// the pinned game gives no outline (or an outline that leaves its cell), a
     /// door named by its upper half, or a trigger anchored at a gate **region**
     /// (many cells; anchor it at the door's cell, where the gate's block is its

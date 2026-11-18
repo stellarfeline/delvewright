@@ -19,7 +19,7 @@ An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a
 
 The entry leaves out the release machinery itself, which changes nothing in what a creator does.
 
-## delvewright-dsl 0.88.0
+## delvewright-dsl 0.89.0
 
 ### Highlights
 
@@ -37,6 +37,7 @@ The entry leaves out the release machinery itself, which changes nothing in what
 - A wave mob's `count` takes `{base, per_player}`: one player meets `base`, and each further player present at the spawn adds `per_player`.
 - A `loot` fill can wait for its beat: `filled: "by-effect"` with the `fill-loot` verb.
 - A `collect` takes `gathered`: the party gets the item by an act the game already has — a fish off a line, a creature in a bucket — and the engine places nothing.
+- An `interact` takes `region` in place of `prop`: a use anywhere over an area — the water of a pond, the soil of a field, the stones of a hearth — completes it, its answers, held item and taken item as for a block, and nothing is placed.
 - A firework rocket stack in a `loot` fill, a `give-item` or a class kit carries its stars as `fireworks`.
 - Every body the story places — a character, an actor, a wave's creature, its mount, a ride — takes `variant`: its coat, colour, collar, kind or trade in the game's own words (a tabby cat, a taiga librarian, a black horse with white dots), where it would otherwise always stand as the type's plain default.
 - An effect's `audience` can name a wave's or an actor's bodies (`{"wave": id}`, `{"actor": id}`) on `give-effect`, `clear-effect` and `damage`; `damage` takes `by: "actor"` to credit the acting player.
