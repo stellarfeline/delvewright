@@ -2604,12 +2604,13 @@ fn a_walk_along_a_race_passes_every_checkpoint() {
 /// exit's box, and the compass aimed at the exit for the whole race.
 #[test]
 fn a_course_ends_where_its_racers_are_and_its_compass_follows_the_next_checkpoint() {
-    let out = course_build(
-        "course-compass",
-        course_bay(race(&["cp-bridge", "cp-east"], "")),
-        START_RACE,
-    )
-    .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    // Titled, so the exit is announced and the compass follows it.
+    let bay = Bay {
+        gate: r#", "course": "race/pig-race", "title": "Ride the race""#,
+        ..course_bay(race(&["cp-bridge", "cp-east"], ""))
+    };
+    let out =
+        course_build("course-compass", bay, START_RACE).unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
     let tick = function(&out, "tick");
     let done: Vec<&str> = tick
         .lines()
