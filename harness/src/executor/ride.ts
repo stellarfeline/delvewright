@@ -7,6 +7,7 @@ import { CENSUS_SETTLE_MS } from "./census.ts";
 import { isRejection } from "../rejection.ts";
 import { delay } from "./connection.ts";
 import { LEDGER_POLL_MS, SCORE_TRACK_TIMEOUT_MS } from "./score.ts";
+import { NON_COLLIDING_ENTITY_TYPES } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** Minecraft server ticks per second. */
@@ -105,6 +106,41 @@ export interface RideReading {
 export function vehicleTag(vehicle: string): string {
   const local = vehicle.includes("/") ? vehicle.slice(vehicle.indexOf("/") + 1) : vehicle;
   return `dw_vehicle_${local.replace(/[-/.]/g, "_")}`;
+}
+
+/** A body the boarding click may be aimed at: what a body of `vehicle` could be. */
+interface Boardable {
+  readonly name?: string;
+  readonly type?: string;
+  readonly position: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+/**
+ * The body a boarding click is aimed at: of the bodies within
+ * {@link VEHICLE_NEAR} of the seat's centre on every axis, the one nearest
+ * that centre. A player, a dropped item and a body nothing can sit on — a
+ * click box, a display, a marker ({@link NON_COLLIDING_ENTITY_TYPES}) — is
+ * never a vehicle, whatever stands nearest the bot: an `interact` over an
+ * area stands its click boxes over a rim the boarding cell lies beside, and a
+ * click on one of them seats nobody.
+ */
+export function boardedBody<E extends Boardable>(bodies: Iterable<E>, centre: Vec3Tuple): E | null {
+  let best: E | null = null;
+  let bestD = Infinity;
+  for (const e of bodies) {
+    if (e.type === "player" || e.name === "item") continue;
+    if (e.name !== undefined && NON_COLLIDING_ENTITY_TYPES.includes(e.name)) continue;
+    const dx = e.position.x - centre[0];
+    const dy = e.position.y - centre[1];
+    const dz = e.position.z - centre[2];
+    if (Math.abs(dx) > VEHICLE_NEAR || Math.abs(dy) > VEHICLE_NEAR || Math.abs(dz) > VEHICLE_NEAR) continue;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < bestD) {
+      best = e;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** The centre of a medium cell, as a ridden body's reported position. */
@@ -318,13 +354,9 @@ export const methods = {
         await bot.equip(item!, "hand");
       }
       const centre = cellCentre(seat, seat[1]);
-      const body: Entity | null = bot.nearestEntity(
-        (e) =>
-          e.type !== "player" &&
-          e.name !== "item" &&
-          Math.abs(e.position.x - centre[0]) <= VEHICLE_NEAR &&
-          Math.abs(e.position.z - centre[2]) <= VEHICLE_NEAR &&
-          Math.abs(e.position.y - centre[1]) <= VEHICLE_NEAR,
+      const body: Entity | null = boardedBody(
+        Object.values((bot as unknown as { entities?: Record<string, Entity> }).entities ?? {}),
+        centre,
       );
       if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
       await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);

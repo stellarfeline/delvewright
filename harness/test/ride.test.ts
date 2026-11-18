@@ -2,7 +2,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arrivedAt, drivePoints, holdLooksForced, resumeIndex, stretchTaken, vehicleTag } from "../src/executor/ride.ts";
+import { arrivedAt, boardedBody, drivePoints, holdLooksForced, resumeIndex, stretchTaken, vehicleTag } from "../src/executor/ride.ts";
 import { methods } from "../src/executor/ride.ts";
 import { methods as connection } from "../src/executor/connection.ts";
 import type { RideStep, Vec3Tuple } from "../src/critical-path.ts";
@@ -54,7 +54,12 @@ function mock(serverReads: { riding: boolean; pos: Vec3Tuple }[], aboardAt?: { v
     requireBot: () => ({
       inventory: { items: () => [{ name: "carrot_on_a_stick" }] },
       equip: async () => {},
-      nearestEntity: () => ({ type: "mob", name: "pig", position: { x: 8.5, y: 67, z: 3.5, offset: () => ({}) }, height: 0.9 }),
+      // A body standing at each seat the tests' steps board from.
+      entities: {
+        7: { type: "mob", name: "pig", position: { x: 8.5, y: 67, z: 3.5, offset: () => ({}) }, height: 0.9 },
+        8: { type: "other", name: "oak_boat", position: { x: 4.5, y: 3, z: 3.5, offset: () => ({}) }, height: 0.56 },
+        9: { type: "other", name: "oak_boat", position: { x: 0.5, y: 3, z: 0.5, offset: () => ({}) }, height: 0.56 },
+      },
       lookAt: async () => {},
       on: () => {},
       removeListener: () => {},
@@ -184,6 +189,23 @@ test("a click the server does not seat fails by name", async () => {
   await assert.rejects(() => methods.ride.call(self as never, step), /did not seat the bot/);
 });
 
+test("the boarding click goes to the vehicle, never to a click box nearer the bot", () => {
+  // The gallery's basin: a boat moored on the water at [519, 64, 142], an
+  // `interact` over the near rim standing its click boxes along z 140, the
+  // bot on the floor in front of the rim. The box at x 519 is the body
+  // nearest the bot, and it is within reach of the seat on every axis.
+  const boat = { type: "other", name: "oak_boat", position: { x: 519.5, y: 64, z: 142.5 } };
+  const tile = { type: "other", name: "interaction", position: { x: 519.5, y: 65.9, z: 140.5 } };
+  const bot = { type: "player", name: "player", position: { x: 519.5, y: 65, z: 139.5 } };
+  const item = { type: "other", name: "item", position: { x: 519.5, y: 64, z: 142.4 } };
+  assert.equal(boardedBody([bot, tile, item, boat], [519.5, 64, 142.5]), boat);
+  // Nothing but a click box beside the seat: nothing is boarded.
+  assert.equal(boardedBody([bot, tile], [519.5, 64, 142.5]), null);
+  // Of two bodies a rider could sit on, the one nearest the seat.
+  const other = { type: "other", name: "oak_boat", position: { x: 521.5, y: 64, z: 142.5 } };
+  assert.equal(boardedBody([other, boat], [519.5, 64, 142.5]), boat);
+});
+
 test("a cart is waited for, never driven", async () => {
   const { self, sent } = mock([
     { riding: true, pos: [8.5, 67, 3.5] },
@@ -300,7 +322,10 @@ test("a boat the server holds past the budget fails by name, the body beside it 
   const bot = (self.requireBot as () => Record<string, unknown>)();
   self.requireBot = () => ({
     ...bot,
-    entities: { 7: { type: "hostile", name: "drowned", position: { x: 3.4, y: 2.0, z: 0.5 } } },
+    entities: {
+      6: { type: "other", name: "oak_boat", position: { x: 0.5, y: 3, z: 0.5, offset: () => ({}) }, height: 0.56 },
+      7: { type: "hostile", name: "drowned", position: { x: 3.4, y: 2.0, z: 0.5 } },
+    },
   }) as never;
   await assert.rejects(
     () => methods.ride.call(self as never, longBoat),
