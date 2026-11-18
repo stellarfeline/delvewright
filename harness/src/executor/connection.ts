@@ -371,6 +371,9 @@ export const methods = {
         process.stderr.write(`[shown] action bar during step ${this.currentStep}: ${text}\n`);
       });
       let lastAim = "";
+      // The inventory window exists once the bot has logged in, not when it is
+      // created: hooked at the first spawn, once.
+      bot.once("spawn", () => {
       const inv = (bot as unknown as {
         inventory?: { on?: (e: string, f: (slot: number, old: unknown, item: unknown) => void) => void };
       }).inventory;
@@ -382,6 +385,7 @@ export const methods = {
         if (aim === lastAim) return;
         lastAim = aim;
         process.stderr.write(`[shown] compass aims at ${aim} during step ${this.currentStep}\n`);
+      });
       });
     }
     typeClient?.prependListener?.("damage_event", (packet: unknown) => {
