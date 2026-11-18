@@ -32,8 +32,8 @@ fn edit(path: &Path, f: impl FnOnce(&mut Value)) {
 
 /// hello-world with the hermit in the den; `gate` is the flag the den's one
 /// connection waits on, if any (`obj/talk` sets `flag/den-open`; nothing sets
-/// any other).
-fn fixture(tag: &str, gate: Option<&str>) -> PathBuf {
+/// any other), and `shy` the flag that withdraws his option, if any.
+fn fixture(tag: &str, gate: Option<&str>, shy: Option<&str>) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("story-choice-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::hello_world_dir(), &dir);
@@ -59,6 +59,7 @@ fn fixture(tag: &str, gate: Option<&str>) -> PathBuf {
                     "options": [
                         {
                             "label": "Tell me a secret.",
+                            "forbids_flags": shy.into_iter().collect::<Vec<_>>(),
                             "effects": [{"type": "set-flag", "flag": "flag/trusted"}],
                             "happening": {"text": "the hermit trusts the party", "verb": "believes"}
                         },
@@ -133,27 +134,37 @@ fn trusted_choices(c: &Campaign) -> (Vec<String>, Vec<(String, String)>) {
     (path, choices)
 }
 
+/// A choice the selection owes is taken in front of the LAST step at which
+/// it can be taken, the entry deeds' rule: the town's arrival in Magnhild's
+/// cellar was a reach armed in front of her, and a choice taken in front of
+/// it walked into its volume (`DW0311`).
 #[test]
-fn a_choice_waits_for_the_way_to_its_speaker() {
-    let (path, choices) = trusted_choices(&parse(&fixture("gated", Some("flag/den-open"))));
+fn a_choice_is_taken_as_late_as_the_reading_allows() {
+    let (path, choices) = trusted_choices(&parse(&fixture("open", None, None)));
     // Binding: the path walks the keeper, then the door, and the trusted world
     // takes the hermit's choice once.
     assert_eq!(path, ["obj/talk", "obj/exit"], "{path:?}");
     assert_eq!(
         choices,
         [("npc/hermit".to_string(), "obj/exit".to_string())],
-        "the den opens on `obj/talk`, so the hermit is spoken to in front of the step after it"
+        "the option is offered in front of both steps, so it is taken in front of the last"
     );
 }
 
+/// A choice is never taken from behind a way that is shut where it stands.
+/// The hermit's den opens on `obj/talk`, and his option is withdrawn by the
+/// same flag: it is offered only while the den is shut, so no point of the
+/// path can take it — before, the trusted world took it in front of
+/// `obj/talk` and walked from the spawn into a shut den.
 #[test]
-fn a_choice_from_a_speaker_on_an_open_way_is_taken_where_it_is_offered() {
-    let (_, choices) = trusted_choices(&parse(&fixture("open", None)));
-    assert_eq!(
-        choices,
-        [("npc/hermit".to_string(), "obj/talk".to_string())],
-        "nothing shuts the den, so the choice stands in front of the first step"
-    );
+fn a_choice_is_never_taken_from_behind_a_shut_way() {
+    let (path, choices) = trusted_choices(&parse(&fixture(
+        "shy",
+        Some("flag/den-open"),
+        Some("flag/den-open"),
+    )));
+    assert_eq!(path, ["obj/talk", "obj/exit"], "{path:?}");
+    assert!(choices.is_empty(), "{choices:?}");
 }
 
 /// A speaker no way ever reaches offers nothing: the solve does not credit
@@ -162,7 +173,7 @@ fn a_choice_from_a_speaker_on_an_open_way_is_taken_where_it_is_offered() {
 /// opens.
 #[test]
 fn a_speaker_no_way_reaches_offers_nothing() {
-    let c = parse(&fixture("sealed", Some("flag/never-set")));
+    let c = parse(&fixture("sealed", Some("flag/never-set"), None));
     let flow = Flow::new(&c);
     // Binding: the story worlds exist, so their paths were asked.
     let n = flow.story_count();
@@ -184,4 +195,96 @@ fn a_speaker_no_way_reaches_offers_nothing() {
     // of its path offers that option").
     let unpaid: Vec<&String> = flow.story().runs.iter().flat_map(|r| &r.unpaid).collect();
     assert!(unpaid.is_empty(), "{unpaid:#?}");
+}
+
+/// hello-world whose keeper is reached by an arrival armed from the start
+/// (`obj/arrive`, a reach at his stand), with a fork on an option of his
+/// lore that completes nothing: the trusted world owes that choice.
+fn arrival_fixture() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("story-choice-arrival");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::hello_world_dir(), &dir);
+    edit(&dir.join("dialogue.json"), |v| {
+        v["content"]["dialogues"][0]["nodes"][1]["options"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "label": "Tell me a secret.",
+                "effects": [{"type": "set-flag", "flag": "flag/trusted"}],
+                "happening": {"text": "the keeper trusts the party", "verb": "believes"}
+            }));
+    });
+    edit(&dir.join("quests.json"), |v| {
+        let objs = v["content"]["quests"][0]["objectives"]
+            .as_array_mut()
+            .unwrap();
+        objs[0]["after"] = json!(["obj/arrive"]);
+        objs.insert(
+            0,
+            json!({
+                "id": "obj/arrive", "type": "reach-anchor", "anchor": "anchor/keeper-stand",
+                "radius": 2, "title": "Come to the keeper", "hint": "He keeps the gate room.",
+                "happening": {"text": "the party completes obj/arrive", "verb": "arrives"}
+            }),
+        );
+    });
+    edit(&dir.join("quest-plan.json"), |v| {
+        v["content"]["branch_points"] = json!([{
+            "id": "branch-point/trust", "forks_on": ["flag/trusted"],
+            "opens_at": "quest/open-the-door",
+            "branches": [
+                {"id": "branch/trusted", "flags": ["flag/trusted"],
+                 "leads_to": "quest/open-the-door"},
+                {"id": "branch/doubted", "flags": [], "leads_to": "quest/open-the-door"}
+            ]
+        }]);
+    });
+    dir
+}
+
+/// **The town's shape, built**: a choice taken in front of the arrival would
+/// walk from the spawn into the arrival's volume while it is armed and not yet
+/// due (`DW0311`); taken as late as the reading allows, it comes after the
+/// arrival and the build proves every world's walk.
+#[test]
+fn a_choice_behind_an_armed_arrival_builds() {
+    let dir = arrival_fixture();
+    let out = dir.with_extension("out");
+    let _ = std::fs::remove_dir_all(&out);
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args([
+            "build",
+            dir.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
+        ])
+        .output()
+        .expect("delvec runs");
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert_eq!(o.status.code(), Some(0), "{log}");
+    // Binding: some world's exported path takes the keeper's choice, after
+    // the arrival.
+    let mut chose = 0;
+    for f in std::fs::read_dir(out.join("validation")).unwrap() {
+        let f = f.unwrap().path();
+        let name = f.file_name().unwrap().to_string_lossy().to_string();
+        if !name.starts_with("world-path-") {
+            continue;
+        }
+        let path: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        let steps = path["steps"].as_array().unwrap();
+        let at = |pred: &dyn Fn(&Value) -> bool| steps.iter().position(|s| pred(s));
+        if let Some(c) = at(&|s| s["action"] == "choose") {
+            let arrive = at(&|s| s["objective"] == "obj/arrive").expect("the arrival is walked");
+            assert!(arrive < c, "{name}: the choice comes after the arrival");
+            chose += 1;
+        }
+    }
+    assert!(chose > 0, "no world took the keeper's choice");
 }
