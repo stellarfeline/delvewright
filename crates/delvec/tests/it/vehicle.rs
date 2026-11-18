@@ -2660,7 +2660,7 @@ fn a_walk_along_a_race_passes_every_checkpoint() {
     );
 }
 
-/// The owner's ruled race end, and the compass on a course. A `reach-anchor`
+/// The race that ends itself, and the compass on a course. A `reach-anchor`
 /// that declares a course is reached by the race being over: its completion
 /// line asks no volume, so a party still on the course when the grace runs
 /// out goes on with the story. The compass of the objective that runs the
