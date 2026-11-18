@@ -42,7 +42,7 @@ fn fixture(tag: &str, gated: bool) -> PathBuf {
         hermit["id"] = json!("npc/hermit");
         hermit["name"] = json!("The Hermit");
         hermit["anchor"] = json!("anchor/hermit-stand");
-        hermit["role"] = json!("informant");
+        hermit["role"] = json!("flavor");
         v["content"]["npcs"].as_array_mut().unwrap().push(hermit);
     });
     edit(&dir.join("dialogue.json"), |v| {
