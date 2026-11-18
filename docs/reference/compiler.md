@@ -3297,13 +3297,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   option that completes no objective, which the world's path takes because its
   selection chose it or because a flag a later step reads comes from it
   (`flow::Flow::story_debts`). A choice the selection owes is placed by the
-  entry deeds' rule, in the same dry pass (`flow::Flow::run_story`): in front
-  of the **last** step, before the first final scene fires, at which it can be
-  taken, and no later than the first step that reads a flag it sets — as late
-  as the world's reading allows, so its walk comes after the beats in front of
-  it (an armed arrival it would otherwise walk into, a door the mainline has
-  not opened). A choice paid as a debt is taken in front of the step that
-  reads its flag, and once only. A choice can be taken where the option is
+  entry deeds' rule, as late as the world's reading allows: one a step reads —
+  its flag, or a flag whose payer's gate needs it — is paid in front of that
+  step, and every other is taken in front of the **last** step, before the
+  first final scene fires, at which it can be taken. So its walk comes after
+  the beats in front of it (an armed arrival it would otherwise walk into, a
+  door the mainline has not opened), and a choice whose flags are already held
+  is not taken again. A choice can be taken where the option is
   offered **and the place the cast ledger stations its speaker at is open**:
   reached from the layout graph's entry over the connections whose `gating`
   the walk's flags and completed quests satisfy

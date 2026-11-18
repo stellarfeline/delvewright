@@ -1012,7 +1012,6 @@ impl<'a> Flow<'a> {
         barred: &BTreeSet<String>,
         solved: &BTreeSet<String>,
         deeds: &[(usize, String)],
-        choice_at: &BTreeMap<(String, usize), usize>,
     ) -> Debts {
         let performs = &w.performs;
         let sel = &self.worlds[w.selection];
@@ -1022,10 +1021,16 @@ impl<'a> Flow<'a> {
         };
         o.st.flags.clear();
         self.debt_saturate(&mut o);
-        // The selection's choices no step takes, each taken where the
-        // placement put it ([`Self::run_story`]'s dry pass): in front of the
-        // last step at which it can be taken, never earlier.
-        let mut owed = self.owed_choices(w, solved);
+        // The selection's choices no step takes ([`Self::owed_choices`]),
+        // taken as late as the world's reading allows — the entry deeds' rule.
+        // One a step reads (its flag, or a flag whose payer's gate needs it) is
+        // paid in front of that step by [`Self::pay`]; every other is taken in
+        // front of the LAST step, before the first final scene fires, at which
+        // it can be taken ([`Self::choice_takeable`]). Taken earlier, a choice
+        // is walked to before the beats in front of it: into an armed
+        // arrival's volume, or past a door the mainline has not opened.
+        let owed = self.owed_choices(w, solved);
+        let mut last_takeable: BTreeMap<(String, usize), usize> = BTreeMap::new();
         let mut out = Debts::default();
         let mut complete_at: Option<(usize, String)> = None;
         for (i, step) in pt.steps.iter().enumerate() {
@@ -1038,22 +1043,13 @@ impl<'a> Flow<'a> {
                 }
             }
             self.debt_saturate(&mut o);
-            let mut still: Vec<PathChoice> = Vec::new();
-            for c in owed {
-                // Made already, by a debt that paid its flags through it.
-                if c.sets.iter().all(|f| o.st.flags.contains(f)) {
-                    continue;
-                }
-                let p = Payer::Choice(c.clone());
-                let due = choice_at.get(&(c.npc.clone(), c.n)).is_none_or(|&j| i >= j);
-                if due && self.payer_enabled(&p, sel, &o, &step.quest) {
-                    self.apply_payer(&p, &mut o, i + 1);
-                    out.choices.push((i, c));
-                } else {
-                    still.push(c);
+            if o.st.scene_at.is_empty() {
+                for c in &owed {
+                    if self.choice_takeable(c, sel, &o.st, &step.quest) {
+                        last_takeable.insert((c.npc.clone(), c.n), i);
+                    }
                 }
             }
-            owed = still;
             for flag in self.step_reads(step) {
                 if o.st.flags.contains(&flag) {
                     continue;
@@ -1098,6 +1094,15 @@ impl<'a> Flow<'a> {
             });
         }
         for c in owed {
+            // Its flags are held already: a debt paid them, through this
+            // option or another act, in front of the step that reads them.
+            if c.sets.iter().all(|f| o.st.flags.contains(f)) {
+                continue;
+            }
+            if let Some(&i) = last_takeable.get(&(c.npc.clone(), c.n)) {
+                out.choices.push((i, c));
+                continue;
+            }
             out.unpaid.push(format!(
                 "its selection takes option #{} of `{}` (setting {}), and no point of its path \
                  offers that option",
@@ -1110,6 +1115,7 @@ impl<'a> Flow<'a> {
                     .join(", ")
             ));
         }
+        out.choices.sort_by_key(|(i, _)| *i);
         out
     }
 
@@ -1152,18 +1158,7 @@ impl<'a> Flow<'a> {
         // the reading allows, so a deed beyond a door the mainline opens is
         // performed after the door is open. Found by a dry pass over the same
         // path with no deed performed.
-        //
-        // The choices the world's selection owes ([`Self::owed_choices`]) are
-        // placed by the same rule in the same pass: in front of the last step at
-        // which the choice can be taken ([`Self::choice_takeable`]), and no later
-        // than the first step that reads a flag it sets. Taken any earlier, a
-        // choice is walked to before the beats in front of it — into an armed
-        // arrival's volume, or past a door the mainline has not opened. A choice
-        // the pass never finds takeable is taken where the debt walk first can.
-        let owed_choices = self.owed_choices(w, &flags);
-        let sel = &self.worlds[w.selection];
         let mut at: BTreeMap<String, usize> = BTreeMap::new();
-        let mut choice_at: BTreeMap<(String, usize), usize> = BTreeMap::new();
         {
             // An act to be placed writes nothing before it is performed: its
             // own flags, credited from the start, would read as its own gate
@@ -1173,24 +1168,10 @@ impl<'a> Flow<'a> {
             let dry_credit = |g: &GatedFlag| self.deed_credit(g, performs, &held, &none);
             let mut dry = self.story_initial(performs, &barred, &held);
             let mut dry_complete: Option<(usize, String)> = None;
-            let mut read: BTreeSet<(String, usize)> = BTreeSet::new();
             for (i, step) in pt.steps.iter().enumerate() {
                 for act in &pending {
                     if self.deed_performable(act, &dry, false) {
                         at.insert(act.clone(), i);
-                    }
-                }
-                let reads = self.step_reads(step);
-                for c in &owed_choices {
-                    let key = (c.npc.clone(), c.n);
-                    if read.contains(&key) {
-                        continue;
-                    }
-                    if self.choice_takeable(c, sel, &dry, &step.quest) {
-                        choice_at.insert(key.clone(), i);
-                    }
-                    if c.sets.iter().any(|f| reads.contains(f)) {
-                        read.insert(key);
                     }
                 }
                 self.saturate_ambient_with(&mut dry.flags, &dry_credit);
@@ -1215,7 +1196,7 @@ impl<'a> Flow<'a> {
             .iter()
             .filter_map(|a| at.get(a).map(|i| (*i, a.clone())))
             .collect();
-        let debts = self.story_debts(&pt, w, &barred, &flags, &placed, &choice_at);
+        let debts = self.story_debts(&pt, w, &barred, &flags, &placed);
         // A deed a debt performs earlier is performed there, once.
         for (i, a) in &debts.deeds {
             if at.get(a).is_none_or(|j| j > i) {
