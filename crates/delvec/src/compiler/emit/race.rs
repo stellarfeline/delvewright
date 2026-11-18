@@ -143,7 +143,7 @@ pub(super) fn race_tick(plan: &Plan) -> Vec<String> {
 
 /// The race functions: per race its start, its end, the body the tick runs
 /// as each racer, the credit and the finish.
-pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
+pub(super) fn race_fns(plan: &Plan, guide: &super::guidance::Guide) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for r in &plan.campaign.quests.content.races {
@@ -215,11 +215,18 @@ pub(super) fn race_fns(plan: &Plan) -> Vec<(String, String)> {
             format!("scoreboard players add @s {p} 1"),
             format!("scoreboard players add @s {nx} 1"),
             format!("execute if score @s {nx} matches {n}.. run scoreboard players set @s {nx} 0"),
-            format!(
-                "execute if score @s {p} matches {total}.. run return run function {ns}:{}",
-                race_finish_fn(id)
-            ),
         ];
+        // A compass that follows this race's course turns to the credited
+        // player's next checkpoint on the tick of the credit.
+        if guide.follows_course(id) {
+            pass.push(format!(
+                "execute if entity @s[type=minecraft:player] run function {ns}:compass_aim_followed"
+            ));
+        }
+        pass.push(format!(
+            "execute if score @s {p} matches {total}.. run return run function {ns}:{}",
+            race_finish_fn(id)
+        ));
         if let Some(text) = &r.passed {
             pass.push(format!(
                 "execute if entity @s[type=minecraft:player] run title @s actionbar {}",

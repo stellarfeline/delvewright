@@ -609,11 +609,22 @@ pub(in crate::compiler::nav) fn positions_of(
             });
             transport_pending = false;
         }
-        // A transport marker on step `i` teleports the player when that step's
-        // objective completes — i.e. before the *next* visited position is reached,
-        // so the move INTO that next position is a ride, not a walk to validate.
-        if transports.get(i).and_then(|t| *t).is_some() {
-            transport_pending = true;
+        // A transport marker on step `i` puts the party down at its landing when
+        // that step's objective completes: the move INTO the landing is a carry,
+        // and the leg on from it to the next position is a leg like any other —
+        // walked, or ridden when its objective says so. With the landing left
+        // out, the whole way from the step to the next position was a carry, so
+        // a course ridden from a start line the story teleports the party to was
+        // neither proven nor exported.
+        if let Some(to) = transports.get(i).copied().flatten() {
+            out.push(VisitedPos {
+                pos: to,
+                transport_before: true,
+                talk_to: false,
+                src_step: i,
+                by_link: false,
+                by_loop: false,
+            });
         }
     }
     out

@@ -186,6 +186,48 @@ fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
     );
 }
 
+/// A step whose completion puts the party down somewhere — a party
+/// `teleport`, a crossing — is a carry into its landing, and the leg on from
+/// the landing to the next position is a leg the proofs walk (or ride). Red
+/// on an enumeration that marked the next position itself as carried into:
+/// the way from the landing was then neither proven nor exported, and a
+/// course ridden from the start line the story teleports the party to was
+/// walked by the bot with no ride.
+#[test]
+fn the_leg_on_from_a_landing_is_walked_from_the_landing() {
+    let steps = vec![
+        Step::TalkTo {
+            objective_id: Some("obj/dare".into()),
+            npc_id: "npc/baker".into(),
+            pos: [2, 67, 4],
+            command: "/trigger dw.dlg_baker set 1".into(),
+            sets: Vec::new(),
+        },
+        Step::Reach {
+            objective_id: "obj/line".into(),
+            anchor_id: "anchor/line".into(),
+            pos: [40, 67, 4],
+            radius: 1,
+            completion: crate::compiler::reach::reach_completion([40, 67, 4], 1),
+        },
+    ];
+    let transports = vec![Some([30, 67, 4]), None];
+    let got: Vec<([i32; 3], bool, usize)> =
+        positions_of(Some([2, 67, 2]), &steps, &transports, None)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
+    assert_eq!(
+        got,
+        vec![
+            ([2, 67, 2], false, 0),
+            ([2, 67, 4], false, 0),
+            ([30, 67, 4], true, 0),
+            ([40, 67, 4], false, 1),
+        ]
+    );
+}
+
 /// spec-0135 §5: a ride that stays aboard carries the party to its last
 /// medium cell, the act after it is done there, and a ride on from aboard is
 /// carried into too — every one a vehicle's carry (`by_loop`), never a
