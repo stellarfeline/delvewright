@@ -51,8 +51,9 @@ fn build(dir: &Path) -> BuildOutput {
     .expect("emission succeeds")
 }
 
-/// `and-join` with a mode that keeps the wards, so it holds the greeting and
-/// the division-of-labour template's guard reads the map's mode.
+/// `and-join` with a mode for each quest, each holding the other: the
+/// division-of-labour template's guard (the wards) and the greeting's dialogue
+/// mask both read the map's mode.
 fn and_join_under_a_mode() -> PathBuf {
     static N: AtomicUsize = AtomicUsize::new(0);
     let dst = std::env::temp_dir().join(format!(
@@ -68,9 +69,14 @@ fn and_join_under_a_mode() -> PathBuf {
     }
     common::patch_file(&dst.join("quests.json"), |d| {
         d["dsl_version"] = json!(DSL_VERSION);
-        d["content"]["modes"] = json!([{ "id": "mode/the-wards", "keeps": ["quest/wards"] }]);
+        d["content"]["modes"] = json!([
+            { "id": "mode/the-wards", "keeps": ["quest/wards"] },
+            { "id": "mode/the-greeting", "keeps": ["quest/greet"] }
+        ]);
         common::objective_effects(d, 1, "obj/ward-north")
             .push(json!({ "type": "enter-mode", "mode": "mode/the-wards" }));
+        common::objective_effects(d, 0, "obj/talk")
+            .push(json!({ "type": "enter-mode", "mode": "mode/the-greeting" }));
     });
     dst
 }
