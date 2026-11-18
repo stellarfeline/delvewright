@@ -331,6 +331,7 @@ export const methods = {
     const wasAboard = this.aboard;
     this.leaveSeat();
     let reading: RideReading;
+    let clicked: Entity | undefined;
     if (!step.boards) {
       if (wasAboard?.vehicle !== step.vehicle) {
         failRide(
@@ -360,6 +361,11 @@ export const methods = {
       );
       if (body === null) failRide(`no body stands within ${VEHICLE_NEAR} blocks of the seat ${JSON.stringify(seat)}`);
       await bot.lookAt(body!.position.offset(0, (body!.height ?? 0.5) / 2, 0), true);
+      clicked = body!;
+      process.stderr.write(
+        `[ride] ${step.vehicle}: clicking ${body!.name ?? body!.type} at ` +
+          `[${[body!.position.x, body!.position.y, body!.position.z].map((v) => v.toFixed(2)).join(", ")}]\n`,
+      );
       bot.mount(body!);
       const mountBy = this.serverDeadline(MOUNT_GRACE_MS);
       reading = await this.readRide(tag);
@@ -390,7 +396,8 @@ export const methods = {
         await delay(500);
         reading = await this.readRide(tag);
         trace.push(
-          `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}`,
+          `${((Date.now() - t0) / 1000).toFixed(1)}s ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}` +
+            (reading.riding ? "" : " unseated"),
         );
       }
     } else {
@@ -466,7 +473,18 @@ export const methods = {
     }
     const serverSeen = dist(start, reading.pos);
     if (!reading.riding) {
-      failRide("the server unseated the bot before the ride's end", { reported, serverSeen, seat: reading.pos });
+      const held = trace.length > 0 ? `; the server's readings: ${trace.join(", ")}` : "";
+      const body =
+        clicked === undefined
+          ? ""
+          : `; the client sees the body it boarded (${clicked.name ?? clicked.type}) at ` +
+            `[${[clicked.position.x, clicked.position.y, clicked.position.z].map((v) => v.toFixed(2)).join(", ")}]` +
+            (clicked.isValid === false ? ", removed" : "");
+      failRide(`the server unseated the bot before the ride's end, last held at ${JSON.stringify(reading.pos.map((v) => Number(v.toFixed(2))))}${held}${body}`, {
+        reported,
+        serverSeen,
+        seat: reading.pos,
+      });
     }
     if (!arrivedAt(reading.pos, last)) {
       failRide(
