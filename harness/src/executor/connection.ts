@@ -2,6 +2,7 @@
 
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
+import { componentText, lodestoneTarget, nbtPlain } from "../heard.ts";
 import type { StageName } from "../report.ts";
 import { respawnReseats } from "../combat.ts";
 import { createHarnessBot, type HarnessBot } from "../client-loaded.ts";
@@ -358,6 +359,31 @@ export const methods = {
       };
     })._client;
     typeClient?.on?.("registry_data", (packet: unknown) => this.damageTypes.observe(packet));
+    // What the bot is shown (`heard.ts`), written into the log when it
+    // changes: the action-bar line — a race's credit, a missed checkpoint —
+    // and where the engine's compass points.
+    {
+      let lastBar = "";
+      typeClient?.on?.("action_bar", (packet: unknown) => {
+        const text = componentText(nbtPlain((packet as { text?: unknown })?.text));
+        if (text === lastBar) return;
+        lastBar = text;
+        process.stderr.write(`[shown] action bar during step ${this.currentStep}: ${text}\n`);
+      });
+      let lastAim = "";
+      const inv = (bot as unknown as {
+        inventory?: { on?: (e: string, f: (slot: number, old: unknown, item: unknown) => void) => void };
+      }).inventory;
+      inv?.on?.("updateSlot", (_slot: number, _old: unknown, item: unknown) => {
+        const it = item as { name?: string; components?: unknown } | null;
+        if (it?.name !== "compass") return;
+        const at = lodestoneTarget(it.components);
+        const aim = at ? JSON.stringify(at) : "nothing (spinning)";
+        if (aim === lastAim) return;
+        lastAim = aim;
+        process.stderr.write(`[shown] compass aims at ${aim} during step ${this.currentStep}\n`);
+      });
+    }
     typeClient?.prependListener?.("damage_event", (packet: unknown) => {
       const p = packet as { entityId?: unknown; sourceTypeId?: unknown };
       if (p.entityId !== bot.entity?.id) return;
