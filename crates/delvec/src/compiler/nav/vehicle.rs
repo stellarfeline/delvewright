@@ -1179,8 +1179,16 @@ fn ride_with(
         }
         for l in world.leaving_cells_of(v, m) {
             // Nor on the goal's own cell: what the party came for stands
-            // there — a body it talks to, a thing it takes.
-            if kept(l) || l == goal {
+            // there — a body it talks to, a thing it takes. Nor in a course's
+            // finish: a body that steps off there has finished the race on
+            // foot, and the walks in front of a reach that runs the course
+            // keep out of its finish (spec-0139 §4, `DW1144`).
+            if kept(l)
+                || l == goal
+                || course
+                    .last()
+                    .is_some_and(|b| crate::compiler::nav::race::cell_in_box(l, b))
+            {
                 continue;
             }
             let e = best.entry(l).or_insert((len, m));
