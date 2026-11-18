@@ -1188,7 +1188,7 @@ pub(super) fn emit_functions(
                     // the race's end completes it wherever the party stands. A
                     // party still on the course when the grace runs out is not
                     // owed a ride to the line before the story goes on.
-                    if false && o.course().is_some() {
+                    if o.course().is_some() {
                         tick.push(format!(
                             "execute as @a{} run function {ns}:complete_{}",
                             pending_guard(plan, o, &qa),
