@@ -4455,6 +4455,36 @@
             "after": [
               "obj/fish-off-the-slip"
             ],
+            "anchor": "anchor/long-hall-near-rim",
+            "answers": {
+              "done": "Your salmon already lies on the rim.",
+              "missing_item": "The rim's toll is a salmon, and your hand holds none.",
+              "not_yet": "The rim wants nothing from you yet."
+            },
+            "happening": {
+              "subject": "anchor/long-hall-near-rim",
+              "text": "the party lays one of its salmon on the basin's near rim, the toll for the boat",
+              "verb": "gains"
+            },
+            "hint": "The basin takes a toll before you row: lay a salmon anywhere along its near rim.",
+            "id": "obj/lay-the-toll",
+            "region": {
+              "anchor": "anchor/long-hall-near-rim",
+              "extent": [
+                2,
+                0,
+                0
+              ]
+            },
+            "requires_item": "minecraft:salmon",
+            "takes_item": true,
+            "title": "Lay a salmon on the rim",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/lay-the-toll"
+            ],
             "anchor": "anchor/long-hall-far-bank",
             "answers": {
               "done": "The lever is thrown; water mutters somewhere under the flags.",
