@@ -16,10 +16,8 @@
 //!   story stance credits a performed act's flag from the start, so the
 //!   purchase read as already made and its own `forbids_flags` as shut.
 //!
-//! The fixed path pays the reach's key in front of it, by the first act whose
-//! gate holds there — the purchase, by mock — and takes the selection's choice
-//! as late as the reading allows, after the reach. A debt no act can pay is
-//! `DW0204`.
+//! The fixed path takes the choice, then the trigger it opens, then the reach;
+//! or the purchase by mock, then the reach. A debt no act can pay is `DW0204`.
 //!
 //! The trigger stands at the latch, off the keeper's walk to the door. A world
 //! that is trusted and performs nothing leaves it open and never fires it, so
@@ -190,13 +188,10 @@ fn every_world_that_reads_the_key_performs_an_act_that_sets_it() {
         let take = position(&s, "reach", "obj/take");
         let trusted = row["selection"]["alternatives"][0] == json!(["flag/trusted"]);
         if trusted {
-            // The read is paid in front of it by the first act whose gate
-            // holds there, the purchase; the selection's choice, which no
-            // step reads, is taken as late as the reading allows — in front
-            // of the last step at which it can be taken, after the read.
-            let bought = position(&s, "mock", "shop/stall/offer-0");
+            // The selection's choice, then the trigger it opens, then the read.
             let chose = position(&s, "choose", choice);
-            assert!(bought < take && take < chose, "{} walks {s:?}", row["id"]);
+            let key = position(&s, "trigger", "trigger/key");
+            assert!(chose < key && key < take, "{} walks {s:?}", row["id"]);
             assert_eq!(
                 row["entry_choices"],
                 json!([{"npc": "npc/keeper", "option": 4, "command": choice}]),

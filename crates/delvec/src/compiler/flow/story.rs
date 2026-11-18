@@ -849,6 +849,27 @@ impl<'a> Flow<'a> {
             .collect()
     }
 
+    /// Whether the harness walks `p` by a step of its own: a choice and a
+    /// trigger always; an elective act unless it has no harness step kind
+    /// ([`Self::act_undrivable`]).
+    fn payer_harnessable(&self, p: &Payer) -> bool {
+        match p {
+            Payer::Choice(_) => true,
+            Payer::Trigger(id) | Payer::Act(id) => self.act_undrivable(id).is_none(),
+        }
+    }
+
+    /// **Why the harness has no step kind for act `id`**, when it has none
+    /// ([`Elective::undrivable`]): the one answer the debt walk's choice of
+    /// payer and the branch plan's no-path verdict both read.
+    pub(crate) fn act_undrivable(&self, id: &str) -> Option<&'static str> {
+        self.acts()
+            .electives
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| e.undrivable)
+    }
+
     /// Whether `p` can be performed at `o`, in front of a step of `quest`: its
     /// gate's three axes for an act; for a choice, the option takeable from a
     /// root a body offers and its speaker standing in a place a body can be at
@@ -950,39 +971,44 @@ impl<'a> Flow<'a> {
             return None;
         }
         let payers = self.payers(flag, sel, performs, &o.paid);
-        for direct in [true, false] {
-            for p in &payers {
-                let missing = self.payer_missing(p, flag, o);
-                if direct != missing.is_empty() {
-                    continue;
-                }
-                let mut next = o.clone();
-                let mut pays: Vec<(Payer, String)> = Vec::new();
-                let mut ok = true;
-                for m in &missing {
-                    if next.st.flags.contains(m) {
+        // A payer the harness can drive (or a choice) before one it can
+        // neither drive nor mock ([`Self::act_undrivable`]): a world whose
+        // path leans on the second exports no walk at all.
+        for harnessable in [true, false] {
+            for direct in [true, false] {
+                for p in &payers {
+                    let missing = self.payer_missing(p, flag, o);
+                    if direct != missing.is_empty() || self.payer_harnessable(p) != harnessable {
                         continue;
                     }
-                    match self.pay(&next, m, sel, performs, at, quest, depth + 1) {
-                        Some((n, more)) => {
-                            next = n;
-                            pays.extend(more);
+                    let mut next = o.clone();
+                    let mut pays: Vec<(Payer, String)> = Vec::new();
+                    let mut ok = true;
+                    for m in &missing {
+                        if next.st.flags.contains(m) {
+                            continue;
                         }
-                        None => {
-                            ok = false;
-                            break;
+                        match self.pay(&next, m, sel, performs, at, quest, depth + 1) {
+                            Some((n, more)) => {
+                                next = n;
+                                pays.extend(more);
+                            }
+                            None => {
+                                ok = false;
+                                break;
+                            }
                         }
                     }
+                    if !ok || !self.payer_enabled(p, sel, &next, quest) {
+                        continue;
+                    }
+                    self.apply_payer(p, &mut next, at + 1);
+                    if !next.st.flags.contains(flag) {
+                        continue;
+                    }
+                    pays.push((p.clone(), flag.to_string()));
+                    return Some((next, pays));
                 }
-                if !ok || !self.payer_enabled(p, sel, &next, quest) {
-                    continue;
-                }
-                self.apply_payer(p, &mut next, at + 1);
-                if !next.st.flags.contains(flag) {
-                    continue;
-                }
-                pays.push((p.clone(), flag.to_string()));
-                return Some((next, pays));
             }
         }
         None

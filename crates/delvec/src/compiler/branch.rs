@@ -3073,11 +3073,6 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
         .iter()
         .map(|e| (e.path.as_str(), e.id.as_str()))
         .collect();
-    let undrivable: BTreeMap<&str, &str> = story
-        .electives
-        .iter()
-        .filter_map(|e| e.undrivable.map(|r| (e.id.as_str(), r)))
-        .collect();
     let mut out = Vec::new();
     for (k, w) in story.worlds.iter().enumerate() {
         let run = &story.runs[k];
@@ -3163,10 +3158,7 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
         // engine's own bundle function, asserted by the terms it changes. A
         // world still exports no path when its act has no such function, or
         // changes nothing the replay reads (a mock of it would assert nothing).
-        let mocks = if deeds
-            .iter()
-            .any(|(a, _)| undrivable.contains_key(a.as_str()))
-        {
+        let mocks = if deeds.iter().any(|(a, _)| flow.act_undrivable(a).is_some()) {
             crate::compiler::plan::path_mocks(c, &flow, pt)
         } else {
             Vec::new()
@@ -3174,7 +3166,7 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
         let needs: Vec<String> = deeds
             .iter()
             .filter_map(|(a, _)| {
-                let r = undrivable.get(a.as_str())?;
+                let r = flow.act_undrivable(a)?;
                 let mock = mocks.iter().find_map(|(_, m)| match m {
                     crate::compiler::plan::Step::Mock { act, after, .. } if act == a => Some(after),
                     _ => None,
