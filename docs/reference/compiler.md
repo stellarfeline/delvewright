@@ -3296,7 +3296,14 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `choose`** (format 10): `{npc, pos, command, sets}` — a story world's dialogue
   option that completes no objective, which the world's path takes because its
   selection chose it or because a flag a later step reads comes from it
-  (`flow::Flow::story_debts`). The harness walks to the NPC and proves the body
+  (`flow::Flow::story_debts`). It is taken in front of the first step at which
+  the option is offered **and the place the cast ledger stations its speaker
+  at is open**: reached from the layout graph's entry over the connections
+  whose `gating` the walk's flags and completed quests satisfy
+  (`flow::Flow::speaker_reachable`, `layout::Closure::reached_holding`), so a
+  speaker below a way a later beat opens is spoken to after that beat; a
+  campaign with no layout graph, or a station no place spells, is not held
+  back. The harness walks to the NPC and proves the body
   reachable as for a `talk-to`, chats `command`, and passes when every `sets`
   term (the option's flags, `dw.f_<flag>` at 1 on the party) holds on the server.
   `pos` is where the cast ledger stations the NPC for that beat, read with the

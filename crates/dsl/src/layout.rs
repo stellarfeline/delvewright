@@ -1000,10 +1000,28 @@ impl Closure {
     /// hands a body and `quest_grants` what completing a quest does.
     #[must_use]
     pub fn run(graph: &LayoutGraphContent, grants: &Grants) -> Closure {
-        let mut c = Closure::default();
+        Closure::run_holding(graph, grants, &BTreeSet::new())
+    }
+
+    /// **The places a body can be at while it already holds `held`** — the
+    /// same closure, seeded with what a walk of the story has produced by a
+    /// point of it (its flags and its completed quests), and with no place
+    /// granting anything further. What a story world reads to ask whether a
+    /// speaker's place is open yet: a way whose gating `held` does not
+    /// satisfy is shut, exactly as [`Closure::run`] reads it.
+    #[must_use]
+    pub fn reached_holding(graph: &LayoutGraphContent, held: &BTreeSet<Grant>) -> BTreeSet<String> {
+        Closure::run_holding(graph, &Grants::default(), held).reached
+    }
+
+    /// [`Closure::run`] from a body that already holds `held`.
+    fn run_holding(graph: &LayoutGraphContent, grants: &Grants, held: &BTreeSet<Grant>) -> Closure {
+        let mut c = Closure {
+            obtained: held.clone(),
+            ..Closure::default()
+        };
         c.reached.insert(graph.entry.0.clone());
-        c.obtained_when
-            .insert(graph.entry.0.clone(), BTreeSet::new());
+        c.obtained_when.insert(graph.entry.0.clone(), held.clone());
         loop {
             let before = (c.reached.len(), c.obtained.len());
             // (a) + (b): every edge whose demand is met carries a body, in the
