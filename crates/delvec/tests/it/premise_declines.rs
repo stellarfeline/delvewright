@@ -183,9 +183,10 @@ fn the_graph_declines_are_enumerated() {
         // path performs, so the question is whether the party, walked on cue
         // to where the wave is seated, gets its feet wet there.
         ("compiler/engage.rs", ".walk_region(", 1, Question::BotRoute),
-        // The bot's own route. `holders::walk_world`: the stance a holder
-        // `collect` is taken from, where the critical path's leg ends and the
-        // bot takes the item (spec-0111 §5.2).
+        // The bot's own route. `holders::stance_walk`: the stance a holder
+        // `collect` is taken from (spec-0111 §5.2) and an area `interact` is
+        // clicked from (`nav::area`), where the critical path's leg ends and
+        // the bot acts.
         (
             "compiler/holders.rs",
             ".walk_region_rooted(",
