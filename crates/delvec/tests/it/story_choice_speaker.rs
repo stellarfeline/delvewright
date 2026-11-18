@@ -178,4 +178,10 @@ fn a_speaker_no_way_reaches_offers_nothing() {
         taken.is_empty(),
         "worlds {taken:?} of {n} speak to the hermit"
     );
+    // And no world owes a choice its path cannot take: the solve does not
+    // credit the hermit's flag to a world that never opens the den, so the
+    // trusted selection's choice is not owed there (else `DW0204`, "no point
+    // of its path offers that option").
+    let unpaid: Vec<&String> = flow.story().runs.iter().flat_map(|r| &r.unpaid).collect();
+    assert!(unpaid.is_empty(), "{unpaid:#?}");
 }
