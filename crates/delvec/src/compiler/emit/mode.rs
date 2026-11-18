@@ -126,6 +126,17 @@ pub(crate) fn mode_drive_term(
     holds_some(c, quest).then_some((MODE_SCORE, 0))
 }
 
+/// The `#party` term that **holds** `quest`: the map put in the first mode
+/// that does not keep it, as `(objective, value)`. The break line of the term
+/// [`mode_drive_term`] opens; `None` for a quest no mode holds.
+pub(crate) fn mode_hold_term(
+    c: &delvewright_dsl::Campaign,
+    quest: &str,
+) -> Option<(&'static str, i32)> {
+    let first = *c.quests.content.modes_holding(quest).first()?;
+    Some((MODE_SCORE, i32::try_from(first).ok()?))
+}
+
 /// Every limited objective a mode can hold — its quest is not kept by some
 /// mode — with its quest, in declaration order.
 pub(crate) fn holdable_clocks(
