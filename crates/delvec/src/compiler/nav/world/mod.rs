@@ -796,16 +796,27 @@ impl World {
 
     /// Every gate anchor whose world-load seal a route's `cells` pass through, in
     /// `(area, anchor)` order — the blame list [`DW_GATE_NEVER_OPENED`] names.
+    ///
+    /// Asked of the **player's body**, as [`World::lethal_volumes_over`] is: a
+    /// route cell is where the feet stand, and the body fills the column above
+    /// it to its height. A walk down a ladder through a hole in a floor stands
+    /// its feet below the hole while its head is in it, so a seal in the hole
+    /// closes the walk without holding any feet cell; read by the feet alone,
+    /// the refusal named no gate and called itself a compiler defect.
     pub(in crate::compiler::nav) fn gate_seals_over(
         &self,
         cells: &[[i32; 3]],
     ) -> Vec<&crate::compiler::assembled::GateSeal> {
+        let fp = Footprint::player();
         self.modelled_seals()
             .filter(|s| {
                 let (lo, hi) = s.region;
-                cells
-                    .iter()
-                    .any(|c| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i])))
+                cells.iter().any(|c| {
+                    (0..fp.height).any(|dy| {
+                        let b = [c[0], c[1] + dy, c[2]];
+                        (0..3).all(|i| lo[i].min(hi[i]) <= b[i] && b[i] <= lo[i].max(hi[i]))
+                    })
+                })
             })
             .collect()
     }
