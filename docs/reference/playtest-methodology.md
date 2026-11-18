@@ -147,6 +147,13 @@ it could attribute. Whether
 the bot survives a walk is not what a walk leg is for. Off a walk the refund rule
 above applies; on one no refund is added. A single blow of 20 or more, a lethal
 volume and a crush gate still kill.
+A hit no entity dealt is named by its damage type: the bot reads the
+configuration phase's `minecraft:damage_type` registry and each `damage_event`'s
+`sourceTypeId` (`harness/src/damage-type.ts`), and prints the type beside every
+hit it cannot attribute. A `minecraft:starve` hit — vanilla's every 80 ticks on
+an empty hunger bar — is the bot's own body, which a player would have fed: it is
+answered by one saturation effect that fills the bar, named in
+`staged_removals`, and no body near the bot is guessed at.
 A scripted death waits until the respawned bot has sent `player_loaded`, which
 ends the server's client-load window (at most 60 ticks, counted on the server's
 clock, for a bot that cannot be asked), and is taken at the fight: a stage that recovers from an
