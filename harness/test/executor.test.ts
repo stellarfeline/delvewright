@@ -5292,7 +5292,8 @@ test("a gathered collect by a use holds the item and right-clicks the body, hand
   executor.beginStep(2);
   await within("executor.collect(SCOOP_STEP)", executor.collect(SCOOP_STEP));
   const acts = bot.calls.filter((c) => !c.startsWith("chat(/tellraw"));
-  assert.deepEqual(acts, ["goto", "equip(water_bucket,hand)", "lookAt", "activateEntity(90)"]);
+  // The bot already stands at the place, so the walk is a no-op.
+  assert.deepEqual(acts, ["equip(water_bucket,hand)", "lookAt", "activateEntity(90)"]);
 });
 
 test("a box standing over the body takes the ray, and the use fails naming both", async () => {
