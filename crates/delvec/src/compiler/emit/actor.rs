@@ -65,6 +65,55 @@ pub(super) fn actor_answer_box_summon(
     ))
 }
 
+/// The fake player on `dw.sys` [`actor_answer_box_stand`] reads: `1` while
+/// some gathered collect owed a use on the body is open.
+pub(super) const ANSWER_BOX_ASIDE: &str = "#abody_aside";
+
+/// **The lines that stand an actor's answer box, unless a use is owed on the
+/// body** ([`crate::compiler::bodies::owed_uses`]): with no use owed, exactly
+/// [`actor_answer_box_summon`]; with one, the summon held behind
+/// [`ANSWER_BOX_ASIDE`], set while any collect owed a use on the body is open
+/// — activated (`#act_<obj>`) and not complete (`dw.o_<obj>`). Run by
+/// `spawn_actor_<id>` and by each owed collect's completion, so the box
+/// returns over a body that still stands once the use is no longer owed, and
+/// a spawn inside the window never puts it back. Empty for an actor that wears
+/// no box.
+pub(super) fn actor_answer_box_stand(
+    c: &delvewright_dsl::Campaign,
+    a: &delvewright_dsl::Actor,
+) -> Vec<String> {
+    let Some(summon) = actor_answer_box_summon(c, a) else {
+        return Vec::new();
+    };
+    let owed: Vec<&str> = crate::compiler::bodies::owed_uses(c)
+        .into_iter()
+        .filter(|u| u.actor.id == a.id)
+        .map(|u| u.objective)
+        .collect();
+    if owed.is_empty() {
+        return vec![summon];
+    }
+    let mut out = vec![format!(
+        "scoreboard players set {ANSWER_BOX_ASIDE} dw.sys 0"
+    )];
+    for o in owed {
+        out.push(format!(
+            "execute if score {} dw.sys matches 1 unless score {} {} matches 1 run scoreboard \
+             players set {ANSWER_BOX_ASIDE} dw.sys 1",
+            super::objective::activation_flag(o),
+            plan::PARTY,
+            plan::obj_score(o)
+        ));
+    }
+    let rest = summon
+        .strip_prefix("execute ")
+        .expect("an answer box summon is an `execute`");
+    out.push(format!(
+        "execute if score {ANSWER_BOX_ASIDE} dw.sys matches 0 {rest}"
+    ));
+    out
+}
+
 /// The line that removes an actor's answer box (spec-0119 §5.1), emitted by
 /// `unleash_<id>` and by `despawn-actor` before either touches the puppet.
 /// `None` for an actor that wears none.
@@ -630,7 +679,7 @@ pub(super) fn actor_fns(
         // spec-0135 §13: a seated actor is put aboard its vehicle.
         let aboard = rider_aboard_lines(plan, a.id.as_str());
         spawn.extend(aboard.iter().cloned());
-        spawn.extend(actor_answer_box_summon(plan.campaign, a));
+        spawn.extend(actor_answer_box_stand(plan.campaign, a));
         spawn.extend(capture.clone());
         out.push((format!("spawn_actor_{safe}"), lines(&spawn)));
         // spec-0119: the answer box goes before anything touches the puppet —
