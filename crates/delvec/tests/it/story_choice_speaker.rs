@@ -30,9 +30,10 @@ fn edit(path: &Path, f: impl FnOnce(&mut Value)) {
     std::fs::write(path, v.to_string()).unwrap();
 }
 
-/// hello-world with the hermit in the den; `gated` says whether the den's one
-/// connection waits on `flag/den-open`.
-fn fixture(tag: &str, gated: bool) -> PathBuf {
+/// hello-world with the hermit in the den; `gate` is the flag the den's one
+/// connection waits on, if any (`obj/talk` sets `flag/den-open`; nothing sets
+/// any other).
+fn fixture(tag: &str, gate: Option<&str>) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("story-choice-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::hello_world_dir(), &dir);
@@ -85,8 +86,8 @@ fn fixture(tag: &str, gated: bool) -> PathBuf {
         }]);
     });
     let mut den = json!({"a": "node/yard", "b": "node/den", "class": "climb", "id": "edge/den"});
-    if gated {
-        den["gating"] = json!({"flags": ["flag/den-open"], "learned": "hidden", "secret": ["den"]});
+    if let Some(flag) = gate {
+        den["gating"] = json!({"flags": [flag], "learned": "hidden", "secret": ["den"]});
     }
     let graph = json!({
         "campaign_id": "hello-world",
@@ -134,7 +135,7 @@ fn trusted_choices(c: &Campaign) -> (Vec<String>, Vec<(String, String)>) {
 
 #[test]
 fn a_choice_waits_for_the_way_to_its_speaker() {
-    let (path, choices) = trusted_choices(&parse(&fixture("gated", true)));
+    let (path, choices) = trusted_choices(&parse(&fixture("gated", Some("flag/den-open"))));
     // Binding: the path walks the keeper, then the door, and the trusted world
     // takes the hermit's choice once.
     assert_eq!(path, ["obj/talk", "obj/exit"], "{path:?}");
@@ -147,10 +148,34 @@ fn a_choice_waits_for_the_way_to_its_speaker() {
 
 #[test]
 fn a_choice_from_a_speaker_on_an_open_way_is_taken_where_it_is_offered() {
-    let (_, choices) = trusted_choices(&parse(&fixture("open", false)));
+    let (_, choices) = trusted_choices(&parse(&fixture("open", None)));
     assert_eq!(
         choices,
         [("npc/hermit".to_string(), "obj/talk".to_string())],
         "nothing shuts the den, so the choice stands in front of the first step"
+    );
+}
+
+/// A speaker no way ever reaches offers nothing: the solve does not credit
+/// the hermit's flag, so no story world's path takes his choice — before, the
+/// worlds whose selection took it walked from the spawn to a den that never
+/// opens.
+#[test]
+fn a_speaker_no_way_reaches_offers_nothing() {
+    let c = parse(&fixture("sealed", Some("flag/never-set")));
+    let flow = Flow::new(&c);
+    // Binding: the story worlds exist, so their paths were asked.
+    let n = flow.story_count();
+    assert!(n > 0, "the fixture has story worlds");
+    let taken: Vec<usize> = (0..n)
+        .filter(|&k| {
+            flow.story_playthrough(k)
+                .story
+                .is_some_and(|ctx| ctx.choices.iter().any(|(_, ch)| ch.npc == "npc/hermit"))
+        })
+        .collect();
+    assert!(
+        taken.is_empty(),
+        "worlds {taken:?} of {n} speak to the hermit"
     );
 }

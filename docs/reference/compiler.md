@@ -3301,9 +3301,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   at is open**: reached from the layout graph's entry over the connections
   whose `gating` the walk's flags and completed quests satisfy
   (`flow::Flow::speaker_reachable`, `layout::Closure::reached_holding`), so a
-  speaker below a way a later beat opens is spoken to after that beat; a
-  campaign with no layout graph, or a station no place spells, is not held
-  back. The harness walks to the NPC and proves the body
+  speaker below a way a later beat opens is spoken to after that beat. The
+  solve reads the same rule: a speaker's options produce nothing, and its
+  `talk-to` completes nothing, until its place is open, so a world that never
+  opens the way never takes a choice from behind it. A campaign with no layout
+  graph, or a station no place spells, is not held back. The harness walks to the NPC and proves the body
   reachable as for a `talk-to`, chats `command`, and passes when every `sets`
   term (the option's flags, `dw.f_<flag>` at 1 on the party) holds on the server.
   `pos` is where the cast ledger stations the NPC for that beat, read with the

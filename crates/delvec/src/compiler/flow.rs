@@ -2891,6 +2891,58 @@ impl<'a> Flow<'a> {
     /// open at this point, through options whose own gates `flags` satisfies?
     /// (Branch selection is not applied here: the replay already committed to
     /// one option per `talk-to`.)
+    /// **Whether a body can stand where `npc` speaks from** while the party
+    /// plays `upto` (every begun quest, when `upto` names none), having begun
+    /// `begun`, holding `flags` and having completed `done`: the place the cast
+    /// ledger stations it at then (its declared anchor where no row governs)
+    /// is reached from the layout graph's entry over the connections whose
+    /// gating those flags and quests satisfy
+    /// ([`delvewright_dsl::layout::Closure::reached_holding`]). An option is
+    /// taken from a speaker the party can walk to: one below a way that opens
+    /// on a later beat offers nothing before that beat, to the solve and to a
+    /// story world's path alike.
+    ///
+    /// `true` where the campaign has no layout graph, the speaker is declared
+    /// out of the world, or its anchor names no place the graph spells: the
+    /// document says nothing about the way to it, and the route proof judges it.
+    fn speaker_reachable(
+        &self,
+        npc: &str,
+        upto: &str,
+        begun: &BTreeSet<String>,
+        flags: &BTreeSet<String>,
+        done: &BTreeSet<String>,
+    ) -> bool {
+        use delvewright_dsl::layout::{Closure, Grant};
+        let Some(graph) = self.c.layout_graph.as_ref().map(|g| &g.content) else {
+            return true;
+        };
+        let anchor = match crate::compiler::cast::station(self.c, npc, upto, begun, flags) {
+            Some(crate::compiler::cast::Station::At(a, _)) => a.to_string(),
+            Some(crate::compiler::cast::Station::Absent(_)) => return true,
+            None => match self
+                .c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.id.as_str() == npc)
+            {
+                Some(n) => n.anchor.as_str().to_string(),
+                None => return true,
+            },
+        };
+        let Some(place) = graph.place_of(&anchor) else {
+            return true;
+        };
+        let held: BTreeSet<Grant> = flags
+            .iter()
+            .map(|f| Grant::Flag(f.clone()))
+            .chain(done.iter().map(|q| Grant::Quest(q.clone())))
+            .collect();
+        Closure::reached_holding(graph, &held).contains(place.0.as_str())
+    }
+
     fn option_takeable_now(&self, npc: &str, n: usize, st: &ReplayState) -> bool {
         let Some(t) = self.trees.iter().find(|t| t.npc == npc) else {
             return false;
@@ -3128,6 +3180,11 @@ impl<'a> Flow<'a> {
             let snapshot = s.flags.clone();
             let active = s.active.clone();
             for t in &self.trees {
+                // A speaker behind a way this world has not opened yet offers
+                // nothing ([`Self::speaker_reachable`]).
+                if !self.speaker_reachable(&t.npc, "", &active, &snapshot, &s.completed) {
+                    continue;
+                }
                 let takeable = |o: &OptModel| {
                     o.requires.iter().all(|f| snapshot.contains(f))
                         && self.selectable(&t.npc, o.n, world)

@@ -858,53 +858,15 @@ impl<'a> Flow<'a> {
             Payer::Choice(c) => {
                 self.selectable(&c.npc, c.n, sel)
                     && self.option_takeable_now(&c.npc, c.n, &o.st)
-                    && self.speaker_reachable(&c.npc, quest, &o.st)
+                    && self.speaker_reachable(
+                        &c.npc,
+                        quest,
+                        &o.st.active.union(&o.st.done_quest).cloned().collect(),
+                        &o.st.flags,
+                        &o.st.done_quest,
+                    )
             }
         }
-    }
-
-    /// **Whether a body can stand where `npc` speaks from**, in front of a step
-    /// of `quest` with `st` held: the place the cast ledger stations it at then
-    /// (the declared anchor where no ledger row governs) is reached from the
-    /// layout graph's entry over the connections whose gating `st`'s flags and
-    /// completed quests satisfy ([`delvewright_dsl::layout::Closure::reached_holding`]).
-    /// A choice is taken from a speaker the party can walk to: one below a way
-    /// that opens on a later beat is spoken to after that beat.
-    ///
-    /// `true` where the campaign has no layout graph, the speaker is declared
-    /// out of the world, or its anchor names no place the graph spells: the
-    /// document says nothing about the way to it, and the route proof judges it.
-    fn speaker_reachable(&self, npc: &str, quest: &str, st: &ReplayState) -> bool {
-        use delvewright_dsl::layout::{Closure, Grant};
-        let Some(graph) = self.c.layout_graph.as_ref().map(|g| &g.content) else {
-            return true;
-        };
-        let begun: BTreeSet<String> = st.active.union(&st.done_quest).cloned().collect();
-        let anchor = match crate::compiler::cast::station(self.c, npc, quest, &begun, &st.flags) {
-            Some(crate::compiler::cast::Station::At(a, _)) => a.to_string(),
-            Some(crate::compiler::cast::Station::Absent(_)) => return true,
-            None => match self
-                .c
-                .npcs
-                .content
-                .npcs
-                .iter()
-                .find(|n| n.id.as_str() == npc)
-            {
-                Some(n) => n.anchor.as_str().to_string(),
-                None => return true,
-            },
-        };
-        let Some(place) = graph.place_of(&anchor) else {
-            return true;
-        };
-        let held: BTreeSet<Grant> = st
-            .flags
-            .iter()
-            .map(|f| Grant::Flag(f.clone()))
-            .chain(st.done_quest.iter().map(|q| Grant::Quest(q.clone())))
-            .collect();
-        Closure::reached_holding(graph, &held).contains(place.0.as_str())
     }
 
     fn apply_payer(&self, p: &Payer, o: &mut Owing, pos: usize) {
