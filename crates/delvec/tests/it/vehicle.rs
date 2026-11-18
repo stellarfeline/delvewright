@@ -2347,11 +2347,11 @@ fn a_course_is_ridden_through_its_checkpoints_in_the_order_written() {
         credit.ends_with(",z=7,dz=0] run return run function hello-world:race_pig_race_pass"),
         "{credit}"
     );
-    let second = line("execute if score @s dw.rn.pig_race matches 1 if entity @s[x=14,dx=0,");
+    let second = line("execute if score @s dw.rn.pig_race matches 1 if entity @s[x=12,dx=4,");
     assert!(second.ends_with("race_pig_race_pass"), "{second}");
     let missed = line(
         "execute if score @s dw.rn.pig_race matches ..0 if entity \
-         @s[type=minecraft:player,x=14,dx=0,",
+         @s[type=minecraft:player,x=12,dx=4,",
     );
     assert!(
         missed.contains(",z=7,dz=0] run return run title @s actionbar "),
