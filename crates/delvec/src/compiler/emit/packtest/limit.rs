@@ -321,6 +321,7 @@ pub(super) fn emit_limit_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.extend(hold.iter().cloned());
             b.extend(open.iter().cloned());
             b.push(format!("function {ns}:{start}"));
+            b.push(super::super::quest::complete_latch_open(oid));
             b.push(format!("function {ns}:complete_{}", safe_obj_fn(oid)));
             b.push(format!("await delay {step}t"));
             b.push(format!(

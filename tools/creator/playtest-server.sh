@@ -611,21 +611,19 @@ dw_saved_world_npc_count() {
 # the world is placed: `Done (` comes ticks before `setup` has even started the
 # build, and the NPCs are summoned by `setup_finish`, its last step.
 #
-# Then: the pack's objectives exist, and every NPC the campaign has standing at
+# Then: the pack's objectives exist — proved by the placed reading itself, a
+# named score on the named `dw.sys` objective (`Test passed` is possible only
+# when that objective is loaded; an unloaded pack answers `Unknown scoreboard
+# objective` until the budget runs out) — and not by listing every objective,
+# whose reply grows with the campaign past the rcon reply ceiling. Every NPC the campaign has standing at
 # world init is in the saved world — counted, against the campaign's own
 # declaration. A campaign that declares none (a one-room demo level) is
 # legitimate and owes none. On failure sets DW_VERIFY_FAILURE and returns 1.
 dw_playtest_verify_campaign() {
   local container="$1" campaign="$2" world="$3" budget="$4" poll="$5"
-  local objectives declared owed saved found
+  local declared owed saved found
   DW_VERIFY_FAILURE=""
   dw_playtest_wait_placed "$container" "$budget" "$poll" || return 1
-  if ! objectives="$(dw_rcon "$container" "scoreboard objectives list")"; then
-    DW_VERIFY_FAILURE="the server refused \`scoreboard objectives list\`"; return 1
-  fi
-  if [[ $objectives != *"dw."* ]]; then
-    DW_VERIFY_FAILURE="no dw.* objectives — datapack not loaded"; return 1
-  fi
   if ! declared="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$campaign/npcs.json")"; then
     DW_VERIFY_FAILURE="cannot read the NPC count from $campaign/npcs.json"; return 1
   fi
@@ -1636,8 +1634,16 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
 else
   # `admit.sys` is created by `admit:load`, so its absence is a pack the server
   # dropped rather than a world that is merely slow.
-  OBJECTIVES="$(rcon "scoreboard objectives list")"
-  [[ $OBJECTIVES == *"admit.sys"* ]] || die_or_oom "no admit.sys objective — the gallery datapack did not load"
+  # A named score on the named objective, not the list of every objective: the
+  # reply to a list grows with the pack past the rcon reply ceiling. `Test
+  # passed` or `Test failed` are both possible only when `admit.sys` exists;
+  # an unloaded pack answers `Unknown scoreboard objective`.
+  ADMIT_READ="$(rcon_raw "execute if score #dwlabels admit.sys matches -2147483648..2147483647" || true)"
+  ADMIT_READ="${ADMIT_READ%"${ADMIT_READ##*[![:space:]]}"}"
+  case "$ADMIT_READ" in
+    "Test passed"|"Test failed") ;;
+    *) die_or_oom "no admit.sys objective — the gallery datapack did not load (the server answered: ${ADMIT_READ:-nothing})";;
+  esac
   # One label per exhibit, COUNTED against the layout the same build wrote.
   # `execute if entity` answers only pass/fail, and a pass over one label of nine
   # exhibits is the vacuity this project keeps paying for — so the count is

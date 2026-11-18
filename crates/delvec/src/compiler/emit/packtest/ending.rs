@@ -49,29 +49,35 @@ pub(crate) struct EndingTemplate {
     pub(crate) asserted: usize,
 }
 
-/// The function a final scene is lowered into, as the line that runs it.
-fn scene_driver(plan: &Plan, scene: &str, me: &str) -> Option<String> {
+/// The function a final scene is lowered into, as the lines that run it.
+fn scene_driver(plan: &Plan, scene: &str, me: &str) -> Option<Vec<String>> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let segs: Vec<&str> = scene.trim_start_matches('/').split('/').collect();
     match segs.as_slice() {
         ["content", "quests", i, "on_complete"] => {
             let q = c.quests.content.quests.get(i.parse::<usize>().ok()?)?;
-            Some(format!(
+            Some(vec![format!(
                 "function {ns}:complete_q_{}",
                 plan::safe_local(q.id.as_str())
-            ))
+            )])
         }
-        ["content", "quests", _, "on_objective_complete", "obj", o] => Some(format!(
-            "execute as {me} at {me} run function {ns}:complete_{}",
-            safe_obj_fn(&format!("obj/{o}"))
-        )),
+        ["content", "quests", _, "on_objective_complete", "obj", o] => {
+            let oid = format!("obj/{o}");
+            Some(vec![
+                super::super::quest::complete_latch_open(&oid),
+                format!(
+                    "execute as {me} at {me} run function {ns}:complete_{}",
+                    safe_obj_fn(&oid)
+                ),
+            ])
+        }
         ["content", "triggers", i, "effects"] => {
             let t = c.quests.content.triggers.get(i.parse::<usize>().ok()?)?;
-            Some(format!(
+            Some(vec![format!(
                 "function {ns}:trig_{}",
                 plan::safe_local(t.id.as_str())
-            ))
+            )])
         }
         _ => None,
     }
@@ -442,7 +448,7 @@ fn templates_and_unproven(plan: &Plan) -> (Vec<EndingTemplate>, Vec<String>) {
             }
             // The scene, through its real function, and every part of it the
             // emitter scheduled, in tick order.
-            t.push(driver);
+            t.extend(driver);
             let mut scheduled: Vec<(u32, String)> = Vec::new();
             drive(plan, list, 0, scene_audience(&scene.path), &mut scheduled);
             scheduled.sort_by_key(|(tick, _)| *tick);

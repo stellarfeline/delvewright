@@ -39,6 +39,7 @@ pub(super) fn emit_carrier_one_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.push(format!("clear @s {item}"));
             b.push(format!("clear {other_sel} {item}"));
         }
+        b.push(super::super::quest::complete_latch_open(oid));
         b.push(format!(
             "execute as @s run function {ns}:complete_{}",
             safe_obj_fn(oid)
@@ -107,6 +108,170 @@ fn judged_carrier_gives(c: &delvewright_dsl::Campaign) -> Vec<(&str, Vec<(&str, 
         }
     }
     out
+}
+
+/// The players a seat-once template completes its objective as: its own
+/// dummy and two members it spawns.
+const SEAT_ONCE_PARTY: u32 = 3;
+
+/// Every objective whose completion bundle seats a wave at its top level, with
+/// the wave and whether the seat stands under no `when`/`in` envelope — the
+/// seats a seat-once template can drive without opening a gate it does not own.
+fn completion_seats(c: &delvewright_dsl::Campaign) -> Vec<(&str, &str, bool)> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            let oid = o.id().as_str();
+            for e in objective_effects(c, oid) {
+                if let Verb::SpawnWave { wave } = &e.verb {
+                    out.push((oid, wave.as_str(), e.when.is_none() && e.within.is_none()));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Generated **seat-once** PackTests: one per objective whose completion
+/// bundle seats a placed wave at its top level with no envelope.
+///
+/// The claim a single dummy cannot make: a completion is dispatched as a fork
+/// over the players present (`execute as @a … run function complete_<obj>`),
+/// and to a party of one a fork and a single call are the same thing. The
+/// template runs alone (its own test environment, so `@a` is its own
+/// players), spawns two members beside its dummy, makes the objective
+/// not-done, and completes it through the real `complete_<obj>` under that
+/// fork. The bodies of the wave that were not standing before must be exactly
+/// the count the wave declares for the three players present: one seating,
+/// never one per player.
+pub(super) fn emit_seat_once_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+) -> SeatOnceBinding {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let seats = completion_seats(c);
+    let mut b = SeatOnceBinding {
+        seats: seats.len(),
+        enveloped: seats.iter().filter(|(_, _, bare)| !bare).count(),
+        ..SeatOnceBinding::default()
+    };
+    // Per objective (content order), each wave its bare seats name, with how
+    // many times the bundle seats it.
+    let mut by_obj: Vec<(&str, BTreeMap<&str, u32>)> = Vec::new();
+    for (oid, wid, bare) in seats {
+        if !bare || !wave_placements.contains_key(wid) {
+            continue;
+        }
+        if by_obj.last().is_none_or(|(o, _)| *o != oid) {
+            by_obj.push((oid, BTreeMap::new()));
+        }
+        if let Some((_, waves)) = by_obj.last_mut() {
+            *waves.entry(wid).or_insert(0) += 1;
+        }
+    }
+    for (n, (oid, waves)) in by_obj.into_iter().enumerate() {
+        let osafe = plan::safe_local(oid);
+        let name = format!("party_seat_once_{osafe}");
+        let before = format!("dw_t_pso_{osafe}");
+        let members: Vec<String> = (1..SEAT_ONCE_PARTY)
+            // A player's name is at most 16 characters: numbered, never named
+            // after the objective.
+            .map(|k| format!("dwso{n}p{k}"))
+            .collect();
+        let named: Vec<String> = waves.keys().map(|w| format!("`{w}`")).collect();
+        let mut t = packtest_header(&format!(
+            "{}: completing `{oid}` with {SEAT_ONCE_PARTY} players present seats {} once, \
+             at the count declared for {SEAT_ONCE_PARTY} players",
+            artifact_title(c),
+            named.join(", ")
+        ));
+        t.insert(1, super::limit::alone(ns, &name, out));
+        t.push(format!("function {ns}:setup"));
+        // The three players, by a tag this template sets: its own dummy and
+        // the two members it spawns.
+        let party = format!("dw_t_psop_{osafe}");
+        let (pin, _) = pin_dummy(&party);
+        t.push(pin);
+        for m in &members {
+            t.push(format!("dummy {m} spawn"));
+            t.push(format!("tag @a[name={m},limit=1] add {party}"));
+        }
+        // The bodies already standing are not this drive's.
+        for wid in waves.keys() {
+            t.push(format!("tag @e[tag={}] add {before}", plan::wave_tag(wid)));
+        }
+        t.push(super::super::quest::complete_latch_open(oid));
+        // The dispatch's own shape: one fork over every player present.
+        t.push(format!(
+            "execute as @a[tag={party}] run function {ns}:complete_{}",
+            safe_obj_fn(oid)
+        ));
+        for (k, (wid, seated)) in waves.iter().enumerate() {
+            let Some(w) = c
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|w| w.id.as_str() == *wid)
+            else {
+                continue;
+            };
+            let tag = plan::wave_tag(wid);
+            let want: u32 = seated
+                * w.mobs
+                    .iter()
+                    .map(|m| m.count.at(SEAT_ONCE_PARTY))
+                    .sum::<u32>();
+            let held = format!("#pso_{osafe}_{k}");
+            t.push(format!(
+                "execute store result score {held} dw.sys if entity @e[tag={tag},tag=!{before}]"
+            ));
+            t.push(format!("assert score {held} dw.sys matches {want}"));
+        }
+        // No residue: this drive's bodies go, the tag goes, the members leave.
+        for wid in waves.keys() {
+            t.push(format!(
+                "kill @e[tag={},tag=!{before}]",
+                plan::wave_tag(wid)
+            ));
+        }
+        t.push(format!("tag @e[tag={before}] remove {before}"));
+        t.push(format!("tag @a[tag={party}] remove {party}"));
+        for m in &members {
+            t.push(format!("dummy {m} leave"));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+        b.judged += 1;
+    }
+    b
+}
+
+/// What the seat-once templates bound on one build.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SeatOnceBinding {
+    /// `spawn-wave` effects at the top level of an objective's completion bundle.
+    pub seats: usize,
+    /// Of those, under a `when` or an `in` envelope: not driven.
+    pub enveloped: usize,
+    /// Objectives a `party_seat_once_<obj>` template drives.
+    pub judged: usize,
+}
+
+impl SeatOnceBinding {
+    /// The one line a build prints.
+    pub fn line(&self) -> String {
+        format!(
+            "seat-once binding: {} wave seat(s) at an objective completion's top level, \
+             {} under a `when`/`in` envelope (not driven); {} objective(s) completed under a \
+             {SEAT_ONCE_PARTY}-player fork by a `party_seat_once` PackTest",
+            self.seats, self.enveloped, self.judged
+        )
+    }
 }
 
 /// What the party-division checks bound on one build, counted off the emitted
@@ -694,6 +859,7 @@ pub(super) fn emit_party_crossing_packtests(plan: &Plan, out: &mut BuildOutput) 
             tz + 0.5
         ));
         b.push(format!("assert score #pcx_{k}_near dw.sys matches 0"));
+        b.push(super::super::quest::complete_latch_open(oid));
         b.push(format!(
             "execute as {me} run function {ns}:complete_{}",
             super::super::objective::safe_obj_fn(oid)

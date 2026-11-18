@@ -836,6 +836,7 @@ export const methods = {
       const sum = this.censusSummaries.get(enc.wave);
       if (sum && sum.seq > before) {
         const mobs = this.censusMobs.get(sum.seq) ?? [];
+        if (mobs.length > 0) this.waveLastStood.set(enc.wave, mobs.map((m) => m.pos));
         return { summary: sum, mobs };
       }
       if (Date.now() >= deadline) return undefined;

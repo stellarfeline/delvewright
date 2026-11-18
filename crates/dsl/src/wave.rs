@@ -207,9 +207,15 @@ impl MobCount {
     /// of the stack's bodies (`DW0312`, `DW0387`, `DW0983`) is judged at.
     #[must_use]
     pub fn max(self) -> u32 {
+        self.at(MAX_PARTY)
+    }
+
+    /// The count `players` (at least one) meet: `base + per_player × (n − 1)`.
+    #[must_use]
+    pub fn at(self, players: u32) -> u32 {
         match self {
             MobCount::Fixed(n) => n,
-            MobCount::Scaled(s) => s.base + s.per_player * (MAX_PARTY - 1),
+            MobCount::Scaled(s) => s.base + s.per_player * (players.max(1) - 1),
         }
     }
 

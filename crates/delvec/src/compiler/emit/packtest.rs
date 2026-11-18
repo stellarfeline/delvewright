@@ -329,6 +329,12 @@ pub(super) fn emit_packtest(
     // spec-0018: one two-player test per objective that hands a `carrier: one`
     // item, asserting exactly one member holds it.
     party::emit_carrier_one_packtests(plan, out);
+    // A completion that seats a wave seats it once with three players present.
+    // The binding is printed either way.
+    {
+        let b = party::emit_seat_once_packtests(plan, out, waves.placements);
+        crate::note!("{}", b.line());
+    }
     // spec-0141: the absent member — a count held between two members, a
     // grant owed to a member who arrives late, a class taken at a checkpoint.
     party::emit_party_collect_packtest(plan, out);
