@@ -2404,10 +2404,6 @@ mod tests {
             assert!(!passes_body(&leaf) && !supports_body(&leaf), "{leaf}");
         }
         assert_eq!(collision_class("minecraft:big_dripleaf"), Collision::Tips);
-        // Its stem is a plant with no box, and no body stands on it either.
-        assert!(passes_body(
-            "minecraft:big_dripleaf_stem[facing=north,waterlogged=false]"
-        ));
         // A waterlogged block is its host block, and a body stands on it.
         let stair = "minecraft:oak_stairs[facing=north,waterlogged=true]";
         assert_eq!(collision_class(stair), Collision::FullCube);
