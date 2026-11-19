@@ -147,8 +147,8 @@ impl BodyRoute {
 
 /// A cell's code: bits 0..=4 the collision shape (`0` none, `1..=16` a floor
 /// that many sixteenths tall, [`BARRIER`] a fence-class 1.5-block box), bit 5
-/// water, bit 6 lava, bit 7 a kept climbable, bits 8..=11 the [`Material`], and
-/// bits 16.. the footprint of a **sieve** ([`super::Floors::sieve`]): one plus
+/// water, bit 6 lava, bit 7 a kept climbable, bits 8..=11 the [`Material`], bit
+/// 12 [`TIPS`], and bits 16.. the footprint of a **sieve** ([`super::Floors::sieve`]): one plus
 /// its position in [`delvewright_dsl::blockshape::server_footprint_palette`],
 /// `0` for a shape that covers its cell.
 type Code = u32;
@@ -162,6 +162,10 @@ const BARRIER: Code = 24;
 const WATER: Code = 1 << 5;
 const LAVA: Code = 1 << 6;
 const CLIMB: Code = 1 << 7;
+/// A solid cell whose block tips a body standing on it off
+/// ([`super::Floors::tipping`]: a big dripleaf's leaf). Its box stops a body
+/// and catches a fall, but no landing on it is a rest ([`landing_cells`]).
+const TIPS: Code = 1 << 12;
 
 fn material_code(m: Material) -> Code {
     (match m {
@@ -601,6 +605,11 @@ impl Dense {
         for c in world.solid.iter() {
             let top = world.partial.get(&c).copied().unwrap_or(16) as Code;
             set(c, &|_| top.max(1));
+        }
+        for c in world.floors.tipping.iter() {
+            if world.solid.contains(c) {
+                set(*c, &|v| v | TIPS);
+            }
         }
         for c in world.tall.iter().chain(world.use_gates.iter()) {
             set(c, &|_| BARRIER);
@@ -1431,6 +1440,10 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
     for x in cell_floor(bb.min[0])..=cell_floor(bb.max[0]) {
         for z in cell_floor(bb.min[2])..=cell_floor(bb.max[2]) {
             for sy in [y0, y0 - 1].into_iter().take(if half { 2 } else { 1 }) {
+                // A leaf that tips holds the body a moment, never a rest.
+                if codes.code([x, sy, z]) & TIPS != 0 {
+                    continue;
+                }
                 boxes.clear();
                 world.shapes([x, sy, z], &mut boxes);
                 let under = boxes.iter().any(|b| {
@@ -2480,7 +2493,8 @@ fn reach_columns(k: i32) -> i32 {
 /// use-gate, 2 a killing cell, 3 furniture, 4 waterloggable, 5 flooded, 6
 /// lava, 7 solid, bits 8..=12 the partial height plus one (`0`: none), 13 a
 /// sieve ([`super::Floors::sieve`]: never a floor, and a fall passes it), and
-/// [`LEAF_BIT`] a door's or a trapdoor's leaf — every cell set a world query
+/// [`LEAF_BIT`] a door's or a trapdoor's leaf, and [`TIPPING_BIT`] a leaf that
+/// tips ([`super::Floors::tipping`]) — every cell set a world query
 /// reads, so two worlds equal here, in the snapshot and in their leaves
 /// ([`Raw::at`]) answer every query about the cell alike.
 fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
@@ -2523,11 +2537,17 @@ fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
     for c in w.floors.leaves.keys() {
         set(*c, LEAF_BIT);
     }
+    for c in w.floors.tipping.iter() {
+        set(*c, TIPPING_BIT);
+    }
     Chunked::new(&x)
 }
 
 /// The raw membership bit of a cell that holds a door's or a trapdoor's leaf.
 const LEAF_BIT: u16 = 1 << 14;
+
+/// The raw membership bit of a cell that holds a leaf that tips a body off.
+const TIPPING_BIT: u16 = 1 << 15;
 
 /// Per window cell, what a world query reads of it that the snapshot's code
 /// does not carry: its raw membership ([`raw_membership`]) and, at a cell
