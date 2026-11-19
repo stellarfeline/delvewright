@@ -43,6 +43,7 @@ impl Build {
                 unheld_climb: Default::default(),
                 material: Default::default(),
                 footprints: Default::default(),
+                tipping: Default::default(),
                 hiding: Default::default(),
                 hurting: Default::default(),
                 rails: Default::default(),
@@ -1550,5 +1551,41 @@ fn a_node_records_the_same_variant_whatever_the_flight_memo_holds() {
         moved.len(),
         flown.len(),
         &moved[..moved.len().min(8)]
+    );
+}
+
+/// **A launch that touches down on a big dripleaf's leaf rests nowhere.** The
+/// leaf's box catches the body (the simulator reads its cell as a floor), but
+/// the leaf tips it off, so `landing_cells` credits no cell over it; over the
+/// same cell in moss it credits that cell.
+#[test]
+fn a_touchdown_on_a_leaf_that_tips_is_no_landing() {
+    let world = |top: &str| {
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 0..7 {
+            for z in 0..5 {
+                cells.push(([x, 62, z], "minecraft:stone"));
+                cells.push((
+                    [x, 63, z],
+                    if [x, z] == [3, 2] {
+                        top
+                    } else {
+                        "minecraft:moss_block"
+                    },
+                ));
+            }
+        }
+        crate::compiler::nav::testkit::blocks_world(&cells)
+    };
+    let body = Attributes::PLAYER;
+    let feet = [3.5, 64.0, 2.5];
+    let moss = world("minecraft:moss_block");
+    let memo = moss.graph_memo(&ReachParams::shipped(false));
+    assert_eq!(landing_cells(&memo.dense, &body, feet), vec![[3, 64, 2]]);
+    let leaf = world("minecraft:big_dripleaf[facing=east,tilt=none,waterlogged=false]");
+    let memo = leaf.graph_memo(&ReachParams::shipped(false));
+    assert_eq!(
+        landing_cells(&memo.dense, &body, feet),
+        Vec::<[i32; 3]>::new()
     );
 }

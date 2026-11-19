@@ -496,7 +496,10 @@ pub fn passes_light(name: &str) -> bool {
         // A climbable is a cell a body is in (spec-0099), so it must pass light
         // or a player holding on a ladder is measured at light 0.
         Collision::Climbable => true,
-        Collision::TallBarrier | Collision::PartialFloor(_) | Collision::FullCube => {
+        Collision::TallBarrier
+        | Collision::PartialFloor(_)
+        | Collision::FullCube
+        | Collision::Tips => {
             light_block(name).is_some_and(|l| l.light_block == 0 && !l.shape_occludes)
         }
     }

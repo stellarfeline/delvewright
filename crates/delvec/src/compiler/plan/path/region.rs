@@ -123,7 +123,8 @@ impl RegionWrite {
             Collision::PartialFloor(_)
             | Collision::FullCube
             | Collision::TallBarrier
-            | Collision::OpensByHand => RegionWrite::Fill,
+            | Collision::OpensByHand
+            | Collision::Tips => RegionWrite::Fill,
         }
     }
 

@@ -1940,6 +1940,7 @@ mod tests {
             unheld_climb: BTreeMap::new(),
             material: Default::default(),
             footprints: Default::default(),
+            tipping: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),

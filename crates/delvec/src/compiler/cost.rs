@@ -139,10 +139,13 @@ fn rest_of(name: &str) -> Rest {
         Collision::Air | Collision::Thin(_) => Rest::None,
         Collision::Fluid => Rest::Water,
         Collision::Climbable => Rest::Climb,
+        // A leaf that tips (`Collision::Tips`) holds no rest, but the census is
+        // an upper bound and counts it with the barriers.
         Collision::PartialFloor(_)
         | Collision::FullCube
         | Collision::TallBarrier
-        | Collision::OpensByHand => Rest::Support,
+        | Collision::OpensByHand
+        | Collision::Tips => Rest::Support,
     }
 }
 
@@ -153,7 +156,7 @@ fn rest_of(name: &str) -> Rest {
 fn ground(name: &str) -> bool {
     matches!(
         collision_class(name),
-        Collision::PartialFloor(_) | Collision::FullCube | Collision::TallBarrier
+        Collision::PartialFloor(_) | Collision::FullCube | Collision::TallBarrier | Collision::Tips
     )
 }
 

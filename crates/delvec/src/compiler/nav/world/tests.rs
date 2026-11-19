@@ -48,6 +48,7 @@ fn floored_holding(
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            tipping: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),
@@ -1061,4 +1062,55 @@ fn a_confined_walk_keeps_off_the_top_of_the_wall_it_laid() {
         !kept.contains(&far),
         "kept off the wall's top, it does not cross"
     );
+}
+
+/// A bank at y = 63 round a one-cell pit at x 3, z 2 whose floor is y = 62,
+/// the pit's cell at y 63 holding `stone` (the stepping stone) — what Pip's
+/// pond is to the body: a leaf flush with its rim.
+fn stepping_stone_in_a_pit(stone: &str) -> World {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..7 {
+        for z in 0..5 {
+            cells.push(([x, 62, z], "minecraft:stone"));
+            cells.push((
+                [x, 63, z],
+                if [x, z] == [3, 2] {
+                    stone
+                } else {
+                    "minecraft:moss_block"
+                },
+            ));
+        }
+    }
+    crate::compiler::nav::testkit::blocks_world(&cells)
+}
+
+/// **No body is proven to stand on a big dripleaf.** The leaf stops a body and
+/// catches it for a moment, then tips it off (`blockshape::tips_body`): a body
+/// over it in game is in the pit a second later. The walk, the reach graph's
+/// rest states and every landing read one standing rule, so none of them
+/// proves a stand there; the same cell in moss is a floor all three hold.
+#[test]
+fn no_body_is_proven_to_stand_on_a_big_dripleaf() {
+    let over = [3, 64, 2];
+    let beside = [2, 64, 2];
+    let moss = stepping_stone_in_a_pit("minecraft:moss_block");
+    assert!(moss.is_standable(over), "moss holds a body");
+    assert!(moss.body_edge_cells(beside).contains(&over));
+    assert!(moss.rest_kind(over).is_some());
+    for tilt in ["none", "unstable", "partial", "full"] {
+        let leaf = format!("minecraft:big_dripleaf[facing=east,tilt={tilt},waterlogged=false]");
+        let w = stepping_stone_in_a_pit(&leaf);
+        assert!(
+            w.is_solid([3, 63, 2]),
+            "{leaf}: the leaf stops a body walking into it"
+        );
+        assert!(!w.is_standable(over), "{leaf}: no body stands on the leaf");
+        assert!(
+            !w.body_edge_cells(beside).contains(&over),
+            "{leaf}: no step onto the leaf: {:?}",
+            w.body_edge_cells(beside)
+        );
+        assert_eq!(w.rest_kind(over), None, "{leaf}: no rest on the leaf");
+    }
 }

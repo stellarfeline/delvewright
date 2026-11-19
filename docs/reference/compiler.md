@@ -5383,6 +5383,7 @@ three answers a walk gets.
 |---|---|---|---|
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
+| tipping (`Collision::Tips`, `Occupancy::tipping`, a subset of solid) | `big_dripleaf`, every state (`blockshape::tips_body`) | no | **no** — a fall lands on it, and no stand there is proven |
 | use-gate | a closed door, trapdoor or fence gate a hand opens (`blockshape::opens_by_hand`) | player: yes (USE); autonomous mobs: no | **no** |
 | passable | an open door, trapdoor or fence gate a hand opens (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | fluid reach — `minecraft:water` / `minecraft:lava` (`is_fluid`), plus waterlogged sources | no | no |
@@ -5481,6 +5482,16 @@ face (`collision-footprints-1.21.11.tsv`; the glass panes the same);
 `#walls` member, and to a sturdy face that is not a connection exception, so a
 hatch of bars set in a stone floor holds its arms out to every side — and a 2×2
 hatch still leaves 14 sixteenths between its posts, which a body drops through.
+A cell in `Occupancy::tipping` (a big dripleaf's leaf) is solid — it stops a body
+walking into it and catches a fall — but `World::standable_fp` refuses it as a
+support, so no walk, landing, rest state of the reach graph or exported waypoint
+stands a body on it, and a fall onto one is no landing. The reach graph's
+snapshot marks such a cell in its code (`TIPS`) and `landing_cells` credits no
+rest on it, so a launch that touches down on a leaf rests nowhere; its digest
+and the raw membership (`TIPPING_BIT`) carry the set, so a world with a leaf
+never shares a flown node with the same world in stone. *Cited* in `docs/reference/body-movement.md` §7: a body on the
+leaf tips it to `full`, which has no collision box, within 20 ticks.
+
 A closed `iron_trapdoor` covers the whole cell in either half (13–16/16 at
 `half=top`, 0–3/16 at `half=bottom`; the second is under 8/16, which
 `collision_top_16` leaves a full cube — the conservative default, which can only

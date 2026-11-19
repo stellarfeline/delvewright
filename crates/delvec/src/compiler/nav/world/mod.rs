@@ -530,6 +530,12 @@ pub struct Floors {
     pub(in crate::compiler::nav) footprints:
         BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
     pub(in crate::compiler::nav) sieve: BTreeSet<[i32; 3]>,
+    /// The solid cells whose block tips a body standing on it off
+    /// ([`crate::compiler::assembled::Occupancy::tipping`]: a big dripleaf's
+    /// leaf). A body walking into one is stopped and a falling body lands on
+    /// it, but it is never a floor a body is proven to rest on
+    /// ([`World::standable_fp`]), so a landing on one is no landing.
+    pub(in crate::compiler::nav) tipping: BTreeSet<[i32; 3]>,
     /// Every door and trapdoor cell with its leaf per state
     /// ([`crate::compiler::assembled::Occupancy::leaves`]): which faces of its
     /// cell a body crosses, and at what height ([`World::leaf_stopping`]).
@@ -555,6 +561,7 @@ struct Cells {
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
     footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    tipping: BTreeSet<[i32; 3]>,
     leaves: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Leaf>,
     hurting: CellSet,
     rails: Rails,
@@ -1199,6 +1206,7 @@ impl World {
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
                 footprints: occ.footprints,
+                tipping: occ.tipping,
                 leaves: occ.leaves,
                 hurting: occ.hurting,
                 rails: std::sync::Arc::new(occ.rails),
@@ -1227,6 +1235,7 @@ impl World {
                 unheld_climb: self.unheld_climb.clone(),
                 rails: self.rails.clone(),
                 footprints: self.floors.footprints.clone(),
+                tipping: self.floors.tipping.clone(),
                 leaves: self.floors.leaves.clone(),
                 hurting: self.seating.hurting.clone(),
             },
@@ -1247,6 +1256,7 @@ impl World {
         self.hiding.compact();
         for c in extra {
             self.floors.footprints.remove(c);
+            self.floors.tipping.remove(c);
         }
         self.resieve()
     }
@@ -1313,6 +1323,7 @@ impl World {
         let floors = Floors {
             footprints: cells.footprints,
             sieve: BTreeSet::new(),
+            tipping: cells.tipping,
             leaves: cells.leaves,
             leaf_use: true,
         };
@@ -1544,8 +1555,10 @@ impl World {
         };
         w.drop_unheld_climbs(extra);
         for c in extra {
-            // A sealed cell holds the sealing block, not the trapdoor.
+            // A sealed cell holds the sealing block, not the trapdoor or the
+            // leaf that tipped.
             w.floors.leaves.remove(c);
+            w.floors.tipping.remove(c);
             match footprints.get(c) {
                 Some(fp) => w.floors.footprints.insert(*c, *fp),
                 None => w.floors.footprints.remove(c),
@@ -1622,6 +1635,7 @@ impl World {
             w.floors.leaves.remove(c);
             w.partial.remove(c);
             w.floors.footprints.remove(c);
+            w.floors.tipping.remove(c);
         }
         let owned: BTreeSet<[i32; 3]> = extra
             .iter()
@@ -1711,6 +1725,7 @@ impl World {
             w.pinned.insert(*c);
             w.flood_written.insert(*c);
             w.floors.footprints.remove(c);
+            w.floors.tipping.remove(c);
             if unswum.contains(c) || unheld.contains(c) {
                 w.unswum.insert(*c);
             } else {
@@ -2166,6 +2181,7 @@ impl World {
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
                 footprints: BTreeMap::new(),
+                tipping: BTreeSet::new(),
                 // A synthetic solid cell is a full cube of stone: it hides.
                 hiding: (solid_hides).into(),
                 leaves: BTreeMap::new(),
