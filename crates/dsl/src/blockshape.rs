@@ -45,6 +45,7 @@
 //! | [`Collision::OpensByHand`] | **yes** | no | — |
 //! | [`Collision::Fluid`] | no | no | — |
 //! | [`Collision::Climbable`] (ladder, vines) | yes | no | — (what holds the body is the climb) |
+//! | [`Collision::Tips`] (big dripleaf) | no | **no** | — (the leaf tips a body standing on it off) |
 //!
 //! Two rows are not the naive complement of each other, and that is the whole
 //! reason there are two columns. A **fluid** cell is a cell whose water or lava
@@ -1921,6 +1922,11 @@ pub enum Collision {
     /// climb, and the climb is the nav model's to judge, with the hold its
     /// support gives it (spec-0099).
     Climbable,
+    /// A block whose box stops a body but **tips it off** when it stands on it
+    /// ([`tips_body`]): a big dripleaf's leaf. A body does not pass its cell and
+    /// is never proven to rest on it; a body that lands on one is held for a
+    /// moment and then falls through.
+    Tips,
 }
 
 impl Collision {
@@ -1974,6 +1980,9 @@ pub fn collision_class(name: &str) -> Collision {
     if climbable(name).is_some_and(|c| c != Climbable::Scaffolding) {
         return Collision::Climbable;
     }
+    if tips_body(name) {
+        return Collision::Tips;
+    }
     let top = collision_top_16(name);
     if let Some(h) = measured_thin_floor_16(name) {
         return Collision::PartialFloor(h);
@@ -1991,6 +2000,23 @@ pub fn collision_class(name: &str) -> Collision {
         return Collision::PartialFloor(top);
     }
     Collision::FullCube
+}
+
+/// **Does this block tip a body standing on it off?** — `big_dripleaf`, in
+/// every state.
+///
+/// *Cited* (the pinned jar, `BigDripleafBlock`, `javap -c` under the pinned
+/// server mappings; `docs/reference/body-movement.md` §7): a body on the ground
+/// over the leaf (its feet above the cell floor plus 11/16) turns a `tilt=none`
+/// leaf that no redstone powers to `unstable`; the scheduled ticks take it to
+/// `partial` after 10 ticks and to `full` 10 ticks later, and a `full` leaf has
+/// no collision box (`collision-tops-1.21.11.tsv`), so the body falls through
+/// within a second. Every state answers yes: a `full` leaf placed by a structure
+/// stays empty, which this reads as a wall rather than a gap (the refusing
+/// direction), and a powered leaf that does not tip is read as one that does
+/// (refusing again). The stem has no collision box and is a thin plant.
+pub fn tips_body(name: &str) -> bool {
+    bare_id(name) == "big_dripleaf"
 }
 
 /// **Can a body's own volume occupy a cell holding this block?** —
@@ -2136,8 +2162,9 @@ mod tests {
             (Collision::OpensByHand, true, false, None),
             (Collision::Fluid, false, false, None),
             (Collision::Climbable, true, false, None),
+            (Collision::Tips, false, false, None),
         ];
-        assert_eq!(rows.len(), 10, "the table lost a row");
+        assert_eq!(rows.len(), 11, "the table lost a row");
         for &(class, passes, supports, top) in rows {
             assert_eq!(class.passes_body(), passes, "{class:?}: passes_body");
             assert_eq!(class.supports_body(), supports, "{class:?}: supports_body");
@@ -2369,6 +2396,18 @@ mod tests {
             assert_eq!(collision_class(fluid), Collision::Fluid, "{fluid}");
             assert!(!passes_body(fluid) && !supports_body(fluid), "{fluid}");
         }
+        // A big dripleaf's leaf stops a body and tips it off: neither.
+        for tilt in ["none", "unstable", "partial", "full"] {
+            let leaf =
+                format!("minecraft:big_dripleaf[facing=north,tilt={tilt},waterlogged=false]");
+            assert_eq!(collision_class(&leaf), Collision::Tips, "{leaf}");
+            assert!(!passes_body(&leaf) && !supports_body(&leaf), "{leaf}");
+        }
+        assert_eq!(collision_class("minecraft:big_dripleaf"), Collision::Tips);
+        // Its stem is a plant with no box, and no body stands on it either.
+        assert!(passes_body(
+            "minecraft:big_dripleaf_stem[facing=north,waterlogged=false]"
+        ));
         // A waterlogged block is its host block, and a body stands on it.
         let stair = "minecraft:oak_stairs[facing=north,waterlogged=true]";
         assert_eq!(collision_class(stair), Collision::FullCube);

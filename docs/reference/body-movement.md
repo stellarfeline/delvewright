@@ -227,6 +227,18 @@ base `applyInput` for the player whose client this is.
   scaled by it and the velocity then zeroed — `(0.5, 0.25, 0.5)` for a body under
   Weaving; stuck resets the fall distance. **Powder snow** (`PowderSnowBlock`):
   `makeStuckInBlock(0.9, 1.5, 0.9)`, a floor only to a body in leather boots.
+- **Big dripleaf** (`BigDripleafBlock`, read with `javap -c` under the server
+  mappings): `entityInside` turns a `tilt=none` leaf to `unstable` when the
+  entity is on the ground with its feet above the cell floor plus `0.6875`
+  (`canEntityTilt`) and no neighbour signal powers the leaf; the scheduled ticks
+  (`DELAY_UNTIL_NEXT_TILT_STATE`) take `unstable` to `partial` after 10 ticks,
+  `partial` to `full` after 10 more, and `full` back to `none` after 100; a
+  `full` leaf has no collision box (`collision-tops-1.21.11.tsv`), so a body
+  standing on a leaf falls through it within 20 ticks. The leaf's box spans
+  11–15/16 at `none` and `unstable`, 11–13/16 at `partial`. A live reading
+  agrees: a bot that jumped onto a leaf over a pond landed with its feet at
+  `y + 0.94`, and before its next move stood on the pond's bed, in the water,
+  nearly two blocks lower.
 - `#fall_damage_resetting`: `#climbable`, `sweet_berry_bush`, `cobweb` — a move of
   a block or more through one of these forgets the fall (`Entity.move`).
 - **Climbables**: spec-0099 §2 is the record; nothing is restated here.

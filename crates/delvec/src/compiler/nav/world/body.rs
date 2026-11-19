@@ -876,9 +876,11 @@ impl World {
             let base = [c[0] + dx, c[1], c[2] + dz];
             let support = [base[0], base[1] - 1, base[2]];
             // A floor is a block that HOLDS the body: a sieve — bars laid
-            // through a floor, a pane — is a block a body falls between.
+            // through a floor, a pane — is a block a body falls between, and a
+            // big dripleaf's leaf tips a body standing on it off.
             self.is_solid(support)
                 && !self.is_sieve(support)
+                && !self.floors.tipping.contains(&support)
                 && (0..fp.height).all(|dy| !self.is_occupied([base[0], base[1] + dy, base[2]]))
         })
     }

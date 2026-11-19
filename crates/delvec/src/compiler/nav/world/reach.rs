@@ -2624,6 +2624,16 @@ impl World {
                     }
                 }
             }
+            // A leaf that tips moves the rest states (`standable_fp`) as a
+            // sieve does; a world with none hashes as it did before.
+            if !self.floors.tipping.is_empty() {
+                h.update(b"tipping");
+                for c in self.floors.tipping.iter() {
+                    for x in c {
+                        h.update(x.to_le_bytes());
+                    }
+                }
+            }
             if !self.keep_out.is_empty() {
                 h.update(b"keep-out");
                 h.update(self.keep_out_digest().as_bytes());

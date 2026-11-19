@@ -1891,6 +1891,12 @@ pub struct Occupancy {
     /// whether a body over it is held or falls between its boxes is the nav
     /// model's to judge from these and the cells around them.
     pub footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    /// The `solid` cells whose block **tips a body standing on it off**
+    /// ([`delvewright_dsl::blockshape::Collision::Tips`]: a big dripleaf's
+    /// leaf). A subset of `solid`: the cell stops a body walking into it and a
+    /// falling body lands on it, but it is never a floor a body is proven to
+    /// rest on ([`crate::compiler::nav::World`]'s standing rule).
+    pub tipping: BTreeSet<[i32; 3]>,
     /// Cells whose block **hides** what stands behind it from the eye
     /// ([`delvewright_dsl::blockshape::hides`], the pinned jar's occlusion
     /// table). Not a collision class and not disjoint from them: a second
@@ -2188,6 +2194,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut waterloggable = CellSet::builder(lo, hi);
     let mut footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
         BTreeMap::new();
+    let mut tipping: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut hiding = CellSet::builder(lo, hi);
     let mut hurting = CellSet::builder(lo, hi);
     let mut rails: BTreeMap<[i32; 3], crate::compiler::rail::Rail> = BTreeMap::new();
@@ -2270,6 +2277,14 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 barriers.insert(cell);
                 tall.insert(cell);
             }
+            // A leaf that tips a body off stops a body and catches a fall, as a
+            // full cube does; whether a body rests on it is the nav model's
+            // standing rule, which reads `tipping`.
+            Collision::Tips => {
+                barriers.insert(cell);
+                solid.insert(cell);
+                tipping.insert(cell);
+            }
             class @ (Collision::PartialFloor(_) | Collision::FullCube) => {
                 barriers.insert(cell);
                 solid.insert(cell);
@@ -2321,6 +2336,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         unheld_climb,
         material,
         footprints,
+        tipping,
         hiding,
         leaves,
         hurting,
