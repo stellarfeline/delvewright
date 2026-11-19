@@ -103,6 +103,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            tipping: Default::default(),
             hiding: Default::default(),
             leaves: Default::default(),
             hurting: Default::default(),

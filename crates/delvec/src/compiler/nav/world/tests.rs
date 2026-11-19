@@ -48,6 +48,7 @@ fn floored_holding(
             unheld_climb: Default::default(),
             material: Default::default(),
             footprints: Default::default(),
+            tipping: Default::default(),
             leaves: Default::default(),
             hiding: Default::default(),
             hurting: Default::default(),

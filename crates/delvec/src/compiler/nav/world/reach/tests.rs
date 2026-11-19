@@ -43,6 +43,7 @@ impl Build {
                 unheld_climb: Default::default(),
                 material: Default::default(),
                 footprints: Default::default(),
+                tipping: Default::default(),
                 hiding: Default::default(),
                 hurting: Default::default(),
                 rails: Default::default(),
