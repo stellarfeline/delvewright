@@ -203,11 +203,24 @@ pub(super) fn emit_seat_once_packtests(
             t.push(format!("tag @e[tag={}] add {before}", plan::wave_tag(wid)));
         }
         t.push(super::super::quest::complete_latch_open(oid));
+        // The three are the only players present. A test's dummy stays on the
+        // server once its test fails or dies, so running alone leaves every
+        // such dummy in `@a`, and a scaling wave's spawn counts the players
+        // present with it. For the drive, every other player is outside that
+        // count: it gets the tag the count excludes, under a marker, so the
+        // template takes back exactly the tags it added.
+        let outside = format!("dw_t_psox_{osafe}");
+        t.push(format!(
+            "tag @a[tag=!{party},tag=!{CUTSCENE_TAG}] add {outside}"
+        ));
+        t.push(format!("tag @a[tag={outside}] add {CUTSCENE_TAG}"));
         // The dispatch's own shape: one fork over every player present.
         t.push(format!(
             "execute as @a[tag={party}] run function {ns}:complete_{}",
             safe_obj_fn(oid)
         ));
+        t.push(format!("tag @a[tag={outside}] remove {CUTSCENE_TAG}"));
+        t.push(format!("tag @a[tag={outside}] remove {outside}"));
         for (k, (wid, seated)) in waves.iter().enumerate() {
             let Some(w) = c
                 .quests

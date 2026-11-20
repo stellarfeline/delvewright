@@ -92,7 +92,7 @@ fn a_completion_that_seats_a_wave_is_driven_under_a_three_player_fork() {
     let out = build_with(|_| {});
     let t = template(&out, "talk").expect("obj/talk seats wave/guards: its template is owed");
     let lines: Vec<&str> = t.lines().collect();
-    // Alone, so `@a` is the template's own three players.
+    // Alone, so no other template runs beside it.
     assert!(
         lines.contains(&format!("# @environment {NS}:solo/party_seat_once_talk").as_str()),
         "{t}"
@@ -140,6 +140,52 @@ fn a_scaled_wave_is_counted_at_the_three_players_present() {
     let t = template(&out, "talk").unwrap();
     assert!(
         t.contains("assert score #pso_talk_0 dw.sys matches 4"),
+        "{t}"
+    );
+}
+
+/// Running alone does not empty the server: a dummy stays once its test fails
+/// or it dies, and a scaling wave's spawn counts every player present. The
+/// template holds every player outside its three out of that count for the
+/// drive, by the tag the count excludes, and hands the tag back.
+#[test]
+fn every_player_outside_the_three_is_outside_the_count_for_the_drive() {
+    let out = build_with(|c| {
+        c.quests.content.waves[0].mobs[0].count = MobCount::Scaled(ScaledCount {
+            base: 2,
+            per_player: 1,
+        });
+    });
+    // The count the spawn reads: every player present but the watching ones.
+    let spawn = out
+        .get(&format!(
+            "datapack/data/{NS}/function/spawn_guards.mcfunction"
+        ))
+        .map(|b| String::from_utf8(b.clone()).unwrap())
+        .expect("wave/guards emits its spawn");
+    assert!(
+        spawn.contains(
+            "execute store result score #pn_guards dw.sys if entity @a[tag=!dw_cutscene]"
+        ),
+        "{spawn}"
+    );
+    let t = template(&out, "talk").unwrap();
+    let lines: Vec<&str> = t.lines().collect();
+    let at = |want: &str| {
+        lines
+            .iter()
+            .position(|l| *l == want)
+            .unwrap_or_else(|| panic!("`{want}` missing:\n{t}"))
+    };
+    let mark = at("tag @a[tag=!dw_t_psop_talk,tag=!dw_cutscene] add dw_t_psox_talk");
+    let hold = at("tag @a[tag=dw_t_psox_talk] add dw_cutscene");
+    let drive = at(&format!(
+        "execute as @a[tag=dw_t_psop_talk] run function {NS}:complete_o_talk"
+    ));
+    let back = at("tag @a[tag=dw_t_psox_talk] remove dw_cutscene");
+    let unmark = at("tag @a[tag=dw_t_psox_talk] remove dw_t_psox_talk");
+    assert!(
+        mark < hold && hold < drive && drive < back && back < unmark,
         "{t}"
     );
 }
